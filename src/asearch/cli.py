@@ -29,7 +29,8 @@ from asearch.llm import (
 def parse_args() -> argparse.Namespace:
     """Parse command-line arguments."""
     parser = argparse.ArgumentParser(
-        description="Tool-calling CLI with model selection."
+        description="Tool-calling CLI with model selection.",
+        formatter_class=argparse.RawTextHelpFormatter,
     )
     parser.add_argument(
         "-m",
@@ -54,14 +55,6 @@ def parse_args() -> argparse.Namespace:
         help="Enable deep dive mode (extracts links and encourages reading more pages from same domain)",
     )
     parser.add_argument(
-        "-H",
-        "--history",
-        nargs="?",
-        type=int,
-        const=10,
-        help="Show last N queries (default 10) and exit.",
-    )
-    parser.add_argument(
         "-c",
         "--continue-chat",
         dest="continue_ids",
@@ -77,7 +70,8 @@ def parse_args() -> argparse.Namespace:
         "-fs",
         "--force-search",
         action="store_true",
-        help="Force the model to use web search (default: False).",
+        help="Force the model to use web search (default: False).\n"
+        "Helpful for avoiding hallucinations with small models",
     )
     parser.add_argument(
         "--cleanup-db",
@@ -89,6 +83,15 @@ def parse_args() -> argparse.Namespace:
         "--all",
         action="store_true",
         help="Used with --cleanup-db to delete ALL history.",
+    )
+    parser.add_argument(
+        "-H",
+        "--history",
+        nargs="?",
+        type=int,
+        const=10,
+        help="Show last N queries and answer summaries (default 10).\n"
+        "Use with --print-answer to print the full answer(s).",
     )
     parser.add_argument(
         "-pa",

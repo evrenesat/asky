@@ -76,8 +76,10 @@ Here is the forecast for today and the next couple of days:
 
 Query completed in 3.88 seconds
 
-usage: ask [-h] [-m {gf,glmair,glmflash,q34t,q34,lfm,q8,q30,onano,omini}] [-d [DEEP_RESEARCH]] [-dd] [-H [HISTORY]] [-c CONTINUE_IDS] [-s] [-fs] [--cleanup-db [CLEANUP_DB]] [--all] [-pa PRINT_IDS]
-           [-p] [-v]
+--------------------------------------------------------------------------------
+➜  ~ ask --help
+usage: ask [-h] [-m {gf,glmair,glmflash,q34t,q34,lfm,q8,q30,onano,omini}] [-d [DEEP_RESEARCH]] [-dd] [-c CONTINUE_IDS] [-s] [-fs] [--cleanup-db [CLEANUP_DB]] [--all]
+           [-H [HISTORY]] [-pa PRINT_IDS] [-p] [-v]
            [query ...]
 
 Tool-calling CLI with model selection.
@@ -92,15 +94,17 @@ options:
   -d, --deep-research [DEEP_RESEARCH]
                         Enable deep research mode (optional: specify min number of queries, default 5)
   -dd, --deep-dive      Enable deep dive mode (extracts links and encourages reading more pages from same domain)
-  -H, --history [HISTORY]
-                        Show last N queries (default 10) and exit.
   -c, --continue-chat CONTINUE_IDS
                         Continue conversation with context from specific history IDs (comma-separated, e.g. '1,2').
   -s, --summarize       Enable summarize mode (summarizes URL content and uses summaries for chat context)
   -fs, --force-search   Force the model to use web search (default: False).
+                        Helpful for avoiding hallucinations with small models
   --cleanup-db [CLEANUP_DB]
                         Delete history records. usage: --cleanup-db [ID|ID-ID|ID,ID] or --cleanup-db --all
   --all                 Used with --cleanup-db to delete ALL history.
+  -H, --history [HISTORY]
+                        Show last N queries and answer summaries (default 10).
+                        Use with --print-answer to print the full answer(s).
   -pa, --print-answer PRINT_IDS
                         Print the answer(s) for specific history IDs (comma-separated).
   -p, --prompts         List all configured user prompts.

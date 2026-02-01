@@ -2,7 +2,9 @@
 
 ## 2026-02-01
 
+- **Feat**: Switched to `argparse.RawTextHelpFormatter` to allow explicit newlines in CLI help text.
 - **Feat**: Integrated **markdown rendering with `rich`**.
+
   - Added `rich` to project dependencies.
   - Implemented `is_markdown` detection in `llm.py`.
   - Updated `run_conversation_loop` in `llm.py` and `print_answers` in `cli.py` to use `rich.markdown.Markdown` for rendering LLM output if markdown is detected.
