@@ -2,6 +2,7 @@
 
 ## 2026-02-01
 
+- **Fix**: Added `User-Agent` header to all `requests` calls in `tools.py` to resolve **SearXNG 403 Forbidden** errors.
 - **Feat**: Introduced **custom user-defined tool support**.
   - Users can define tools in `config.toml` under `[tool.NAME]`.
   - Supports command execution via `subprocess`.

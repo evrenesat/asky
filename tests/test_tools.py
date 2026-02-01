@@ -38,6 +38,8 @@ def test_execute_web_search_success(mock_requests_get):
             }
         ]
     }
+    mock_response.status_code = 200
+    mock_response.text = ""
     mock_requests_get.return_value = mock_response
 
     result = execute_web_search({"q": "test query"})
@@ -108,6 +110,8 @@ def test_dispatch_tool_call(mock_requests_get, reset_urls):
     # Mock web search dispatch
     mock_response = MagicMock()
     mock_response.json.return_value = {"results": []}
+    mock_response.status_code = 200
+    mock_response.text = ""
     mock_requests_get.return_value = mock_response
 
     call = {"function": {"name": "web_search", "arguments": '{"q": "test"}'}}

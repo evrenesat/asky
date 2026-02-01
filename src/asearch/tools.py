@@ -32,13 +32,22 @@ def reset_read_urls() -> None:
 
 def _execute_searxng_search(q: str, count: int) -> Dict[str, Any]:
     """Execute a web search using SearXNG."""
+    # Ensure no trailing slash on SEARXNG_URL
+    base_url = SEARXNG_URL.rstrip("/")
     try:
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36",
+            "Accept": "application/json",
+        }
         resp = requests.get(
-            f"{SEARXNG_URL}/search",
+            f"{base_url}/search",
             params={"q": q, "format": "json"},
+            headers=headers,
             timeout=20,
         )
-        resp.raise_for_status()
+        if resp.status_code != 200:
+            return {"error": f"SearXNG error {resp.status_code}: {resp.text[:200]}"}
+
         data = resp.json()
         results = []
         for x in data.get("results", [])[:count]:
@@ -139,7 +148,10 @@ def fetch_single_url(
     if url in read_urls:
         return {url: "Error: Already read this URL."}
     try:
-        resp = requests.get(url, timeout=20)
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
+        }
+        resp = requests.get(url, headers=headers, timeout=20)
         resp.raise_for_status()
         content = strip_tags(resp.text)
 
@@ -191,7 +203,10 @@ def execute_get_url_details(args: Dict[str, Any], max_chars: int) -> Dict[str, A
         return {"error": "You have already read this URL."}
     read_urls.append(url)
     try:
-        resp = requests.get(url, timeout=20)
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
+        }
+        resp = requests.get(url, headers=headers, timeout=20)
         resp.raise_for_status()
         s = HTMLStripper()
         s.feed(resp.text)
@@ -219,27 +234,34 @@ def _execute_custom_tool(name: str, args: Dict[str, Any]) -> Dict[str, Any]:
     if not cmd_base:
         return {"error": f"No command defined for custom tool '{name}'."}
 
-    # Prepare arguments: remove double quotes and add them back
+    # Prepare arguments:
+    # 1. Get defaults from config
+    props = tool_cfg.get("parameters", {}).get("properties", {})
     processed_args = {}
-    for k, v in args.items():
-        # Remove existing double quotes and wrap in new ones
-        clean_val = str(v).replace('"', "")
-        processed_args[k] = f'"{clean_val}"'
+
+    # 2. Merge defaults with provided args
+    # Note: LLM might already handle defaults, but we ensure it here
+    for k, p in props.items():
+        val = args.get(k)
+        if val is None:
+            val = p.get("default")
+
+        if val is not None:
+            # Remove existing double quotes and wrap in new ones
+            clean_val = str(val).replace('"', "")
+            processed_args[k] = f'"{clean_val}"'
 
     try:
         # Check if the command uses placeholders
         if "{" in cmd_base and "}" in cmd_base:
             try:
-                # Format only with existing keys to avoid KeyError for optional params
-                # This is a bit naive but works if placeholders match properties
                 cmd_str = cmd_base.format(**processed_args)
             except KeyError as e:
-                return {"error": f"Missing required parameter for command: {e}"}
+                return {"error": f"Missing parameter required by command template: {e}"}
         else:
-            # Append arguments in order of appearance in properties if not using placeholders
-            param_order = tool_cfg.get("parameters", {}).get("properties", {}).keys()
+            # Append arguments in order of appearance in properties mapping
             arg_list = []
-            for k in param_order:
+            for k in props.keys():
                 if k in processed_args:
                     arg_list.append(processed_args[k])
 

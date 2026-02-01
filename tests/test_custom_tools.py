@@ -30,6 +30,20 @@ def mock_custom_tools():
 
 
 @patch("subprocess.run")
+def test_execute_custom_tool_placeholder_with_default(mock_run, mock_custom_tools):
+    mock_run.return_value = MagicMock(stdout="file.txt\n", stderr="", returncode=0)
+
+    # Do not pass 'path', it should use default "."
+    args = {}
+    result = _execute_custom_tool("list_dir", args)
+
+    mock_run.assert_called_once()
+    cmd = mock_run.call_args[0][0]
+    assert cmd == 'ls "."'
+    assert result["stdout"] == "file.txt"
+
+
+@patch("subprocess.run")
 def test_execute_custom_tool_placeholder(mock_run, mock_custom_tools):
     mock_run.return_value = MagicMock(stdout="file.txt\n", stderr="", returncode=0)
 

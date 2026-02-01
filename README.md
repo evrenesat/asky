@@ -198,6 +198,13 @@ default = "."
 - **Quoting**: All arguments are automatically cleaned (inner double-quotes removed) and wrapped in double-quotes for safety.
 - **Execution**: Commands are executed via terminal shell, allowing for advanced piping and redirection.
 
+> [!TIP]
+> **Performance Tip**: When using recursive tools like `grep`, consider excluding large directories like `.venv` or `node_modules` to avoid timeouts:
+> `command = "grep -r --exclude-dir={.venv,node_modules} {pattern} {path}"`
+
+> [!NOTE]
+> **Optional Parameters**: If you define a parameter with a `default` value in `config.toml`, it will be automatically injected into your `command` if the LLM omits it.
+
 ## Configuration options
 [See default configuration](./src/asearch/config.toml)
 
