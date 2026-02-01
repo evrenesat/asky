@@ -1,0 +1,23 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "asearch"
+version = "0.1.0"
+description = "AI-powered web search CLI with LLM tool-calling capabilities"
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.10"
+dependencies = [
+    "requests",
+    "litellm",
+    "python-dotenv",
+]
+
+[project.scripts]
+ask = "asearch.cli:main"
+asearch = "asearch.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/asearch"]

@@ -1,0 +1,12 @@
+repro_issue.py
+*.db
+temp_*
+temp/
+
+# Python packaging
+*.egg-info/
+dist/
+build/
+__pycache__/
+*.pyc
+.eggs/
