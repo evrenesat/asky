@@ -21,6 +21,8 @@ from asearch.config import (
     ANSWER_SUMMARY_MAX_CHARS,
     SUMMARIZATION_MODEL,
     LLM_USER_AGENT,
+    SUMMARIZE_QUERY_PROMPT_TEMPLATE,
+    SUMMARIZE_ANSWER_PROMPT_TEMPLATE,
 )
 from asearch.html import strip_think_tags
 from asearch.tools import dispatch_tool_call, reset_read_urls
@@ -227,7 +229,9 @@ def generate_summaries(query: str, answer: str) -> tuple[str, str]:
             msgs = [
                 {
                     "role": "system",
-                    "content": "Summarize the following query into a single short sentence (max 40 chars).",
+                    "content": SUMMARIZE_QUERY_PROMPT_TEMPLATE.format(
+                        QUERY_SUMMARY_MAX_CHARS=QUERY_SUMMARY_MAX_CHARS
+                    ),
                 },
                 {"role": "user", "content": query[:1000]},
             ]
@@ -245,7 +249,9 @@ def generate_summaries(query: str, answer: str) -> tuple[str, str]:
         msgs = [
             {
                 "role": "system",
-                "content": f"Summarize the following answer into a short paragraph (max {ANSWER_SUMMARY_MAX_CHARS} chars).",
+                "content": SUMMARIZE_ANSWER_PROMPT_TEMPLATE.format(
+                    ANSWER_SUMMARY_MAX_CHARS=ANSWER_SUMMARY_MAX_CHARS
+                ),
             },
             {"role": "user", "content": answer[:5000]},
         ]

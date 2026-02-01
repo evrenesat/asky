@@ -2,6 +2,10 @@
 
 ## 2026-02-01
 
+- **Feat**: Made **summarization prompts configurable** via `config.toml` under `[prompts]` section.
+  - Added `summarize_query` and `summarize_answer` templates with `{QUERY_SUMMARY_MAX_CHARS}` and `{ANSWER_SUMMARY_MAX_CHARS}` placeholders.
+  - Updated `llm.py` to use these templates for internal summarization tasks.
+
 - **Feat**: Made **User-Agent configurable** via `config.toml` under `[general]` section.
   - Replaced hardcoded UA strings in `tools.py` with `USER_AGENT` constant.
   - Introduced `llm_user_agent` for LLM requests in `llm.py`.

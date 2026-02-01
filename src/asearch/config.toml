@@ -115,6 +115,13 @@ force_search = """Unless you are asked to use a specific URL, always use web_sea
 # Global system prompt suffix.
 system_suffix = """Then use get_url_content for details of the search results. You can pass a list of URLs to get_url_content to fetch multiple pages efficiently at once. Use tools, don't say you can't.You have {MAX_TURNS} turns to complete your task, if you reach the limit, process will be terminated.You should finish your task before reaching %100 of your token limit."""
 
+# Prompt for summarizing the user query.
+summarize_query = "Summarize the following query into a single short sentence (max {QUERY_SUMMARY_MAX_CHARS} chars)."
+
+# Prompt for summarizing the final answer.
+summarize_answer = """Summarize the following answer into a short paragraph (max {ANSWER_SUMMARY_MAX_CHARS} chars).
+ Be sure to include all numerical values and dates """
+
 # Template for DEEP RESEARCH mode (-d). {n} is the number of searches.
 deep_research = """
 You are in DEEP RESEARCH mode. You MUST perform at least {n} distinct web searches, or make {n} get_url_content calls to gather comprehensive information before providing a final answer.If you need to get links from a URL, use get_url_details. If you just need to get content from a URL, use get_url_content."""

@@ -167,6 +167,14 @@ FORCE_SEARCH_PROMPT = _prompts["force_search"]
 SYSTEM_PROMPT_SUFFIX = _prompts["system_suffix"]
 DEEP_RESEARCH_PROMPT_TEMPLATE = _prompts["deep_research"]
 DEEP_DIVE_PROMPT_TEMPLATE = _prompts["deep_dive"]
+SUMMARIZE_QUERY_PROMPT_TEMPLATE = _prompts.get(
+    "summarize_query",
+    "Summarize the following query into a single short sentence (max {QUERY_SUMMARY_MAX_CHARS} chars).",
+)
+SUMMARIZE_ANSWER_PROMPT_TEMPLATE = _prompts.get(
+    "summarize_answer",
+    "Summarize the following answer into a short paragraph (max {ANSWER_SUMMARY_MAX_CHARS} chars).",
+)
 USER_PROMPTS = _CONFIG.get("user_prompts", {})
 
 # --- Custom Tools ---
