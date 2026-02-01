@@ -5,7 +5,7 @@ import os
 import re
 from typing import Dict, List, Optional
 
-from asearch.config import DEFAULT_MODEL, MODELS
+from asearch.config import DEFAULT_MODEL, MODELS, USER_PROMPTS
 from asearch.storage import (
     init_db,
     get_history,
@@ -91,10 +91,16 @@ def parse_args() -> argparse.Namespace:
         help="Used with --cleanup-db to delete ALL history.",
     )
     parser.add_argument(
-        "-p",
+        "-pa",
         "--print-answer",
         dest="print_ids",
         help="Print the answer(s) for specific history IDs (comma-separated).",
+    )
+    parser.add_argument(
+        "-p",
+        "--prompts",
+        action="store_true",
+        help="List all configured user prompts.",
     )
     parser.add_argument(
         "-v",
@@ -337,9 +343,33 @@ def main() -> None:
     if handle_print_answer_implicit(args):
         return
 
-    if not args.query:
-        print("Error: Query argument is required unless -H/--history is used.")
+    if args.prompts:
+        print("\n=== USER PROMPTS ===")
+        if USER_PROMPTS:
+            for key, prompt in USER_PROMPTS.items():
+                print(f"  /{key:<10} : {prompt}")
+        else:
+            print("  (No prompts configured)")
+        print("====================\n")
         return
+
+    if not args.query:
+        print(
+            "Error: Query argument is required unless -H/--history or --prompts is used."
+        )
+        return
+
+    # Handle Predefined Prompts Expansion
+    if args.query and args.query[0].startswith("/"):
+        key = args.query[0][1:]
+        if key in USER_PROMPTS:
+            expanded_prompt = USER_PROMPTS[key]
+            # Replace the first argument (the key) with the expanded prompt
+            args.query[0] = expanded_prompt
+            if args.verbose:
+                print(f"[Expanded Prompt '{key}': {expanded_prompt}]")
+        # Else: User might be using a slash for something else, leave it as is or warn?
+        # For now, let's treat it as a normal query start if not found in prompts.
 
     # Handle Context
     context_str = ""

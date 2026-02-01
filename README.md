@@ -47,7 +47,7 @@ options:
   -v, --verbose         Enable verbose output (prints config and LLM inputs).
 
 
-  
+
 # Basic query
 ask what is the weather in Berlin
 
@@ -73,6 +73,32 @@ ask -c "~2" what about the one before that?
 
 > [!NOTE]
 > **Zsh Users**: When using `~` for relative IDs, you must either quote the value (e.g., `ask -c "~1"`) or place it immediately after the flag without a space (e.g., `ask -c~1`). If you use a space without quotes (e.g., `ask -c ~1`), zsh will attempt to expand it as a directory stack entry.
+
+
+➜  ~ ask -p
+
+=== USER PROMPTS ===
+  /gn         : Give me latest news from The Guardian, use https://www.theguardian.com/europe
+  /wh         : how is weather in
+====================
+
+➜  ~ ask /wh delft
+Dispatching tool call: web_search with args {'q': 'weather in Delft'}
+Dispatching tool call: get_url_content with args {'urls': ...}
+
+The weather in **Delft, South Holland, Netherlands** is currently **45°F and Cloudy with Showers in the Vicinity** (as of 4:20 pm CET).
+
+Here is the forecast for today and the next couple of days:
+
+*   **Now (Current):** 44°F, Light Rain, wind SE 8 mph.
+*   **Tonight:** Low of **40°F**. Cloudy with periods of rain. Chance of rain is 75-80%. Winds ESE at 10 to 15 mph.
+*   **Monday (Tomorrow):** High of **43°F** / Low of **32°F**.
+    *   **Day:** Scattered rain showers early with overcast skies later. Chance of rain 40%. Winds E at 10 to 15 mph.
+    *   **Night:** Partly cloudy, low of 32°F. Winds E at 10 to 20 mph.
+*   **Tuesday:** High of **38°F** / Low of **38°F**.
+    *   Cloudy with periods of light rain. Chance of rain 60%. Winds E at 10 to 20 mph.
+
+Query completed in 3.88 seconds
 
 # Deep research mode (multiple searches)
 ask -d 5 comprehensive analysis of topic

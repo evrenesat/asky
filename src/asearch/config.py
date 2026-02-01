@@ -55,7 +55,13 @@ def load_config() -> Dict[str, Any]:
     except Exception as e:
         print(f"Error loading bundled config: {e}")
         # Build a minimal fallback if bundled config fails
-        default_config = {"general": {}, "api": {}, "models": {}, "prompts": {}}
+        default_config = {
+            "general": {},
+            "api": {},
+            "models": {},
+            "prompts": {},
+            "user_prompts": {},
+        }
 
     # Initialize from defaults
     final_config = copy.deepcopy(default_config)
@@ -132,6 +138,7 @@ FORCE_SEARCH_PROMPT = _prompts["force_search"]
 SYSTEM_PROMPT_SUFFIX = _prompts["system_suffix"]
 DEEP_RESEARCH_PROMPT_TEMPLATE = _prompts["deep_research"]
 DEEP_DIVE_PROMPT_TEMPLATE = _prompts["deep_dive"]
+USER_PROMPTS = _CONFIG.get("user_prompts", {})
 
 
 # --- Tool Definitions ---
