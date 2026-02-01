@@ -1,0 +1,69 @@
+# asearch Configuration File
+
+[general]
+db_path_env_var = "SEARXNG_HISTORY_DB_PATH"
+query_summary_max_chars = 40
+answer_summary_max_chars = 200
+searxng_url = "http://localhost:8888"
+max_turns = 20
+default_model = "gf"
+summarization_model = "lfm"
+
+[api.gemini]
+url = "https://generativelanguage.googleapis.com/v1beta/chat/completions"
+api_key_env = "GOOGLE_API_KEY"
+
+[api.lmstudio]
+url = "http://localhost:1234/v1/chat/completions"
+api_key = "lm-studio"
+
+[prompts]
+system_prefix = """You are a helpful assistant with web searc and URL retrieval capabilities. Use get_date_time for current date/time if needed (e.g., for 'today' or 'recently'). """
+force_search = """Unless you are asked to use a specific URL, always use web_search, never try to answer without using web_search. """
+system_suffix = """Then use get_url_content for details of the search results. You can pass a list of URLs to get_url_content to fetch multiple pages efficiently at once. Use tools, don't say you can't.You have {MAX_TURNS} turns to complete your task, if you reach the limit, process will be terminated.You should finish your task before reaching %100 of your token limit."""
+deep_research = """
+You are in DEEP RESEARCH mode. You MUST perform at least {n} distinct web searches, or make {n} get_url_content calls to gather comprehensive information before providing a final answer.If you need to get links from a URL, use get_url_details. If you just need to get content from a URL, use get_url_content."""
+deep_dive = """
+You are in DEEP DIVE mode. Follow these instructions:
+1. Use 'get_url_details' for the INITIAL page to retrieve content and links.
+2. Follow up to 25 relevant links within the same domain to gather comprehensive information.
+3. IMPORTANT: Use 'get_url_details' ONLY for the first page. Use 'get_url_content' for all subsequent links.
+4. Do not rely on your internal knowledge; base your answer strictly on the retrieved content.5. Do not use web_search in deep dive mode."""
+
+# Model Definitions
+
+[models.q34t]
+id = "qwen/qwen3-4b-thinking-2507"
+api = "lmstudio"
+max_chars = 4000
+context_size = 32000
+
+[models.q34]
+id = "qwen/qwen3-4b-2507"
+api = "lmstudio"
+max_chars = 4000
+context_size = 32000
+
+[models.lfm]
+id = "liquid/lfm2.5-1.2b"
+api = "lmstudio"
+max_chars = 100000
+context_size = 32000
+
+[models.q8]
+id = "qwen/qwen3-8b"
+api = "lmstudio"
+max_chars = 4000
+context_size = 32000
+
+[models.q30]
+id = "qwen/qwen3-30b-a3b-2507"
+api = "lmstudio"
+max_chars = 3000
+context_size = 32000
+
+[models.gf]
+id = "gemini-flash-latest"
+api = "gemini"
+max_chars = 1000000
+context_size = 1000000

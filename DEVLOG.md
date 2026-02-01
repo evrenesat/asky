@@ -110,3 +110,4 @@
 - Updated `tests/test_tools.py` to test text summarization (`summarize_text`).
 - Updated `tests/test_storage.py` to cover edge cases in database cleanup (e.g., reverse ranges).
 - Achieved 100% pass rate for 47 unit tests.
+- **Refactor**: Replaced dynamic configuration generation with a bundled `config.toml`. The default configuration file is now shipped with the package and copied to the user's config directory on first run.
