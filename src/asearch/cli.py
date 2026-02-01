@@ -127,14 +127,61 @@ def show_history(history_arg: int) -> None:
 def load_context(continue_ids: str, full_content: bool) -> Optional[str]:
     """Load context from previous interactions."""
     try:
-        ids = [int(x.strip()) for x in continue_ids.split(",")]
-        context_str = get_interaction_context(ids, full=full_content)
+        raw_ids = [x.strip() for x in continue_ids.split(",")]
+        resolved_ids = []
+        relative_indices = []
+
+        for raw_id in raw_ids:
+            if raw_id.startswith("~"):
+                try:
+                    # ~1 means last record (index 0), ~2 means second to last (index 1)
+                    rel_val = int(raw_id[1:])
+                    if rel_val < 1:
+                        print(f"Error: Relative ID must be >= 1 (got {raw_id})")
+                        return None
+                    relative_indices.append(rel_val)
+                except ValueError:
+                    print(f"Error: Invalid relative ID format: {raw_id}")
+                    return None
+            else:
+                resolved_ids.append(int(raw_id))
+
+        if relative_indices:
+            max_depth = max(relative_indices)
+            # Fetch enough history to cover the requested depth
+            history_rows = get_history(limit=max_depth)
+
+            for rel_val in relative_indices:
+                list_index = rel_val - 1
+                if list_index < len(history_rows):
+                    # history_rows is ordered by ID DESC
+                    # row format: (id, timestamp, query, q_sum, a_sum, mod)
+                    real_id = history_rows[list_index][0]
+                    resolved_ids.append(real_id)
+                else:
+                    print(
+                        f"Error: Relative ID {rel_val} is out of range (only {len(history_rows)} records available)."
+                    )
+                    return None
+
+        # Remove duplicates while preserving order? Or just sort?
+        # get_interaction_context uses "WHERE id IN (...)" so order in list might not match output order if SQL doesn't enforce it.
+        # But commonly we want context in chronological order usually.
+        # get_interaction_context implementation:
+        #   c.execute(query_str, ids)
+        #   results = c.fetchall()
+        # It doesn't enforce order passed in `ids` unless we do explicit ordering.
+        # But `load_context` returns a joined string.
+        # Let's keep distinct IDs.
+        resolved_ids = sorted(list(set(resolved_ids)))
+
+        context_str = get_interaction_context(resolved_ids, full=full_content)
         if context_str:
-            print(f"\n[Loaded context from IDs: {continue_ids}]")
+            print(f"\n[Loaded context from IDs: {', '.join(map(str, resolved_ids))}]")
         return context_str
     except ValueError:
         print(
-            "Error: Invalid format for -c/--continue-chat. Use comma-separated integers."
+            "Error: Invalid format for -c/--continue-chat. Use comma-separated integers or ~N for relative."
         )
         return None
 

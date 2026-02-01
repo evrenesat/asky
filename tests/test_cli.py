@@ -102,6 +102,55 @@ def test_load_context_invalid(mock_get_context, capsys):
     assert "Error: Invalid format" in captured.out
 
 
+@patch("asearch.cli.get_history")
+@patch("asearch.cli.get_interaction_context")
+def test_load_context_relative_success(mock_get_context, mock_get_history):
+    # Mock history: ID 5 is most recent (~1), ID 4 is ~2
+    mock_get_history.return_value = [
+        (5, "ts", "q5", "s5", "a5", "m"),
+        (4, "ts", "q4", "s4", "a4", "m"),
+    ]
+    mock_get_context.return_value = "Context Content"
+
+    # Test ~1 -> ID 5
+    result = load_context("~1", False)
+    mock_get_history.assert_called_with(limit=1)
+    mock_get_context.assert_called_with([5], full=False)
+    assert result == "Context Content"
+
+    # Test ~2 -> ID 4
+    result = load_context("~2", False)
+    mock_get_history.assert_called_with(limit=2)
+    mock_get_context.assert_called_with([4], full=False)
+
+
+@patch("asearch.cli.get_history")
+@patch("asearch.cli.get_interaction_context")
+def test_load_context_mixed(mock_get_context, mock_get_history):
+    # Mock history
+    mock_get_history.return_value = [
+        (10, "ts", "q10", "s10", "a10", "m"),
+    ]
+    mock_get_context.return_value = "Mixed Context"
+
+    # Test 123, ~1 -> 123, 10
+    load_context("123, ~1", False)
+    mock_get_history.assert_called_with(limit=1)
+    # verify call args contains 123 and 10. Order might vary due to sorted(set(...))
+    call_args = mock_get_context.call_args[0][0]
+    assert set(call_args) == {10, 123}
+
+
+@patch("asearch.cli.get_history")
+def test_load_context_relative_out_of_bounds(mock_get_history, capsys):
+    mock_get_history.return_value = [(1, "ts", "q", "s", "a", "m")]  # only 1 record
+
+    result = load_context("~5", False)
+    assert result is None
+    captured = capsys.readouterr()
+    assert "Error: Relative ID 5 is out of range" in captured.out
+
+
 def test_build_messages_basic(mock_args):
     messages = build_messages(mock_args, "")
     assert len(messages) == 2
