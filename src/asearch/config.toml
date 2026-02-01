@@ -55,6 +55,7 @@ api_key = "lm-studio"
 [user_prompts]
 gn = "Give me latest news from The Guardian, use https://www.theguardian.com/europe"
 wh = "how is weather in "
+ex = "Explain this: /cp"
 
 # --- Internal Prompt Templates ---
 # Templates used to construct system prompts for different modes.

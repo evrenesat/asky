@@ -2,6 +2,12 @@
 
 ## 2026-02-01
 
+- **Feat**: Added **clipboard support** via `/cp` slash command.
+  - Can be used anywhere in the query (not just at start).
+  - Integrates with `pyperclip`.
+- **Feat**: Improved **prompt expansion** to be recursive and work anywhere in the query string.
+- **Fix**: Made `tests/test_tools.py` independent of user's local configuration by explicitly patching `SEARCH_PROVIDER`.
+- **Refactor**: Cleaned up CLI code, removed unused imports and fixed lint warnings.
 - **Feat**: Introduced **Serper API** search provider support.
   - Added `search_provider`, `serper_api_url`, and `serper_api_key_env` to `config.toml`.
   - Refactored `execute_web_search` in `tools.py` to dispatch between `SearXNG` and `Serper`.

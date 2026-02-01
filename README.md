@@ -13,6 +13,7 @@ aSearch (can be invoked as `ask` or `asearch`) is a powerful command-line interf
 - **Deep Research Mode**: Automatically performs multiple searches to provide comprehensive analysis of complex topics.
 - **Deep Dive Mode**: Recursively explores links found on web pages for in-depth information gathering.
 - **Predefined Prompts**: Save and quickly invoke common prompt patterns using simple slashes (e.g., `/gn` for get latest news from The Guardian).
+- **Clipboard Integration**: Use `/cp` to expand the query with clipboard content.
 
 ## How it Works
 

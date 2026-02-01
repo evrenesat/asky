@@ -2,6 +2,7 @@
 
 import argparse
 import os
+import pyperclip
 import re
 from typing import Dict, List, Optional
 
@@ -249,6 +250,48 @@ def handle_cleanup(args: argparse.Namespace) -> bool:
     return False
 
 
+def expand_query_text(text: str, verbose: bool = False) -> str:
+    """Recursively expand slash commands like /cp and predefined prompts."""
+    expanded = text
+    max_depth = 5
+    depth = 0
+
+    while depth < max_depth:
+        original = expanded
+
+        # 1. Expand /cp
+        if "/cp" in expanded:
+            try:
+                clipboard_content = pyperclip.paste()
+                if clipboard_content:
+                    expanded = expanded.replace("/cp", clipboard_content)
+                    if verbose:
+                        print("[Expanded /cp from clipboard]")
+                else:
+                    if verbose:
+                        print("[Warning: Clipboard is empty, /cp not expanded]")
+            except Exception as e:
+                if verbose:
+                    print(f"[Error reading clipboard: {e}]")
+
+        # 2. Expand predefined prompts from USER_PROMPTS
+        # Pattern: /command followed by space or end of string
+        # We use a pattern that matches /word but avoids matching /cp if we already handled it
+        # Actually, let's just iterate over USER_PROMPTS keys
+        for key, prompt_val in USER_PROMPTS.items():
+            pattern = rf"/{re.escape(key)}(\s|$)"
+            if re.search(pattern, expanded):
+                expanded = re.sub(pattern, rf"{prompt_val}\1", expanded)
+                if verbose:
+                    print(f"[Expanded Prompt '/{key}']")
+
+        if expanded == original:
+            break
+        depth += 1
+
+    return expanded.strip()
+
+
 def handle_print_answer_implicit(args: argparse.Namespace) -> bool:
     """Handle implicit print answer (query is list of ints). Returns True if handled."""
     if not args.query:
@@ -280,11 +323,9 @@ def main() -> None:
         print("-" * 20)
         from asearch.config import (
             DEFAULT_MODEL,
-            SEARXNG_URL,
             MAX_TURNS,
             QUERY_SUMMARY_MAX_CHARS,
             ANSWER_SUMMARY_MAX_CHARS,
-            SUMMARIZATION_MODEL,
         )
 
         print(f"DEFAULT_MODEL: {DEFAULT_MODEL}")
@@ -312,7 +353,7 @@ def main() -> None:
                         )
                         print(f"      [Status]: SET ({masked})")
                     else:
-                        print(f"      [Status]: NOT SET")
+                        print("      [Status]: NOT SET")
                     continue
 
                 if "key" in k.lower() and v and k != "api_key_env":
@@ -359,17 +400,13 @@ def main() -> None:
         )
         return
 
-    # Handle Predefined Prompts Expansion
-    if args.query and args.query[0].startswith("/"):
-        key = args.query[0][1:]
-        if key in USER_PROMPTS:
-            expanded_prompt = USER_PROMPTS[key]
-            # Replace the first argument (the key) with the expanded prompt
-            args.query[0] = expanded_prompt
-            if args.verbose:
-                print(f"[Expanded Prompt '{key}': {expanded_prompt}]")
-        # Else: User might be using a slash for something else, leave it as is or warn?
-        # For now, let's treat it as a normal query start if not found in prompts.
+    # Join query tokens and expand slash commands
+    query_text = " ".join(args.query)
+    query_text = expand_query_text(query_text, verbose=args.verbose)
+
+    # Update args.query to the expanded version for later use (saving interaction)
+    # Note: args.query was a list, we'll keep it as a list with one element for compatibility
+    args.query = [query_text]
 
     # Handle Context
     context_str = ""

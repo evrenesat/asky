@@ -25,6 +25,7 @@ def reset_urls():
     reset_read_urls()
 
 
+@patch("asearch.tools.SEARCH_PROVIDER", "searxng")
 def test_execute_web_search_success(mock_requests_get):
     mock_response = MagicMock()
     mock_response.json.return_value = {
@@ -45,6 +46,7 @@ def test_execute_web_search_success(mock_requests_get):
     assert result["results"][0]["title"] == "Test Title"
 
 
+@patch("asearch.tools.SEARCH_PROVIDER", "searxng")
 def test_execute_web_search_failure(mock_requests_get):
     mock_requests_get.side_effect = Exception("Search failed")
     result = execute_web_search({"q": "fail"})
@@ -101,6 +103,7 @@ def test_execute_get_url_details(mock_requests_get, reset_urls):
     assert result["links"][0]["href"] == "http://link.com"
 
 
+@patch("asearch.tools.SEARCH_PROVIDER", "searxng")
 def test_dispatch_tool_call(mock_requests_get, reset_urls):
     # Mock web search dispatch
     mock_response = MagicMock()
