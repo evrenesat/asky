@@ -2,6 +2,11 @@
 
 ## 2026-02-01
 
+### Dependency Cleanup
+- Removed `liteLLM` dependency (simplified project, reduced bloat).
+- Implemented naive token counting: `len(content) // 4`.
+- Updated tests and matched `run_conversation_loop` tracking.
+
 ### Database Cleanup & Bug Fixes
 - Added `--cleanup-db` (delete by ID/list/range/all)
 - Fixed duplicate history output (`ask -H`)

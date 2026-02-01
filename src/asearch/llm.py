@@ -7,7 +7,6 @@ import time
 from typing import Any, Dict, List, Optional
 
 import requests
-from litellm import token_counter
 
 from asearch.config import (
     LMSTUDIO,
@@ -43,6 +42,16 @@ def parse_textual_tool_call(text: str) -> Optional[Dict[str, Any]]:
         return {"name": name, "arguments": j.group(1)}
     except Exception:
         return None
+
+
+def count_tokens(messages: List[Dict[str, Any]]) -> int:
+    """Naive token counting: chars / 4."""
+    total_chars = 0
+    for m in messages:
+        content = m.get("content")
+        if content:
+            total_chars += len(content)
+    return total_chars // 4
 
 
 def get_llm_msg(
@@ -146,7 +155,7 @@ def run_conversation_loop(
             turn += 1
 
             # Token & Turn Tracking
-            total_tokens = token_counter(model=model_config["id"], messages=messages)
+            total_tokens = count_tokens(messages)
             context_size = model_config.get("context_size", 4096)
             turns_left = MAX_TURNS - turn + 1
 

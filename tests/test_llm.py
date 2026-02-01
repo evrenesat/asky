@@ -9,6 +9,7 @@ from asearch.llm import (
     get_llm_msg,
     generate_summaries,
     run_conversation_loop,
+    count_tokens,
 )
 
 
@@ -18,6 +19,15 @@ def test_parse_textual_tool_call_valid():
     assert result is not None
     assert result["name"] == "web_search"
     assert '"q": "test"' in result["arguments"]
+
+
+def test_count_tokens():
+    messages = [
+        {"role": "user", "content": "1234"},  # 4 chars
+        {"role": "assistant", "content": "5678"},  # 4 chars
+    ]
+    # (4 + 4) // 4 = 2
+    assert count_tokens(messages) == 2
 
 
 def test_parse_textual_tool_call_invalid():
@@ -108,11 +118,7 @@ def test_get_llm_msg_rate_limit_retry(mock_post):
 
 @patch("asearch.llm.get_llm_msg")
 @patch("asearch.llm.dispatch_tool_call")
-@patch("asearch.llm.token_counter")
-def test_run_conversation_loop_basic(mock_counter, mock_dispatch, mock_get_msg):
-    # Mock token counter
-    mock_counter.return_value = 100
-
+def test_run_conversation_loop_basic(mock_dispatch, mock_get_msg):
     # Mock LLM sequence:
     # 1. Tool call (web search)
     # 2. Final answer
