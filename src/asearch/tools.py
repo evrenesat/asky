@@ -4,6 +4,7 @@ import json
 import os
 import requests
 import subprocess
+import time
 from datetime import datetime
 from typing import Any, Dict, List
 
@@ -140,10 +141,19 @@ def summarize_text(text: str) -> str:
         return f"[Error in summarization: {str(e)}]"
 
 
+def _sanitize_url(url: str) -> str:
+    """Remove artifacts like shell-escaped backslashes from URLs."""
+    if not url:
+        return ""
+    # Remove backslashes which are often artifacts of shell-escaping parentheses or special chars
+    return url.replace("\\", "")
+
+
 def fetch_single_url(
     url: str, max_chars: int, summarize: bool = False
 ) -> Dict[str, str]:
     """Fetch content from a single URL."""
+    url = _sanitize_url(url)
     global read_urls
     if url in read_urls:
         return {url: "Error: Already read this URL."}
@@ -171,6 +181,9 @@ def execute_get_url_content(
     header_url = args.get("url")
     urls = args.get("urls", [])
 
+    # LLM can override the global summarize flag in its tool call
+    effective_summarize = args.get("summarize", summarize)
+
     # Support both single 'url' and list 'urls'
     if header_url:
         urls.append(header_url)
@@ -182,25 +195,31 @@ def execute_get_url_content(
         return {"error": "No URLs provided."}
 
     results = {}
-    for url in urls:
-        results.update(fetch_single_url(url, max_chars, summarize))
+    for i, url in enumerate(urls):
+        if i > 0 and effective_summarize:
+            # Small delay between summarizations to avoid hitting RPM limits
+            time.sleep(1)
+        results.update(fetch_single_url(url, max_chars, effective_summarize))
 
     return results
 
 
 def execute_get_url_details(args: Dict[str, Any], max_chars: int) -> Dict[str, Any]:
     """Fetch content and extract links from a URL."""
-    url = args.get("url", "")
+    url = _sanitize_url(args.get("url", ""))
     global read_urls
     if url in read_urls:
         return {"error": "You have already read this URL."}
-    read_urls.append(url)
     try:
         headers = {"User-Agent": USER_AGENT}
         resp = requests.get(url, headers=headers, timeout=20)
         resp.raise_for_status()
         s = HTMLStripper()
         s.feed(resp.text)
+
+        # Mark as read only after successful fetch
+        read_urls.append(url)
+
         return {
             "content": s.get_data()[:max_chars],
             "links": s.get_links()[:50],  # Limit links to avoid context overflow

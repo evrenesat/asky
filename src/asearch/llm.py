@@ -116,8 +116,9 @@ def get_llm_msg(
         payload["tools"] = tools
         payload["tool_choice"] = "auto"
 
-    max_retries = 5
+    max_retries = 10
     backoff = 2
+    max_backoff = 60
 
     if verbose:
         print(f"\n[DEBUG] Sending to LLM ({model_id})...")
@@ -141,21 +142,31 @@ def get_llm_msg(
             resp.raise_for_status()
             return resp.json()["choices"][0]["message"]
         except requests.exceptions.HTTPError as e:
-            if (
-                e.response is not None
-                and e.response.status_code == 429
-                and attempt < max_retries - 1
-            ):
-                print(f"Rate limit exceeded (429). Retrying in {backoff} seconds...")
-                time.sleep(backoff)
-                backoff *= 2
-                continue
+            if e.response is not None and e.response.status_code == 429:
+                if attempt < max_retries - 1:
+                    retry_after = e.response.headers.get("Retry-After")
+                    if retry_after:
+                        try:
+                            # Handle potential floating point strings (e.g. "5.0")
+                            wait_time = int(float(retry_after))
+                        except ValueError:
+                            wait_time = backoff
+                            backoff = min(backoff * 2, max_backoff)
+                    else:
+                        wait_time = backoff
+                        backoff = min(backoff * 2, max_backoff)
+
+                    print(
+                        f"Rate limit exceeded (429). Retrying in {wait_time} seconds..."
+                    )
+                    time.sleep(wait_time)
+                    continue
             raise e
         except requests.exceptions.RequestException as e:
             if attempt < max_retries - 1:
                 print(f"Request error: {e}. Retrying in {backoff} seconds...")
                 time.sleep(backoff)
-                backoff *= 2
+                backoff = min(backoff * 2, max_backoff)
                 continue
             raise e
     raise requests.exceptions.RequestException("Max retries exceeded")

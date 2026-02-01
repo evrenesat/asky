@@ -9,7 +9,14 @@ from asearch.tools import (
     dispatch_tool_call,
     reset_read_urls,
     summarize_text,
+    _sanitize_url,
 )
+
+
+def test_sanitize_url():
+    assert _sanitize_url("http://ex.com/a\\(b\\)") == "http://ex.com/a(b)"
+    assert _sanitize_url(None) == ""
+    assert _sanitize_url("norm") == "norm"
 
 
 @pytest.fixture
@@ -105,6 +112,23 @@ def test_execute_get_url_details(mock_requests_get, reset_urls):
     assert result["links"][0]["href"] == "http://link.com"
 
 
+def test_execute_get_url_details_failure_no_block(mock_requests_get, reset_urls):
+    # First attempt fails
+    mock_requests_get.side_effect = Exception("Network error")
+    result1 = execute_get_url_details({"url": "http://fail.com"}, max_chars=100)
+    assert "error" in result1
+
+    # Second attempt (mocking success now) should NOT say "Already read"
+    mock_requests_get.side_effect = None
+    mock_response = MagicMock()
+    mock_response.text = "<html><body>Success</body></html>"
+    mock_requests_get.return_value = mock_response
+
+    result2 = execute_get_url_details({"url": "http://fail.com"}, max_chars=100)
+    assert "content" in result2
+    assert result2["content"] == "Success"
+
+
 @patch("asearch.tools.SEARCH_PROVIDER", "searxng")
 def test_dispatch_tool_call(mock_requests_get, reset_urls):
     # Mock web search dispatch
@@ -192,3 +216,17 @@ def test_execute_web_search_dispatch_searxng(mock_searxng):
 
     execute_web_search({"q": "test"})
     mock_searxng.assert_called_once()
+
+
+@patch("asearch.tools.time.sleep")
+@patch("asearch.tools.fetch_single_url")
+def test_execute_get_url_content_batch_summarize_delay(
+    mock_fetch, mock_sleep, reset_urls
+):
+    args = {"urls": ["http://a.com", "http://b.com", "http://c.com"]}
+    execute_get_url_content(args, max_chars=100, summarize=True)
+
+    # Delay should be called for i > 0 (i.e., for 2nd and 3rd URL)
+    assert mock_sleep.call_count == 2
+    mock_sleep.assert_called_with(1)
+    assert mock_fetch.call_count == 3

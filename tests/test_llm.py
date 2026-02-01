@@ -131,6 +131,27 @@ def test_get_llm_msg_rate_limit_retry(mock_post):
     assert mock_post.call_count == 2
 
 
+@patch("asearch.llm.requests.post")
+def test_get_llm_msg_retry_after(mock_post):
+    # Test that Retry-After header is respected
+    response_429 = MagicMock()
+    response_429.status_code = 429
+    response_429.headers = {"Retry-After": "5"}
+    error_429 = requests.exceptions.HTTPError(response=response_429)
+
+    response_200 = MagicMock()
+    response_200.json.return_value = {
+        "choices": [{"message": {"role": "assistant", "content": "Success"}}]
+    }
+
+    mock_post.side_effect = [error_429, response_200]
+
+    with patch("asearch.llm.time.sleep") as mock_sleep:
+        msg = get_llm_msg("q34", [])
+        assert msg["content"] == "Success"
+        mock_sleep.assert_called_with(5)
+
+
 @patch("asearch.llm.get_llm_msg")
 @patch("asearch.llm.dispatch_tool_call")
 def test_run_conversation_loop_basic(mock_dispatch, mock_get_msg):

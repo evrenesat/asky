@@ -1,5 +1,24 @@
 # Development Log
 
+## 2026-02-02
+
+- **Fix**: Improved **rate limit handling and backoff robustness**.
+  - Increased `max_retries` from 5 to 10 in `llm.py`.
+  - Capped exponential backoff at 60 seconds to stay within API limit reset windows.
+  - Added support for respecting the `Retry-After` header from API responses (now handles decimal strings).
+  - Introduced a 1-second delay between sequential summarizations in `get_url_content` to reduce RPM (Requests Per Minute) pressure.
+  - Added unit tests to verify `Retry-After` handling and batch delay logic.
+- **Fix**: Resolved issue where **failed URL fetches were marked as "read"**.
+  - Updated `execute_get_url_details` in `tools.py` to only append to `read_urls` after a successful request.
+- **Fix**: Ensured `get_url_content` **respects the summarization flag** requested by the LLM.
+  - Previously, if the CLI was run without `-s`, the tool would ignore the LLM's own request for summaries and return full content.
+  - This often caused the next turn of the conversation to have a massive payload, triggering 429 rate limits on the LLM API itself.
+  - Now, `execute_get_url_content` uses `effective_summarize = args.get("summarize", summarize)`, correctly balancing user preference and LLM context management.
+- **Fix**: Added **URL sanitization** to remove shell-escaped backslashes.
+  - Wikipedia and other servers often return 403 Forbidden for URLs containing literal backslashes (e.g., `\(`, `\)`).
+  - These backslashes are frequently added when a user pastes a URL into a shell without proper quoting.
+  - Added `_sanitize_url` and applied it to `fetch_single_url` and `execute_get_url_details`.
+
 ## 2026-02-01
 
 - **Feat**: Switched to `argparse.RawTextHelpFormatter` to allow explicit newlines in CLI help text.
