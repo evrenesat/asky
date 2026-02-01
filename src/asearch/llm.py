@@ -7,6 +7,9 @@ import time
 from typing import Any, Dict, List, Optional
 
 import requests
+from rich.console import Console
+from rich.markdown import Markdown
+
 
 from asearch.config import (
     MAX_TURNS,
@@ -27,6 +30,23 @@ from asearch.config import (
 )
 from asearch.html import strip_think_tags
 from asearch.tools import dispatch_tool_call, reset_read_urls
+
+
+def is_markdown(text: str) -> bool:
+    """Check if the text likely contains markdown formatting."""
+    # Basic detection: common markdown patterns
+    patterns = [
+        r"^#+\s",  # Headers
+        r"\*\*.*\*\*",  # Bold
+        r"__.*__",  # Bold
+        r"\*.*\* ",  # Italic
+        r"_.*_",  # Italic
+        r"\[.*\]\(.*\)",  # Links
+        r"```",  # Code blocks
+        r"^\s*[-*+]\s",  # Lists
+        r"^\s*\d+\.\s",  # Numbered lists
+    ]
+    return any(re.search(p, text, re.M) for p in patterns)
 
 
 def parse_textual_tool_call(text: str) -> Optional[Dict[str, Any]]:
@@ -207,7 +227,11 @@ def run_conversation_loop(
             calls = extract_calls(msg, turn)
             if not calls:
                 final_answer = strip_think_tags(msg.get("content", ""))
-                print(final_answer)
+                if is_markdown(final_answer):
+                    console = Console()
+                    console.print(Markdown(final_answer))
+                else:
+                    print(final_answer)
                 break
             messages.append(msg)
             for call in calls:

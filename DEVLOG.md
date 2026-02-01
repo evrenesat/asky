@@ -2,6 +2,15 @@
 
 ## 2026-02-01
 
+- **Feat**: Integrated **markdown rendering with `rich`**.
+  - Added `rich` to project dependencies.
+  - Implemented `is_markdown` detection in `llm.py`.
+  - Updated `run_conversation_loop` in `llm.py` and `print_answers` in `cli.py` to use `rich.markdown.Markdown` for rendering LLM output if markdown is detected.
+
+
+
+## 2026-02-01
+
 - **Refactor**: Consolidated `-f/--full` and `-s/--summarize` into a single `-s/--summarize` parameter.
   - Removed `-f/--full` flag.
   - Updated `-s/--summarize` to handle both URL content summarization and chat context summarization.

@@ -6,6 +6,10 @@ import pyperclip
 import re
 from typing import Dict, List, Optional
 
+from rich.console import Console
+from rich.markdown import Markdown
+
+
 from asearch.config import DEFAULT_MODEL, MODELS, USER_PROMPTS
 from asearch.storage import (
     init_db,
@@ -18,6 +22,7 @@ from asearch.llm import (
     construct_system_prompt,
     run_conversation_loop,
     generate_summaries,
+    is_markdown,
 )
 
 
@@ -226,7 +231,11 @@ def print_answers(ids_str: str, summarize: bool) -> None:
 
     print(f"\n[Retrieving answers for IDs: {ids_str}]\n")
     print("-" * 60)
-    print(context)
+    if is_markdown(context):
+        console = Console()
+        console.print(Markdown(context))
+    else:
+        print(context)
     print("-" * 60)
 
 
