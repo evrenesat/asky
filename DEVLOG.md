@@ -2,6 +2,14 @@
 
 ## 2026-02-01
 
+- **Fix**: Added **configurable request timeout** for LLM API calls.
+  - Added `request_timeout` (default 60s) to `[general]` section in `config.toml`.
+  - Updated `get_llm_msg` in `llm.py` to use `REQUEST_TIMEOUT` from `config.py`.
+  - Broadened exception handling in `get_llm_msg` to catch and retry all `RequestException` errors (including timeouts).
+  - Verified with new unit test simulating connection timeouts and verifying retries.
+
+## 2026-02-01
+
 - **Refactor**: Removed **multi-threaded execution** from `get_url_content` tool.
   - Replaced `ThreadPoolExecutor` with sequential execution to prevent rate limiting.
   - Simplified `execute_get_url_content` logic.

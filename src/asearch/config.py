@@ -63,6 +63,7 @@ def load_config() -> Dict[str, Any]:
                 "max_turns": 20,
                 "default_model": "gf",
                 "summarization_model": "lfm",
+                "request_timeout": 60,
             },
             "api": {},
             "models": {
@@ -140,6 +141,7 @@ USER_AGENT = _gen.get(
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36",
 )
 LLM_USER_AGENT = _gen.get("llm_user_agent", USER_AGENT)
+REQUEST_TIMEOUT = _gen.get("request_timeout", 60)
 
 # Database
 # DB Path logic:

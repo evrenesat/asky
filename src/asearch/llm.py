@@ -23,6 +23,7 @@ from asearch.config import (
     LLM_USER_AGENT,
     SUMMARIZE_QUERY_PROMPT_TEMPLATE,
     SUMMARIZE_ANSWER_PROMPT_TEMPLATE,
+    REQUEST_TIMEOUT,
 )
 from asearch.html import strip_think_tags
 from asearch.tools import dispatch_tool_call, reset_read_urls
@@ -114,7 +115,9 @@ def get_llm_msg(
 
     for attempt in range(max_retries):
         try:
-            resp = requests.post(url, json=payload, headers=headers)
+            resp = requests.post(
+                url, json=payload, headers=headers, timeout=REQUEST_TIMEOUT
+            )
             resp.raise_for_status()
             return resp.json()["choices"][0]["message"]
         except requests.exceptions.HTTPError as e:
@@ -128,7 +131,14 @@ def get_llm_msg(
                 backoff *= 2
                 continue
             raise e
-    raise requests.exceptions.HTTPError("Max retries exceeded")
+        except requests.exceptions.RequestException as e:
+            if attempt < max_retries - 1:
+                print(f"Request error: {e}. Retrying in {backoff} seconds...")
+                time.sleep(backoff)
+                backoff *= 2
+                continue
+            raise e
+    raise requests.exceptions.RequestException("Max retries exceeded")
 
 
 def extract_calls(msg: Dict[str, Any], turn: int) -> List[Dict[str, Any]]:

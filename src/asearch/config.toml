@@ -27,6 +27,9 @@ serper_api_key_env = "SERPER_API_KEY"
 # Maximum number of turns (tool calls) allowed in a single conversation loop.
 max_turns = 20
 
+# Timeout for API requests in seconds
+request_timeout = 60
+
 # Default model used when no model is specified via CLI (-m).
 default_model = "gf"
 
