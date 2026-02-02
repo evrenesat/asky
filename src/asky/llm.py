@@ -156,23 +156,10 @@ def get_llm_msg(
     max_backoff = 60
 
     logger.info(f"Sending request to LLM: {model_id}")
-    logger.debug(f"Tools enabled: {use_tools}")
-
-    if verbose:
-        logger.info(f"\nSending to LLM ({model_id})...")
-        logger.info("Last message sent:")
-        if messages:
-            last_msg = messages[-1]
-            content = last_msg.get("content", "")
-            if content:
-                logger.info(f"Role: {last_msg['role']}")
-                logger.debug(f"Content: {content}")
-        logger.info("-" * 20)
+    logger.debug(f"Payload: {payload}")
 
     tokens_sent = count_tokens(messages)
-    log_msg = f"[{model_alias or model_id}] Sent: {tokens_sent} tokens"
-    logger.info(log_msg)
-    logger.info(log_msg)
+    logger.info(f"[{model_alias or model_id}] Sent: {tokens_sent} tokens")
 
     for attempt in range(max_retries):
         try:

@@ -152,7 +152,7 @@ def execute_get_url_details(args: Dict[str, Any]) -> Dict[str, Any]:
         headers = {"User-Agent": USER_AGENT}
         resp = requests.get(url, headers=headers, timeout=20)
         resp.raise_for_status()
-        s = HTMLStripper()
+        s = HTMLStripper(base_url=url)
         s.feed(resp.text)
 
         return {

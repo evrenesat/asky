@@ -3,12 +3,13 @@
 import re
 from html.parser import HTMLParser
 from typing import Any, Dict, List, Optional
+from urllib.parse import urljoin
 
 
 class HTMLStripper(HTMLParser):
     """Parse HTML and extract text content and links."""
 
-    def __init__(self) -> None:
+    def __init__(self, base_url: Optional[str] = None) -> None:
         super().__init__()
         self.reset()
         self.strict = False
@@ -17,6 +18,7 @@ class HTMLStripper(HTMLParser):
         self.links: List[Dict[str, str]] = []
         self.ignore = False
         self.current_href: Optional[str] = None
+        self.base_url = base_url
 
     def handle_starttag(self, tag: str, attrs: List[Any]) -> None:
         if tag in ("script", "style"):
@@ -39,7 +41,10 @@ class HTMLStripper(HTMLParser):
             if text:
                 self.text.append(data)
                 if self.current_href:
-                    self.links.append({"text": text, "href": self.current_href})
+                    href = self.current_href
+                    if self.base_url:
+                        href = urljoin(self.base_url, href)
+                    self.links.append({"text": text, "href": href})
 
     def get_data(self) -> str:
         return "".join(self.text).strip()

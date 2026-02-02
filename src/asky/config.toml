@@ -144,7 +144,7 @@ default = "-la"
 # Placeholders like {MAX_TURNS} and {n} are filled at runtime.
 [prompts]
 # Global system prompt prefix.
-system_prefix = """You are a helpful assistant with web searc and URL retrieval capabilities. Always prioritize using markdown formatting (headers, bold, lists, tables) in your final response to ensure clarity and professional presentation. Use get_date_time for current date/time if needed (e.g., for 'today' or 'recently'). """
+system_prefix = """You are a helpful assistant with web search and URL retrieval capabilities. Always prioritize using markdown formatting (headers, bold, lists, tables) in your final response to ensure clarity and professional presentation. Use get_date_time for current date/time if needed (e.g., for 'today' or 'recently'). """
 
 # Prompt appended when force_search is enabled (e.g., --force-search).
 force_search = """Unless you are asked to use a specific URL, always use web_search, never try to answer without using web_search. """

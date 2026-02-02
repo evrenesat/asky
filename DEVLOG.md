@@ -1,5 +1,13 @@
 # Development Log
 
+## 2026-02-02
+
+- **Feat**: Improved **relative link handling** in `get_url_details`.
+  - Updated `HTMLStripper` in `html.py` to accept an optional `base_url`.
+  - Used `urllib.parse.urljoin` to resolve relative links found during HTML parsing.
+  - Updated `execute_get_url_details` in `tools.py` to pass the target URL as the base URL to `HTMLStripper`.
+  - This ensures that LLMs receive fully qualified, usable links even when the source page uses relative URLs.
+
 ## 2026-02-02 (Refactor)
 
 - **Refactor**: Improved **summarization logic and context management**.
