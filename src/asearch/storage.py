@@ -5,7 +5,7 @@ import sqlite3
 from datetime import datetime
 from typing import List, Optional
 
-from asearch.config import DB_PATH
+from asearch.config import DB_PATH, CONTINUE_QUERY_THRESHOLD
 
 
 def init_db() -> None:
@@ -56,7 +56,12 @@ def get_interaction_context(ids: List[int], full: bool = False) -> str:
     context_parts = []
     for row in results:
         rid, query, q_sum, answer, a_sum = row
-        q_text = q_sum if q_sum else query
+        # Use summary if available and original query is long enough
+        if q_sum and len(query) >= CONTINUE_QUERY_THRESHOLD:
+            q_text = q_sum
+        else:
+            q_text = query
+
         a_text = answer if full else a_sum
         context_parts.append(f"Query {rid}: {q_text}\nAnswer {rid}: {a_text}")
 

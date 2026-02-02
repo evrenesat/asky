@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "asearch"
-version = "0.1.5"
+version = "0.1.6"
 description = "AI-powered web search CLI with LLM tool-calling capabilities"
 readme = "README.md"
 license = "MIT"

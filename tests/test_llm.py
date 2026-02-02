@@ -203,7 +203,8 @@ def test_generate_summaries(mock_get_msg):
         {"content": "Short answer summary"},
     ]
 
-    q_sum, a_sum = generate_summaries("Long query " * 10, "Long answer " * 100)
+    # Use a query longer than the default threshold (160)
+    q_sum, a_sum = generate_summaries("Long query " * 20, "Long answer " * 100)
 
     assert q_sum == "Short query"
     assert a_sum == "Short answer summary"

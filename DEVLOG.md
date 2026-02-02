@@ -2,6 +2,13 @@
 
 ## 2026-02-02
 
+- **Feat**: Introduced **configurable query summarization threshold**.
+  - Added `continue_query_threshold` (default: 160) to `[general]` section in `config.toml`.
+  - Exposed `CONTINUE_QUERY_THRESHOLD` in `config.py`.
+  - Updated `generate_summaries` in `llm.py` to only summarize queries exceeding this threshold.
+  - Updated `get_interaction_context` in `storage.py` to use the full query if it's below the threshold, even if a summary exists.
+  - Added unit tests to verify the threshold logic.
+
 - **Feat**: Introduced **default context size setting** in the configuration.
   - Added `default_context_size` (default: 4096) to `[general]` section in `config.toml`.
   - Exposed `DEFAULT_CONTEXT_SIZE` in `config.py`.

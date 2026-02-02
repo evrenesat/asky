@@ -28,6 +28,7 @@ from asearch.config import (
     SUMMARIZE_ANSWER_PROMPT_TEMPLATE,
     REQUEST_TIMEOUT,
     DEFAULT_CONTEXT_SIZE,
+    CONTINUE_QUERY_THRESHOLD,
 )
 from asearch.html import strip_think_tags
 from asearch.tools import dispatch_tool_call, reset_read_urls
@@ -320,7 +321,7 @@ def generate_summaries(
     answer_summary = ""
 
     # Generate Query Summary (if needed)
-    if len(query) > QUERY_SUMMARY_MAX_CHARS:
+    if len(query) > CONTINUE_QUERY_THRESHOLD:
         try:
             msgs = [
                 {

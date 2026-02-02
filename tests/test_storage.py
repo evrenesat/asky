@@ -58,7 +58,8 @@ def test_save_and_get_history(mock_db_path):
 
 def test_get_interaction_context(mock_db_path):
     init_db()
-    save_interaction("q1", "a1", "m1", "qs1", "as1")
+    # Use a query longer than the default threshold (160)
+    save_interaction("q1" * 100, "a1", "m1", "qs1", "as1")
 
     # Get the ID of the inserted row
     rows = get_history(1)

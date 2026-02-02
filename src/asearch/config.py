@@ -59,6 +59,7 @@ def load_config() -> Dict[str, Any]:
         default_config = {
             "general": {
                 "query_summary_max_chars": 40,
+                "continue_query_threshold": 160,
                 "answer_summary_max_chars": 200,
                 "searxng_url": "http://localhost:8888",
                 "max_turns": 20,
@@ -129,6 +130,7 @@ _CONFIG = load_config()
 # General
 _gen = _CONFIG["general"]
 QUERY_SUMMARY_MAX_CHARS = _gen["query_summary_max_chars"]
+CONTINUE_QUERY_THRESHOLD = _gen.get("continue_query_threshold", 160)
 ANSWER_SUMMARY_MAX_CHARS = _gen["answer_summary_max_chars"]
 ANSWER_SUMMARY_MAX_CHARS = _gen["answer_summary_max_chars"]
 SEARXNG_URL = _gen["searxng_url"]

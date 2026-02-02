@@ -8,9 +8,12 @@
 db_path_env_var = "SEARXNG_HISTORY_DB_PATH"
 
 # Maximum length of the query and answer summaries shown in 'asearch -H'.
-# These are also passed to the LLM as context when using --continue-chat flag without --full flag.
 query_summary_max_chars = 40
 answer_summary_max_chars = 200
+
+# Threshold for using full query vs summary in --continue-chat mode.
+# If query length is below this, it's used as is.
+continue_query_threshold = 160
 
 # URL of your SearXNG instance.
 searxng_url = "http://localhost:8888"
