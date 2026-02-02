@@ -156,7 +156,13 @@ def get_llm_msg(
     max_backoff = 60
 
     logger.info(f"Sending request to LLM: {model_id}")
-    logger.debug(f"Payload: {payload}")
+    log_payload = {
+        **payload,
+        "messages": [
+            m["content"][:400] + "..." for m in messages if m["role"] != "system"
+        ],
+    }
+    logger.debug(f"Payload: {log_payload}")
 
     tokens_sent = count_tokens(messages)
     logger.info(f"[{model_alias or model_id}] Sent: {tokens_sent} tokens")
@@ -298,9 +304,13 @@ def run_conversation_loop(
                 break
             messages.append(msg)
             for call in calls:
-                logger.debug(f"Tool call [{len(str(call))} chrs]: {call}")
+                logger.debug(
+                    f"Tool call [{len(str(call))} chrs]: {str(call)[:200] + '...'}"
+                )
                 result = dispatch_tool_call(call, summarize, usage_tracker)
-                logger.debug(f"Tool result [{len(str(result))} chrs]: {result}")
+                logger.debug(
+                    f"Tool result [{len(str(result))} chrs]: {str(result)[:200] + '...'}"
+                )
                 messages.append(
                     {
                         "role": "tool",
