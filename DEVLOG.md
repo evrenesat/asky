@@ -2,6 +2,12 @@
 
 ## 2026-02-02
 
+- **Feat**: Introduced **system-wide logging**.
+  - Added `log_level` and `log_file` to `config.toml`.
+  - Implemented `asky.logger` for centralized log configuration.
+  - Instrumented `cli.py`, `tools.py`, and `llm.py` to log critical events (tool dispatch, LLM requests, summarization).
+  - Logs are written to `~/.config/asky/asky.log` by default.
+
 - **Feat**: Introduced **markdown browser rendering**.
   - Added `-o/--open` flag to the CLI to render model output in the browser.
   - Created a lean, responsive `template.html` using a lightweight markdown parser.

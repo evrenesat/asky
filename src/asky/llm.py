@@ -1,5 +1,6 @@
 """LLM integration and conversation loop."""
 
+import logging
 import json
 import os
 import re
@@ -11,6 +12,8 @@ from typing import Any, Dict, List, Optional
 import requests
 from rich.console import Console
 from rich.markdown import Markdown
+
+logger = logging.getLogger(__name__)
 
 
 from asky.config import (
@@ -143,6 +146,9 @@ def get_llm_msg(
     backoff = 2
     max_backoff = 60
 
+    logger.info(f"Sending request to LLM: {model_id}")
+    logger.debug(f"Tools enabled: {bool(tools)}")
+
     if verbose:
         print(f"\n[DEBUG] Sending to LLM ({model_id})...")
         print(f"Tools enabled: {bool(tools)}")
@@ -158,10 +164,9 @@ def get_llm_msg(
         print("-" * 20)
 
     tokens_sent = count_tokens(messages)
-    if model_alias:
-        print(f"[{model_alias}] Sent: {tokens_sent} tokens")
-    else:
-        print(f"[{model_id}] Sent: {tokens_sent} tokens")
+    log_msg = f"[{model_alias or model_id}] Sent: {tokens_sent} tokens"
+    logger.info(log_msg)
+    print(log_msg)
 
     for attempt in range(max_retries):
         try:
@@ -266,6 +271,7 @@ def run_conversation_loop(
     try:
         while turn < MAX_TURNS:
             turn += 1
+            logger.info(f"Starting turn {turn}/{MAX_TURNS}")
 
             # Token & Turn Tracking
             total_tokens = count_tokens(messages)
@@ -377,6 +383,9 @@ def generate_summaries(
                 usage_tracker=usage_tracker,
             )
             query_summary = strip_think_tags(msg.get("content", "")).strip()
+
+            logger.debug(f"Query Summary: {query_summary}")
+
             if len(query_summary) > QUERY_SUMMARY_MAX_CHARS:
                 query_summary = query_summary[: QUERY_SUMMARY_MAX_CHARS - 3] + "..."
         except Exception as e:
@@ -404,6 +413,10 @@ def generate_summaries(
             usage_tracker=usage_tracker,
         )
         answer_summary = strip_think_tags(msg.get("content", "")).strip()
+
+        logger.debug(f"Answer : {answer}")
+        logger.debug(f"Answer Summary: {answer_summary}")
+
         if len(answer_summary) > ANSWER_SUMMARY_MAX_CHARS:
             answer_summary = answer_summary[: ANSWER_SUMMARY_MAX_CHARS - 3] + "..."
     except Exception as e:

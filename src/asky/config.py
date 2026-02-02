@@ -60,6 +60,8 @@ def load_config() -> Dict[str, Any]:
             "general": {
                 "query_summary_max_chars": 40,
                 "continue_query_threshold": 160,
+                "log_level": "INFO",
+                "log_file": "~/.config/asky/asky.log",
                 "answer_summary_max_chars": 200,
                 "searxng_url": "http://localhost:8888",
                 "max_turns": 20,
@@ -132,7 +134,6 @@ _gen = _CONFIG["general"]
 QUERY_SUMMARY_MAX_CHARS = _gen["query_summary_max_chars"]
 CONTINUE_QUERY_THRESHOLD = _gen.get("continue_query_threshold", 160)
 ANSWER_SUMMARY_MAX_CHARS = _gen["answer_summary_max_chars"]
-ANSWER_SUMMARY_MAX_CHARS = _gen["answer_summary_max_chars"]
 SEARXNG_URL = _gen["searxng_url"]
 MAX_TURNS = _gen["max_turns"]
 DEFAULT_MODEL = _gen["default_model"]
@@ -147,6 +148,8 @@ USER_AGENT = _gen.get(
 LLM_USER_AGENT = _gen.get("llm_user_agent", USER_AGENT)
 REQUEST_TIMEOUT = _gen.get("request_timeout", 60)
 DEFAULT_CONTEXT_SIZE = _gen.get("default_context_size", 4096)
+LOG_LEVEL = _gen.get("log_level", "INFO")
+LOG_FILE = _gen.get("log_file", "~/.config/asky/asky.log")
 
 # Database
 # DB Path logic:

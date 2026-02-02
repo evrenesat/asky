@@ -20,8 +20,11 @@ from asky.config import (
     MAX_TURNS,
     QUERY_SUMMARY_MAX_CHARS,
     ANSWER_SUMMARY_MAX_CHARS,
+    LOG_LEVEL,
+    LOG_FILE,
 )
 from asky.banner import get_banner
+from asky.logger import setup_logging
 from asky.storage import (
     init_db,
     get_history,
@@ -337,6 +340,9 @@ def handle_print_answer_implicit(args: argparse.Namespace) -> bool:
 
 def main() -> None:
     """Main entry point for the CLI."""
+    # Initialize logging first
+    setup_logging(LOG_LEVEL, LOG_FILE)
+
     args = parse_args()
 
     # Initialize DB before any DB operations (like get_db_record_count for the banner)

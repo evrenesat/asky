@@ -2,11 +2,14 @@
 
 import json
 import os
+import logging
 import requests
 import subprocess
 import time
 from datetime import datetime
 from typing import Any, Dict, List
+
+logger = logging.getLogger(__name__)
 
 from asky.config import (
     SEARXNG_URL,
@@ -135,8 +138,15 @@ def summarize_text(text: str) -> str:
         ]
 
         model_id = MODELS[SUMMARIZATION_MODEL]["id"]
+
+        logger.info(f"Summarizing text length: {len(text)} chars")
+        logger.debug(f"Text content (start): {text[:200]}...")
+
         msg = get_llm_msg(model_id, messages, tools=None)
-        return strip_think_tags(msg.get("content", ""))
+        summary = strip_think_tags(msg.get("content", ""))
+
+        logger.debug(f"Summary result: {summary}")
+        return summary
     except Exception as e:
         return f"[Error in summarization: {str(e)}]"
 
@@ -277,7 +287,7 @@ def _execute_custom_tool(name: str, args: Dict[str, Any]) -> Dict[str, Any]:
 
             cmd_str = f"{cmd_base} {' '.join(arg_list)}".strip()
 
-        print(f"Executing custom tool command: {cmd_str}")
+        logger.info(f"Executing custom tool command: {cmd_str}")
         result = subprocess.run(
             cmd_str, shell=True, capture_output=True, text=True, timeout=30
         )
@@ -298,7 +308,11 @@ def dispatch_tool_call(
     func = call["function"]
     name = func["name"]
     args = json.loads(func["arguments"]) if func.get("arguments") else {}
-    print(f"Dispatching tool call: {name} with args {args}")
+    args = json.loads(func["arguments"]) if func.get("arguments") else {}
+
+    logger.info(f"Dispatching tool: {name}")
+    logger.debug(f"Tool arguments: {args}")
+
     if name == "web_search":
         return execute_web_search(args)
     if name == "get_url_content":
