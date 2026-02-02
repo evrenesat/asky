@@ -162,7 +162,7 @@ def get_llm_msg(
             m["content"][:400] + "..." for m in messages if m["role"] != "system"
         ],
     }
-    logger.debug(f"Payload: {log_payload}")
+    logger.debug(f"Payload: {str(payload)}")
 
     tokens_sent = count_tokens(messages)
     logger.info(f"[{model_alias or model_id}] Sent: {tokens_sent} tokens")
@@ -304,13 +304,9 @@ def run_conversation_loop(
                 break
             messages.append(msg)
             for call in calls:
-                logger.debug(
-                    f"Tool call [{len(str(call))} chrs]: {str(call)[:200] + '...'}"
-                )
+                logger.debug(f"Tool call [{len(str(call))} chrs]: {str(call)}")
                 result = dispatch_tool_call(call, summarize, usage_tracker)
-                logger.debug(
-                    f"Tool result [{len(str(result))} chrs]: {str(result)[:200] + '...'}"
-                )
+                logger.debug(f"Tool result [{len(str(result))} chrs]: {str(result)}")
                 messages.append(
                     {
                         "role": "tool",

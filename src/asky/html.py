@@ -43,14 +43,29 @@ class HTMLStripper(HTMLParser):
                 if self.current_href:
                     href = self.current_href
                     if self.base_url:
+                        # print(f"Base URL: {self.base_url}, Href: {href}")
                         href = urljoin(self.base_url, href)
+                        print(f"Joined Href: {href}")
                     self.links.append({"text": text, "href": href})
 
     def get_data(self) -> str:
         return "".join(self.text).strip()
 
     def get_links(self) -> List[Dict[str, str]]:
-        return self.links
+        seen_urls = set()
+        unique_links = []
+        for link in self.links:
+            href = link["href"]
+            # Remove fragment
+            if "#" in href:
+                href = href.split("#")[0]
+
+            # Skip empty URLs or duplicates
+            if href and href not in seen_urls:
+                seen_urls.add(href)
+                unique_links.append({"text": link["text"], "href": href})
+
+        return unique_links
 
 
 def strip_tags(html: str) -> str:

@@ -272,4 +272,10 @@
 - **Feat**: Added support for **Predefined Prompts**. Users can define reusable prompts in `config.toml` under `[user_prompts]` and invoke them via `/key` (e.g., `ask /wh Rotterdam`).
 - **Feat**: Added `--prompts` / `-p` flag to list configured user prompts.
 - **Change**: Renamed `--print-answer` short flag from `-p` to `-pa` to accommodate the new prompts flag.
+- **Feat**: Improved **URL link handling** in `HTMLStripper`.
+  - Added post-processing step to remove fragments (hash tags) from all extracted URLs.
+  - Implemented deduplication of links based on the clean URL.
+  - Removed debug prints from `html.py`.
+  - Added unit test coverage for hash stripping and deduplication in `tests/test_html.py`.
+
 

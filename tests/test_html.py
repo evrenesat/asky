@@ -62,3 +62,21 @@ def test_strip_think_tags():
 def test_strip_think_tags_no_tags():
     text = "Just plain text."
     assert strip_think_tags(text) == text
+
+
+def test_html_stripper_links_with_hashes_and_duplicates():
+    html = """
+    <a href="http://example.com/page#section1">Link 1</a>
+    <a href="http://example.com/page#section2">Link 1 Again</a>
+    <a href="http://example.com/page">Link 1 Plain</a>
+    <a href="#local">Local Anchor</a>
+    """
+    stripper = HTMLStripper(base_url="http://example.com")
+    stripper.feed(html)
+    links = stripper.get_links()
+
+    # Should maximize unique URLs (stripping fragments)
+    assert len(links) == 2
+    assert links[0]["href"] == "http://example.com/page"
+    assert links[0]["text"] == "Link 1"
+    assert links[1]["href"] == "http://example.com"
