@@ -1,10 +1,12 @@
-# asky
-![asky icon](assets/asearch_icon.png)
+
+<img src="assets/asearch_icon.png" alt="asky icon" width="200" align="right">
+
+<font size="6">**asky**</font>
+
 
 AI-powered web search CLI with LLM tool-calling capabilities.
 
-asky (can be invoked as `asky` or `ask`) is a powerful command-line interface that brings AI-powered search and research capabilities directly to your terminal. It LLMs and tools to synthesize answers from the web.
-
+asky (can be invoked as `asky` or `ask`) is a powerful command-line interface that brings AI-powered search and research capabilities directly to your terminal. It uses LLMs and tools to synthesize answers from the web (or from files and apps you have on your computer).
 ## Key Features
 
 - **Multi-Model Support**: Easily define and switch between various LLMs and providers that supports OpenAI compatible API.
@@ -19,7 +21,7 @@ asky (can be invoked as `asky` or `ask`) is a powerful command-line interface th
 
 ## How it Works
 
-1. **User Query**: You provide a query to the `ask` command.
+1. **User Query**: You provide a query to the `asky` command.
 2. **Model Selection**: asky initializes the selected LLM based on your configuration.
 3. **Tool Loop**: The LLM analyzes your query. If it needs real-world data, it calls integrated tools (like `web_search`).
 4. **Context Synthesis**: asky fetches the data, cleans it, and feeds it back to the LLM. This process can repeat for up to 15 turns for complex research.
@@ -30,7 +32,7 @@ asky (can be invoked as `asky` or `ask`) is a powerful command-line interface th
 ## Installation
 
 ```bash
-pip install asky
+pip install asky-cli
 ```
 
 Or install from source:
@@ -44,28 +46,28 @@ pip install -e .
 ```
 
 # Basic query
-ask what is the weather in Berlin
+asky what is the weather in Berlin
 
 # Continue from previous query (by ID)
-ask -c 1 tell me more about that
+asky -c 1 tell me more about that
 
 # Continue from last query (relative ID)
-ask -c~1 explain more
+asky -c~1 explain more
 # OR
-ask -c "~2" what about the one before that?
+asky -c "~2" what about the one before that?
 
 > [!NOTE]
-> **Zsh Users**: When using `~` for relative IDs, you must either quote the value (e.g., `ask -c "~1"`) or place it immediately after the flag without a space (e.g., `ask -c~1`). If you use a space without quotes (e.g., `ask -c ~1`), zsh will attempt to expand it as a directory stack entry.
+> **Zsh Users**: When using `~` for relative IDs, you must either quote the value (e.g., `asky -c "~1"`) or place it immediately after the flag without a space (e.g., `asky -c~1`). If you use a space without quotes (e.g., `asky -c ~1`), zsh will attempt to expand it as a directory stack entry.
 
 
-➜  ~ ask -p
+➜  ~ asky -p
 
 === USER PROMPTS ===
   /gn         : Give me latest news from The Guardian, use https://www.theguardian.com/europe
   /wh         : how is weather in
 ====================
 
-➜  ~ ask /wh delft
+➜  ~ asky /wh delft
 Dispatching tool call: web_search with args {'q': 'weather in Delft'}
 Dispatching tool call: get_url_content with args {'urls': ...}
 
@@ -78,8 +80,8 @@ Here is the forecast for today and the next couple of days:
 Query completed in 3.88 seconds
 
 --------------------------------------------------------------------------------
-➜  ~ ask --help
-usage: ask [-h] [-m {gf,glmair,glmflash,q34t,q34,lfm,q8,q30,onano,omini}] [-d [DEEP_RESEARCH]] [-dd] [-c CONTINUE_IDS] [-s] [-fs] [--cleanup-db [CLEANUP_DB]] [--all]
+➜  ~ asky --help
+usage: asky [-h] [-m {gf,glmair,glmflash,q34t,q34,lfm,q8,q30,onano,omini}] [-d [DEEP_RESEARCH]] [-dd] [-c CONTINUE_IDS] [-s] [-fs] [--cleanup-db [CLEANUP_DB]] [--all]
            [-H [HISTORY]] [-pa PRINT_IDS] [-p] [-v]
            [query ...]
 
@@ -114,19 +116,19 @@ options:
 
 **Deep research mode** (encourages model to perform multiple searches)
 
-ask -d 5 comprehensive analysis of topic
+asky -d 5 comprehensive analysis of topic
 
 **Deep dive mode** (encourages model to read multiple pages from same domain)
 
-ask -dd https://example.com
+asky -dd https://example.com
 
 **Use a specific model**
 
-ask -m gf what is quantum computing
+asky -m gf what is quantum computing
 
 **Force web search**
 
-ask -fs latest news on topic
+asky -fs latest news on topic
 
 
 **Pre-configured model definitions**
@@ -222,7 +224,7 @@ url = "http://localhost:1234/v1/chat/completions"
 ### Verification
 Run with `-v` to see the loaded configuration:
 ```bash
-ask -v
+asky -v
 ```
 
 
