@@ -1,23 +1,25 @@
 
-<img src="assets/asearch_icon.png" alt="asky icon" width="200" align="right">
+<img src="https://github.com/evrenesat/asky/raw/main/assets/asky_icon.png" alt="asky icon" width="200" align="right">
 
-<font size="6">**asky**</font>
+<!-- <font size="6">**asky**</font> -->
+<img src="https://github.com/evrenesat/asky/raw/main/assets/title.png" alt="asky title">
 
 
-AI-powered web search CLI with LLM tool-calling capabilities.
+asky is an AI-powered web search CLI with LLM tool-calling capabilities.
 
-asky (can be invoked as `asky` or `ask`) is a powerful command-line interface that brings AI-powered search and research capabilities directly to your terminal. It uses LLMs and tools to synthesize answers from the web (or from files and apps you have on your computer).
+It (can be invoked as `asky` or `ask`) provides a powerful command-line interface that brings AI-powered search and research capabilities directly to your terminal. It uses LLMs and tools to synthesize answers from the web (or from files and cli commands you expose as tools).
 ## Key Features
 
 - **Multi-Model Support**: Easily define and switch between various LLMs and providers that supports OpenAI compatible API.
 - **Tool-Calling Integration**: Models can autonomously perform web searches (via SearXNG or Serper API), fetch URL content, and get current date/time to provide accurate, up-to-date answers.
-- **Intelligent Content Fetching**: Automatically strips HTML noise (scripts, styles) to provide clean text context to the models.
-- **Conversation History**: Maintains a local SQLite database of your queries and answers, allowing for context-aware follow-up questions.
-- **Deep Research Mode**: Automatically performs multiple searches to provide comprehensive analysis of complex topics.
-- **Deep Dive Mode**: Recursively explores links found on web pages for in-depth information gathering.
-- **Predefined Prompts**: Save and quickly invoke common prompt patterns using simple slashes (e.g., `/gn` for get latest news from The Guardian).
-- **Clipboard Integration**: Use `/cp` to expand the query with clipboard content.
 - **Custom Tools**: Expose any CLI command as a tool for the LLM. Define your own commands and parameters in `config.toml`.
+- **Intelligent Content Fetching**: Automatically strips HTML noise (scripts, styles) to provide clean text context to the models. It can also summarize the content of the URLs and use the summaries for chat context. 
+- **Conversation History**: Maintains a local SQLite database of your queries and answers (with their summaries), allowing for context-aware follow-up questions.
+- **Deep Research Mode**: Automatically performs multiple searches to provide comprehensive analysis of complex topics.
+- **Deep Dive Mode**: Allows models to recursively explore the links found on web pages for in-depth information gathering.
+- **Predefined Prompts**: Users can define and quickly invoke common prompt patterns using simple slashes (e.g., `/gn` for get latest news from The Guardian).
+- **Clipboard Integration**: Use `/cp` to expand the query with clipboard content.
+- **Token Efficient**: It counts token usage and keep the model informed about remaining context capacity to encourage it to finish the task before hitting the limit. Together with summaries, this makes asky very token efficient.
 
 ## How it Works
 
