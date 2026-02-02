@@ -39,6 +39,7 @@ from asky.llm import (
     generate_summaries,
     is_markdown,
     UsageTracker,
+    render_to_browser,
 )
 
 
@@ -241,7 +242,7 @@ def build_messages(args: argparse.Namespace, context_str: str) -> List[Dict[str,
     return messages
 
 
-def print_answers(ids_str: str, summarize: bool) -> None:
+def print_answers(ids_str: str, summarize: bool, open_browser: bool = False) -> None:
     """Print answers for specific history IDs."""
     try:
         ids = [int(x.strip()) for x in ids_str.split(",")]
@@ -262,6 +263,9 @@ def print_answers(ids_str: str, summarize: bool) -> None:
     else:
         print(context)
     print("-" * 60)
+
+    if open_browser:
+        render_to_browser(context)
 
 
 def handle_cleanup(args: argparse.Namespace) -> bool:
@@ -331,7 +335,7 @@ def handle_print_answer_implicit(args: argparse.Namespace) -> bool:
         possible_ids = [x for x in possible_ids if x]
         try:
             clean_ids_str = ",".join(possible_ids)
-            print_answers(clean_ids_str, args.summarize)
+            print_answers(clean_ids_str, args.summarize, open_browser=args.open)
             return True
         except ValueError:
             pass
@@ -441,7 +445,7 @@ def main() -> None:
 
     # Handle Explicit Print Answer
     if args.print_ids:
-        print_answers(args.print_ids, args.summarize)
+        print_answers(args.print_ids, args.summarize, open_browser=args.open)
         return
 
     # Handle Implicit Print Answer (query is list of ints)

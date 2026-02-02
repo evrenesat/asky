@@ -2,6 +2,10 @@
 
 ## 2026-02-02
 
+- **Feat**: Enabled **browser rendering for history printing**.
+  - Updated `print_answers` in `cli.py` to support the `-o/--open` flag.
+  - Users can now use `asky -pa <ID> -o` or `asky <ID> -o` to render and open previous results in their default browser.
+  - Integrated `render_to_browser` from `llm.py` into the history printing flow.
 - **Feat**: Improved **relative link handling** in `get_url_details`.
   - Updated `HTMLStripper` in `html.py` to accept an optional `base_url`.
   - Used `urllib.parse.urljoin` to resolve relative links found during HTML parsing.

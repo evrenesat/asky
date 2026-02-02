@@ -171,7 +171,7 @@ def test_build_messages_with_context(mock_args):
 @patch("asky.cli.get_interaction_context")
 def test_print_answers(mock_get_context, capsys):
     mock_get_context.return_value = "Answer Content"
-    print_answers("1,2", False)
+    print_answers("1,2", False, open_browser=False)
     captured = capsys.readouterr()
     assert "Answer Content" in captured.out
     mock_get_context.assert_called_with([1, 2], full=True)
@@ -201,10 +201,11 @@ def test_handle_cleanup_all(mock_cleanup):
 def test_handle_print_answer_implicit(mock_print_answers):
     args = MagicMock()
     args.query = ["1,", "2"]
-    args.full = False
+    args.summarize = False
+    args.open = False
 
     assert handle_print_answer_implicit(args) is True
-    mock_print_answers.assert_called_with("1,2", args.summarize)
+    mock_print_answers.assert_called_with("1,2", args.summarize, open_browser=args.open)
 
 
 def test_handle_print_answer_implicit_fail():
