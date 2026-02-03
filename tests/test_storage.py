@@ -21,8 +21,8 @@ def temp_db_path(tmp_path):
 
 @pytest.fixture
 def mock_db_path(temp_db_path):
-    # Mock the DB_PATH constant in storage module
-    with patch("asky.storage.DB_PATH", temp_db_path):
+    # Mock the DB_PATH constant in sqlite implementation
+    with patch("asky.storage.sqlite.DB_PATH", temp_db_path):
         yield temp_db_path
 
 
@@ -49,11 +49,12 @@ def test_save_and_get_history(mock_db_path):
 
     rows = get_history(limit=1)
     assert len(rows) == 1
-    # row: id, timestamp, query, query_summary, answer_summary, model
+    # Interaction indexing: 0:id, 1:timestamp, 2:query, 3:query_summary, 4:answer_summary, 5:answer, 6:model
     assert rows[0][2] == "test query"
     assert rows[0][3] == "q sum"
     assert rows[0][4] == "a sum"
-    assert rows[0][5] == "test_model"
+    assert rows[0][5] == "test answer"
+    assert rows[0][6] == "test_model"
 
 
 def test_get_interaction_context(mock_db_path):

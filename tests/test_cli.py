@@ -13,7 +13,7 @@ from asky.cli import (
     main,
 )
 from asky.config import MODELS
-from asky.llm import construct_system_prompt
+from asky.core import construct_system_prompt
 
 
 @pytest.fixture
@@ -37,7 +37,7 @@ def mock_args():
 
 
 def test_parse_args_defaults():
-    with patch("asky.cli.DEFAULT_MODEL", "gf"):
+    with patch("asky.cli.main.DEFAULT_MODEL", "gf"):
         with patch("sys.argv", ["asky", "query"]):
             args = parse_args()
             assert args.query == ["query"]
@@ -74,7 +74,7 @@ def test_parse_args_options():
         assert args.force_search is True
 
 
-@patch("asky.cli.get_history")
+@patch("asky.cli.history.get_history")
 def test_show_history(mock_get_history, capsys):
     mock_get_history.return_value = [
         (1, "ts", "query1", "summary1", "ans_sum1", "model")
@@ -87,7 +87,7 @@ def test_show_history(mock_get_history, capsys):
     mock_get_history.assert_called_with(5)
 
 
-@patch("asky.cli.get_interaction_context")
+@patch("asky.cli.chat.get_interaction_context")
 def test_load_context_success(mock_get_context):
     mock_get_context.return_value = "Context Content"
     result = load_context("1,2", True)
@@ -95,7 +95,7 @@ def test_load_context_success(mock_get_context):
     mock_get_context.assert_called_with([1, 2], full=False)
 
 
-@patch("asky.cli.get_interaction_context")
+@patch("asky.cli.chat.get_interaction_context")
 def test_load_context_invalid(mock_get_context, capsys):
     result = load_context("1,a", False)
     assert result is None
@@ -103,8 +103,8 @@ def test_load_context_invalid(mock_get_context, capsys):
     assert "Error: Invalid format" in captured.out
 
 
-@patch("asky.cli.get_history")
-@patch("asky.cli.get_interaction_context")
+@patch("asky.cli.chat.get_history")
+@patch("asky.cli.chat.get_interaction_context")
 def test_load_context_relative_success(mock_get_context, mock_get_history):
     # Mock history: ID 5 is most recent (~1), ID 4 is ~2
     mock_get_history.return_value = [
@@ -125,8 +125,8 @@ def test_load_context_relative_success(mock_get_context, mock_get_history):
     mock_get_context.assert_called_with([4], full=True)
 
 
-@patch("asky.cli.get_history")
-@patch("asky.cli.get_interaction_context")
+@patch("asky.cli.chat.get_history")
+@patch("asky.cli.chat.get_interaction_context")
 def test_load_context_mixed(mock_get_context, mock_get_history):
     # Mock history
     mock_get_history.return_value = [
@@ -142,7 +142,7 @@ def test_load_context_mixed(mock_get_context, mock_get_history):
     assert set(call_args) == {10, 123}
 
 
-@patch("asky.cli.get_history")
+@patch("asky.cli.chat.get_history")
 def test_load_context_relative_out_of_bounds(mock_get_history, capsys):
     mock_get_history.return_value = [(1, "ts", "q", "s", "a", "m")]  # only 1 record
 
@@ -153,7 +153,7 @@ def test_load_context_relative_out_of_bounds(mock_get_history, capsys):
 
 
 def test_build_messages_basic(mock_args):
-    messages = build_messages(mock_args, "")
+    messages = build_messages(mock_args, "", "test query")
     assert len(messages) == 2
     assert messages[0]["role"] == "system"
     assert messages[1]["role"] == "user"
@@ -161,14 +161,14 @@ def test_build_messages_basic(mock_args):
 
 
 def test_build_messages_with_context(mock_args):
-    messages = build_messages(mock_args, "Previous Context")
+    messages = build_messages(mock_args, "Previous Context", "test query")
     assert len(messages) == 3
     assert messages[1]["role"] == "user"
     assert "Context from previous queries" in messages[1]["content"]
     assert "Previous Context" in messages[1]["content"]
 
 
-@patch("asky.cli.get_interaction_context")
+@patch("asky.cli.history.get_interaction_context")
 def test_print_answers(mock_get_context, capsys):
     mock_get_context.return_value = "Answer Content"
     print_answers("1,2", False, open_browser=False)
@@ -177,27 +177,27 @@ def test_print_answers(mock_get_context, capsys):
     mock_get_context.assert_called_with([1, 2], full=True)
 
 
-@patch("asky.cli.cleanup_db")
+@patch("asky.cli.history.cleanup_db")
 def test_handle_cleanup(mock_cleanup):
     args = MagicMock()
     args.cleanup_db = "1,2"
     args.all = False
 
     assert handle_cleanup(args) is True
-    mock_cleanup.assert_called_with("1,2")
+    mock_cleanup.assert_called_with(ids="1,2")
 
 
-@patch("asky.cli.cleanup_db")
+@patch("asky.cli.history.cleanup_db")
 def test_handle_cleanup_all(mock_cleanup):
     args = MagicMock()
     args.cleanup_db = None
     args.all = True
 
     assert handle_cleanup(args) is True
-    mock_cleanup.assert_called_with(None, delete_all=True)
+    mock_cleanup.assert_called_with(delete_all=True)
 
 
-@patch("asky.cli.print_answers")
+@patch("asky.cli.main.history.print_answers_command")
 def test_handle_print_answer_implicit(mock_print_answers):
     args = MagicMock()
     args.query = ["1,", "2"]
@@ -214,12 +214,12 @@ def test_handle_print_answer_implicit_fail():
     assert handle_print_answer_implicit(args) is False
 
 
-@patch("asky.cli.parse_args")
-@patch("asky.cli.init_db")
-@patch("asky.cli.get_db_record_count")
-@patch("asky.cli.ConversationEngine.run")
-@patch("asky.cli.generate_summaries")
-@patch("asky.cli.save_interaction")
+@patch("asky.cli.main.parse_args")
+@patch("asky.cli.main.init_db")
+@patch("asky.cli.main.get_db_record_count")
+@patch("asky.cli.chat.ConversationEngine.run")
+@patch("asky.cli.chat.generate_summaries")
+@patch("asky.cli.chat.save_interaction")
 def test_main_flow(
     mock_save, mock_gen_sum, mock_run, mock_db_count, mock_init, mock_parse
 ):
@@ -243,7 +243,7 @@ def test_main_flow(
     mock_gen_sum.return_value = ("q_sum", "a_sum")
 
     with patch(
-        "asky.cli.MODELS",
+        "asky.cli.main.MODELS",
         {"gf": {"id": "gemini-flash-latest"}, "lfm": {"id": "llama-fallback"}},
     ):
         main()
@@ -259,13 +259,13 @@ def test_main_flow(
     mock_save.assert_called_once()
 
 
-@patch("asky.cli.parse_args")
-@patch("asky.cli.init_db")
-@patch("asky.cli.get_db_record_count")
-@patch("asky.cli.ConversationEngine.run")
-@patch("asky.cli.generate_summaries")
-@patch("asky.cli.save_interaction")
-@patch("asky.cli.os.environ.get")
+@patch("asky.cli.main.parse_args")
+@patch("asky.cli.main.init_db")
+@patch("asky.cli.main.get_db_record_count")
+@patch("asky.cli.chat.ConversationEngine.run")
+@patch("asky.cli.chat.generate_summaries")
+@patch("asky.cli.chat.save_interaction")
+@patch("asky.cli.utils.os.environ.get")
 def test_main_flow_verbose(
     mock_env_get,
     mock_save,
@@ -297,7 +297,7 @@ def test_main_flow_verbose(
     mock_gen_sum.return_value = ("q_sum", "a_sum")
 
     with patch(
-        "asky.cli.MODELS",
+        "asky.cli.main.MODELS",
         {"gf": {"id": "gemini-flash-latest"}, "lfm": {"id": "llama-fallback"}},
     ):
         main()

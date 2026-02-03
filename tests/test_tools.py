@@ -8,7 +8,7 @@ from asky.tools import (
     execute_get_date_time,
     _sanitize_url,
 )
-from asky.llm import dispatch_tool_call
+from asky.core import dispatch_tool_call
 
 
 def test_sanitize_url():

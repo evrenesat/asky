@@ -6,7 +6,7 @@ from asky.cli import expand_query_text
 @pytest.fixture
 def mock_prompts():
     with patch(
-        "asky.cli.USER_PROMPTS", {"ex": "Explain this:", "sum": "Summarize /cp"}
+        "asky.cli.utils.USER_PROMPTS", {"ex": "Explain this:", "sum": "Summarize /cp"}
     ):
         yield
 

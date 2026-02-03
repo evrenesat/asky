@@ -1,4 +1,4 @@
-from asky.llm import dispatch_tool_call
+from asky.core import dispatch_tool_call
 import pytest
 from unittest.mock import MagicMock, patch
 from asky.tools import _execute_custom_tool
@@ -8,7 +8,8 @@ from asky.tools import _execute_custom_tool
 def mock_custom_tools():
     with (
         patch("asky.tools.CUSTOM_TOOLS") as mock_tools,
-        patch("asky.llm.CUSTOM_TOOLS") as mock_llm,
+        patch("asky.config.CUSTOM_TOOLS") as mock_config_tools,
+        patch("asky.core.engine.CUSTOM_TOOLS") as mock_engine_tools,
     ):
         mock_data = {
             "list_dir": {
@@ -38,9 +39,13 @@ def mock_custom_tools():
         mock_tools.get.side_effect = get_side_effect
         mock_tools.__contains__.side_effect = contains_side_effect
 
-        mock_llm.items.return_value = mock_data.items()
-        mock_llm.get.side_effect = get_side_effect
-        mock_llm.__contains__.side_effect = contains_side_effect
+        mock_config_tools.items.return_value = mock_data.items()
+        mock_config_tools.get.side_effect = get_side_effect
+        mock_config_tools.__contains__.side_effect = contains_side_effect
+
+        mock_engine_tools.items.return_value = mock_data.items()
+        mock_engine_tools.get.side_effect = get_side_effect
+        mock_engine_tools.__contains__.side_effect = contains_side_effect
 
         yield mock_tools
 

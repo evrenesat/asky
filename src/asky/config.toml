@@ -55,6 +55,26 @@ user_agent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTM
 # Some providers only accept specific user agents for certain subscriptions types.
 llm_user_agent = "asky/1.0.0"
 
+# --- Limits & Timeouts ---
+[limits]
+# Maximum number of links returned from get_url_details to prevent context overflow.
+max_url_detail_links = 50
+
+# Maximum snippet length in search results.
+search_snippet_max_chars = 400
+
+# Maximum recursion depth for expanding slash commands.
+query_expansion_max_depth = 5
+
+# LLM API retry settings
+max_retries = 10
+initial_backoff = 2
+max_backoff = 60
+
+# Search and fetch timeouts in seconds
+search_timeout = 20
+fetch_timeout = 20
+
 # --- API Definitions ---
 # Define reusable API endpoints and authentication details here.
 # For each section [api.NAME]:

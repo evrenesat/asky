@@ -16,6 +16,10 @@ from asky.config import (
     SERPER_API_KEY_ENV,
     SERPER_API_URL,
     USER_AGENT,
+    MAX_URL_DETAIL_LINKS,
+    SEARCH_SNIPPET_MAX_CHARS,
+    SEARCH_TIMEOUT,
+    FETCH_TIMEOUT,
 )
 from asky.html import HTMLStripper, strip_tags
 
@@ -35,7 +39,7 @@ def _execute_searxng_search(q: str, count: int) -> Dict[str, Any]:
             f"{base_url}/search",
             params={"q": q, "format": "json"},
             headers=headers,
-            timeout=20,
+            timeout=SEARCH_TIMEOUT,
         )
         if resp.status_code != 200:
             return {"error": f"SearXNG error {resp.status_code}: {resp.text[:200]}"}
@@ -47,7 +51,9 @@ def _execute_searxng_search(q: str, count: int) -> Dict[str, Any]:
                 {
                     "title": strip_tags(x.get("title", "")),
                     "url": x.get("url"),
-                    "snippet": strip_tags(x.get("content", ""))[:400],
+                    "snippet": strip_tags(x.get("content", ""))[
+                        :SEARCH_SNIPPET_MAX_CHARS
+                    ],
                     "engine": x.get("engine"),
                 }
             )
@@ -74,7 +80,7 @@ def _execute_serper_search(q: str, count: int) -> Dict[str, Any]:
             SERPER_API_URL,
             headers=headers,
             data=payload,
-            timeout=20,
+            timeout=SEARCH_TIMEOUT,
         )
         resp.raise_for_status()
         data = resp.json()
@@ -85,7 +91,9 @@ def _execute_serper_search(q: str, count: int) -> Dict[str, Any]:
                 {
                     "title": strip_tags(x.get("title", "")),
                     "url": x.get("link"),
-                    "snippet": strip_tags(x.get("snippet", ""))[:400],
+                    "snippet": strip_tags(x.get("snippet", ""))[
+                        :SEARCH_SNIPPET_MAX_CHARS
+                    ],
                     "engine": "serper",
                 }
             )
@@ -119,7 +127,7 @@ def fetch_single_url(url: str) -> Dict[str, str]:
 
     try:
         headers = {"User-Agent": USER_AGENT}
-        resp = requests.get(url, headers=headers, timeout=20)
+        resp = requests.get(url, headers=headers, timeout=FETCH_TIMEOUT)
         resp.raise_for_status()
         content = strip_tags(resp.text)
         return {url: content}
@@ -150,14 +158,16 @@ def execute_get_url_details(args: Dict[str, Any]) -> Dict[str, Any]:
 
     try:
         headers = {"User-Agent": USER_AGENT}
-        resp = requests.get(url, headers=headers, timeout=20)
+        resp = requests.get(url, headers=headers, timeout=FETCH_TIMEOUT)
         resp.raise_for_status()
         s = HTMLStripper(base_url=url)
         s.feed(resp.text)
 
         return {
             "content": s.get_data(),
-            "links": s.get_links()[:50],  # Limit links to avoid context overflow
+            "links": s.get_links()[
+                :MAX_URL_DETAIL_LINKS
+            ],  # Limit links to avoid context overflow
             "system_note": "IMPORTANT: Do NOT use get_url_details again. Use get_url_content to read links.",
         }
     except Exception as e:

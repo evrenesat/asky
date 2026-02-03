@@ -2,7 +2,7 @@ import pytest
 import json
 import requests
 from unittest.mock import patch, MagicMock
-from asky.llm import (
+from asky.core import (
     parse_textual_tool_call,
     construct_system_prompt,
     extract_calls,
@@ -10,8 +10,8 @@ from asky.llm import (
     generate_summaries,
     run_conversation_loop,
     count_tokens,
-    render_to_browser,
 )
+from asky.rendering import render_to_browser
 
 
 def test_parse_textual_tool_call_valid():
@@ -77,7 +77,7 @@ def test_extract_calls_textual_fallback():
     assert calls[0]["id"] == "textual_call_1"
 
 
-@patch("asky.llm.requests.post")
+@patch("asky.core.api_client.requests.post")
 def test_get_llm_msg_success(mock_post):
     mock_response = MagicMock()
     mock_response.json.return_value = {
@@ -89,7 +89,7 @@ def test_get_llm_msg_success(mock_post):
     assert msg["content"] == "Hello"
 
 
-@patch("asky.llm.requests.post")
+@patch("asky.core.api_client.requests.post")
 def test_get_llm_msg_rate_limit_retry(mock_post):
     # First call returns 429, second returns success
     response_429 = MagicMock()
@@ -110,14 +110,14 @@ def test_get_llm_msg_rate_limit_retry(mock_post):
     mock_post.side_effect = [error_429, response_200]
 
     # We need to mock time.sleep to avoid waiting in tests
-    with patch("asky.llm.time.sleep"):
+    with patch("asky.core.api_client.time.sleep"):
         msg = get_llm_msg("q34", [])
         assert msg["content"] == "Success"
 
     assert mock_post.call_count == 2
 
 
-@patch("asky.llm.requests.post")
+@patch("asky.core.api_client.requests.post")
 def test_get_llm_msg_retry_after(mock_post):
     # Test that Retry-After header is respected
     response_429 = MagicMock()
@@ -132,14 +132,14 @@ def test_get_llm_msg_retry_after(mock_post):
 
     mock_post.side_effect = [error_429, response_200]
 
-    with patch("asky.llm.time.sleep") as mock_sleep:
+    with patch("asky.core.api_client.time.sleep") as mock_sleep:
         msg = get_llm_msg("q34", [])
         assert msg["content"] == "Success"
         mock_sleep.assert_called_with(5)
 
 
-@patch("asky.llm.get_llm_msg")
-@patch("asky.llm.ToolRegistry.dispatch")
+@patch("asky.core.engine.get_llm_msg")
+@patch("asky.core.engine.ToolRegistry.dispatch")
 def test_run_conversation_loop_basic(mock_dispatch, mock_get_msg):
     # Mock LLM sequence:
     # 1. Tool call (web search)
@@ -178,7 +178,7 @@ def test_run_conversation_loop_basic(mock_dispatch, mock_get_msg):
     assert messages[2]["tool_call_id"] == "call_1"
 
 
-@patch("asky.llm.get_llm_msg")
+@patch("asky.core.engine.get_llm_msg")
 def test_generate_summaries(mock_get_msg):
     # Mock responses for query summary and answer summary
     # 1. Query summary
@@ -197,7 +197,7 @@ def test_generate_summaries(mock_get_msg):
     assert mock_get_msg.call_count == 2
 
 
-@patch("asky.llm.get_llm_msg")
+@patch("asky.core.engine.get_llm_msg")
 def test_generate_summaries_short_query(mock_get_msg):
     # If query is short, it shouldn't call LLM for query summary
     mock_get_msg.return_value = {"content": "Answer summary"}
@@ -231,8 +231,8 @@ def test_generate_summaries_short_query(mock_get_msg):
     assert mock_get_msg.call_count == 1
 
 
-@patch("asky.llm.webbrowser.open")
-@patch("asky.llm.tempfile.NamedTemporaryFile")
+@patch("asky.rendering.webbrowser.open")
+@patch("asky.rendering.tempfile.NamedTemporaryFile")
 @patch("builtins.open")
 @patch("asky.config.TEMPLATE_PATH")
 def test_render_to_browser(

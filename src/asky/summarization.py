@@ -14,6 +14,7 @@ from asky.config import (
     SUMMARIZE_QUERY_PROMPT_TEMPLATE,
 )
 from asky.html import strip_think_tags
+from asky.core import get_llm_msg, UsageTracker
 
 logger = logging.getLogger(__name__)
 
@@ -22,8 +23,8 @@ def _summarize_content(
     content: str,
     prompt_template: str,
     max_output_chars: int,
-    get_llm_msg_func: Any,
-    usage_tracker: Optional[Any] = None,
+    get_llm_msg_func: Optional[Any] = None,  # Keep for backward compat for now
+    usage_tracker: Optional[UsageTracker] = None,
 ) -> str:
     """Helper function to summarize content using the summarization model.
     requires get_llm_msg_func to avoid circular imports.
@@ -38,7 +39,8 @@ def _summarize_content(
         ]
         model_id = MODELS[SUMMARIZATION_MODEL]["id"]
         model_alias = MODELS[SUMMARIZATION_MODEL].get("alias", SUMMARIZATION_MODEL)
-        msg = get_llm_msg_func(
+        llm_func = get_llm_msg_func or get_llm_msg
+        msg = llm_func(
             model_id,
             msgs,
             use_tools=False,
