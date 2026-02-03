@@ -4,14 +4,14 @@ from rich.console import Console
 from rich.table import Table
 from rich.markdown import Markdown
 
-from asky.storage.session import SessionRepository
+from asky.storage.sqlite import SQLiteHistoryRepository
 from asky.rendering import render_to_browser
 from asky.config import MODELS
 
 
 def show_session_history_command(limit: int) -> None:
     """List recent sessions."""
-    repo = SessionRepository()
+    repo = SQLiteHistoryRepository()
     sessions = repo.list_sessions(limit)
 
     if not sessions:
@@ -51,7 +51,7 @@ def print_session_command(
     subject: str = None,
 ) -> None:
     """Print session messages."""
-    repo = SessionRepository()
+    repo = SQLiteHistoryRepository()
 
     # Try to get by ID first
     session = None
@@ -109,7 +109,7 @@ def end_session_command() -> None:
     """End the currently active session."""
     from asky.core import clear_shell_session
 
-    repo = SessionRepository()
+    repo = SQLiteHistoryRepository()
     active = repo.get_active_session()
     if active:
         repo.end_session(active.id)

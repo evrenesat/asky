@@ -7,25 +7,41 @@ from typing import List, Optional, Union
 
 @dataclass
 class Interaction:
-    """Represents a single conversation turn in history."""
+    """Represents a single conversation turn in history or a session message."""
 
     id: Optional[int]
     timestamp: str
-    query: str
-    query_summary: str
-    answer_summary: str
-    answer: str
+
+    # Session fields (nullable for non-session messages)
+    session_id: Optional[int]
+    role: Optional[str]  # 'user' or 'assistant' for session messages, None for history
+
+    # Content fields
+    content: (
+        str  # Main content (query for user, answer for assistant, or full interaction)
+    )
+    summary: Optional[str]
+
+    # Legacy fields for history compatibility
+    query_summary: Optional[str]
+    answer_summary: Optional[str]
+
+    # Metadata
     model: str
+    token_count: Optional[int]
 
     def __getitem__(self, idx):
         return (
             self.id,
             self.timestamp,
-            self.query,
+            self.session_id,
+            self.role,
+            self.content,
+            self.summary,
             self.query_summary,
             self.answer_summary,
-            self.answer,
             self.model,
+            self.token_count,
         )[idx]
 
     def __iter__(self):
@@ -33,17 +49,20 @@ class Interaction:
             (
                 self.id,
                 self.timestamp,
-                self.query,
+                self.session_id,
+                self.role,
+                self.content,
+                self.summary,
                 self.query_summary,
                 self.answer_summary,
-                self.answer,
                 self.model,
+                self.token_count,
             )
         )
 
 
 class HistoryRepository(ABC):
-    """Abstract interface for history storage."""
+    """Abstract interface for message and session storage."""
 
     @abstractmethod
     def init_db(self) -> None:
@@ -84,4 +103,61 @@ class HistoryRepository(ABC):
     @abstractmethod
     def get_db_record_count(self) -> int:
         """Return total number of records."""
+        pass
+
+    @abstractmethod
+    def delete_sessions(
+        self,
+        ids: Optional[str] = None,
+        delete_all: bool = False,
+    ) -> int:
+        """Delete session records and their messages."""
+        pass
+
+    # Session management methods
+    @abstractmethod
+    def create_session(self, model: str, name: Optional[str] = None) -> int:
+        """Create a new session and return its ID."""
+        pass
+
+    @abstractmethod
+    def get_session_by_id(self, session_id: int):
+        """Look up a session by ID."""
+        pass
+
+    @abstractmethod
+    def get_session_by_name(self, name: str):
+        """Look up a session by name."""
+        pass
+
+    @abstractmethod
+    def get_active_session(self):
+        """Return the most recently created active session."""
+        pass
+
+    @abstractmethod
+    def save_message(
+        self, session_id: int, role: str, content: str, summary: str, token_count: int
+    ) -> None:
+        """Save a message to a session."""
+        pass
+
+    @abstractmethod
+    def get_session_messages(self, session_id: int) -> List[Interaction]:
+        """Retrieve all messages for a session."""
+        pass
+
+    @abstractmethod
+    def compact_session(self, session_id: int, compacted_summary: str) -> None:
+        """Replace session message history with a compacted summary."""
+        pass
+
+    @abstractmethod
+    def end_session(self, session_id: int) -> None:
+        """Mark a session as completed."""
+        pass
+
+    @abstractmethod
+    def list_sessions(self, limit: int) -> list:
+        """List recently created sessions."""
         pass

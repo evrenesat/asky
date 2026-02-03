@@ -1,29 +1,24 @@
 import pytest
 import sqlite3
-import os
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch, MagicMock
 
-from asky.storage.session import SessionRepository, Session, SessionMessage
+from asky.storage.sqlite import SQLiteHistoryRepository
 from asky.core.session_manager import SessionManager
-from asky.config import DB_PATH
+from asky.core.api_client import UsageTracker
 
 
 @pytest.fixture
-def temp_repo(tmp_path):
-    # Use a temporary database for testing
-    db_file = tmp_path / "test_sessions.db"
+def temp_db_path(tmp_path):
+    return tmp_path / "test_sessions.db"
 
-    # Initialize DB (copying schema from sqlite.py or just running it)
-    from asky.storage.sqlite import SQLiteHistoryRepository
 
-    with patch("asky.storage.sqlite.DB_PATH", db_file):
+@pytest.fixture
+def temp_repo(temp_db_path):
+    with patch("asky.storage.sqlite.DB_PATH", temp_db_path):
         repo = SQLiteHistoryRepository()
         repo.init_db()
-
-    with patch("asky.storage.session.DB_PATH", db_file):
-        session_repo = SessionRepository()
-        yield session_repo
+        yield repo
 
 
 def test_session_lifecycle(temp_repo):
@@ -53,8 +48,8 @@ def test_session_lifecycle(temp_repo):
 
 def test_session_messages(temp_repo):
     sid = temp_repo.create_session("model-a")
-    temp_repo.add_message(sid, "user", "hello", "q_sum", 10)
-    temp_repo.add_message(sid, "assistant", "hi", "a_sum", 5)
+    temp_repo.save_message(sid, "user", "hello", "q_sum", 10)
+    temp_repo.save_message(sid, "assistant", "hi", "a_sum", 5)
 
     msgs = temp_repo.get_session_messages(sid)
     assert len(msgs) == 2
@@ -76,7 +71,9 @@ def test_session_manager_resume(temp_repo):
     # Create a session in repo first
     sid = temp_repo.create_session("model-a", name="my-session")
 
-    with patch("asky.core.session_manager.SessionRepository", return_value=temp_repo):
+    with patch(
+        "asky.core.session_manager.SQLiteHistoryRepository", return_value=temp_repo
+    ):
         mgr = SessionManager({"alias": "model-a", "context_size": 1000})
 
         # Resume by name
@@ -92,7 +89,9 @@ def test_session_manager_auto_resume(temp_repo):
     # Create an active session
     sid = temp_repo.create_session("model-a")
 
-    with patch("asky.core.session_manager.SessionRepository", return_value=temp_repo):
+    with patch(
+        "asky.core.session_manager.SQLiteHistoryRepository", return_value=temp_repo
+    ):
         mgr = SessionManager({"alias": "model-a", "context_size": 1000})
         s = mgr.start_or_resume()  # Should pick active one
         assert s.id == sid
@@ -100,11 +99,13 @@ def test_session_manager_auto_resume(temp_repo):
 
 def test_session_manager_build_context(temp_repo):
     sid = temp_repo.create_session("model-a")
-    temp_repo.add_message(sid, "user", "ping", "p_sum", 5)
-    temp_repo.add_message(sid, "assistant", "pong", "po_sum", 5)
+    temp_repo.save_message(sid, "user", "ping", "p_sum", 5)
+    temp_repo.save_message(sid, "assistant", "pong", "po_sum", 5)
     temp_repo.compact_session(sid, "Old Summary")
 
-    with patch("asky.core.session_manager.SessionRepository", return_value=temp_repo):
+    with patch(
+        "asky.core.session_manager.SQLiteHistoryRepository", return_value=temp_repo
+    ):
         mgr = SessionManager({"alias": "model-a"})
         mgr.current_session = temp_repo.get_session_by_id(sid)
 
@@ -118,9 +119,11 @@ def test_session_manager_build_context(temp_repo):
 def test_compaction_logic_threshold(temp_repo):
     sid = temp_repo.create_session("model-a")
     # 10 tokens total
-    temp_repo.add_message(sid, "user", "long" * 10, "sum", 10)
+    temp_repo.save_message(sid, "user", "long" * 10, "sum", 10)
 
-    with patch("asky.core.session_manager.SessionRepository", return_value=temp_repo):
+    with patch(
+        "asky.core.session_manager.SQLiteHistoryRepository", return_value=temp_repo
+    ):
         # Set threshold low to trigger
         with patch("asky.core.session_manager.SESSION_COMPACTION_THRESHOLD", 50):
             mgr = SessionManager(
@@ -138,9 +141,11 @@ def test_compaction_logic_threshold(temp_repo):
 
 def test_compaction_llm_strategy(temp_repo):
     sid = temp_repo.create_session("model-a")
-    temp_repo.add_message(sid, "user", "long text", "sum", 10)
+    temp_repo.save_message(sid, "user", "long text", "sum", 10)
 
-    with patch("asky.core.session_manager.SessionRepository", return_value=temp_repo):
+    with patch(
+        "asky.core.session_manager.SQLiteHistoryRepository", return_value=temp_repo
+    ):
         mgr = SessionManager({"alias": "model-a"})
         mgr.current_session = temp_repo.get_session_by_id(sid)
 

@@ -13,7 +13,8 @@ from asky.config import (
     DEFAULT_CONTEXT_SIZE,
     SUMMARIZATION_MODEL,
 )
-from asky.storage.session import SessionRepository, Session, SessionMessage
+from asky.storage import Session
+from asky.storage.sqlite import SQLiteHistoryRepository
 from asky.core.api_client import count_tokens, get_llm_msg, UsageTracker
 from asky.summarization import _summarize_content
 from asky.html import strip_think_tags
@@ -70,7 +71,7 @@ class SessionManager:
         model_config: Dict[str, Any],
         usage_tracker: Optional[UsageTracker] = None,
     ):
-        self.repo = SessionRepository()
+        self.repo = SQLiteHistoryRepository()
         self.model_config = model_config
         self.usage_tracker = usage_tracker
         self.current_session: Optional[Session] = None
@@ -150,10 +151,10 @@ class SessionManager:
         q_tokens = count_tokens([{"role": "user", "content": query}])
         a_tokens = count_tokens([{"role": "assistant", "content": answer}])
 
-        self.repo.add_message(
+        self.repo.save_message(
             self.current_session.id, "user", query, query_summary, q_tokens
         )
-        self.repo.add_message(
+        self.repo.save_message(
             self.current_session.id, "assistant", answer, answer_summary, a_tokens
         )
 

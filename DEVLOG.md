@@ -1,5 +1,30 @@
 # Development Log
 
+## 2026-02-03 - Database Schema Consolidation
+
+**Summary**: Refactored database schema to consolidate `history` and `session_messages` tables into a single unified `messages` table, eliminating redundant data storage in session mode.
+
+**Changes**:
+- **Database Schema**: Created unified `messages` table with nullable `session_id` and `role` fields to distinguish between regular history entries (where both are NULL) and session messages (where both are set)
+- **Repository Layer**: Merged `SessionRepository` functionality into `SQLiteHistoryRepository`, making it the single source of truth for all message storage
+- **Data Models**: Updated `Interaction` dataclass to include session-related fields (`session_id`, `role`, `content`, `summary`, `token_count`)
+- **Session Manager**: Updated to use `SQLiteHistoryRepository` and call `save_message()` for individual user/assistant messages instead of the old `SessionRepository.add_message()`
+- **CLI Layer**: 
+  - Removed duplicate `save_interaction()` call in session mode from `chat.py` - session messages are now only saved via `session_manager.save_turn()`
+  - Updated `sessions.py` to use `SQLiteHistoryRepository` instead of `SessionRepository`
+- **Tests**: Updated all storage, session, and integration tests to work with the new unified schema (92/92 tests passing)
+
+**Gotchas**:
+- The `content` field in the `messages` table serves dual purpose: for history entries, it contains the full "Query: X\n\nAnswer: Y" format; for session messages, it contains just the message content
+- Legacy fields `query_summary` and `answer_summary` are retained for backwards compatibility with history entries
+- Session messages use the `summary` field instead of the legacy summary fields
+- When testing, ensure the global `_repo` instance has its `db_path` set to the mocked path before any database operations
+
+**Follow-up**: Consider renaming `SQLiteHistoryRepository` to `SQLiteMessageRepository` to better reflect its unified purpose.
+
+---
+
+
 ## 2026-02-03 (Major Refactor & Feat)
 
 - **Refactor**: Database deletion commands completely redesigned

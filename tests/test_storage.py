@@ -22,11 +22,15 @@ def temp_db_path(tmp_path):
 
 @pytest.fixture
 def mock_db_path(temp_db_path):
-    # Mock the DB_PATH constant in storage implementations
+    # Mock the DB_PATH constant in all storage modules
     with (
         patch("asky.storage.sqlite.DB_PATH", temp_db_path),
-        patch("asky.storage.session.DB_PATH", temp_db_path),
+        patch("asky.config.DB_PATH", temp_db_path),
     ):
+        # Re-instantiate the repository with the mocked path
+        from asky.storage import _repo
+
+        _repo.db_path = temp_db_path
         yield temp_db_path
 
 
@@ -36,7 +40,11 @@ def test_init_db(mock_db_path):
 
     conn = sqlite3.connect(mock_db_path)
     c = conn.cursor()
-    c.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='history'")
+    # Check for new unified messages table
+    c.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='messages'")
+    assert c.fetchone() is not None
+    # Check for sessions table
+    c.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='sessions'")
     assert c.fetchone() is not None
     conn.close()
 
@@ -53,12 +61,16 @@ def test_save_and_get_history(mock_db_path):
 
     rows = get_history(limit=1)
     assert len(rows) == 1
-    # Interaction indexing: 0:id, 1:timestamp, 2:query, 3:query_summary, 4:answer_summary, 5:answer, 6:model
-    assert rows[0][2] == "test query"
-    assert rows[0][3] == "q sum"
-    assert rows[0][4] == "a sum"
-    assert rows[0][5] == "test answer"
-    assert rows[0][6] == "test_model"
+
+    # Access via attributes (Interaction dataclass)
+    interaction = rows[0]
+    assert interaction.session_id is None  # Non-session message
+    assert interaction.role is None
+    assert "test query" in interaction.content
+    assert "test answer" in interaction.content
+    assert interaction.query_summary == "q sum"
+    assert interaction.answer_summary == "a sum"
+    assert interaction.model == "test_model"
 
 
 def test_get_interaction_context(mock_db_path):
@@ -68,7 +80,7 @@ def test_get_interaction_context(mock_db_path):
 
     # Get the ID of the inserted row
     rows = get_history(1)
-    rid = rows[0][0]
+    rid = rows[0].id
 
     context = get_interaction_context([rid])
     assert "Query" in context
@@ -90,7 +102,7 @@ def test_cleanup_db(mock_db_path, capsys):
 
     # Test deletion by ID
     rows = get_history(10)
-    ids = [r[0] for r in rows]
+    ids = [r.id for r in rows]
     target_id = ids[0]
 
     delete_messages(str(target_id))
@@ -113,17 +125,6 @@ def test_cleanup_db_edge_cases(mock_db_path, capsys):
 
     remaining = get_history(10)
     assert len(remaining) == 2
-    rem_ids = sorted([r[0] for r in remaining])
-    # The IDs in DB are likely 1,2,3,4,5. `cleanup_db("4-2")` deletes 2,3,4.
-    # So 1 and 5 should remain.
-    # Wait, `get_history` returns DESC.
-    # Let's verify IDs explicitly if we can rely on autoincrement.
-    # Note: SQLite `sqlite_sequence` is not reset unless we did delete_all, which we didn't in this test func (new mock_db_path).
-
-    # We can assume IDs are 1..5
-
-    # Let's check remaining count first
-    assert len(remaining) == 2
 
     # Test invalid range
     delete_messages("a-b")
@@ -142,9 +143,9 @@ def test_cleanup_db_edge_cases(mock_db_path, capsys):
 
 
 def test_delete_sessions(mock_db_path):
-    from asky.storage.session import SessionRepository
+    from asky.storage.sqlite import SQLiteHistoryRepository
 
-    repo = SessionRepository()
+    repo = SQLiteHistoryRepository()
     init_db()
 
     # Create 3 sessions
@@ -153,7 +154,7 @@ def test_delete_sessions(mock_db_path):
     sid3 = repo.create_session("model", name="s3")
 
     # Add messages to sid1
-    repo.add_message(sid1, "user", "hi", "hi", 10)
+    repo.save_message(sid1, "user", "hi", "hi", 10)
 
     # Verify messages exist
     assert len(repo.get_session_messages(sid1)) == 1

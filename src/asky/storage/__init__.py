@@ -3,7 +3,7 @@
 from typing import Optional, Union
 from asky.config import DB_PATH
 from asky.storage.interface import Interaction, HistoryRepository
-from asky.storage.sqlite import SQLiteHistoryRepository
+from asky.storage.sqlite import SQLiteHistoryRepository, Session
 
 # Default repository instance
 _repo = SQLiteHistoryRepository()

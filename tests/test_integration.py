@@ -7,8 +7,8 @@ import os
 import sys
 import tempfile
 import pytest
-from asky.storage import init_db, save_interaction, delete_messages, delete_sessions
-from asky.storage.session import SessionRepository
+from asky.storage import save_interaction, delete_messages, delete_sessions
+from asky.storage.sqlite import SQLiteHistoryRepository
 from asky.cli.main import parse_args, main
 from unittest.mock import patch
 from pathlib import Path
@@ -29,11 +29,16 @@ def temp_integration_db():
 @pytest.fixture
 def setup_test_data(temp_integration_db):
     """Setup test data in database."""
-    with (
-        patch("asky.storage.sqlite.DB_PATH", temp_integration_db),
-        patch("asky.storage.session.DB_PATH", temp_integration_db),
-    ):
-        init_db()
+    with patch("asky.storage.sqlite.DB_PATH", temp_integration_db):
+        # Ensure global _repo uses the mocked path BEFORE any operations
+        from asky.storage import _repo
+
+        _repo.db_path = temp_integration_db
+
+        # Ensure the repository uses the mocked path
+        repo = SQLiteHistoryRepository()
+        repo.db_path = temp_integration_db
+        repo.init_db()  # Call init_db on the repo instance
 
         # Add history records
         save_interaction("query1", "answer1", "model")
@@ -41,11 +46,10 @@ def setup_test_data(temp_integration_db):
         save_interaction("query3", "answer3", "model")
 
         # Add sessions
-        repo = SessionRepository()
         sid1 = repo.create_session("model", name="test_session_1")
         sid2 = repo.create_session("model", name="test_session_2")
-        repo.add_message(sid1, "user", "hello", "hello", 10)
-        repo.add_message(sid1, "assistant", "hi", "hi there", 20)
+        repo.save_message(sid1, "user", "hello", "hello", 10)
+        repo.save_message(sid1, "assistant", "hi", "hi there", 20)
 
         yield {
             "db_path": temp_integration_db,
@@ -58,6 +62,11 @@ def test_delete_messages_integration(setup_test_data, capsys):
     db_path = setup_test_data["db_path"]
 
     with patch("asky.storage.sqlite.DB_PATH", db_path):
+        # Ensure global _repo uses the mocked path
+        from asky.storage import _repo
+
+        _repo.db_path = db_path
+
         # Delete single message by ID
         count = delete_messages(ids="2")
         assert count == 1
@@ -77,11 +86,14 @@ def test_delete_sessions_integration(setup_test_data):
     db_path = setup_test_data["db_path"]
     session_ids = setup_test_data["session_ids"]
 
-    with (
-        patch("asky.storage.sqlite.DB_PATH", db_path),
-        patch("asky.storage.session.DB_PATH", db_path),
-    ):
-        repo = SessionRepository()
+    with patch("asky.storage.sqlite.DB_PATH", db_path):
+        # Ensure global _repo uses the mocked path
+        from asky.storage import _repo
+
+        _repo.db_path = db_path
+
+        repo = SQLiteHistoryRepository()
+        repo.db_path = db_path
 
         # Verify session 1 has messages
         assert len(repo.get_session_messages(session_ids[0])) == 2

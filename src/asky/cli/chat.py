@@ -176,18 +176,18 @@ def run_chat(args: argparse.Namespace, query_text: str) -> None:
                 query_text, final_answer, usage_tracker=usage_tracker
             )
 
-            # Save to global history
-            save_interaction(
-                query_text, final_answer, args.model, query_summary, answer_summary
-            )
-
-            # Save to session if active
+            # Save to session if active (session mode handles its own storage)
             if session_manager:
                 session_manager.save_turn(
                     query_text, final_answer, query_summary, answer_summary
                 )
                 if session_manager.check_and_compact():
                     print("[Session context compacted]")
+            else:
+                # Save to global history (non-session mode only)
+                save_interaction(
+                    query_text, final_answer, args.model, query_summary, answer_summary
+                )
 
         # Send Email if requested
         if final_answer and getattr(args, "mail_recipients", None):
