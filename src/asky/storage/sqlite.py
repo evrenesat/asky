@@ -30,6 +30,33 @@ class SQLiteHistoryRepository(HistoryRepository):
             )
         """
         )
+        c.execute(
+            """
+            CREATE TABLE IF NOT EXISTS sessions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT,
+                model TEXT,
+                created_at TEXT,
+                ended_at TEXT,
+                is_active INTEGER DEFAULT 1,
+                compacted_summary TEXT
+            )
+        """
+        )
+        c.execute(
+            """
+            CREATE TABLE IF NOT EXISTS session_messages (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                session_id INTEGER,
+                role TEXT,
+                content TEXT,
+                summary TEXT,
+                token_count INTEGER,
+                created_at TEXT,
+                FOREIGN KEY (session_id) REFERENCES sessions(id)
+            )
+        """
+        )
         conn.commit()
         conn.close()
 

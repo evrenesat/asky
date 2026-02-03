@@ -10,6 +10,12 @@ from asky.core.engine import (
     dispatch_tool_call,
     generate_summaries,
 )
+from asky.core.session_manager import (
+    SessionManager,
+    get_shell_session_id,
+    set_shell_session_id,
+    clear_shell_session,
+)
 from asky.core.prompts import (
     construct_system_prompt,
     extract_calls,

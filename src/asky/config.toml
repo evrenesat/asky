@@ -178,6 +178,19 @@ summarize_query = "Summarize the following query into a single short sentence."
 # Prompt for summarizing the final answer.
 summarize_answer = """Summarize the following answer into a short paragraph. Be sure to include all numerical values and dates """
 
+# Prompt for LLM-based session compaction
+summarize_session = """Summarize this conversation history into a concise context summary.
+Preserve: key decisions, important facts, user preferences, and final outcomes.
+Omit: pleasantries, redundant information, and failed attempts."""
+
+# --- Session Settings ---
+[session]
+# Trigger compaction at this % of model context
+compaction_threshold = 80
+
+# Compaction strategy: "summary_concat" or "llm_summary"
+compaction_strategy = "summary_concat"
+
 # Template for DEEP RESEARCH mode (-d). {n} is the number of searches.
 deep_research = """
 You are in DEEP RESEARCH mode. You MUST perform at least {n} distinct web searches, or make {n} get_url_content calls to gather comprehensive information before providing a final answer.If you need to get links from a URL, use get_url_details. If you just need to get content from a URL, use get_url_content."""

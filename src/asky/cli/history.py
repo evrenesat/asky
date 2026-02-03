@@ -43,11 +43,28 @@ def print_answers_command(
     mail_recipients: str = None,
     subject: str = None,
 ) -> None:
-    """Print answers for specific history IDs."""
+    """Print answers for specific history IDs or session IDs."""
+    import re
+
+    # Check if this is a session ID (S123) or a session name (not a plain integer or comma-list of integers)
+    if re.match(r"^[sS]\d+$", ids_str.strip()) or (
+        not re.match(r"^(\d+\s*,?\s*)+$", ids_str.strip()) and "," not in ids_str
+    ):
+        from asky.cli.sessions import print_session_command
+
+        val = ids_str.strip()
+        if val.lower().startswith("s") and val[1:].isdigit():
+            val = val[1:]  # Pass the numeric part to session command
+        print_session_command(val, open_browser, mail_recipients, subject)
+        return
+
     try:
         ids = [int(x.strip()) for x in ids_str.split(",")]
     except ValueError:
-        print("Error: Invalid ID format. Use comma-separated integers.")
+        # Fallback to session name if it's not a valid history ID list
+        from asky.cli.sessions import print_session_command
+
+        print_session_command(ids_str.strip(), open_browser, mail_recipients, subject)
         return
 
     context = get_interaction_context(ids, full=not summarize)

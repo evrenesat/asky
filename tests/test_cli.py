@@ -34,6 +34,9 @@ def mock_args():
         open=False,
         mail_recipients=None,
         subject=None,
+        sticky_session=None,
+        session_end=False,
+        session_history=None,
         query=["test", "query"],
     )
 
@@ -206,6 +209,12 @@ def test_handle_print_answer_implicit(mock_print_answers):
     args.summarize = False
     args.open = False
 
+    args.mail_recipients = MagicMock()
+    args.subject = MagicMock()
+    args.sticky_session = None
+    args.session_end = False
+    args.session_history = None
+
     assert handle_print_answer_implicit(args) is True
     mock_print_answers.assert_called_with(
         "1,2",
@@ -248,6 +257,9 @@ def test_main_flow(
         open=False,
         mail_recipients=None,
         subject=None,
+        sticky_session=None,
+        session_end=False,
+        session_history=None,
     )
     mock_run.return_value = "Final Answer"
     mock_gen_sum.return_value = ("q_sum", "a_sum")
@@ -304,6 +316,9 @@ def test_main_flow_verbose(
         open=False,
         mail_recipients=None,
         subject=None,
+        sticky_session=None,
+        session_end=False,
+        session_history=None,
     )
     mock_run.return_value = "Final Answer"
     mock_gen_sum.return_value = ("q_sum", "a_sum")

@@ -2,7 +2,6 @@
 
 import argparse
 import re
-import sys
 
 from rich.console import Console
 
@@ -21,7 +20,7 @@ from asky.config import (
 from asky.banner import get_banner
 from asky.logger import setup_logging
 from asky.storage import init_db, get_db_record_count
-from . import history, prompts, chat, utils
+from . import history, prompts, chat, utils, sessions
 
 
 def parse_args() -> argparse.Namespace:
@@ -124,6 +123,26 @@ def parse_args() -> argparse.Namespace:
         "--subject",
         help="Subject line for the email (used with --mail).",
     )
+    parser.add_argument(
+        "-ss",
+        "--sticky-session",
+        nargs="?",
+        const="auto",
+        help="Start or resume a persistent session (optional: provide session name)",
+    )
+    parser.add_argument(
+        "--session-end",
+        action="store_true",
+        help="End the current active session",
+    )
+    parser.add_argument(
+        "-sH",
+        "--session-history",
+        nargs="?",
+        type=int,
+        const=10,
+        help="Show last N sessions (default 10).",
+    )
     parser.add_argument("query", nargs="*", help="The query string")
     return parser.parse_args()
 
@@ -155,15 +174,16 @@ def show_banner(args) -> None:
 
 
 def handle_print_answer_implicit(args) -> bool:
-    """Handle implicit print answer (query is list of ints)."""
+    """Handle implicit print answer (query is list of ints or session IDs)."""
     if not args.query:
         return False
     query_str = " ".join(args.query).strip()
-    if re.match(r"^(\d+\s*,?\s*)+$", query_str):
-        possible_ids = re.split(r"[,\s]+", query_str)
-        clean_ids_str = ",".join([x for x in possible_ids if x])
+    # Match integers or S-prefixed integers (e.g. 1, 2, S3, s4)
+    if re.match(r"^([sS]?\d+\s*,?\s*)+$", query_str):
+        # Clean up spaces
+        clean_query_str = re.sub(r"\s+", "", query_str)
         history.print_answers_command(
-            clean_ids_str,
+            clean_query_str,
             args.summarize,
             open_browser=args.open,
             mail_recipients=args.mail_recipients,
@@ -195,6 +215,12 @@ def main() -> None:
         )
         return
     if handle_print_answer_implicit(args):
+        return
+    if args.session_history is not None:
+        sessions.show_session_history_command(args.session_history)
+        return
+    if args.session_end:
+        sessions.end_session_command()
         return
     if args.prompts:
         prompts.list_prompts_command()

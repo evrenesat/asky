@@ -1,13 +1,10 @@
 """Chat implementation for asky CLI."""
 
-import sys
 import argparse
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Optional
 
 from asky.config import (
     MODELS,
-    SUMMARIZATION_MODEL,
-    QUERY_EXPANSION_MAX_DEPTH,
 )
 from asky.core import (
     ConversationEngine,
@@ -16,6 +13,9 @@ from asky.core import (
     UsageTracker,
     construct_system_prompt,
     generate_summaries,
+    SessionManager,
+    get_shell_session_id,
+    set_shell_session_id,
 )
 from asky.storage import (
     get_history,
@@ -74,7 +74,10 @@ def load_context(continue_ids: str, summarize: bool) -> Optional[str]:
 
 
 def build_messages(
-    args: argparse.Namespace, context_str: str, query_text: str
+    args: argparse.Namespace,
+    context_str: str,
+    query_text: str,
+    session_manager: Optional[SessionManager] = None,
 ) -> List[Dict[str, str]]:
     """Build the initial message list for the conversation."""
     messages = [
@@ -86,7 +89,9 @@ def build_messages(
         },
     ]
 
-    if context_str:
+    if session_manager:
+        messages.extend(session_manager.build_context_messages())
+    elif context_str:
         messages.append(
             {
                 "role": "user",
@@ -111,13 +116,43 @@ def run_chat(args: argparse.Namespace, query_text: str) -> None:
 
     # Initialize Components
     usage_tracker = UsageTracker()
+    model_config = MODELS[args.model]
+
+    # Handle Sessions
+    session_manager = None
+    shell_session_id = get_shell_session_id()
+
+    # Explicit session start/resume
+    if getattr(args, "sticky_session", None):
+        session_manager = SessionManager(model_config, usage_tracker)
+        s = session_manager.start_or_resume(
+            args.sticky_session if args.sticky_session != "auto" else None
+        )
+        set_shell_session_id(s.id)
+        print(f"\n[Session S{s.id} ({s.name or 'auto'}) active]")
+
+    # Auto-resume from shell lock file
+    elif shell_session_id:
+        session_manager = SessionManager(model_config, usage_tracker)
+        session = session_manager.repo.get_session_by_id(shell_session_id)
+        if session and session.is_active:
+            session_manager.current_session = session
+            print(f"\n[Resuming session S{session.id} ({session.name or 'auto'})]")
+        else:
+            # Lock file points to an ended session, clear it
+            from asky.core import clear_shell_session
+
+            clear_shell_session()
+            session_manager = None
+
+    messages = build_messages(
+        args, context_str, query_text, session_manager=session_manager
+    )
 
     if args.deep_dive:
         registry = create_deep_dive_tool_registry()
     else:
         registry = create_default_tool_registry()
-
-    model_config = MODELS[args.model]
 
     engine = ConversationEngine(
         model_config=model_config,
@@ -127,6 +162,7 @@ def run_chat(args: argparse.Namespace, query_text: str) -> None:
         usage_tracker=usage_tracker,
         open_browser=args.open,
         deep_dive=args.deep_dive,
+        session_manager=session_manager,
     )
 
     # Run loop
@@ -139,9 +175,19 @@ def run_chat(args: argparse.Namespace, query_text: str) -> None:
             query_summary, answer_summary = generate_summaries(
                 query_text, final_answer, usage_tracker=usage_tracker
             )
+
+            # Save to global history
             save_interaction(
                 query_text, final_answer, args.model, query_summary, answer_summary
             )
+
+            # Save to session if active
+            if session_manager:
+                session_manager.save_turn(
+                    query_text, final_answer, query_summary, answer_summary
+                )
+                if session_manager.check_and_compact():
+                    print("[Session context compacted]")
 
         # Send Email if requested
         if final_answer and getattr(args, "mail_recipients", None):

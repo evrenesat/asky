@@ -1,5 +1,19 @@
 # Development Log
 
+## 2026-02-03 (Feat)
+
+- **Feat**: Implemented **Persistent Session Support** with automatic context compaction.
+  - Added `--sticky-session` (`-ss`) flag to start/resume conversation sessions.
+  - Implemented auto-incremental session IDs (e.g., `S1`, `S22`) and user-provided session names.
+  - Added `session_history` (`-sH`) to list recent and active sessions.
+  - Integrated **automatic compaction**: Sessions trigger compression when context reaches a configurable threshold (default 80%).
+  - Supported two compaction strategies: `summary_concat` (fast) and `llm_summary` (comprehensive).
+  - Enhanced numeric-id queries to support `S` prefix (e.g., `ask S1`) for printing session content.
+  - Supported `-o/--open` and `--mail` for session content export.
+  - Created `SessionRepository` and `SessionManager` for clean lifecycle management.
+  - **Shell-Sticky Sessions**: Sessions are now tied to each terminal instance (via parent shell PID). After using `-ss` once, subsequent calls in the same terminal auto-resume the session without needing the flag again. `--session-end` clears the association.
+  - Verified with comprehensive unit tests and regression testing.
+
 ## 2026-02-03 (Fix)
 
 - **Fix**: Updated logging handler to **clear logs at application start**.

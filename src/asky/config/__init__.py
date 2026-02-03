@@ -82,6 +82,16 @@ SUMMARIZE_ANSWER_PROMPT_TEMPLATE = _prompts.get(
     "summarize_answer",
     "Summarize the following answer into a short paragraph. Be sure to include all numerical values and dates.",
 )
+SUMMARIZE_SESSION_PROMPT = _prompts.get(
+    "summarize_session",
+    "Summarize this conversation history into a concise context summary.",
+)
+
+# Session
+_session = _CONFIG.get("session", {})
+SESSION_COMPACTION_THRESHOLD = _session.get("compaction_threshold", 80)
+SESSION_COMPACTION_STRATEGY = _session.get("compaction_strategy", "summary_concat")
+
 USER_PROMPTS = _CONFIG.get("user_prompts", {})
 
 # Custom Tools

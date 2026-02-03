@@ -47,6 +47,7 @@ class ConversationEngine:
         usage_tracker: Optional[UsageTracker] = None,
         open_browser: bool = False,
         deep_dive: bool = False,
+        session_manager: Optional[Any] = None,
     ):
         self.model_config = model_config
         self.tool_registry = tool_registry
@@ -55,6 +56,7 @@ class ConversationEngine:
         self.usage_tracker = usage_tracker
         self.open_browser = open_browser
         self.deep_dive = deep_dive
+        self.session_manager = session_manager
         self.start_time: float = 0
         self.final_answer: str = ""
         # Initialize crawler state if in deep dive mode
