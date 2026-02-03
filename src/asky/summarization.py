@@ -71,7 +71,8 @@ def generate_summaries(
     logger.debug(f"Answer: {answer}")
 
     # Generate Query Summary (if needed)
-    if len(query) > CONTINUE_QUERY_THRESHOLD:
+    # Generate Query Summary (if needed)
+    if len(query) > QUERY_SUMMARY_MAX_CHARS:
         query_summary = _summarize_content(
             content=query,
             prompt_template=SUMMARIZE_QUERY_PROMPT_TEMPLATE,
@@ -80,15 +81,20 @@ def generate_summaries(
             usage_tracker=usage_tracker,
         )
         logger.debug(f"Query Summary: {query_summary}")
+    else:
+        query_summary = query
 
-    # Generate Answer Summary (Always)
-    answer_summary = _summarize_content(
-        content=answer,
-        prompt_template=SUMMARIZE_ANSWER_PROMPT_TEMPLATE,
-        max_output_chars=ANSWER_SUMMARY_MAX_CHARS,
-        get_llm_msg_func=get_llm_msg_func,
-        usage_tracker=usage_tracker,
-    )
+    # Generate Answer Summary
+    if len(answer) > ANSWER_SUMMARY_MAX_CHARS:
+        answer_summary = _summarize_content(
+            content=answer,
+            prompt_template=SUMMARIZE_ANSWER_PROMPT_TEMPLATE,
+            max_output_chars=ANSWER_SUMMARY_MAX_CHARS,
+            get_llm_msg_func=get_llm_msg_func,
+            usage_tracker=usage_tracker,
+        )
+    else:
+        answer_summary = answer
     logger.debug(f"Answer Summary: {answer_summary}")
 
     return query_summary, answer_summary

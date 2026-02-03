@@ -1,5 +1,12 @@
 # Development Log
 
+## 2026-02-03 - Conditional Summarization
+
+### Changed
+- Refactored `generate_summaries` in `asky/core/engine.py` and `asky/summarization.py` to skip LLM summarization if the content is already shorter than the configured thresholds (`QUERY_SUMMARY_MAX_CHARS`, `ANSWER_SUMMARY_MAX_CHARS`).
+- Updated `asky/summarization.py` to use `QUERY_SUMMARY_MAX_CHARS` for query consistency.
+- Updated unit tests in `tests/test_llm.py` to verify that short content is returned as-is (previously empty string for queries, or summarized for answers).
+
 ## 2026-02-03 - Database Schema Consolidation
 
 **Summary**: Refactored database schema to consolidate `history` and `session_messages` tables into a single unified `messages` table, eliminating redundant data storage in session mode.

@@ -329,12 +329,18 @@ def generate_summaries(
             get_llm_msg_func=get_llm_msg,
             usage_tracker=usage_tracker,
         )
+    else:
+        query_summary = query
 
-    answer_summary = summarization._summarize_content(
-        content=answer,
-        prompt_template=SUMMARIZE_ANSWER_PROMPT_TEMPLATE,
-        max_output_chars=ANSWER_SUMMARY_MAX_CHARS,
-        get_llm_msg_func=get_llm_msg,
-        usage_tracker=usage_tracker,
-    )
+    if len(answer) > ANSWER_SUMMARY_MAX_CHARS:
+        answer_summary = summarization._summarize_content(
+            content=answer,
+            prompt_template=SUMMARIZE_ANSWER_PROMPT_TEMPLATE,
+            max_output_chars=ANSWER_SUMMARY_MAX_CHARS,
+            get_llm_msg_func=get_llm_msg,
+            usage_tracker=usage_tracker,
+        )
+    else:
+        answer_summary = answer
+
     return query_summary, answer_summary

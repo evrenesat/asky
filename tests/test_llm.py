@@ -202,32 +202,22 @@ def test_generate_summaries_short_query(mock_get_msg):
     # If query is short, it shouldn't call LLM for query summary
     mock_get_msg.return_value = {"content": "Answer summary"}
 
-    q_sum, a_sum = generate_summaries("Short", "Long answer")
+    q_sum, a_sum = generate_summaries("Short", "Long answer " * 50)
 
-    assert q_sum == ""  # Code logic: if len(query) <= MAX, q_sum = ""?
-    # Wait, let's check code.
-    # if len(query) > QUERY_SUMMARY_MAX_CHARS: ... else: query_summary = "" ?
-    # Actually looking at logic: query_summary = "" initially.
-    # IF too long -> summarize.
-    # So if short, it remains "".
-    # Wait, that might be a bug or intended?
-    # user probably wants the query itself if it's short?
-    # Let's check `generate_summaries` implementation in `llm.py`:
-    # query_summary = ""
-    # if len(query) > ...: ...
-    # It returns query_summary. So if short, it returns empty string?
-    # Let's re-read llm.py Step 24.
-    # query_summary = ""
-    # if len(query) > QUERY_SUMMARY_MAX_CHARS: ...
-    # return query_summary, answer_summary
-    # Yes, it returns empty string if query is short.
-    # That seems like a potential bug or feature (maybe storage handles empty summary by using query?).
-    # In `storage.py`, `save_interaction`:
-    # `q_text = q_sum if q_sum else query`
-    # So yes, empty implementation is fine.
-
-    assert q_sum == ""
+    assert q_sum == "Short"
     assert a_sum == "Answer summary"
+    assert mock_get_msg.call_count == 1
+
+
+@patch("asky.core.engine.get_llm_msg")
+def test_generate_summaries_short_answer(mock_get_msg):
+    # Short answer should return answer as-is without LLM call
+    mock_get_msg.return_value = {"content": "Summary"}
+
+    q_sum, a_sum = generate_summaries("Long query " * 20, "ShortAns")
+
+    assert q_sum == "Summary"
+    assert a_sum == "ShortAns"
     assert mock_get_msg.call_count == 1
 
 

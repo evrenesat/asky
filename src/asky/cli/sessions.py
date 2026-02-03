@@ -89,7 +89,7 @@ def print_session_command(
     full_text = "\n".join(full_content)
 
     if open_browser:
-        print(f"Opening Session S{session.id} in browser...")
+        print(f"Opening Session #{session.id} in browser...")
         render_to_browser(full_text)
     else:
         console = Console()
@@ -100,7 +100,7 @@ def print_session_command(
 
         recipients = [x.strip() for x in mail_recipients.split(",")]
         email_subject = (
-            subject or f"asky Session S{session.id}: {session.name or 'Untold'}"
+            subject or f"asky Session #{session.id}: {session.name or 'Untold'}"
         )
         send_email(recipients, email_subject, full_text)
 
