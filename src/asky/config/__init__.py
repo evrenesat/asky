@@ -86,3 +86,18 @@ USER_PROMPTS = _CONFIG.get("user_prompts", {})
 
 # Custom Tools
 CUSTOM_TOOLS = _CONFIG.get("tool", {})
+
+# Email
+_email = _CONFIG.get("email", {})
+SMTP_HOST = _email.get("smtp_host", "localhost")
+SMTP_PORT = _email.get("smtp_port", 587)
+SMTP_USE_SSL = _email.get("smtp_use_ssl", False)
+SMTP_USE_TLS = _email.get("smtp_use_tls", True)
+
+_smtp_user_env = _email.get("smtp_user_env", "ASKY_SMTP_USER")
+SMTP_USER = os.environ.get(_smtp_user_env) or _email.get("smtp_user")
+
+_smtp_password_env = _email.get("smtp_password_env", "ASKY_SMTP_PASSWORD")
+SMTP_PASSWORD = os.environ.get(_smtp_password_env) or _email.get("smtp_password")
+
+EMAIL_FROM_ADDRESS = _email.get("from_address") or SMTP_USER

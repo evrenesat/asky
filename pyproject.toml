@@ -4,12 +4,13 @@ build-backend = "hatchling.build"
 
 [project]
 name = "asky-cli"
-version = "0.1.6"
+version = "0.1.7"
 description = "AI-powered web search CLI with LLM tool-calling capabilities"
 readme = "README.md"
 license = "MIT"
 requires-python = ">=3.11"
 dependencies = [
+    "markdown>=3.10.1",
     "pyperclip>=1.11.0",
     "requests",
     "rich",

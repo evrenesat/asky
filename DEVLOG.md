@@ -8,6 +8,16 @@
 
 ## 2026-02-03 (Feat)
 
+- **Feat**: Implemented **email sending capability**.
+  - Added `markdown` dependency for server-side HTML generation.
+  - Created `email_sender.py` module for SMTP communication.
+  - Added `[email]` section to `config.toml` for SMTP settings.
+  - Introduced `--mail` (recipients) and `--subject` CLI flags.
+  - Supported emailing both new chat results and history records.
+  - Integrated units tests for email module and updated CLI tests.
+
+## 2026-02-03 (Feat)
+
 ## 2026-02-03 (Feat)
 
 - **Feat**: Implemented **`page_crawler` tool for Deep Dive mode**.

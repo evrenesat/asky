@@ -143,6 +143,14 @@ def run_chat(args: argparse.Namespace, query_text: str) -> None:
                 query_text, final_answer, args.model, query_summary, answer_summary
             )
 
+        # Send Email if requested
+        if final_answer and getattr(args, "mail_recipients", None):
+            from asky.email_sender import send_email
+
+            recipients = [x.strip() for x in args.mail_recipients.split(",")]
+            email_subject = args.subject or f"asky Result: {query_text[:50]}"
+            send_email(recipients, email_subject, final_answer)
+
     except KeyboardInterrupt:
         print("\nAborted by user.")
     except Exception as e:

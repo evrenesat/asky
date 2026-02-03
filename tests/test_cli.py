@@ -32,6 +32,8 @@ def mock_args():
         prompts=False,
         verbose=False,
         open=False,
+        mail_recipients=None,
+        subject=None,
         query=["test", "query"],
     )
 
@@ -205,7 +207,13 @@ def test_handle_print_answer_implicit(mock_print_answers):
     args.open = False
 
     assert handle_print_answer_implicit(args) is True
-    mock_print_answers.assert_called_with("1,2", args.summarize, open_browser=args.open)
+    mock_print_answers.assert_called_with(
+        "1,2",
+        args.summarize,
+        open_browser=args.open,
+        mail_recipients=args.mail_recipients,
+        subject=args.subject,
+    )
 
 
 def test_handle_print_answer_implicit_fail():
@@ -238,6 +246,8 @@ def test_main_flow(
         query=["test"],
         verbose=False,
         open=False,
+        mail_recipients=None,
+        subject=None,
     )
     mock_run.return_value = "Final Answer"
     mock_gen_sum.return_value = ("q_sum", "a_sum")
@@ -292,6 +302,8 @@ def test_main_flow_verbose(
         query=["test"],
         verbose=True,
         open=False,
+        mail_recipients=None,
+        subject=None,
     )
     mock_run.return_value = "Final Answer"
     mock_gen_sum.return_value = ("q_sum", "a_sum")

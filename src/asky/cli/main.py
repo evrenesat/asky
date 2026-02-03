@@ -115,6 +115,15 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Open the final answer in a browser using a markdown template.",
     )
+    parser.add_argument(
+        "--mail",
+        dest="mail_recipients",
+        help="Send the final answer via email to comma-separated addresses.",
+    )
+    parser.add_argument(
+        "--subject",
+        help="Subject line for the email (used with --mail).",
+    )
     parser.add_argument("query", nargs="*", help="The query string")
     return parser.parse_args()
 
@@ -154,7 +163,11 @@ def handle_print_answer_implicit(args) -> bool:
         possible_ids = re.split(r"[,\s]+", query_str)
         clean_ids_str = ",".join([x for x in possible_ids if x])
         history.print_answers_command(
-            clean_ids_str, args.summarize, open_browser=args.open
+            clean_ids_str,
+            args.summarize,
+            open_browser=args.open,
+            mail_recipients=args.mail_recipients,
+            subject=args.subject,
         )
         return True
     return False
@@ -174,7 +187,11 @@ def main() -> None:
         return
     if args.print_ids:
         history.print_answers_command(
-            args.print_ids, args.summarize, open_browser=args.open
+            args.print_ids,
+            args.summarize,
+            open_browser=args.open,
+            mail_recipients=args.mail_recipients,
+            subject=args.subject,
         )
         return
     if handle_print_answer_implicit(args):

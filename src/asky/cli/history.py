@@ -37,7 +37,11 @@ def show_history_command(history_arg: int) -> None:
 
 
 def print_answers_command(
-    ids_str: str, summarize: bool, open_browser: bool = False
+    ids_str: str,
+    summarize: bool,
+    open_browser: bool = False,
+    mail_recipients: str = None,
+    subject: str = None,
 ) -> None:
     """Print answers for specific history IDs."""
     try:
@@ -62,6 +66,14 @@ def print_answers_command(
 
     if open_browser:
         render_to_browser(context)
+
+    if mail_recipients:
+        from asky.email_sender import send_email
+
+        recipients = [x.strip() for x in mail_recipients.split(",")]
+        # Use provided subject or default
+        email_subject = subject or f"asky History: {ids_str}"
+        send_email(recipients, email_subject, context)
 
 
 def handle_cleanup_command(args) -> bool:

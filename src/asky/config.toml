@@ -245,3 +245,17 @@ id = "qwen/qwen3-30b-a3b-2507"
 api = "lmstudio"
 context_size = 32000
 
+# --- Email Settings ---
+[email]
+smtp_host = "smtp.gmail.com"
+smtp_port = 587
+# Use smtp_use_ssl = true for port 465 (direct SSL/TLS connection)
+# Use smtp_use_tls = true for port 587 (STARTTLS upgrade)
+smtp_use_ssl = false
+smtp_use_tls = true
+# Authentication - use env var (recommended) or direct value
+smtp_user_env = "ASKY_SMTP_USER"
+smtp_password_env = "ASKY_SMTP_PASSWORD"
+# Default sender address (optional, defaults to smtp_user)
+from_address = ""
+
