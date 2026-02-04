@@ -61,7 +61,7 @@ def execute_page_crawler(
     args: Dict[str, Any],
     crawler_state: PageCrawlerState,
     summarize: bool = False,
-    usage_tracker: Optional[UsageTracker] = None,
+    summarization_tracker: Optional[UsageTracker] = None,
 ) -> Dict[str, Any]:
     """Execute the page_crawler tool.
 
@@ -139,7 +139,7 @@ def execute_page_crawler(
                                 prompt_template=SUMMARIZE_ANSWER_PROMPT_TEMPLATE,
                                 max_output_chars=ANSWER_SUMMARY_MAX_CHARS,
                                 get_llm_msg_func=get_llm_msg,
-                                usage_tracker=usage_tracker,
+                                usage_tracker=summarization_tracker,
                             )
                         )
             return results

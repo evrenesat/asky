@@ -38,7 +38,6 @@ class ToolRegistry:
         self,
         call: Dict[str, Any],
         summarize: bool = False,
-        usage_tracker: Optional[Any] = None,
         crawler_state: Optional[Any] = None,
     ) -> Dict[str, Any]:
         """Dispatch a tool call to its registered executor."""
@@ -55,15 +54,13 @@ class ToolRegistry:
         if not executor:
             return {"error": f"Unknown tool: {name}"}
 
-        # Check executor signature to see if it accepts summarize, usage_tracker, or crawler_state
+        # Check executor signature to see if it accepts summarize or crawler_state
         try:
             sig = inspect.signature(executor)
             params = sig.parameters
             call_kwargs = {}
             if "summarize" in params:
                 call_kwargs["summarize"] = summarize
-            if "usage_tracker" in params:
-                call_kwargs["usage_tracker"] = usage_tracker
             if "crawler_state" in params:
                 call_kwargs["crawler_state"] = crawler_state
 

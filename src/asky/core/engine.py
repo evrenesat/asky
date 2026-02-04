@@ -122,7 +122,6 @@ class ConversationEngine:
                     result = self.tool_registry.dispatch(
                         call,
                         self.summarize,
-                        self.usage_tracker,
                         crawler_state=self.crawler_state if self.deep_dive else None,
                     )
                     logger.debug(
@@ -150,7 +149,10 @@ class ConversationEngine:
         return self.final_answer
 
 
-def create_default_tool_registry() -> ToolRegistry:
+def create_default_tool_registry(
+    usage_tracker: Optional[UsageTracker] = None,
+    summarization_tracker: Optional[UsageTracker] = None,
+) -> ToolRegistry:
     """Create a ToolRegistry with all default and custom tools."""
     registry = ToolRegistry()
 
@@ -174,7 +176,6 @@ def create_default_tool_registry() -> ToolRegistry:
     def url_content_executor(
         args: Dict[str, Any],
         summarize: bool = False,
-        usage_tracker: Optional[UsageTracker] = None,
     ) -> Dict[str, Any]:
         result = execute_get_url_content(args)
         # LLM can override the global summarize flag in its tool call
@@ -189,7 +190,7 @@ def create_default_tool_registry() -> ToolRegistry:
                             prompt_template=SUMMARIZE_ANSWER_PROMPT_TEMPLATE,
                             max_output_chars=ANSWER_SUMMARY_MAX_CHARS,
                             get_llm_msg_func=get_llm_msg,
-                            usage_tracker=usage_tracker,
+                            usage_tracker=summarization_tracker,
                         )
                     )
         return result
@@ -255,7 +256,10 @@ def create_default_tool_registry() -> ToolRegistry:
     return registry
 
 
-def create_deep_dive_tool_registry() -> ToolRegistry:
+def create_deep_dive_tool_registry(
+    usage_tracker: Optional[UsageTracker] = None,
+    summarization_tracker: Optional[UsageTracker] = None,
+) -> ToolRegistry:
     """Create a ToolRegistry for Deep Dive mode (only page_crawler & get_date_time)."""
     registry = ToolRegistry()
 
@@ -279,7 +283,9 @@ def create_deep_dive_tool_registry() -> ToolRegistry:
                 "required": [],  # Logic enforces one or the other
             },
         },
-        execute_page_crawler,
+        lambda args, crawler_state=None: execute_page_crawler(
+            args, crawler_state, summarization_tracker=summarization_tracker
+        ),
     )
 
     return registry
@@ -294,7 +300,7 @@ def run_conversation_loop(
     open_browser: bool = False,
 ) -> str:
     """Legacy wrapper for ConversationEngine.run()."""
-    registry = create_default_tool_registry()
+    registry = create_default_tool_registry(usage_tracker=usage_tracker)
     engine = ConversationEngine(
         model_config=model_config,
         tool_registry=registry,
@@ -312,8 +318,8 @@ def dispatch_tool_call(
     usage_tracker: Optional[UsageTracker] = None,
 ) -> Dict[str, Any]:
     """Legacy standalone tool dispatcher."""
-    registry = create_default_tool_registry()
-    return registry.dispatch(call, summarize, usage_tracker)
+    registry = create_default_tool_registry(usage_tracker=usage_tracker)
+    return registry.dispatch(call, summarize)
 
 
 def generate_summaries(

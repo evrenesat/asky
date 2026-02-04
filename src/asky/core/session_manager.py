@@ -232,10 +232,12 @@ class SessionManager:
         self,
         model_config: Dict[str, Any],
         usage_tracker: Optional[UsageTracker] = None,
+        summarization_tracker: Optional[UsageTracker] = None,
     ):
         self.repo = SQLiteHistoryRepository()
         self.model_config = model_config
         self.usage_tracker = usage_tracker
+        self.summarization_tracker = summarization_tracker
         self.current_session: Optional[Session] = None
         self.context_size = model_config.get("context_size", DEFAULT_CONTEXT_SIZE)
 
@@ -396,7 +398,7 @@ class SessionManager:
             content=conversation_blob,
             prompt_template=SUMMARIZE_SESSION_PROMPT,
             max_output_chars=4000,  # Large enough for context summary
-            usage_tracker=self.usage_tracker,
+            usage_tracker=self.summarization_tracker,
         )
 
         self.repo.compact_session(self.current_session.id, compacted_content)

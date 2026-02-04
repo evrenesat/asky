@@ -153,7 +153,7 @@ def parse_args() -> argparse.Namespace:
         help="End the current active session",
     )
     parser.add_argument(
-        "-sH",
+        "-sh",
         "--session-history",
         nargs="?",
         type=int,

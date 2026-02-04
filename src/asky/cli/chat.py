@@ -118,6 +118,7 @@ def run_chat(args: argparse.Namespace, query_text: str) -> None:
 
     # Initialize Components
     usage_tracker = UsageTracker()
+    summarization_tracker = UsageTracker()
     model_config = MODELS[args.model]
 
     # Handle Sessions
@@ -128,7 +129,9 @@ def run_chat(args: argparse.Namespace, query_text: str) -> None:
     # Explicit session create (-ss)
     if getattr(args, "sticky_session", None):
         session_name = " ".join(args.sticky_session)
-        session_manager = SessionManager(model_config, usage_tracker)
+        session_manager = SessionManager(
+            model_config, usage_tracker, summarization_tracker=summarization_tracker
+        )
         s = session_manager.create_session(session_name)
         set_shell_session_id(s.id)
         print(f"\n[Session {s.id} ('{s.name}') created and active]")
@@ -137,7 +140,9 @@ def run_chat(args: argparse.Namespace, query_text: str) -> None:
     # Explicit session resume (-rs)
     elif getattr(args, "resume_session", None):
         search_term = " ".join(args.resume_session)
-        session_manager = SessionManager(model_config, usage_tracker)
+        session_manager = SessionManager(
+            model_config, usage_tracker, summarization_tracker=summarization_tracker
+        )
         matches = session_manager.find_sessions(search_term)
 
         if not matches:
@@ -158,7 +163,9 @@ def run_chat(args: argparse.Namespace, query_text: str) -> None:
 
     # Auto-resume from shell lock file
     elif shell_session_id:
-        session_manager = SessionManager(model_config, usage_tracker)
+        session_manager = SessionManager(
+            model_config, usage_tracker, summarization_tracker=summarization_tracker
+        )
         session = session_manager.repo.get_session_by_id(shell_session_id)
         if session:
             session_manager.current_session = session
@@ -173,9 +180,13 @@ def run_chat(args: argparse.Namespace, query_text: str) -> None:
     )
 
     if args.deep_dive:
-        registry = create_deep_dive_tool_registry()
+        registry = create_deep_dive_tool_registry(
+            usage_tracker=usage_tracker, summarization_tracker=summarization_tracker
+        )
     else:
-        registry = create_default_tool_registry()
+        registry = create_default_tool_registry(
+            usage_tracker=usage_tracker, summarization_tracker=summarization_tracker
+        )
 
     engine = ConversationEngine(
         model_config=model_config,
@@ -196,7 +207,9 @@ def run_chat(args: argparse.Namespace, query_text: str) -> None:
         if final_answer:
             print("\n[Saving interaction...]")
             query_summary, answer_summary = generate_summaries(
-                query_text, final_answer, usage_tracker=usage_tracker
+                query_text,
+                final_answer,
+                usage_tracker=summarization_tracker,
             )
 
             # Save to session if active (session mode handles its own storage)
@@ -230,27 +243,32 @@ def run_chat(args: argparse.Namespace, query_text: str) -> None:
             traceback.print_exc()
     finally:
         # Report usage
-        if usage_tracker.usage:
-            print("\n=== SESSION TOKEN USAGE ===")
-            print(f"  {'Model':<15} {'Input':<10} {'Output':<10} {'Total':<10}")
-            print("  " + "-" * 45)
+        def print_tracker_usage(tracker: UsageTracker, title: str):
+            if tracker.usage:
+                print(f"\n=== {title} ===")
+                print(f"  {'Model':<15} {'Input':<10} {'Output':<10} {'Total':<10}")
+                print("  " + "-" * 45)
 
-            total_input = 0
-            total_output = 0
+                total_input = 0
+                total_output = 0
 
-            for m_alias in usage_tracker.usage.keys():
-                breakdown = usage_tracker.get_usage_breakdown(m_alias)
-                inp = breakdown["input"]
-                out = breakdown["output"]
-                total = inp + out
+                for m_alias in tracker.usage.keys():
+                    breakdown = tracker.get_usage_breakdown(m_alias)
+                    inp = breakdown["input"]
+                    out = breakdown["output"]
+                    total = inp + out
 
-                print(f"  {m_alias:<15} {inp:<10,} {out:<10,} {total:<10,}")
+                    print(f"  {m_alias:<15} {inp:<10,} {out:<10,} {total:<10,}")
 
-                total_input += inp
-                total_output += out
+                    total_input += inp
+                    total_output += out
 
-            print("  " + "-" * 45)
-            print(
-                f"  {'TOTAL':<15} {total_input:<10,} {total_output:<10,} {total_input + total_output:<10,}"
-            )
-            print("===========================\n")
+                print("  " + "-" * 45)
+                print(
+                    f"  {'TOTAL':<15} {total_input:<10,} {total_output:<10,} {total_input + total_output:<10,}"
+                )
+                print("===========================\n")
+
+        print_tracker_usage(usage_tracker, "SESSION TOKEN USAGE")
+        if summarization_tracker.usage:
+            print_tracker_usage(summarization_tracker, "SUMMARIZATION TOKEN USAGE")

@@ -15,6 +15,22 @@
 - `src/asky/cli/chat.py`: Updated usage reporting block.
 - `tests/test_usage_tracker.py`: Added new tests for split tracking.
 
+## 2026-02-04 - Summarization Usage Tracking
+
+**Summary**: Added separate usage tracking for summarization tasks to distinguish between conversation cost and overhead cost.
+
+**Changes**:
+- **Tracker Isolation**: Introduced a dedicated `summarization_tracker` instance alongside the main `usage_tracker`.
+- **Binding Strategy**: trackers are now instantiated in `chat.py` and bound to tool registries and session managers at creation time, ensuring consistent usage without complex threading through the engine loop.
+- **Reporting**: CLI now displays a second table "SUMMARIZATION TOKEN USAGE" when summarization occurs (e.g., during session compaction or URL summarization).
+
+**Files Modified**:
+- `src/asky/cli/chat.py`: Instantiated `summarization_tracker`, updated reporting.
+- `src/asky/core/engine.py`: Updated registry factories to accept and bind trackers.
+- `src/asky/core/registry.py`: Removed `usage_tracker` from dispatch logic.
+- `src/asky/core/page_crawler.py`: Updated signature to accept `summarization_tracker`.
+- `src/asky/core/session_manager.py`: Updated to use `summarization_tracker` for compaction.
+
 ---
 
 # Development Log
