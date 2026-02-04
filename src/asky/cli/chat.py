@@ -105,7 +105,7 @@ def build_messages(
 
 def run_chat(args: argparse.Namespace, query_text: str) -> None:
     """Run the chat conversation flow."""
-    from asky.core import DuplicateSessionError, clear_shell_session
+    from asky.core import clear_shell_session
 
     # Handle Context
     context_str = ""
@@ -125,21 +125,36 @@ def run_chat(args: argparse.Namespace, query_text: str) -> None:
     shell_session_id = get_shell_session_id()
 
     # Explicit session start/resume
+    # Explicit session create (-ss)
     if getattr(args, "sticky_session", None):
+        session_name = " ".join(args.sticky_session)
         session_manager = SessionManager(model_config, usage_tracker)
-        try:
-            s = session_manager.start_or_resume(
-                args.sticky_session if args.sticky_session != "auto" else None,
-                query=query_text,
-            )
-            set_shell_session_id(s.id)
-            print(f"\n[Session {s.id} ({s.name or 'auto'}) active]")
-        except DuplicateSessionError as e:
-            print(f"\nMultiple sessions named '{e.name}':")
-            for sid, sname, preview in e.sessions:
-                print(f'  {sid}: {sname} - "{preview}"')
-            print(f"\nUse: asky -ss {e.sessions[0][0]} to resume a specific session.")
+        s = session_manager.create_session(session_name)
+        set_shell_session_id(s.id)
+        print(f"\n[Session {s.id} ('{s.name}') created and active]")
+        return
+
+    # Explicit session resume (-rs)
+    elif getattr(args, "resume_session", None):
+        search_term = " ".join(args.resume_session)
+        session_manager = SessionManager(model_config, usage_tracker)
+        matches = session_manager.find_sessions(search_term)
+
+        if not matches:
+            print(f"Error: No sessions found matching '{search_term}'")
             return
+        elif len(matches) > 1:
+            print(f"Multiple sessions found for '{search_term}':")
+            for s in matches:
+                print(f"  {s.id}: {s.name or '(no name)'} ({s.created_at})")
+            return
+        else:
+            s = matches[0]
+            session_manager.current_session = s
+            set_shell_session_id(s.id)
+            print(f"\n[Resumed session {s.id} ('{s.name or 'auto'}')]")
+            if not query_text:
+                return
 
     # Auto-resume from shell lock file
     elif shell_session_id:

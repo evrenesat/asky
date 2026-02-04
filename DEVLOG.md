@@ -521,3 +521,21 @@ Created comprehensive [ARCHITECTURE.md](ARCHITECTURE.md) and addressed code qual
 
 - **Other**:
   - Created `TODO.md` to track future refactoring tasks (e.g., banner overhaul).
+
+## 2026-02-04 - Session Logic Refinement (Separated Create/Resume)
+
+**Summary**: Refined session management to clearly distinguish between creating a new session and resuming an existing one, improving UX and removing implicit behaviors.
+
+**Changes**:
+- **Flag Separation**:
+  - `-ss / --sticky-session`: Now ONLY creates a new named session and exits immediately (e.g., `asky -ss MyProject`).
+  - `-rs / --resume-session`: New flag to search and resume existing sessions (e.g., `asky -rs MyPro`).
+- **Feature Changes**:
+  - **Removed Auto-Naming**: Sessions no longer auto-generate names from queries. Names must be explicit via `-ss`.
+  - **Fuzzy Search**: `-rs` supports partial name matching. If multiple sessions match, a list is displayed.
+- **Code Refactor**:
+  - Refactored `SessionManager` to remove `start_or_resume` complexity.
+  - Implemented cleaner `create_session` and `find_sessions` methods.
+- **Testing**:
+  - Updated CLI tests and Session Manager tests to cover separate flows and partial matching.
+

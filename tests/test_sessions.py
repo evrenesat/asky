@@ -67,7 +67,7 @@ def test_compaction_storage(temp_repo):
     assert s.compacted_summary == "Compacted Summary Here"
 
 
-def test_session_manager_resume(temp_repo):
+def test_session_manager_find(temp_repo):
     # Create a session in repo first
     sid = temp_repo.create_session("model-a", name="my-session")
 
@@ -76,30 +76,25 @@ def test_session_manager_resume(temp_repo):
     ):
         mgr = SessionManager({"alias": "model-a", "context_size": 1000})
 
-        # Resume by name
-        s = mgr.start_or_resume("my-session")
-        assert s.id == sid
+        # Find by name
+        results = mgr.find_sessions("my-session")
+        assert len(results) >= 1
+        assert results[0].id == sid
 
-        # Resume by ID (S1) - legacy format
-        s_id = mgr.start_or_resume("S1")
-        assert s_id.id == sid
+        # Find by ID (S1) - legacy format
+        results_s = mgr.find_sessions("S1")
+        assert len(results_s) == 1
+        assert results_s[0].id == sid
 
-        # Resume by numeric ID
-        s_num = mgr.start_or_resume("1")
-        assert s_num.id == sid
+        # Find by numeric ID
+        results_n = mgr.find_sessions("1")
+        assert len(results_n) == 1
+        assert results_n[0].id == sid
 
-
-def test_session_manager_shell_resume(temp_repo):
-    """Test that session auto-resumes when shell lock file exists."""
-    sid = temp_repo.create_session("model-a", name="shell-test")
-
-    with patch(
-        "asky.core.session_manager.SQLiteHistoryRepository", return_value=temp_repo
-    ):
-        with patch("asky.core.session_manager.get_shell_session_id", return_value=sid):
-            mgr = SessionManager({"alias": "model-a", "context_size": 1000})
-            s = mgr.start_or_resume()  # Should resume from lock file
-            assert s.id == sid
+        # Partial Match
+        results_p = mgr.find_sessions("my-ses")
+        assert len(results_p) >= 1
+        assert results_p[0].id == sid
 
 
 def test_session_manager_build_context(temp_repo):

@@ -133,6 +133,7 @@ STOPWORDS = frozenset(
         "we",
         "our",
         "ours",
+        "ours",
         "ourselves",
         "you",
         "your",
@@ -157,6 +158,7 @@ STOPWORDS = frozenset(
         "themselves",
         "about",
         "tell",
+        "no",
     }
 )
 
@@ -219,15 +221,6 @@ def clear_shell_session() -> None:
         logger.info(f"Session lock file removed: {lock_file}")
 
 
-class DuplicateSessionError(Exception):
-    """Raised when multiple sessions match a name and user must choose."""
-
-    def __init__(self, name: str, sessions: List[Tuple[int, str, str]]):
-        self.name = name
-        self.sessions = sessions  # List of (id, name, preview)
-        super().__init__(f"Multiple sessions named '{name}'")
-
-
 class SessionManager:
     """Orchestrates persistent conversation sessions and compaction.
 
@@ -246,79 +239,55 @@ class SessionManager:
         self.current_session: Optional[Session] = None
         self.context_size = model_config.get("context_size", DEFAULT_CONTEXT_SIZE)
 
-    def start_or_resume(
-        self, session_name: Optional[str] = None, query: Optional[str] = None
-    ) -> Session:
-        """Start a new session or resume an existing one.
+    def create_session(self, name: str) -> Session:
+        """Create a new named session.
 
-        Args:
-            session_name: Name or ID to resume. If numeric, treated as ID.
-            query: Query text for auto-generating session name if creating new.
-
-        Returns:
-            The session object.
-
-        Raises:
-            DuplicateSessionError: If multiple sessions match the name.
+        args:
+            name: The name for the new session.
         """
-        # Case 1: Resume by explicit ID (numeric session_name)
-        if session_name and session_name.isdigit():
-            session_id = int(session_name)
-            session = self.repo.get_session_by_id(session_id)
-            if session:
-                self.current_session = session
-                return session
-            else:
-                # ID not found, create new with this as name
-                pass
-
-        # Case 2: Resume by name (including S-prefixed IDs for backwards compat)
-        if session_name:
-            # Handle legacy S prefix
-            if session_name.lower().startswith("s") and session_name[1:].isdigit():
-                session_id = int(session_name[1:])
-                session = self.repo.get_session_by_id(session_id)
-                if session:
-                    self.current_session = session
-                    return session
-
-            # Look up by name
-            matching_sessions = self.repo.get_sessions_by_name(session_name)
-
-            if len(matching_sessions) == 1:
-                # Exact match, resume it
-                self.current_session = matching_sessions[0]
-                return self.current_session
-            elif len(matching_sessions) > 1:
-                # Multiple matches - raise error with details for user
-                session_info = []
-                for s in matching_sessions:
-                    preview = self.repo.get_first_message_preview(s.id)
-                    session_info.append((s.id, s.name, preview))
-                raise DuplicateSessionError(session_name, session_info)
-            else:
-                # No match - create new with this name
-                sid = self.repo.create_session(
-                    self.model_config["alias"], name=session_name
-                )
-                self.current_session = self.repo.get_session_by_id(sid)
-                return self.current_session
-
-        # Case 3: No name provided - check shell lock file first
-        shell_session_id = get_shell_session_id()
-        if shell_session_id:
-            session = self.repo.get_session_by_id(shell_session_id)
-            if session:
-                self.current_session = session
-                return session
-            # Lock file points to deleted session, clear it
-            clear_shell_session()
-
-        # Case 4: Create new session with auto-generated name
-        auto_name = generate_session_name(query) if query else None
-        sid = self.repo.create_session(self.model_config["alias"], name=auto_name)
+        sid = self.repo.create_session(self.model_config["alias"], name=name)
         self.current_session = self.repo.get_session_by_id(sid)
         return self.current_session
+
+    def find_sessions(self, search_term: str) -> List[Session]:
+        """Find sessions matching the search term.
+
+        Search logic:
+        1. If numeric, exact ID match.
+        2. Exact name match.
+        3. Partial name match (case-insensitive).
+        4. Legacy 'S' prefix handling.
+        """
+        results = []
+        seen_ids = set()
+
+        def add(session: Optional[Session]):
+            if session and session.id not in seen_ids:
+                results.append(session)
+                seen_ids.add(session.id)
+
+        # 1. Exact ID
+        if search_term.isdigit():
+            add(self.repo.get_session_by_id(int(search_term)))
+
+        # 2. Legacy S-prefix
+        if search_term.lower().startswith("s") and search_term[1:].isdigit():
+            add(self.repo.get_session_by_id(int(search_term[1:])))
+
+        # 3. Name Search (Exact)
+        exact_matches = self.repo.get_sessions_by_name(search_term)
+        for s in exact_matches:
+            add(s)
+
+        # 4. Partial Scan
+        # Scan recent sessions (limit 200) for fuzzy matches
+        recent_sessions = self.repo.list_sessions(limit=200)
+        term_lower = search_term.lower()
+        for s in recent_sessions:
+            if s.name and term_lower in s.name.lower():
+                add(s)
+
+        return results
 
     def build_context_messages(self) -> List[Dict[str, str]]:
         """Retrieve session messages and format them for context."""

@@ -37,6 +37,7 @@ def mock_args():
         mail_recipients=None,
         subject=None,
         sticky_session=None,
+        resume_session=None,
         session_end=False,
         session_history=None,
         query=["test", "query"],

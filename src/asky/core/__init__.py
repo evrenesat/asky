@@ -12,8 +12,6 @@ from asky.core.engine import (
 )
 from asky.core.session_manager import (
     SessionManager,
-    DuplicateSessionError,
-    generate_session_name,
     get_shell_session_id,
     set_shell_session_id,
     clear_shell_session,

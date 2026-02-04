@@ -138,9 +138,14 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "-ss",
         "--sticky-session",
-        nargs="?",
-        const="auto",
-        help="Start or resume a persistent session (optional: provide session name)",
+        nargs="+",
+        help="Create and activate a new named session (then exits). Usage: -ss My Session Name",
+    )
+    parser.add_argument(
+        "-rs",
+        "--resume-session",
+        nargs="+",
+        help="Resume an existing session by ID or name (partial match supported).",
     )
     parser.add_argument(
         "--session-end",
@@ -249,7 +254,20 @@ def main() -> None:
         return
 
     # From here on, we need a query
-    if not args.query:
+    if not args.query and not any(
+        [
+            args.history is not None,
+            args.print_ids,
+            args.print_session,
+            args.delete_messages is not None,
+            args.delete_sessions is not None,
+            args.prompts,
+            args.session_history is not None,
+            args.session_end,
+            getattr(args, "sticky_session", None),
+            getattr(args, "resume_session", None),
+        ]
+    ):
         print("Error: Query argument is required.")
         return
 
