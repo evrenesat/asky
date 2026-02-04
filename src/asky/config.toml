@@ -198,15 +198,15 @@ You are in DEEP RESEARCH mode. You MUST perform at least {n} distinct web search
 
 # Template for DEEP DIVE mode (-dd).
 deep_dive = """
-You are in DEEP DIVE mode. Use the 'page_crawler' tool exclusively:
+You are in DEEP DIVE mode. You HAVE the capability to browse using 'page_crawler'. Follow these instructions:
 
 1. Start with page_crawler(url="<target>") to fetch initial page content and a numbered link list.
-2. Review the returned links (format: "1:link_text, 2:link_text, ...").
+2. Review the returned links (format: "1:link_text, 2:link_text, ..."), select IDs of the most useful ones to request contents of them.
 3. Request additional pages using page_crawler(link_ids="1,3,5") with comma-separated IDs.
 4. Repeat steps 2-3 to explore up to 25 relevant links within the same domain.
 5. Base your answer strictly on the retrieved content, not internal knowledge.
 
-IMPORTANT: Only page_crawler is available in this mode.
+IMPORTANT: Do NOT say "I cannot browse". You have the 'page_crawler' tool for this specific purpose. Use it!
 """
 
 # --- Session Settings ---
