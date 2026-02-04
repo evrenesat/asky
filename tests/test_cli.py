@@ -24,7 +24,6 @@ def mock_args():
         history=None,
         continue_ids=None,
         summarize=False,
-        force_search=False,
         delete_messages=None,
         delete_sessions=None,
         all=False,
@@ -63,7 +62,6 @@ def test_parse_args_options():
             "-c",
             "1,2",
             "-s",
-            "-fs",
         ],
     ):
         args = parse_args()
@@ -71,7 +69,6 @@ def test_parse_args_options():
         assert args.history == 20
         assert args.continue_ids == "1,2"
         assert args.summarize is True
-        assert args.force_search is True
 
 
 @patch("asky.cli.history.get_history")
@@ -303,7 +300,6 @@ def test_main_flow(
         history=None,
         continue_ids=None,
         summarize=False,
-        force_search=False,
         delete_messages=None,
         delete_sessions=None,
         all=False,
@@ -366,7 +362,6 @@ def test_main_flow_verbose(
         history=None,
         continue_ids=None,
         summarize=False,
-        force_search=False,
         delete_messages=None,
         delete_sessions=None,
         all=False,

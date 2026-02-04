@@ -175,8 +175,6 @@ This is the VERIFIED, CONFIRMED, and ACTUAL current date from the system clock. 
 
 Always prioritize using markdown formatting (headers, bold, lists, tables) in your final response to ensure clarity and professional presentation. """
 
-# Prompt appended when force_search is enabled (e.g., --force-search).
-force_search = """Unless you are asked to use a specific URL, always use web_search, never try to answer without using web_search. """
 
 # Global system prompt suffix.
 # Global system prompt suffix.

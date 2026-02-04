@@ -15,8 +15,6 @@ It (can be invoked as `asky` or `ask`) provides a powerful command-line interfac
 - **Custom Tools**: Expose any CLI command as a tool for the LLM. Define your own commands and parameters in `config.toml`.
 - **Intelligent Content Fetching**: Automatically strips HTML noise (scripts, styles) to provide clean text context to the models. It can also summarize the content of the URLs and use the summaries for chat context. 
 - **Conversation History**: Maintains a local SQLite database of your queries and answers (with their summaries), allowing for context-aware follow-up questions.
-- **Deep Research Mode**: Automatically performs multiple searches to provide comprehensive analysis of complex topics.
-- **Deep Dive Mode**: Allows models to recursively explore the links found on web pages for in-depth information gathering.
 - **Predefined Prompts**: Users can define and quickly invoke common prompt patterns using simple slashes (e.g., `/gn` for get latest news from The Guardian).
 - **Clipboard Integration**: Use `/cp` to expand the query with clipboard content.
 - **Token Efficient**: It counts token usage and keep the model informed about remaining context capacity to encourage it to finish the task before hitting the limit. Together with summaries, this makes asky very token efficient.
@@ -83,9 +81,10 @@ Query completed in 3.88 seconds
 
 --------------------------------------------------------------------------------
 ➜  ~ asky --help
-usage: asky [-h] [-m {gf,glmair,glmflash,q34t,q34,lfm,q8,q30,onano,omini}] [-d [DEEP_RESEARCH]] [-dd] [-c CONTINUE_IDS] [-s] [-fs] [--cleanup-db [CLEANUP_DB]] [--all]
-           [-H [HISTORY]] [-pa PRINT_IDS] [-p] [-v]
-           [query ...]
+usage: asky [-h] [-m {gf,glmair,glmflash,q34t,q34,lfm,q8,q30,onano,omini,qwenmax,qwenflash,qnext,nna3b,p4mini,On3b,Ogpt20,Ol370,Ogfl,gfl}] [-c CONTINUE_IDS] [-s]
+            [--delete-messages [DELETE_MESSAGES]] [--delete-sessions [DELETE_SESSIONS]] [--all] [-H [HISTORY]] [-pa PRINT_IDS] [-ps PRINT_SESSION] [-p] [-v] [-o]
+            [--mail MAIL_RECIPIENTS] [--subject SUBJECT] [-ss STICKY_SESSION [STICKY_SESSION ...]] [-rs RESUME_SESSION [RESUME_SESSION ...]] [-se] [-sh [SESSION_HISTORY]]
+            [query ...]
 
 Tool-calling CLI with model selection.
 
@@ -94,29 +93,36 @@ positional arguments:
 
 options:
   -h, --help            show this help message and exit
-  -m, --model {gf,glmair,glmflash,q34t,q34,lfm,q8,q30,onano,omini}
+  -m, --model {gf,list,of,configured,models}
                         Select the model alias
-  -d, --deep-research [DEEP_RESEARCH]
-                        Enable deep research mode (optional: specify min number of queries, default 5)
-  -dd, --deep-dive      Enable deep dive mode (extracts links and encourages reading more pages from same domain)
   -c, --continue-chat CONTINUE_IDS
                         Continue conversation with context from specific history IDs (comma-separated, e.g. '1,2').
   -s, --summarize       Enable summarize mode (summarizes URL content and uses summaries for chat context)
-  -fs, --force-search   Force the model to use web search (default: False).
-                        Helpful for avoiding hallucinations with small models
-  --delete-messages [ID|ID-ID|ID,ID]
-                        Delete specific history records
-  --delete-messages --all
-                        Clear **entire** message history (interactive confirm)
-  --delete-sessions [ID|ID-ID]
-                        Delete specific sessions
+  --delete-messages [DELETE_MESSAGES]
+                        Delete message history records. usage: --delete-messages [ID|ID-ID|ID,ID] or --delete-messages --all
+  --delete-sessions [DELETE_SESSIONS]
+                        Delete session records and their messages. usage: --delete-sessions [ID|ID-ID|ID,ID] or --delete-sessions --all
+  --all                 Used with --delete-messages or --delete-sessions to delete ALL records.
   -H, --history [HISTORY]
                         Show last N queries and answer summaries (default 10).
                         Use with --print-answer to print the full answer(s).
   -pa, --print-answer PRINT_IDS
                         Print the answer(s) for specific history IDs (comma-separated).
+  -ps, --print-session PRINT_SESSION
+                        Print session content by session ID or name.
   -p, --prompts         List all configured user prompts.
   -v, --verbose         Enable verbose output (prints config and LLM inputs).
+  -o, --open            Open the final answer in a browser using a markdown template.
+  --mail MAIL_RECIPIENTS
+                        Send the final answer via email to comma-separated addresses.
+  --subject SUBJECT     Subject line for the email (used with --mail).
+  -ss, --sticky-session STICKY_SESSION [STICKY_SESSION ...]
+                        Create and activate a new named session (then exits). Usage: -ss My Session Name
+  -rs, --resume-session RESUME_SESSION [RESUME_SESSION ...]
+                        Resume an existing session by ID or name (partial match supported).
+  -se, --session-end    End the current active session
+  -sh, --session-history [SESSION_HISTORY]
+                        Show last N sessions (default 10).
 ```
 
 **Deep research mode** (encourages model to perform multiple searches)

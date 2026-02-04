@@ -133,7 +133,6 @@ The CLI is modularized for maintainability:
 | `-m, --model` | Select model alias |
 | `-c, --continue-chat` | Continue with context from previous IDs |
 | `-s, --summarize` | Use summaries for context/URL content |
-| `-fs, --force-search` | Force web search |
 | `-H, --history [N]` | Show last N history entries |
 | `-pa, --print-answer` | Print specific answer(s) by ID |
 | `-ps, --print-session` | Print session content |

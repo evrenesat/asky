@@ -72,7 +72,6 @@ MODELS = _CONFIG["models"]
 # Prompts
 _prompts = _CONFIG["prompts"]
 SYSTEM_PROMPT = _prompts["system_prefix"]
-FORCE_SEARCH_PROMPT = _prompts["force_search"]
 SEARCH_SUFFIX = _prompts["search_suffix"]
 SYSTEM_PROMPT_SUFFIX = _prompts["system_suffix"]
 SUMMARIZE_QUERY_PROMPT_TEMPLATE = _prompts.get(

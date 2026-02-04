@@ -1,4 +1,18 @@
 
+## 2026-02-05 - Removed Force-Search Flag
+
+**Summary**: Removed the `--force-search` (`-fs`) flag and related code paths to simplify the interface and system prompt construction.
+
+**Changes**:
+- **CLI**: Removed `-fs` / `--force-search` from `parse_args` in `src/asky/cli/main.py`.
+- **Core**: Removed `force_search` parameter and logic from `construct_system_prompt` in `src/asky/core/prompts.py`.
+- **Config**: Removed `FORCE_SEARCH_PROMPT` and `force_search` template from `config.toml` and defaults.
+- **Cleanup**: Removed verbose configuration print for force-search.
+- **Docs**: Updated `ARCHITECTURE.md` and `DEVLOG.md`.
+- **Tests**: Updated `tests/test_cli.py` and `tests/test_llm.py` to match the new API.
+
+---
+
 ## 2026-02-05 - File-Based Custom Prompts
 
 **Summary**: Added support for reading custom prompts from external files using the `file://` prefix in `config.toml`. Includes validation for file existence, size, and content type.

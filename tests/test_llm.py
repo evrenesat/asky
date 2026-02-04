@@ -38,14 +38,10 @@ def test_parse_textual_tool_call_invalid():
 
 def test_construct_system_prompt_modes():
     # Basic
-    p1 = construct_system_prompt(False)
+    p1 = construct_system_prompt()
     assert "DEEP RESEARCH mode" not in p1
     assert "DEEP DIVE mode" not in p1
     assert "always use web_search" not in p1
-
-    # Force Search
-    p4 = construct_system_prompt(True)
-    assert "always use web_search" in p4
 
 
 def test_extract_calls_native():

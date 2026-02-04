@@ -102,7 +102,6 @@ def print_config(
     print("\n=== CONFIGURATION ===")
     print(f"Selected Model: {args.model}")
     print(f"Summarize: {args.summarize}")
-    print(f"Force Search: {args.force_search}")
     print("-" * 20)
 
     print(f"DEFAULT_MODEL: {DEFAULT_MODEL}")

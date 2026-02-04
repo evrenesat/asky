@@ -78,7 +78,6 @@ def load_config() -> Dict[str, Any]:
             },
             "prompts": {
                 "system_prefix": "",
-                "force_search": "",
                 "system_suffix": "",
             },
             "user_prompts": {},

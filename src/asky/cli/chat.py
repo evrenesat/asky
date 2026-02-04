@@ -83,7 +83,7 @@ def build_messages(
     messages = [
         {
             "role": "system",
-            "content": construct_system_prompt(args.force_search),
+            "content": construct_system_prompt(),
         },
     ]
 

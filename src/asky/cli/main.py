@@ -48,13 +48,6 @@ def parse_args() -> argparse.Namespace:
         help="Enable summarize mode (summarizes URL content and uses summaries for chat context)",
     )
     parser.add_argument(
-        "-fs",
-        "--force-search",
-        action="store_true",
-        help="Force the model to use web search (default: False).\n"
-        "Helpful for avoiding hallucinations with small models",
-    )
-    parser.add_argument(
         "--delete-messages",
         nargs="?",
         const="interactive",
@@ -132,6 +125,7 @@ def parse_args() -> argparse.Namespace:
         help="Resume an existing session by ID or name (partial match supported).",
     )
     parser.add_argument(
+        "-se",
         "--session-end",
         action="store_true",
         help="End the current active session",
