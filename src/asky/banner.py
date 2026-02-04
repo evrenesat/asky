@@ -39,6 +39,7 @@ class BannerState:
     session_name: Optional[str] = None
     session_msg_count: int = 0
     total_sessions: int = 0
+    status_message: Optional[str] = None
 
     # Stats
     token_usage: Dict[str, Dict[str, int]] = field(default_factory=dict)
@@ -60,24 +61,24 @@ def display(lines):
     console.print()
 
 
-def mini():
-    """Mini version"""
-    display(
-        [
-            f"[{D}] ╭[{G}]∩[/{G}]─────[{G}]∩[/{G}]╮[/{D}] [{M1}]a[/{M1}]",
-            f"[{D}] │[/{D}] [{G}]▷[/{G}] [{D}][{N}]ω[/{N}][/{D}] [{G}]_[/{G}] [{D}]│[/{D}] [{M2}]s[/{M2}]",
-            f"[{D}] │[/{D}] [{P}]◠[/{P}]   [{P}]◠[/{P}] [{D}]│[/{D}] [{M3}]k[/{M3}]",
-            f"[{D}] ╰───────╯[/{D}] [{M4}]y[/{M4}]",
-        ]
-    )
+# def mini():
+#     """Mini version"""
+#     display(
+#         [
+#             f"[{D}] ╭[{G}]∩[/{G}]─────[{G}]∩[/{G}]╮[/{D}] [{M1}]a[/{M1}]",
+#             f"[{D}] │[/{D}] [{G}]▷[/{G}] [{D}][{N}]ω[/{N}][/{D}] [{G}]_[/{G}] [{D}]│[/{D}] [{M2}]s[/{M2}]",
+#             f"[{D}] │[/{D}] [{P}]◠[/{P}]   [{P}]◠[/{P}] [{D}]│[/{D}] [{M3}]k[/{M3}]",
+#             f"[{D}] ╰───────╯[/{D}] [{M4}]y[/{M4}]",
+#         ]
+#     )
 
 
 def get_banner(state: BannerState) -> Panel:
     """Create a side-by-side banner with an icon and configuration info using BannerState."""
     icon_lines = [
         f"[{D}] ╭[{G}]∩[/{G}]─────[{G}]∩[/{G}]╮[/{D}] [{M1}]a[/{M1}]",
-        f"[{D}] │[/{D}] [{G}]▷[/{G}] [{D}][{N}]ω[/{N}][/{D}] [{G}]_[/{G}] [{D}]│[/{D}] [{M2}]s[/{M2}]",
-        f"[{D}] │[/{D}] [{P}]◠[/{P}]   [{P}]◠[/{P}] [{D}]│[/{D}] [{M3}]k[/{M3}]",
+        f"[{D}] │[/{D}] [{G}]>[/{G}] [{D}][{N}]ω[/{N}][/{D}] [{G}]_[/{G}] [{D}]│[/{D}] [{M2}]s[/{M2}]",
+        f"[{D}] │[/{D}] [{P}]◠[/{P}]   [{P}]❞[/{P}] [{D}]│[/{D}] [{M3}]k[/{M3}]",
         f"[{D}] ╰───────╯[/{D}] [{M4}]y[/{M4}]",
     ]
     icon_text = Text.from_markup("\n".join(icon_lines))
@@ -135,4 +136,11 @@ def get_banner(state: BannerState) -> Panel:
     layout_table.add_column(ratio=1)
     layout_table.add_row(icon_text, grid)
 
-    return Panel(layout_table, box=box.ROUNDED, border_style="dim", padding=(0, 1))
+    return Panel(
+        layout_table,
+        box=box.ROUNDED,
+        border_style="dim",
+        padding=(0, 1),
+        subtitle=state.status_message,
+        subtitle_align="right",
+    )

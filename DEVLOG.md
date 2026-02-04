@@ -1,6 +1,27 @@
 # Development Log
 
-## 2026-02-04 - Token Tracking Refinement
+## 2026-02-04 - Banner Redraw Bug Fix
+
+**Summary**: Fixed critical bugs with banner display and extracted interface rendering to a proper module.
+
+**Bugs Fixed**:
+1. **Screen clearing after answer**: The `finally` block was calling `redraw_interface()` after the engine printed the final answer, making it unreadable. Removed.
+2. **Double banner at end**: The engine was printing the answer AND the interface redraw was showing it from messages. Fixed by skipping engine's print when `display_callback` is provided.
+3. **Summarizer stats always zero**: `InterfaceRenderer` only used the main tracker. Now combines both `usage_tracker` and `summarization_tracker` for display.
+
+**Refactoring**:
+- Extracted `redraw_interface` from `run_chat()` closure to `InterfaceRenderer` class in `cli/display.py`.
+- Removed redundant `show_banner(args)` call in `main.py`.
+
+**Files Modified**:
+- `src/asky/cli/display.py` (NEW): `InterfaceRenderer` class with `_get_combined_token_usage()`.
+- `src/asky/cli/chat.py`: Uses `InterfaceRenderer`, passes both trackers.
+- `src/asky/core/engine.py`: Skips printing answer when in live mode.
+- `src/asky/cli/main.py`: Removed redundant `show_banner` call.
+
+---
+
+## 2026-02-04 - Rate Limit Status Bar
 
 **Summary**: Separated input and output token tracking in `UsageTracker` to provide more granular usage reporting.
 
@@ -574,3 +595,18 @@ Created comprehensive [ARCHITECTURE.md](ARCHITECTURE.md) and addressed code qual
 - **Testing**:
   - Updated CLI tests and Session Manager tests to cover separate flows and partial matching.
 
+## 2026-02-04 - Rate Limit Status Bar
+
+**Summary**: Implemented a status bar in the CLI banner to display rate limit warnings (429 errors) and other system messages in real-time without polluting the chat log.
+
+**Changes**:
+- **Banner UI**: Updated `BannerState` and `get_banner` in `banner.py` to support a `status_message` displayed as a right-aligned subtitle.
+- **API Client**: Updated `get_llm_msg` in `api_client.py` to accept a `status_callback`. It now invokes this callback with "Retrying in X seconds..." when a 429 error occurs, and clears it on success.
+- **Engine Support**: Updated `ConversationEngine` in `engine.py` to bridge the API client's status updates to the CLI display loop.
+- **CLI Integration**: Updated `chat.py` to redraw the interface with the current status message.
+- **Testing**: Added `tests/test_api_client_status.py` to verify the callback logic in isolation.
+
+**Verification**:
+- Verified visually using a reproduction script.
+- Verified logic with new unit tests.
+- Ran full test suite (99 passed) to ensure no regressions.

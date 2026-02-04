@@ -167,15 +167,14 @@ def test_run_conversation_loop_basic(mock_dispatch, mock_get_msg):
     assert mock_get_msg.call_count == 2
     assert mock_dispatch.call_count == 1
 
-    # Check that tool output was appended to messages
-    assert len(messages) == 3
-    # The loop breaks when no calls are returned. The final message IS NOT appended to messages list in the code.
-    # It just returns final_answer.
-    # So messages should contain: System, Tool Call (from LLM), Tool Result.
-    # Let's verify messages content
+    # Check that tool output and final assistant answer were appended to messages
+    # Messages: System, Tool Call, Tool Result, Final Assistant Answer
+    assert len(messages) == 4
     assert messages[1] == msg_tool_call
     assert messages[2]["role"] == "tool"
     assert messages[2]["tool_call_id"] == "call_1"
+    assert messages[3]["role"] == "assistant"
+    assert messages[3]["content"] == "Final Answer"
 
 
 @patch("asky.core.engine.get_llm_msg")
@@ -249,6 +248,8 @@ def test_render_to_browser(
     written_content = mock_temp.write.call_args[0][0]
     assert "Test Markdown" in written_content
     mock_browser_open.assert_called_with(f"file://{mock_temp.name}")
+
+
 @patch("asky.core.engine.get_llm_msg")
 @patch("asky.core.engine.ToolRegistry.dispatch")
 def test_conversation_engine_tool_usage_tracking(mock_dispatch, mock_get_msg):

@@ -5,7 +5,7 @@ import logging
 import os
 import requests
 import time
-from typing import Any, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional
 
 
 logger = logging.getLogger(__name__)
@@ -58,6 +58,7 @@ def get_llm_msg(
     model_alias: Optional[str] = None,
     usage_tracker: Optional[UsageTracker] = None,
     tool_schemas: Optional[List[Dict[str, Any]]] = None,
+    status_callback: Optional[Callable[[Optional[str]], None]] = None,
 ) -> Dict[str, Any]:
     """Send messages to the LLM and get a response."""
     # Importing here to avoid circular dependencies during initialization
@@ -149,6 +150,10 @@ def get_llm_msg(
             if usage_tracker and model_alias:
                 usage_tracker.add_usage(model_alias, prompt_tokens, completion_tokens)
 
+            # Clear any status message if we succeeded
+            if status_callback:
+                status_callback(None)
+
             return response_message
         except requests.exceptions.HTTPError as e:
             if e.response is not None and e.response.status_code == 429:
@@ -165,9 +170,13 @@ def get_llm_msg(
                         wait_time = current_backoff
                         current_backoff = min(current_backoff * 2, MAX_BACKOFF)
 
-                    logger.info(
+                    msg = (
                         f"Rate limit exceeded (429). Retrying in {wait_time} seconds..."
                     )
+                    logger.info(msg)
+                    if status_callback:
+                        status_callback(msg)
+
                     time.sleep(wait_time)
                     continue
             raise e

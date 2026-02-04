@@ -95,6 +95,11 @@ class ConversationEngine:
                 if display_callback:
                     display_callback(turn)
 
+                # Wrap display_callback to match api_client expectation
+                def status_reporter(msg: Optional[str]):
+                    if display_callback:
+                        display_callback(turn, status_message=msg)
+
                 msg = get_llm_msg(
                     self.model_config["id"],
                     messages,
@@ -104,16 +109,27 @@ class ConversationEngine:
                     usage_tracker=self.usage_tracker,
                     # Pass schemas from registry
                     tool_schemas=self.tool_registry.get_schemas(),
+                    status_callback=status_reporter,
                 )
 
                 calls = extract_calls(msg, turn)
                 if not calls:
                     self.final_answer = strip_think_tags(msg.get("content", ""))
-                    console = Console()
-                    if is_markdown(self.final_answer):
-                        console.print(Markdown(self.final_answer))
+
+                    # Add the final assistant message to conversations for display
+                    messages.append({"role": "assistant", "content": self.final_answer})
+
+                    # If display_callback is provided (live mode), redraw the interface
+                    # to show the conversation including the final answer.
+                    if display_callback:
+                        display_callback(turn)
                     else:
-                        console.print(self.final_answer)
+                        # No callback, print the answer directly
+                        console = Console()
+                        if is_markdown(self.final_answer):
+                            console.print(Markdown(self.final_answer))
+                        else:
+                            console.print(self.final_answer)
 
                     if self.open_browser:
                         render_to_browser(self.final_answer)

@@ -289,8 +289,10 @@ def main() -> None:
             ANSWER_SUMMARY_MAX_CHARS,
         )
 
-    # Show banner
-    show_banner(args)
+    # Note: When LIVE_BANNER is enabled, the InterfaceRenderer in run_chat
+    # handles all banner display. When disabled, no banner is shown during chat.
+    # The old show_banner() call here was redundant because the first redraw
+    # in engine.run() would immediately clear it anyway.
 
     # Run Chat
     chat.run_chat(args, query_text)
