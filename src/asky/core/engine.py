@@ -92,9 +92,6 @@ class ConversationEngine:
                 if messages and messages[0]["role"] == "system":
                     messages[0]["content"] = original_system_prompt + status_msg
 
-                if display_callback:
-                    display_callback(turn)
-
                 # Wrap display_callback to match api_client expectation
                 def status_reporter(msg: Optional[str]):
                     if display_callback:
@@ -119,10 +116,13 @@ class ConversationEngine:
                     # Add the final assistant message to conversations for display
                     messages.append({"role": "assistant", "content": self.final_answer})
 
-                    # If display_callback is provided (live mode), redraw the interface
-                    # to show the conversation including the final answer.
+                    # If display_callback is provided (live mode), notify that the final
+                    # answer is ready. Pass is_final=True so the callback can render
+                    # only the answer without re-drawing the banner (avoiding double banner).
                     if display_callback:
-                        display_callback(turn)
+                        display_callback(
+                            turn, is_final=True, final_answer=self.final_answer
+                        )
                     else:
                         # No callback, print the answer directly
                         console = Console()
@@ -161,9 +161,9 @@ class ConversationEngine:
                         }
                     )
 
-                    # Real-time update after tool execution
-                    if display_callback:
-                        display_callback(turn)
+                # Redraw interface after processing all tool calls for this turn
+                if display_callback:
+                    display_callback(turn)
 
             if turn >= MAX_TURNS:
                 logger.info("Error: Max turns reached.")

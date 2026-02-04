@@ -1,5 +1,34 @@
 # Development Log
 
+## 2026-02-04 - In-Place Banner Updates with rich.Live
+
+**Summary**: Refactored banner display to use `rich.Live` for in-place multi-line updates, preserving terminal history.
+
+**Problem**: The previous approach used `clear_screen()` which:
+- Destroyed user's terminal history/context
+- Made it impossible to continue work in the same shell after using asky
+- Caused double banner when scrolling up
+
+**Solution**: Replaced screen-clearing with `rich.Live` context manager that updates the banner in-place using ANSI cursor control.
+
+**Changes**:
+- Rewrote `InterfaceRenderer` in `display.py` to use `rich.Live`:
+  - `start_live()`: Starts the Live context with initial banner
+  - `update_banner()`: Updates banner in-place during execution
+  - `stop_live()`: Stops Live before printing final output
+  - `print_final_answer()`: Prints answer normally after stopping Live
+- Updated `chat.py` to manage Live lifecycle with proper cleanup in `finally` block
+- Removed `clear_screen()` entirely
+
+**Benefits**:
+- Terminal history preserved (can scroll up to see previous commands)
+- Single banner that updates in-place
+- Final answer prints normally below banner
+- Clean exit on keyboard interrupt
+
+---
+
+
 ## 2026-02-04 - Banner Redraw Bug Fix
 
 **Summary**: Fixed critical bugs with banner display and extracted interface rendering to a proper module.

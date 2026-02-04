@@ -3,7 +3,9 @@
 from typing import Dict, List, Optional, Any
 
 from rich.console import Console
+from rich.live import Live
 from rich.markdown import Markdown
+from rich.panel import Panel
 
 from asky.banner import get_banner, BannerState
 from asky.config import (
@@ -16,7 +18,7 @@ from asky.storage import get_db_record_count
 
 
 class InterfaceRenderer:
-    """Handles rendering of the CLI interface including banner and conversation history."""
+    """Handles rendering of the CLI interface with in-place banner updates using rich.Live."""
 
     def __init__(
         self,
@@ -34,24 +36,38 @@ class InterfaceRenderer:
         self.session_manager = session_manager
         self.messages = messages or []
         self.console = Console()
+        self.live: Optional[Live] = None
 
-    def clear_screen(self):
-        """Clear the terminal screen."""
-        import os
+    def start_live(self) -> None:
+        """Start the Live context for in-place banner updates."""
+        initial_banner = self._build_banner(current_turn=0)
+        self.live = Live(
+            initial_banner,
+            console=self.console,
+            refresh_per_second=4,
+            transient=False,  # Keep the final banner visible after stopping
+        )
+        self.live.start()
 
-        os.system("cls" if os.name == "nt" else "clear")
-
-    def render(self, current_turn: int, status_message: Optional[str] = None) -> None:
-        """Render the full interface: clear screen, show banner, show conversation."""
-        self.clear_screen()
-        self._render_banner(current_turn, status_message)
-        self._render_conversation()
-
-    def render_banner_only(
+    def update_banner(
         self, current_turn: int, status_message: Optional[str] = None
     ) -> None:
-        """Render just the banner without clearing screen or showing conversation."""
-        self._render_banner(current_turn, status_message)
+        """Update the banner in-place without screen clearing."""
+        if self.live:
+            banner = self._build_banner(current_turn, status_message)
+            self.live.update(banner)
+
+    def stop_live(self) -> None:
+        """Stop the Live context (call before printing final output)."""
+        if self.live:
+            self.live.stop()
+            self.live = None
+
+    def print_final_answer(self, answer: str) -> None:
+        """Print the final answer normally (after stopping Live)."""
+        if answer:
+            self.console.print(f"\n[bold blue]Assistant[/]:")
+            self.console.print(Markdown(answer))
 
     def _get_combined_token_usage(self) -> Dict[str, Dict[str, int]]:
         """Combine token usage from main and summarization trackers."""
@@ -65,10 +81,10 @@ class InterfaceRenderer:
                     combined[alias] = dict(usage)
         return combined
 
-    def _render_banner(
+    def _build_banner(
         self, current_turn: int, status_message: Optional[str] = None
-    ) -> None:
-        """Build and print the banner."""
+    ) -> Panel:
+        """Build and return the banner Panel (for use with Live)."""
         model_id = self.model_config["id"]
 
         sum_alias = SUMMARIZATION_MODEL
@@ -111,22 +127,4 @@ class InterfaceRenderer:
             status_message=status_message,
         )
 
-        banner = get_banner(state)
-        self.console.print(banner)
-
-    def _render_conversation(self) -> None:
-        """Print conversation history (skipping system messages)."""
-        for m in self.messages:
-            role = m.get("role")
-            content = m.get("content", "")
-
-            if role == "system":
-                continue
-
-            if role == "user":
-                self.console.print(f"\n[bold green]User[/]: {content}")
-            elif role == "assistant":
-                if content:
-                    self.console.print(f"\n[bold blue]Assistant[/]:")
-                    self.console.print(Markdown(content))
-            # Tool outputs are shown in banner statistics, no need to print
+        return get_banner(state)

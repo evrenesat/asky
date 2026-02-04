@@ -208,11 +208,27 @@ def run_chat(args: argparse.Namespace, query_text: str) -> None:
     )
 
     # Create display callback for live banner mode
-    def display_callback(current_turn: int, status_message: Optional[str] = None):
-        renderer.render(current_turn, status_message)
+    def display_callback(
+        current_turn: int,
+        status_message: Optional[str] = None,
+        is_final: bool = False,
+        final_answer: Optional[str] = None,
+    ):
+        if is_final:
+            # Stop the Live display before printing final answer
+            renderer.stop_live()
+            if final_answer:
+                renderer.print_final_answer(final_answer)
+        else:
+            # Update banner in-place
+            renderer.update_banner(current_turn, status_message)
 
     # Run loop
     try:
+        # Start Live banner display if enabled
+        if LIVE_BANNER:
+            renderer.start_live()
+
         display_cb = display_callback if LIVE_BANNER else None
         final_answer = engine.run(messages, display_callback=display_cb)
 
@@ -254,3 +270,6 @@ def run_chat(args: argparse.Namespace, query_text: str) -> None:
             import traceback
 
             traceback.print_exc()
+    finally:
+        # Ensure Live is stopped on any exit path
+        renderer.stop_live()
