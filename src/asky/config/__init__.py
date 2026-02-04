@@ -52,7 +52,7 @@ SUMMARIZATION_INPUT_LIMIT = int(
 )
 
 # Database
-_db_env_var_name = _gen.get("db_path_env_var", "SEARXNG_HISTORY_DB_PATH")
+_db_env_var_name = _gen.get("db_path_env_var", "ASKY_DB_PATH")
 _env_path = os.environ.get(_db_env_var_name)
 
 if _env_path:

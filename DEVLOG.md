@@ -440,3 +440,58 @@
   - Added unit test coverage for hash stripping and deduplication in `tests/test_html.py`.
 
 
+
+## 2026-02-04
+
+### Architecture Documentation & Code Cleanup
+
+Created comprehensive [ARCHITECTURE.md](ARCHITECTURE.md) and addressed code quality issues.
+
+- **Storage Consolidation**: 
+  - Merged  dataclass into .
+  - Removed redundant .
+  - Updated  to use shared interface.
+
+- **CLI Improvements**:
+  - **Safety**: Warning: --all must be used with --delete-messages to confirm deletion.
+Deleted all 1 session records and their messages. now requires explicit  or  flags to prevent accidental deletion.
+  - **Output**: Removed legacy "S" prefixes from session ID displays (e.g., "S1" -> "1").
+  - **Docs**: Updated  to reference checking  instead of legacy .
+
+- **Configuration**:
+  - Renamed  to  in , , and .
+
+- **Testing**:
+  - Created  with an autouse fixture to isolate tests from the user's environment (mocks  and ).
+  - Fixed  execution by mocking .
+  - All 94 tests passing.
+
+- **Other**:
+  - Created  to track future refactoring tasks (e.g., banner overhaul).
+
+## 2026-02-04
+
+### Architecture Documentation & Code Cleanup
+
+Created comprehensive [ARCHITECTURE.md](ARCHITECTURE.md) and addressed code quality issues.
+
+- **Storage Consolidation**: 
+  - Merged `Session` dataclass into `storage/interface.py`.
+  - Removed redundant `storage/session.py`.
+  - Updated `storage/sqlite.py` to use shared interface.
+
+- **CLI Improvements**:
+  - **Safety**: `asky --all` now requires explicit `--delete-messages` or `--delete-sessions` flags to prevent accidental deletion.
+  - **Output**: Removed legacy "S" prefixes from session ID displays (e.g., "S1" -> "1").
+  - **Docs**: Updated `README.md` to reference checking `--delete-messages` instead of legacy `--cleanup-db`.
+
+- **Configuration**:
+  - Renamed `SEARXNG_HISTORY_DB_PATH` to `ASKY_DB_PATH` in `config.toml`, `config/__init__.py`, and `storage/sqlite.py`.
+
+- **Testing**:
+  - Created `tests/conftest.py` with an autouse fixture to isolate tests from the user's environment (mocks `HOME` and `ASKY_DB_PATH`).
+  - Fixed `test_main_flow` execution by mocking `SUMMARIZATION_MODEL`.
+  - All 94 tests passing.
+
+- **Other**:
+  - Created `TODO.md` to track future refactoring tasks (e.g., banner overhaul).

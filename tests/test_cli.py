@@ -200,8 +200,9 @@ def test_handle_delete_messages_all(mock_delete):
     args.delete_messages = None
     args.all = True
 
-    assert handle_delete_messages(args) is True
-    mock_delete.assert_called_with(delete_all=True)
+    assert handle_delete_messages(args) is False  # Should fail now
+    # We could also check for printed warning, but return value check is sufficient
+    mock_delete.assert_not_called()
 
 
 @patch("asky.storage.delete_sessions")
@@ -278,9 +279,12 @@ def test_main_flow(
     mock_run.return_value = "Final Answer"
     mock_gen_sum.return_value = ("q_sum", "a_sum")
 
-    with patch(
-        "asky.cli.main.MODELS",
-        {"gf": {"id": "gemini-flash-latest"}, "lfm": {"id": "llama-fallback"}},
+    with (
+        patch(
+            "asky.cli.main.MODELS",
+            {"gf": {"id": "gemini-flash-latest"}, "lfm": {"id": "llama-fallback"}},
+        ),
+        patch("asky.cli.main.SUMMARIZATION_MODEL", "gf"),
     ):
         main()
 
@@ -339,9 +343,12 @@ def test_main_flow_verbose(
     mock_run.return_value = "Final Answer"
     mock_gen_sum.return_value = ("q_sum", "a_sum")
 
-    with patch(
-        "asky.cli.main.MODELS",
-        {"gf": {"id": "gemini-flash-latest"}, "lfm": {"id": "llama-fallback"}},
+    with (
+        patch(
+            "asky.cli.main.MODELS",
+            {"gf": {"id": "gemini-flash-latest"}, "lfm": {"id": "llama-fallback"}},
+        ),
+        patch("asky.cli.main.SUMMARIZATION_MODEL", "gf"),
     ):
         main()
 

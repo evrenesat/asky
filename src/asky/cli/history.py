@@ -80,8 +80,14 @@ def print_answers_command(
 
 def handle_delete_messages_command(args) -> bool:
     """Handle delete-messages flag."""
+    # Safety check: if --all is present but no explicit delete flag, warn user.
+    if getattr(args, "all", False) and args.delete_messages is None:
+        print("Warning: --all must be used with --delete-messages to confirm deletion.")
+        return False
+
     if args.delete_messages or (
-        args.delete_messages is None and getattr(args, "all", False)
+        args.delete_messages is None
+        and getattr(args, "all", False)  # redundant now but safe
     ):
         if args.all:
             count = delete_messages(delete_all=True)

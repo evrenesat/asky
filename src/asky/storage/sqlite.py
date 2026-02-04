@@ -6,22 +6,10 @@ from datetime import datetime
 from typing import List, Optional
 
 from asky.config import DB_PATH
-from asky.storage.interface import HistoryRepository, Interaction
+from asky.storage.interface import HistoryRepository, Interaction, Session
 
 
 # Session dataclass (kept from session.py)
-from dataclasses import dataclass
-
-
-@dataclass
-class Session:
-    id: int
-    name: Optional[str]
-    model: str
-    created_at: str
-    ended_at: Optional[str]
-    is_active: bool
-    compacted_summary: Optional[str]
 
 
 class SQLiteHistoryRepository(HistoryRepository):

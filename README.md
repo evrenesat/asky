@@ -104,9 +104,12 @@ options:
   -s, --summarize       Enable summarize mode (summarizes URL content and uses summaries for chat context)
   -fs, --force-search   Force the model to use web search (default: False).
                         Helpful for avoiding hallucinations with small models
-  --cleanup-db [CLEANUP_DB]
-                        Delete history records. usage: --cleanup-db [ID|ID-ID|ID,ID] or --cleanup-db --all
-  --all                 Used with --cleanup-db to delete ALL history.
+  --delete-messages [ID|ID-ID|ID,ID]
+                        Delete specific history records
+  --delete-messages --all
+                        Clear **entire** message history (interactive confirm)
+  --delete-sessions [ID|ID-ID]
+                        Delete specific sessions
   -H, --history [HISTORY]
                         Show last N queries and answer summaries (default 10).
                         Use with --print-answer to print the full answer(s).

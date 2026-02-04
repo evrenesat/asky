@@ -137,7 +137,7 @@ def run_chat(args: argparse.Namespace, query_text: str) -> None:
         session = session_manager.repo.get_session_by_id(shell_session_id)
         if session and session.is_active:
             session_manager.current_session = session
-            print(f"\n[Resuming session S{session.id} ({session.name or 'auto'})]")
+            print(f"\n[Resuming session {session.id} ({session.name or 'auto'})]")
         else:
             # Lock file points to an ended session, clear it
             from asky.core import clear_shell_session

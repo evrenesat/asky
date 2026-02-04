@@ -3,6 +3,7 @@
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import List, Optional, Union
+from datetime import datetime
 
 
 @dataclass
@@ -56,6 +57,19 @@ class Interaction:
                 self.token_count,
             )
         )
+
+
+@dataclass
+class Session:
+    """Represents a conversation session."""
+
+    id: int
+    name: Optional[str]
+    model: str
+    created_at: str
+    ended_at: Optional[str]
+    is_active: bool
+    compacted_summary: Optional[str]
 
 
 class HistoryRepository(ABC):

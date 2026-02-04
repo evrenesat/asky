@@ -114,7 +114,7 @@ def end_session_command() -> None:
     if active:
         repo.end_session(active.id)
         clear_shell_session()
-        print(f"Session S{active.id} ({active.name or 'unnamed'}) ended.")
+        print(f"Session {active.id} ({active.name or 'unnamed'}) ended.")
     else:
         print("No active session to end.")
 
