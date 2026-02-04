@@ -291,3 +291,80 @@ def test_conversation_engine_tool_usage_tracking(mock_dispatch, mock_get_msg):
 
     # assertion: usage_tracker.record_tool_usage should be called with "web_search"
     usage_tracker.record_tool_usage.assert_called_with("web_search")
+
+
+@patch("asky.core.engine.get_llm_msg")
+@patch("asky.core.engine.ToolRegistry.dispatch")
+def test_run_conversation_loop_max_turns_graceful_exit(mock_dispatch, mock_get_msg):
+    # Test graceful exit when MAX_TURNS is reached
+    # We'll patch MAX_TURNS to 2 inside the test
+    from asky.core.engine import ConversationEngine
+    import asky.core.engine as engine_mod
+
+    # Mock LLM sequence:
+    # 1. Turn 1: Tool call
+    # 2. Turn 2: Tool call (Hitting limit)
+    # 3. Graceful Exit: Final Answer (use_tools=False)
+
+    msg_tool_call_1 = {
+        "content": None,
+        "tool_calls": [
+            {"id": "call_1", "function": {"name": "test", "arguments": "{}"}}
+        ],
+    }
+
+    msg_tool_call_2 = {
+        "content": None,
+        "tool_calls": [
+            {"id": "call_2", "function": {"name": "test", "arguments": "{}"}}
+        ],
+    }
+
+    msg_forced_final = {"content": "Forced Final Answer"}
+
+    # The loop will call get_llm_msg multiple times:
+    # 1. Turn 1
+    # 2. Turn 2
+    # 3. Graceful Exit call
+    mock_get_msg.side_effect = [msg_tool_call_1, msg_tool_call_2, msg_forced_final]
+
+    mock_dispatch.return_value = {"result": "ok"}
+
+    # Patch MAX_TURNS locally
+    with patch.object(engine_mod, "MAX_TURNS", new=2):
+        model_config = {"id": "test", "alias": "test"}
+
+        # Configure registry mock to avoid JSON serialization issues
+        registry_mock = MagicMock()
+        registry_mock.dispatch.return_value = {"result": "ok"}
+        registry_mock.get_schemas.return_value = []
+
+        engine = ConversationEngine(
+            model_config=model_config, tool_registry=registry_mock
+        )
+        # We need a real registry or mock that supports dispatch if we didn't mock dispatch separately,
+        # but we mocked dispatch, so it's fine.
+        # Ideally capture messages to check injection
+
+        messages = [{"role": "user", "content": "start"}]
+        final_answer = engine.run(messages)
+
+        assert final_answer == "Forced Final Answer"
+
+        # Verify calls
+        # 1. Turn 1
+        # 2. Turn 2
+        # 3. Final forced call
+        assert mock_get_msg.call_count == 3
+
+        # Verify the final call had use_tools=False
+        # checking the kwargs of the last call
+        args, kwargs = mock_get_msg.call_args
+        assert kwargs["use_tools"] is False
+
+        # Verify the injected message
+        # The messages list passed to the final call is mutable and has the final answer appended after the call returns.
+        # So the injected instruction is at index -2.
+        final_messages = args[1]
+        assert final_messages[-2]["role"] == "user"
+        assert "Finish your task now" in final_messages[-2]["content"]

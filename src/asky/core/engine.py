@@ -166,7 +166,44 @@ class ConversationEngine:
                     display_callback(turn)
 
             if turn >= MAX_TURNS:
-                logger.info("Error: Max turns reached.")
+                logger.info("Max turns reached. Forcing graceful exit.")
+
+                # Force a final turn to wrap up
+                messages.append(
+                    {
+                        "role": "user",
+                        "content": "SYSTEM: Finish your task now. You cannot make any more tool calls.",
+                    }
+                )
+
+                # Make final call without tools
+                final_msg = get_llm_msg(
+                    self.model_config["id"],
+                    messages,
+                    use_tools=False,
+                    verbose=self.verbose,
+                    model_alias=self.model_config.get("alias"),
+                    usage_tracker=self.usage_tracker,
+                    status_callback=status_reporter,
+                )
+
+                self.final_answer = final_msg.get("content", "")
+                messages.append({"role": "assistant", "content": self.final_answer})
+
+                # Render/Print the forced final answer
+                if display_callback:
+                    display_callback(
+                        turn + 1, is_final=True, final_answer=self.final_answer
+                    )
+                else:
+                    console = Console()
+                    if is_markdown(self.final_answer):
+                        console.print(Markdown(self.final_answer))
+                    else:
+                        console.print(self.final_answer)
+
+                if self.open_browser:
+                    render_to_browser(self.final_answer)
 
         except Exception as e:
             logger.info(f"Error: {str(e)}")

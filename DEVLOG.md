@@ -639,3 +639,18 @@ Created comprehensive [ARCHITECTURE.md](ARCHITECTURE.md) and addressed code qual
 - Verified visually using a reproduction script.
 - Verified logic with new unit tests.
 - Ran full test suite (99 passed) to ensure no regressions.
+
+## 2026-02-04 - Graceful Exit on Turn Limit
+
+**Summary**: Improved the user experience when the conversation exceeds the maximum turn limit (`MAX_TURNS`).
+
+**Changes**:
+- **Engine Logic**: Instead of abruptly aborting with an error log, the engine now:
+    1. Injects a strong system instruction: "Finish your task now. You cannot make any more tool calls."
+    2. Forces one final LLM call with `use_tools=False`.
+    3. Displays the final text-only response to the user.
+- **Testing**: Added unit tests in `tests/test_llm.py` to verify the graceful exit sequence and message injection.
+
+**Verification**:
+- Verified with new unit tests simulating a max-turn scenario.
+- Ran full test suite (101 passed) to ensure no regressions.
