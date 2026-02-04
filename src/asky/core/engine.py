@@ -61,7 +61,7 @@ class ConversationEngine:
         # Initialize crawler state if in deep dive mode
         self.crawler_state = PageCrawlerState() if deep_dive else None
 
-    def run(self, messages: List[Dict[str, Any]]) -> str:
+    def run(self, messages: List[Dict[str, Any]], display_callback=None) -> str:
         """Run the multi-turn conversation loop."""
         turn = 0
         self.start_time = time.perf_counter()
@@ -91,6 +91,9 @@ class ConversationEngine:
                 )
                 if messages and messages[0]["role"] == "system":
                     messages[0]["content"] = original_system_prompt + status_msg
+
+                if display_callback:
+                    display_callback(turn)
 
                 msg = get_llm_msg(
                     self.model_config["id"],
@@ -127,6 +130,13 @@ class ConversationEngine:
                     logger.debug(
                         f"Tool result [{len(str(result))} chrs]: {str(result)}"
                     )
+
+                    # Track tool usage in tracker if available
+                    if self.usage_tracker:
+                        tool_name = call.get("function", {}).get("name")
+                        if tool_name:
+                            self.usage_tracker.record_tool_usage(tool_name)
+
                     messages.append(
                         {
                             "role": "tool",
@@ -134,6 +144,10 @@ class ConversationEngine:
                             "content": json.dumps(result),
                         }
                     )
+
+                    # Real-time update after tool execution
+                    if display_callback:
+                        display_callback(turn)
 
             if turn >= MAX_TURNS:
                 logger.info("Error: Max turns reached.")

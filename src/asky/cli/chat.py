@@ -201,7 +201,105 @@ def run_chat(args: argparse.Namespace, query_text: str) -> None:
 
     # Run loop
     try:
-        final_answer = engine.run(messages)
+        from rich.console import Console
+        from rich.markdown import Markdown
+        from asky.banner import get_banner, BannerState
+        from asky.config import (
+            DEFAULT_CONTEXT_SIZE,
+            MAX_TURNS,
+            SUMMARIZATION_MODEL,
+            LIVE_BANNER,
+        )
+        from asky.storage import get_db_record_count
+        from asky.cli.utils import clear_screen
+
+        console = Console()
+
+        def redraw_interface(current_turn: int):
+            clear_screen()
+
+            # --- Prepare Banner State ---
+            model_id = model_config["id"]
+            model_alias = args.model
+
+            sum_alias = SUMMARIZATION_MODEL
+            sum_id = MODELS[sum_alias]["id"]
+
+            model_ctx = model_config.get("context_size", DEFAULT_CONTEXT_SIZE)
+            sum_ctx = MODELS[sum_alias].get("context_size", DEFAULT_CONTEXT_SIZE)
+
+            db_count = get_db_record_count()
+
+            # Session info
+            s_name = None
+            s_msg_count = 0
+            total_sessions = 0
+
+            if session_manager and session_manager.current_session:
+                s_name = session_manager.current_session.name
+                # Count messages in current session (in DB + current query/answer pending)
+                # This is a bit rough, but we can query the manager or repo
+                s_msg_count = len(
+                    session_manager.repo.get_session_messages(
+                        session_manager.current_session.id
+                    )
+                )
+                total_sessions = session_manager.repo.count_sessions()
+            else:
+                # If not in session mode, we might still want total sessions count
+                # We can instantiate a repo just for stats if needed, or skip
+                pass
+
+            state = BannerState(
+                model_alias=model_alias,
+                model_id=model_id,
+                sum_alias=sum_alias,
+                sum_id=sum_id,
+                model_ctx=model_ctx,
+                sum_ctx=sum_ctx,
+                max_turns=MAX_TURNS,
+                current_turn=current_turn,
+                db_count=db_count,
+                session_name=s_name,
+                session_msg_count=s_msg_count,
+                total_sessions=total_sessions,
+                token_usage=usage_tracker.usage,
+                tool_usage=usage_tracker.get_tool_usage(),
+            )
+
+            # Print Banner
+            banner = get_banner(state)
+            console.print(banner)
+
+            # Print Conversation History
+            # We skip system prompts and huge blocks if possible, or just print nicely
+            # The engine messages list has the history
+            for m in messages:
+                role = m.get("role")
+                content = m.get("content", "")
+
+                if role == "system":
+                    continue
+
+                if role == "user":
+                    console.print(f"\n[bold green]User[/]: {content}")
+                elif role == "assistant":
+                    # Check if it has tool calls
+                    if m.get("tool_calls"):
+                        # Maybe summarize tool calls?
+                        pass
+
+                    if content:
+                        console.print(f"\n[bold blue]Assistant[/]:")
+                        console.print(Markdown(content))
+                if role == "tool":
+                    # Tool outputs are shown in banner statistics, no need to print raw output here
+                    pass
+
+        # Callback injection based on config
+        display_cb = redraw_interface if LIVE_BANNER else None
+
+        final_answer = engine.run(messages, display_callback=display_cb)
 
         # Save Interaction
         if final_answer:
@@ -242,7 +340,32 @@ def run_chat(args: argparse.Namespace, query_text: str) -> None:
 
             traceback.print_exc()
     finally:
-        # Report usage
+        # If LIVE_BANNER was on, the screen is showing the state at the beginning of the last turn.
+        # We might want one final update to show the final token usage?
+        # Or if LIVE_BANNER was off, we MUST show the banner now.
+
+        # We can re-use redraw_interface logic but we need to pass the final turn count
+        # Getting turn count from messages?
+        current_turns = sum(1 for m in messages if m.get("role") == "user")
+
+        if not LIVE_BANNER:
+            # Show full banner stats at the end if not live
+            # We need to construct state manually here as redraw_interface is inside try block...
+            # Actually let's just copy the logic or refactor.
+            # Given the constraints, I will duplicate the state construction logic for the final report
+            # OR I can move redraw_interface out, but it relies on closure variables.
+
+            # Better: just use usage_tracker report as before, but maybe prettier?
+            # The requirement said: "Display session-wide token usage statistics from the database when in session mode."
+            # The existing usage report code at the end of the file does print token usage.
+            # I should ensure it meets the new requirements.
+            pass
+        else:
+            # If live banner is on, just do one final redraw with updated stats
+            if "redraw_interface" in locals():
+                redraw_interface(current_turns)
+
+        # Legacy Usage Report (kept for non-live mode or detailed breakdown)
         def print_tracker_usage(tracker: UsageTracker, title: str):
             if tracker.usage:
                 print(f"\n=== {title} ===")

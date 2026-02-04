@@ -9,7 +9,6 @@ from asky.config import (
     DEFAULT_MODEL,
     MODELS,
     SUMMARIZATION_MODEL,
-    SEARCH_PROVIDER,
     DEFAULT_CONTEXT_SIZE,
     MAX_TURNS,
     QUERY_SUMMARY_MAX_CHARS,
@@ -17,7 +16,7 @@ from asky.config import (
     LOG_LEVEL,
     LOG_FILE,
 )
-from asky.banner import get_banner
+from asky.banner import get_banner, BannerState
 from asky.logger import setup_logging
 from asky.storage import init_db, get_db_record_count
 from . import history, prompts, chat, utils, sessions
@@ -175,18 +174,23 @@ def show_banner(args) -> None:
     sum_ctx = MODELS[sum_alias].get("context_size", DEFAULT_CONTEXT_SIZE)
     db_count = get_db_record_count()
 
-    banner = get_banner(
-        model_alias,
-        model_id,
-        sum_alias,
-        sum_id,
-        DEFAULT_MODEL,
-        SEARCH_PROVIDER,
-        model_ctx,
-        sum_ctx,
-        MAX_TURNS,
-        db_count,
+    state = BannerState(
+        model_alias=model_alias,
+        model_id=model_id,
+        sum_alias=sum_alias,
+        sum_id=sum_id,
+        model_ctx=model_ctx,
+        sum_ctx=sum_ctx,
+        max_turns=MAX_TURNS,
+        current_turn=0,
+        db_count=db_count,
+        # session details (initial state)
+        session_name=None,
+        session_msg_count=0,
+        total_sessions=0,
     )
+
+    banner = get_banner(state)
     Console().print(banner)
 
 

@@ -27,6 +27,14 @@ class UsageTracker:
     def get_usage_breakdown(self, model_alias: str) -> Dict[str, int]:
         return self.usage.get(model_alias, {"input": 0, "output": 0})
 
+    def record_tool_usage(self, tool_name: str):
+        if not hasattr(self, "tools"):
+            self.tools = {}
+        self.tools[tool_name] = self.tools.get(tool_name, 0) + 1
+
+    def get_tool_usage(self) -> Dict[str, int]:
+        return getattr(self, "tools", {})
+
 
 def count_tokens(messages: List[Dict[str, Any]]) -> int:
     """Naive token counting: chars / 4."""

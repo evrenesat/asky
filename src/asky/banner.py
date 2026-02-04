@@ -1,7 +1,5 @@
-#!/usr/bin/env python3
-"""
-Cute Terminal Icon - ASCII Art
-"""
+from dataclasses import dataclass, field
+from typing import Dict, Optional
 
 from rich.console import Console
 from rich.text import Text
@@ -20,6 +18,37 @@ M1 = "bold #ffffff"  # bright highlight
 M2 = "bold #c0c0c0"  # silver
 M3 = "#a0a0a0"  # medium gray
 M4 = "#707070"  # shadow
+
+
+@dataclass
+class BannerState:
+    """State object for the banner display."""
+
+    # Model Config
+    model_alias: str
+    model_id: str
+    sum_alias: str
+    sum_id: str
+    model_ctx: int
+    sum_ctx: int
+    max_turns: int
+
+    # Session / Sys
+    current_turn: int
+    db_count: int
+    session_name: Optional[str] = None
+    session_msg_count: int = 0
+    total_sessions: int = 0
+
+    # Stats
+    token_usage: Dict[str, Dict[str, int]] = field(default_factory=dict)
+    tool_usage: Dict[str, int] = field(default_factory=dict)
+
+    def get_token_str(self, alias: str) -> str:
+        usage = self.token_usage.get(alias, {"input": 0, "output": 0})
+        total = usage["input"] + usage["output"]
+        # Escape brackets for Rich markup
+        return f"\\[in: {usage['input']:,}, out: {usage['output']:,}, total: {total:,} tokens]"
 
 
 def display(lines):
@@ -43,19 +72,8 @@ def mini():
     )
 
 
-def get_banner(
-    model_alias: str,
-    model_id: str,
-    sum_alias: str,
-    sum_id: str,
-    default_model: str,
-    search_provider: str,
-    model_ctx: int,
-    sum_ctx: int,
-    max_turns: int,
-    db_count: int,
-) -> Panel:
-    """Create a side-by-side banner with an icon and configuration info in two columns."""
+def get_banner(state: BannerState) -> Panel:
+    """Create a side-by-side banner with an icon and configuration info using BannerState."""
     icon_lines = [
         f"[{D}] ╭[{G}]∩[/{G}]─────[{G}]∩[/{G}]╮[/{D}] [{M1}]a[/{M1}]",
         f"[{D}] │[/{D}] [{G}]▷[/{G}] [{D}][{N}]ω[/{N}][/{D}] [{G}]_[/{G}] [{D}]│[/{D}] [{M2}]s[/{M2}]",
@@ -65,57 +83,56 @@ def get_banner(
     icon_text = Text.from_markup("\n".join(icon_lines))
 
     # --- Configuration Columns ---
-    col1 = Table.grid(padding=(0, 1))
-    col1.add_column(justify="left", style="bold cyan")
-    col1.add_column(justify="left")
-    col1.add_row(
-        " Main Model :", f" [white]{model_alias}[/white] ([dim]{model_id}[/dim])"
-    )
-    col1.add_row(" Summarizer :", f" [white]{sum_alias}[/white] ([dim]{sum_id}[/dim])")
-    col1.add_row(" Default    :", f" [white]{default_model}[/white]")
+    grid = Table.grid(padding=(0, 2))
+    grid.add_column(justify="left")  # Label
+    grid.add_column(justify="left")  # Value
 
-    col2 = Table.grid(padding=(0, 1))
-    col2.add_column(justify="left", style="bold cyan")
-    col2.add_column(justify="left")
-    col2.add_row(" Search     :", f" [white]{search_provider}[/white]")
-    col2.add_row(
-        " Context    :",
-        f" [white]{model_ctx:,}[/white]/[white]{sum_ctx:,}[/white] [dim]tokens[/dim]",
-    )
-    col2.add_row(
-        " System     :",
-        f" [white]{max_turns}[/white] [dim]turns[/dim] | [white]{db_count}[/white] [dim]records[/dim]",
+    # 1. Main Model
+    grid.add_row(
+        "[bold cyan]Main Model :[/]",
+        f"[white]{state.model_alias}[/] ([dim]{state.model_id}[/]) ({state.model_ctx // 1000}k) {state.get_token_str(state.model_alias)}",
     )
 
-    info_layout = Table.grid(padding=(0, 3))
-    info_layout.add_column()
-    info_layout.add_column()
-    info_layout.add_row(col1, col2)
+    # 2. Summarizer
+    grid.add_row(
+        "[bold cyan]Summarizer :[/]",
+        f"[white]{state.sum_alias}[/] ([dim]{state.sum_id}[/]) ({state.sum_ctx // 1000}k) {state.get_token_str(state.sum_alias)}",
+    )
+
+    # 3. Tools Status
+    tools_str = (
+        " | ".join([f"{k}: {v}" for k, v in state.tool_usage.items()])
+        if state.tool_usage
+        else "None"
+    )
+    grid.add_row(
+        "[bold cyan]Tools      :[/]",
+        f"{tools_str} | [bold]Turns:[/] {state.current_turn}/{state.max_turns}",
+    )
+
+    # 4. Session Info
+    session_details_parts = [
+        f"Messages: {state.session_msg_count}",
+        f"Sessions: {state.total_sessions}",
+    ]
+
+    if state.session_name:
+        sess_name = state.session_name
+        # Truncate long session names
+        if len(sess_name) > 30:
+            sess_name = sess_name[:27] + "..."
+        session_details_parts.append(f'Current: "{sess_name}"')
+
+    session_details = " | ".join(session_details_parts)
+    # Add session-wide token usage if available in the tracker for the current session alias?
+    # For now, just show the context message count
+
+    grid.add_row("[bold cyan]Session    :[/]", session_details)
 
     # --- Main Layout ---
     layout_table = Table.grid(padding=(0, 2))
     layout_table.add_column()
     layout_table.add_column(ratio=1)
-    layout_table.add_row(icon_text, info_layout)
+    layout_table.add_row(icon_text, grid)
 
     return Panel(layout_table, box=box.ROUNDED, border_style="dim", padding=(0, 1))
-
-
-if __name__ == "__main__":
-    mini()
-    # Test get_banner
-    console = Console()
-    console.print(
-        get_banner(
-            "gf",
-            "gemini-flash-latest",
-            "lfm",
-            "llama3",
-            "gf",
-            "searxng",
-            1000000,
-            4096,
-            20,
-            123,
-        )
-    )

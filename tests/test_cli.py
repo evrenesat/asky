@@ -294,7 +294,8 @@ def test_main_flow(
         [
             {"role": "system", "content": ANY},
             {"role": "user", "content": "test"},
-        ]
+        ],
+        display_callback=ANY,
     )
     mock_gen_sum.assert_called_once_with("test", "Final Answer", usage_tracker=ANY)
     mock_save.assert_called_once()
@@ -362,5 +363,6 @@ def test_main_flow_verbose(
         [
             {"role": "system", "content": ANY},
             {"role": "user", "content": "test"},
-        ]
+        ],
+        display_callback=ANY,
     )

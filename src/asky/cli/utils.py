@@ -6,6 +6,11 @@ import pyperclip
 from asky.config import USER_PROMPTS, QUERY_EXPANSION_MAX_DEPTH
 
 
+def clear_screen():
+    """Clear the terminal screen."""
+    os.system("cls" if os.name == "nt" else "clear")
+
+
 def expand_query_text(text: str, verbose: bool = False) -> str:
     """Recursively expand slash commands like /cp and predefined prompts."""
     expanded = text

@@ -249,3 +249,44 @@ def test_render_to_browser(
     written_content = mock_temp.write.call_args[0][0]
     assert "Test Markdown" in written_content
     mock_browser_open.assert_called_with(f"file://{mock_temp.name}")
+@patch("asky.core.engine.get_llm_msg")
+@patch("asky.core.engine.ToolRegistry.dispatch")
+def test_conversation_engine_tool_usage_tracking(mock_dispatch, mock_get_msg):
+    # Test that engine correctly tracks tool usage with standard OpenAI-style tool calls
+    from asky.core.engine import ConversationEngine
+
+    msg_tool_call = {
+        "content": None,
+        "tool_calls": [
+            {
+                "id": "call_123",
+                "type": "function",
+                "function": {"name": "web_search", "arguments": "{}"},
+            }
+        ],
+    }
+
+    msg_final = {"content": "Final Answer"}
+
+    mock_get_msg.side_effect = [msg_tool_call, msg_final]
+    mock_dispatch.return_value = {"results": "search results"}
+
+    usage_tracker = MagicMock()
+    model_config = {"id": "test_model", "alias": "test"}
+    registry = MagicMock()
+    # Ensure tool schemas return valid list
+    registry.get_schemas.return_value = []
+    # Needs to return dispatch result
+    registry.dispatch.return_value = {"results": "search results"}
+
+    engine = ConversationEngine(
+        model_config=model_config,
+        tool_registry=registry,
+        usage_tracker=usage_tracker,
+    )
+
+    messages = [{"role": "user", "content": "search"}]
+    engine.run(messages)
+
+    # assertion: usage_tracker.record_tool_usage should be called with "web_search"
+    usage_tracker.record_tool_usage.assert_called_with("web_search")
