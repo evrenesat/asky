@@ -232,10 +232,25 @@ def run_chat(args: argparse.Namespace, query_text: str) -> None:
         # Report usage
         if usage_tracker.usage:
             print("\n=== SESSION TOKEN USAGE ===")
-            total_session_tokens = 0
-            for m_alias, tokens in usage_tracker.usage.items():
-                print(f"  {m_alias:<15}: {tokens:,} tokens")
-                total_session_tokens += tokens
-            print("-" * 30)
-            print(f"  {'TOTAL':<15}: {total_session_tokens:,} tokens")
+            print(f"  {'Model':<15} {'Input':<10} {'Output':<10} {'Total':<10}")
+            print("  " + "-" * 45)
+
+            total_input = 0
+            total_output = 0
+
+            for m_alias in usage_tracker.usage.keys():
+                breakdown = usage_tracker.get_usage_breakdown(m_alias)
+                inp = breakdown["input"]
+                out = breakdown["output"]
+                total = inp + out
+
+                print(f"  {m_alias:<15} {inp:<10,} {out:<10,} {total:<10,}")
+
+                total_input += inp
+                total_output += out
+
+            print("  " + "-" * 45)
+            print(
+                f"  {'TOTAL':<15} {total_input:<10,} {total_output:<10,} {total_input + total_output:<10,}"
+            )
             print("===========================\n")

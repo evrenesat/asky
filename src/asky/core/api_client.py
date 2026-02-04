@@ -15,13 +15,17 @@ class UsageTracker:
     """Track token usage per model alias."""
 
     def __init__(self):
-        self.usage: Dict[str, int] = {}
+        # Format: {model_alias: {"input": int, "output": int}}
+        self.usage: Dict[str, Dict[str, int]] = {}
 
-    def add_usage(self, model_alias: str, tokens: int):
-        self.usage[model_alias] = self.usage.get(model_alias, 0) + tokens
+    def add_usage(self, model_alias: str, input_tokens: int, output_tokens: int):
+        if model_alias not in self.usage:
+            self.usage[model_alias] = {"input": 0, "output": 0}
+        self.usage[model_alias]["input"] += input_tokens
+        self.usage[model_alias]["output"] += output_tokens
 
-    def get_total_usage(self, model_alias: str) -> int:
-        return self.usage.get(model_alias, 0)
+    def get_usage_breakdown(self, model_alias: str) -> Dict[str, int]:
+        return self.usage.get(model_alias, {"input": 0, "output": 0})
 
 
 def count_tokens(messages: List[Dict[str, Any]]) -> int:
@@ -134,10 +138,8 @@ def get_llm_msg(
             if "completion_tokens" not in usage:
                 completion_tokens = len(json.dumps(response_message)) // 4
 
-            total_call_tokens = prompt_tokens + completion_tokens
-
             if usage_tracker and model_alias:
-                usage_tracker.add_usage(model_alias, total_call_tokens)
+                usage_tracker.add_usage(model_alias, prompt_tokens, completion_tokens)
 
             return response_message
         except requests.exceptions.HTTPError as e:

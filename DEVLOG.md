@@ -1,5 +1,24 @@
 # Development Log
 
+## 2026-02-04 - Token Tracking Refinement
+
+**Summary**: Separated input and output token tracking in `UsageTracker` to provide more granular usage reporting.
+
+**Changes**:
+- **UsageTracker**: Updated to track `input_tokens` and `output_tokens` separately for each model alias.
+- **Reporting**: Updated `chat.py` to display a detailed breakdown table (Input, Output, Total) instead of just single total.
+- **API Client**: Updated `get_llm_msg` to extract prompt and completion tokens from API responses and feed them into the improved tracker.
+- **Refactor**: Replaced direct access to `.usage` dict in `chat.py` with `get_usage_breakdown` accessor method.
+
+**Files Modified**:
+- `src/asky/core/api_client.py`: Updated `UsageTracker` and `get_llm_msg`.
+- `src/asky/cli/chat.py`: Updated usage reporting block.
+- `tests/test_usage_tracker.py`: Added new tests for split tracking.
+
+---
+
+# Development Log
+
 ## 2026-02-04 - Session Architecture Refactor (Persistent Sessions)
 
 **Summary**: Refactored session management to make sessions persistent conversation threads that never "end". Sessions can be resumed from any shell at any time.
