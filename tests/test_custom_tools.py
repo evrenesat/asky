@@ -114,3 +114,22 @@ def test_dispatch_custom_tool(mock_run, mock_custom_tools):
     print(result)
     assert result["stdout"] == "ok"
     mock_run.assert_called_once()
+@patch("subprocess.run")
+def test_custom_tool_disabled(mock_run, mock_custom_tools):
+    """Test that a custom tool with enabled=False is not registered."""
+    mock_custom_tools.items.return_value = {
+        "disabled_tool": {
+            "command": "echo disabled",
+            "description": "Disabled tool",
+            "enabled": False,
+        }
+    }.items()
+
+    # We need to import create_default_tool_registry inside the test or setup
+    # to ensure it uses the mocked CUSTOM_TOOLS
+    from asky.core.engine import create_default_tool_registry
+
+    registry = create_default_tool_registry()
+    tool_names = registry.get_tool_names()
+
+    assert "disabled_tool" not in tool_names

@@ -130,6 +130,7 @@ ex = "Explain this: /cp"
 command = "ls {flags} {path}"
 description = "List the contents of a directory."
 parameter_type = "object"
+enabled = true
 [tool.list_dir.parameters]
 type = "object"
 required = ["path"]
@@ -144,7 +145,7 @@ default = "-la"
 
 
 # [tool.grep_search]
-# command = "grep -r --exclude-dir={.venv,node_modules} {pattern} {path}"
+# command = "grep -r --exclude-dir=.venv --exclude-dir=node_modules {pattern} {path}"
 # description = "Search for a pattern in files recursively."
 
 # [tool.grep_search.parameters]

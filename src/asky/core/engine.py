@@ -300,6 +300,8 @@ def create_default_tool_registry(
 
     # Register custom tools from config
     for tool_name, tool_data in CUSTOM_TOOLS.items():
+        if not tool_data.get("enabled", True):
+            continue
         registry.register(
             tool_name,
             {
