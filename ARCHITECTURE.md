@@ -100,11 +100,11 @@ src/asky/
 │   └── loader.py       # TOML loading, config merging
 ├── research/           # Research mode cache, RAG, and adapters
 │   ├── adapters.py     # Map custom tools to research source fetches
-│   ├── cache.py        # Research cache and findings persistence
-│   ├── chunker.py      # Text chunking utilities for retrieval
-│   ├── embeddings.py   # Embedding API client
+│   ├── cache.py        # Research cache, findings persistence, vector invalidation
+│   ├── chunker.py      # Overlap-safe text chunking utilities
+│   ├── embeddings.py   # Embedding API client with retry/backoff
 │   ├── tools.py        # Research tool executors
-│   └── vector_store.py # Embedding storage and similarity search
+│   └── vector_store.py # Embedding storage and hybrid dense+lexical retrieval
 ├── config.toml         # Default configuration file
 ├── tools.py            # Tool execution (web search, URL fetch, custom tools)
 ├── push_data.py        # HTTP data push to external endpoints
@@ -405,6 +405,27 @@ SessionManager.save_turn()
 check_and_compact() → compact if > threshold
 ```
 
+### Research Retrieval Flow
+
+```
+extract_links(urls, query?)
+    ↓
+ResearchCache.cache_url()  # stores content + links with TTL
+    ↓
+if cached content/links changed:
+    clear stale content_chunks/link_embeddings rows
+    ↓
+get_relevant_content(urls, query)
+    ↓
+VectorStore ensures embeddings exist for current embedding model
+    ↓
+Hybrid ranking = dense cosine + BM25 lexical search (FTS5)
+    ↓
+Diversity filter removes near-duplicate chunks
+    ↓
+Top chunks returned with semantic + lexical relevance scores
+```
+
 ---
 
 ## Design Decisions
@@ -427,6 +448,9 @@ Tools are registered dynamically at runtime, enabling:
 
 ### 4. Naive Token Counting
 Uses `chars / 4` approximation instead of actual tokenizer, reducing dependencies while providing "good enough" estimates for context management.
+
+### 5. Vector Freshness and Hybrid Retrieval
+Research cache updates actively invalidate stale vectors when cached content or link sets change. Retrieval uses hybrid scoring (semantic embedding similarity + BM25 lexical relevance via SQLite FTS5) with a diversity filter to improve relevance quality while avoiding repetitive snippets.
 
 ---
 

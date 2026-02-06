@@ -5,6 +5,9 @@ from typing import List, Tuple
 
 from asky.config import RESEARCH_CHUNK_SIZE, RESEARCH_CHUNK_OVERLAP
 
+SENTENCE_BOUNDARY_SEARCH_FRACTION = 0.8
+SENTENCE_BOUNDARY_LOOKAHEAD_CHARS = 50
+
 
 def chunk_text(
     text: str,
@@ -42,14 +45,14 @@ def chunk_text(
     chunk_index = 0
 
     while start < len(text):
-        end = start + chunk_size
+        end = min(start + chunk_size, len(text))
 
         # Try to break at sentence boundary
         if end < len(text):
             # Look for sentence end near chunk boundary
             # Search in the last 20% of the chunk
-            search_start = start + int(chunk_size * 0.8)
-            search_end = min(end + 50, len(text))  # Look a bit ahead too
+            search_start = start + int(chunk_size * SENTENCE_BOUNDARY_SEARCH_FRACTION)
+            search_end = min(end + SENTENCE_BOUNDARY_LOOKAHEAD_CHARS, len(text))
 
             # Try to find a good break point (period, question mark, exclamation)
             break_point = -1
@@ -67,11 +70,11 @@ def chunk_text(
             chunk_index += 1
 
         # Move start with overlap
-        start = end - overlap
-
-        # Prevent infinite loop
-        if start <= 0 or (chunks and start <= len(chunks[-1][1])):
-            start = end
+        next_start = end - overlap
+        if next_start <= start:
+            # Guarantee progress even with pathological overlap values
+            next_start = end
+        start = next_start
 
     return chunks
 

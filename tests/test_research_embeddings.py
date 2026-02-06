@@ -4,6 +4,7 @@ import struct
 from unittest.mock import patch, MagicMock
 
 import pytest
+import requests
 
 
 class TestEmbeddingClient:
@@ -22,6 +23,8 @@ class TestEmbeddingClient:
             model="test-model",
             timeout=10,
             batch_size=2,
+            retry_attempts=1,
+            retry_backoff_seconds=0,
         )
         yield client
 
@@ -32,7 +35,7 @@ class TestEmbeddingClient:
         assert client.timeout == 10
         assert client.batch_size == 2
 
-    @patch("requests.post")
+    @patch("requests.sessions.Session.post")
     def test_embed_single_text(self, mock_post, client):
         """Test embedding a single text."""
         mock_response = MagicMock()
@@ -46,7 +49,7 @@ class TestEmbeddingClient:
         assert result == [0.1, 0.2, 0.3]
         mock_post.assert_called_once()
 
-    @patch("requests.post")
+    @patch("requests.sessions.Session.post")
     def test_embed_multiple_texts(self, mock_post, client):
         """Test embedding multiple texts."""
         mock_response = MagicMock()
@@ -64,7 +67,7 @@ class TestEmbeddingClient:
         assert result[0] == [0.1, 0.2]
         assert result[1] == [0.3, 0.4]
 
-    @patch("requests.post")
+    @patch("requests.sessions.Session.post")
     def test_embed_batches_large_inputs(self, mock_post, client):
         """Test that large inputs are batched."""
         mock_response = MagicMock()
@@ -89,7 +92,7 @@ class TestEmbeddingClient:
 
     def test_embed_filters_empty_strings(self, client):
         """Test that empty strings are filtered out."""
-        with patch("requests.post") as mock_post:
+        with patch("requests.sessions.Session.post") as mock_post:
             mock_response = MagicMock()
             mock_response.json.return_value = {
                 "data": [{"embedding": [0.1]}]
@@ -108,7 +111,7 @@ class TestEmbeddingClient:
         with pytest.raises(ValueError):
             client.embed_single("   ")
 
-    @patch("requests.post")
+    @patch("requests.sessions.Session.post")
     def test_embed_handles_alternative_response_format(self, mock_post, client):
         """Test handling of alternative response format."""
         mock_response = MagicMock()
@@ -121,7 +124,7 @@ class TestEmbeddingClient:
 
         assert result == [[0.1, 0.2], [0.3, 0.4]]
 
-    @patch("requests.post")
+    @patch("requests.sessions.Session.post")
     def test_embed_connection_error(self, mock_post, client):
         """Test handling of connection errors."""
         import requests
@@ -131,7 +134,7 @@ class TestEmbeddingClient:
         with pytest.raises(requests.exceptions.ConnectionError):
             client.embed_single("test")
 
-    @patch("requests.post")
+    @patch("requests.sessions.Session.post")
     def test_embed_timeout_error(self, mock_post, client):
         """Test handling of timeout errors."""
         import requests
@@ -141,7 +144,7 @@ class TestEmbeddingClient:
         with pytest.raises(requests.exceptions.Timeout):
             client.embed_single("test")
 
-    @patch("requests.post")
+    @patch("requests.sessions.Session.post")
     def test_is_available_returns_true(self, mock_post, client):
         """Test is_available returns True when API works."""
         mock_response = MagicMock()
@@ -152,12 +155,40 @@ class TestEmbeddingClient:
 
         assert client.is_available() is True
 
-    @patch("requests.post")
+    @patch("requests.sessions.Session.post")
     def test_is_available_returns_false_on_error(self, mock_post, client):
         """Test is_available returns False when API fails."""
         mock_post.side_effect = Exception("API error")
 
         assert client.is_available() is False
+
+    @patch("requests.sessions.Session.post")
+    def test_embed_retries_transient_errors(self, mock_post):
+        """Test transient failures are retried before succeeding."""
+        from asky.research.embeddings import EmbeddingClient
+
+        EmbeddingClient._instance = None
+        client = EmbeddingClient(
+            api_url="http://localhost:1234/v1/embeddings",
+            model="test-model",
+            timeout=10,
+            batch_size=2,
+            retry_attempts=3,
+            retry_backoff_seconds=0,
+        )
+
+        timeout_error = requests.exceptions.Timeout()
+        success_response = MagicMock()
+        success_response.json.return_value = {
+            "data": [{"embedding": [0.11, 0.22, 0.33]}]
+        }
+        success_response.raise_for_status.return_value = None
+        mock_post.side_effect = [timeout_error, success_response]
+
+        result = client.embed_single("retry test")
+
+        assert result == [0.11, 0.22, 0.33]
+        assert mock_post.call_count == 2
 
 
 class TestEmbeddingSerialization:

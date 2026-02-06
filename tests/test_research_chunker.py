@@ -54,6 +54,18 @@ class TestChunkText:
             assert len(chunk1_text) > 0
             assert len(chunk2_text) > 0
 
+    def test_overlap_preserved_for_non_sentence_text(self):
+        """Test deterministic overlap behavior when no sentence boundaries exist."""
+        text = "ABCDEFGHIJKLMNOPQRSTUVWXYZ" * 4
+        overlap_size = 5
+        result = chunk_text(text, chunk_size=20, overlap=overlap_size)
+
+        assert len(result) > 1
+        for idx in range(len(result) - 1):
+            current_chunk = result[idx][1]
+            next_chunk = result[idx + 1][1]
+            assert current_chunk[-overlap_size:] == next_chunk[:overlap_size]
+
     def test_prefers_sentence_boundaries(self):
         """Test that chunker prefers sentence boundaries."""
         text = "First sentence. Second sentence. Third sentence. Fourth sentence."

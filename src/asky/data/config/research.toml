@@ -63,3 +63,9 @@ batch_size = 32
 
 # Timeout for embedding API requests in seconds
 timeout = 30
+
+# Number of retry attempts for transient embedding API failures
+retry_attempts = 3
+
+# Base sleep (seconds) used for linear retry backoff: base * attempt_number
+retry_backoff_seconds = 0.5

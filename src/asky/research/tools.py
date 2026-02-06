@@ -1,5 +1,6 @@
 """Research mode tool executors."""
 
+import difflib
 import logging
 from typing import Any, Dict, List, Optional
 
@@ -20,6 +21,12 @@ from asky.research.vector_store import get_vector_store
 from asky.research.adapters import fetch_source_via_adapter, has_source_adapter
 
 logger = logging.getLogger(__name__)
+DEFAULT_HYBRID_DENSE_WEIGHT = 0.75
+DEFAULT_MIN_CHUNK_RELEVANCE = 0.15
+MAX_RAG_CANDIDATE_MULTIPLIER = 3
+CHUNK_DIVERSITY_SIMILARITY_THRESHOLD = 0.92
+CONTENT_PREVIEW_SHORT_CHARS = 2000
+CONTENT_PREVIEW_LONG_CHARS = 3000
 
 
 # Tool Schemas for LLM
@@ -97,6 +104,16 @@ Requires embedding model to be available.""",
                     "type": "integer",
                     "default": 5,
                     "description": "Maximum content sections to return per URL",
+                },
+                "dense_weight": {
+                    "type": "number",
+                    "default": DEFAULT_HYBRID_DENSE_WEIGHT,
+                    "description": "Weight of semantic similarity in hybrid ranking (0 to 1)",
+                },
+                "min_relevance": {
+                    "type": "number",
+                    "default": DEFAULT_MIN_CHUNK_RELEVANCE,
+                    "description": "Minimum hybrid relevance threshold to include a section",
                 },
             },
             "required": ["urls", "query"],
@@ -179,6 +196,38 @@ def _sanitize_url(url: str) -> str:
     if not url:
         return ""
     return url.replace("\\", "")
+
+
+def _dedupe_preserve_order(values: List[str]) -> List[str]:
+    """Deduplicate values while preserving first-seen order."""
+    seen = set()
+    deduped: List[str] = []
+    for value in values:
+        if value in seen:
+            continue
+        seen.add(value)
+        deduped.append(value)
+    return deduped
+
+
+def _select_diverse_chunks(
+    ranked_chunks: List[Dict[str, Any]], max_chunks: int
+) -> List[Dict[str, Any]]:
+    """Select top chunks while avoiding near-duplicate snippets."""
+    selected: List[Dict[str, Any]] = []
+    for candidate in ranked_chunks:
+        candidate_text = candidate.get("text", "")
+        is_duplicate = any(
+            difflib.SequenceMatcher(None, candidate_text, item.get("text", "")).ratio()
+            >= CHUNK_DIVERSITY_SIMILARITY_THRESHOLD
+            for item in selected
+        )
+        if is_duplicate:
+            continue
+        selected.append(candidate)
+        if len(selected) >= max_chunks:
+            break
+    return selected
 
 
 def _fetch_and_parse(
@@ -297,12 +346,58 @@ def _try_embed_links(cache_id: int, links: List[Dict[str, str]]) -> bool:
     """Try to embed links for relevance filtering. Returns True if successful."""
     try:
         vector_store = get_vector_store()
-        if not vector_store.has_link_embeddings(cache_id):
+        embedding_model = getattr(vector_store.embedding_client, "model", "")
+        has_embeddings = vector_store.has_link_embeddings(cache_id)
+
+        has_for_model_method = getattr(
+            vector_store, "has_link_embeddings_for_model", None
+        )
+        if callable(has_for_model_method):
+            model_result = has_for_model_method(cache_id, embedding_model)
+            if isinstance(model_result, bool):
+                has_embeddings = model_result
+
+        if not has_embeddings:
             vector_store.store_link_embeddings(cache_id, links)
         return True
     except Exception as e:
         logger.warning(f"Link embedding failed (will use unranked links): {e}")
         return False
+
+
+def _search_relevant_chunks(
+    vector_store: Any,
+    cache_id: int,
+    query: str,
+    max_chunks: int,
+    dense_weight: float,
+    min_relevance: float,
+) -> List[Dict[str, Any]]:
+    """Search chunks with hybrid ranking when available, otherwise dense fallback."""
+    candidate_count = max_chunks * MAX_RAG_CANDIDATE_MULTIPLIER
+    search_hybrid = getattr(vector_store, "search_chunks_hybrid", None)
+    if callable(search_hybrid):
+        hybrid_result = search_hybrid(
+            cache_id=cache_id,
+            query=query,
+            top_k=candidate_count,
+            dense_weight=dense_weight,
+            min_score=min_relevance,
+        )
+        if isinstance(hybrid_result, list):
+            if not hybrid_result or isinstance(hybrid_result[0], dict):
+                return hybrid_result
+
+    dense_results = vector_store.search_chunks(cache_id, query, top_k=max_chunks)
+    return [
+        {
+            "text": text,
+            "score": score,
+            "dense_score": score,
+            "lexical_score": 0.0,
+        }
+        for text, score in dense_results
+    ]
 
 
 def execute_extract_links(args: Dict[str, Any]) -> Dict[str, Any]:
@@ -320,7 +415,7 @@ def execute_extract_links(args: Dict[str, Any]) -> Dict[str, Any]:
         urls.append(single_url)
 
     # Deduplicate and filter
-    urls = list(set([_sanitize_url(u) for u in urls if u]))
+    urls = _dedupe_preserve_order([_sanitize_url(u) for u in urls if u])
     if not urls:
         return {"error": "No URLs provided. Please specify 'urls' or 'url' parameter."}
 
@@ -409,7 +504,7 @@ def execute_get_link_summaries(args: Dict[str, Any]) -> Dict[str, Any]:
     if isinstance(urls, str):
         urls = [urls]
 
-    urls = list(set([_sanitize_url(u) for u in urls if u]))
+    urls = _dedupe_preserve_order([_sanitize_url(u) for u in urls if u])
     if not urls:
         return {"error": "No URLs provided."}
 
@@ -469,9 +564,11 @@ def execute_get_relevant_content(args: Dict[str, Any]) -> Dict[str, Any]:
     if isinstance(urls, str):
         urls = [urls]
 
-    urls = list(set([_sanitize_url(u) for u in urls if u]))
+    urls = _dedupe_preserve_order([_sanitize_url(u) for u in urls if u])
     query = args.get("query", "")
     max_chunks = args.get("max_chunks", 5)
+    dense_weight = args.get("dense_weight", DEFAULT_HYBRID_DENSE_WEIGHT)
+    min_relevance = args.get("min_relevance", DEFAULT_MIN_CHUNK_RELEVANCE)
 
     if not urls:
         return {"error": "No URLs provided."}
@@ -511,24 +608,46 @@ def execute_get_relevant_content(args: Dict[str, Any]) -> Dict[str, Any]:
 
         try:
             vector_store = get_vector_store()
+            embedding_model = vector_store.embedding_client.model
 
             # Ensure chunks are embedded
-            if not vector_store.has_chunk_embeddings(cache_id):
+            has_embeddings = vector_store.has_chunk_embeddings(cache_id)
+            has_for_model_method = getattr(
+                vector_store, "has_chunk_embeddings_for_model", None
+            )
+            if callable(has_for_model_method):
+                model_result = has_for_model_method(cache_id, embedding_model)
+                if isinstance(model_result, bool):
+                    has_embeddings = model_result
+
+            if not has_embeddings:
                 logger.debug(f"Generating chunk embeddings for {url}")
                 chunks = chunk_text(content)
                 stored = vector_store.store_chunk_embeddings(cache_id, chunks)
                 if stored == 0:
                     raise Exception("Failed to store chunk embeddings")
 
-            # Search for relevant chunks
-            relevant = vector_store.search_chunks(cache_id, query, top_k=max_chunks)
+            ranked_chunks = _search_relevant_chunks(
+                vector_store=vector_store,
+                cache_id=cache_id,
+                query=query,
+                max_chunks=max_chunks,
+                dense_weight=dense_weight,
+                min_relevance=min_relevance,
+            )
+            relevant = _select_diverse_chunks(ranked_chunks, max_chunks=max_chunks)
 
             if relevant:
                 results[url] = {
                     "title": cached.get("title", ""),
                     "chunks": [
-                        {"text": text, "relevance": round(score, 3)}
-                        for text, score in relevant
+                        {
+                            "text": chunk["text"],
+                            "relevance": round(chunk["score"], 3),
+                            "semantic_relevance": round(chunk["dense_score"], 3),
+                            "lexical_relevance": round(chunk["lexical_score"], 3),
+                        }
+                        for chunk in relevant
                     ],
                     "chunk_count": len(relevant),
                 }
@@ -537,8 +656,8 @@ def execute_get_relevant_content(args: Dict[str, Any]) -> Dict[str, Any]:
                 results[url] = {
                     "title": cached.get("title", ""),
                     "note": "No highly relevant sections found. Returning content preview.",
-                    "content_preview": content[:2000]
-                    + ("..." if len(content) > 2000 else ""),
+                    "content_preview": content[:CONTENT_PREVIEW_SHORT_CHARS]
+                    + ("..." if len(content) > CONTENT_PREVIEW_SHORT_CHARS else ""),
                 }
 
         except Exception as e:
@@ -548,8 +667,8 @@ def execute_get_relevant_content(args: Dict[str, Any]) -> Dict[str, Any]:
                 "title": cached.get("title", ""),
                 "fallback": True,
                 "note": f"Semantic search unavailable ({str(e)[:50]}). Returning content preview.",
-                "content_preview": content[:3000]
-                + ("..." if len(content) > 3000 else ""),
+                "content_preview": content[:CONTENT_PREVIEW_LONG_CHARS]
+                + ("..." if len(content) > CONTENT_PREVIEW_LONG_CHARS else ""),
             }
 
     return results
@@ -561,7 +680,7 @@ def execute_get_full_content(args: Dict[str, Any]) -> Dict[str, Any]:
     if isinstance(urls, str):
         urls = [urls]
 
-    urls = list(set([_sanitize_url(u) for u in urls if u]))
+    urls = _dedupe_preserve_order([_sanitize_url(u) for u in urls if u])
     if not urls:
         return {"error": "No URLs provided."}
 

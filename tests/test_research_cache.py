@@ -101,6 +101,112 @@ class TestResearchCache:
         assert cached["content"] == "Content 2"
         assert cached["title"] == "Title 2"
 
+    def test_cache_url_content_change_clears_chunk_vectors(self, cache):
+        """Test that content changes invalidate stale chunk vectors."""
+        url = "http://example.com/chunks"
+        links = [{"text": "Link 1", "href": "http://link1.com"}]
+        cache_id = cache.cache_url(
+            url=url,
+            content="Original content",
+            title="Title",
+            links=links,
+            trigger_summarization=False,
+        )
+
+        conn = sqlite3.connect(cache.db_path)
+        c = conn.cursor()
+        c.execute(
+            """
+            INSERT INTO content_chunks
+            (cache_id, chunk_index, chunk_text, embedding, embedding_model, created_at)
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (cache_id, 0, "Old chunk", b"1234", "old-model", datetime.now().isoformat()),
+        )
+        c.execute(
+            """
+            INSERT INTO link_embeddings
+            (cache_id, link_text, link_url, embedding, embedding_model, created_at)
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (
+                cache_id,
+                "Link 1",
+                "http://link1.com",
+                b"1234",
+                "old-model",
+                datetime.now().isoformat(),
+            ),
+        )
+        conn.commit()
+        conn.close()
+
+        cache.cache_url(
+            url=url,
+            content="Updated content",
+            title="Title",
+            links=links,
+            trigger_summarization=False,
+        )
+
+        conn = sqlite3.connect(cache.db_path)
+        c = conn.cursor()
+        c.execute("SELECT COUNT(*) FROM content_chunks WHERE cache_id = ?", (cache_id,))
+        chunk_count = c.fetchone()[0]
+        c.execute("SELECT COUNT(*) FROM link_embeddings WHERE cache_id = ?", (cache_id,))
+        link_count = c.fetchone()[0]
+        conn.close()
+
+        assert chunk_count == 0
+        assert link_count == 1
+
+    def test_cache_url_links_change_clears_link_vectors(self, cache):
+        """Test that link list changes invalidate stale link vectors."""
+        url = "http://example.com/links"
+        cache_id = cache.cache_url(
+            url=url,
+            content="Same content",
+            title="Title",
+            links=[{"text": "Old link", "href": "http://old-link.com"}],
+            trigger_summarization=False,
+        )
+
+        conn = sqlite3.connect(cache.db_path)
+        c = conn.cursor()
+        c.execute(
+            """
+            INSERT INTO link_embeddings
+            (cache_id, link_text, link_url, embedding, embedding_model, created_at)
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (
+                cache_id,
+                "Old link",
+                "http://old-link.com",
+                b"1234",
+                "old-model",
+                datetime.now().isoformat(),
+            ),
+        )
+        conn.commit()
+        conn.close()
+
+        cache.cache_url(
+            url=url,
+            content="Same content",
+            title="Title",
+            links=[{"text": "New link", "href": "http://new-link.com"}],
+            trigger_summarization=False,
+        )
+
+        conn = sqlite3.connect(cache.db_path)
+        c = conn.cursor()
+        c.execute("SELECT COUNT(*) FROM link_embeddings WHERE cache_id = ?", (cache_id,))
+        link_count = c.fetchone()[0]
+        conn.close()
+
+        assert link_count == 0
+
     def test_get_cached_returns_none_for_missing(self, cache):
         """Test that get_cached returns None for non-existent URLs."""
         result = cache.get_cached("http://nonexistent.com")

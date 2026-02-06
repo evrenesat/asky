@@ -24,8 +24,8 @@ class TestEmbeddingClientUsageTracking:
 
         client = EmbeddingClient()
 
-        # Mock the requests.post call
-        with patch("asky.research.embeddings.requests.post") as mock_post:
+        # Mock the embedding HTTP call
+        with patch("requests.sessions.Session.post") as mock_post:
             mock_response = MagicMock()
             mock_response.json.return_value = {
                 "data": [
@@ -50,7 +50,7 @@ class TestEmbeddingClientUsageTracking:
 
         client = EmbeddingClient()
 
-        with patch("asky.research.embeddings.requests.post") as mock_post:
+        with patch("requests.sessions.Session.post") as mock_post:
             mock_response = MagicMock()
             mock_response.json.return_value = {
                 "data": [{"embedding": [0.1, 0.2]}],
@@ -76,7 +76,7 @@ class TestEmbeddingClientUsageTracking:
 
         client = EmbeddingClient()
 
-        with patch("asky.research.embeddings.requests.post") as mock_post:
+        with patch("requests.sessions.Session.post") as mock_post:
             mock_response = MagicMock()
             mock_response.json.return_value = {
                 "data": [{"embedding": [0.1, 0.2, 0.3]}],
@@ -99,7 +99,7 @@ class TestEmbeddingClientUsageTracking:
 
         client = EmbeddingClient()
 
-        with patch("asky.research.embeddings.requests.post") as mock_post:
+        with patch("requests.sessions.Session.post") as mock_post:
             # Response without 'usage' field
             mock_response = MagicMock()
             mock_response.json.return_value = {
@@ -259,7 +259,7 @@ class TestInterfaceRendererEmbeddingIntegration:
         EmbeddingClient._instance = None
 
     @patch("asky.cli.display.get_db_record_count")
-    @patch("asky.research.embeddings.requests.post")
+    @patch("requests.sessions.Session.post")
     def test_renderer_pulls_embedding_stats_when_research_mode_true(
         self, mock_post, mock_db_count
     ):

@@ -140,6 +140,7 @@ class TestVectorStore:
                 link_text TEXT,
                 link_url TEXT,
                 embedding BLOB,
+                embedding_model TEXT,
                 created_at TEXT
             )
         """
@@ -251,6 +252,118 @@ class TestVectorStore:
         """Test has_link_embeddings returns False when none exist."""
         # cache_id 999 doesn't have any link embeddings
         assert not vector_store.has_link_embeddings(999)
+
+    def test_has_chunk_embeddings_for_model(self, vector_store):
+        """Test model-aware chunk embedding freshness checks."""
+        chunks = [(0, "First chunk"), (1, "Second chunk")]
+        vector_store.store_chunk_embeddings(cache_id=1, chunks=chunks)
+
+        assert vector_store.has_chunk_embeddings_for_model(1, "test-model") is True
+        assert vector_store.has_chunk_embeddings_for_model(1, "other-model") is False
+
+    def test_has_link_embeddings_for_model(self, vector_store):
+        """Test model-aware link embedding freshness checks."""
+        links = [
+            {"text": "Link 1", "href": "http://link1.com"},
+            {"text": "Link 2", "href": "http://link2.com"},
+        ]
+        vector_store.store_link_embeddings(cache_id=1, links=links)
+
+        assert vector_store.has_link_embeddings_for_model(1, "test-model") is True
+        assert vector_store.has_link_embeddings_for_model(1, "other-model") is False
+
+    def test_search_chunks_hybrid_returns_ranked_dicts(self, vector_store):
+        """Test hybrid chunk search returns score-rich dictionaries."""
+        chunks = [
+            (0, "machine learning design notes"),
+            (1, "deployment checklist and operations"),
+        ]
+        vector_store.store_chunk_embeddings(cache_id=1, chunks=chunks)
+
+        results = vector_store.search_chunks_hybrid(
+            cache_id=1,
+            query="machine learning operations",
+            top_k=2,
+            dense_weight=0.7,
+            min_score=0.0,
+        )
+
+        assert len(results) == 2
+        assert "text" in results[0]
+        assert "score" in results[0]
+        assert "dense_score" in results[0]
+        assert "lexical_score" in results[0]
+
+    def test_bm25_scores_available_when_fts_present(self, vector_store):
+        """Test BM25 lexical scoring returns results when FTS index exists."""
+        conn = sqlite3.connect(vector_store.db_path)
+        c = conn.cursor()
+        try:
+            c.execute(
+                """
+                CREATE VIRTUAL TABLE IF NOT EXISTS content_chunks_fts
+                USING fts5(
+                    chunk_text,
+                    content='content_chunks',
+                    content_rowid='id'
+                )
+                """
+            )
+            c.execute(
+                """
+                CREATE TRIGGER IF NOT EXISTS content_chunks_ai
+                AFTER INSERT ON content_chunks
+                BEGIN
+                    INSERT INTO content_chunks_fts(rowid, chunk_text)
+                    VALUES (new.id, new.chunk_text);
+                END
+                """
+            )
+            c.execute(
+                """
+                CREATE TRIGGER IF NOT EXISTS content_chunks_ad
+                AFTER DELETE ON content_chunks
+                BEGIN
+                    INSERT INTO content_chunks_fts(content_chunks_fts, rowid, chunk_text)
+                    VALUES('delete', old.id, old.chunk_text);
+                END
+                """
+            )
+            c.execute(
+                """
+                CREATE TRIGGER IF NOT EXISTS content_chunks_au
+                AFTER UPDATE ON content_chunks
+                BEGIN
+                    INSERT INTO content_chunks_fts(content_chunks_fts, rowid, chunk_text)
+                    VALUES('delete', old.id, old.chunk_text);
+                    INSERT INTO content_chunks_fts(rowid, chunk_text)
+                    VALUES (new.id, new.chunk_text);
+                END
+                """
+            )
+            c.execute(
+                "INSERT INTO content_chunks_fts(content_chunks_fts) VALUES('rebuild')"
+            )
+            conn.commit()
+        except sqlite3.OperationalError as exc:
+            pytest.skip(f"SQLite FTS5 unavailable in this environment: {exc}")
+        finally:
+            conn.close()
+
+        chunks = [
+            (0, "machine learning model architecture"),
+            (1, "sports weather and travel notes"),
+        ]
+        vector_store.store_chunk_embeddings(cache_id=1, chunks=chunks)
+
+        scores = vector_store._get_bm25_scores(
+            cache_id=1,
+            query="machine learning architecture",
+            limit=10,
+        )
+
+        assert scores
+        assert 0 in scores
 
     def test_search_returns_sorted_results(self, vector_store, mock_embedding_client):
         """Test that search results are sorted by similarity descending."""

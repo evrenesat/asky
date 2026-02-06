@@ -106,6 +106,21 @@ class TestExtractLinks:
         # Should only process once
         assert len(result) == 1
 
+    def test_extract_links_preserves_input_order(self, mock_cache):
+        """Test that URL deduplication preserves first-seen order."""
+        from asky.research.tools import execute_extract_links
+
+        mock_cache.get_cached.return_value = {
+            "id": 1,
+            "links": [],
+        }
+
+        result = execute_extract_links(
+            {"urls": ["http://b.com", "http://a.com", "http://b.com"]}
+        )
+
+        assert list(result.keys()) == ["http://b.com", "http://a.com"]
+
     def test_extract_links_limits_results(self, mock_cache):
         """Test that max_links limits results."""
         from asky.research.tools import execute_extract_links
@@ -275,8 +290,8 @@ class TestGetRelevantContent:
             mock_store = MagicMock()
             mock_store.has_chunk_embeddings.return_value = True
             mock_store.search_chunks.return_value = [
-                ("Relevant chunk 1", 0.95),
-                ("Relevant chunk 2", 0.85),
+                ("Relevant chunk about architecture decisions", 0.95),
+                ("Operational timeline and milestone details", 0.85),
             ]
             mock_vs.return_value = mock_store
 

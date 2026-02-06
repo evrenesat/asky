@@ -17,6 +17,7 @@ from asky.config import (
 )
 
 logger = logging.getLogger(__name__)
+CHUNK_FTS_TABLE_NAME = "content_chunks_fts"
 
 
 class ResearchCache:
@@ -130,6 +131,7 @@ class ResearchCache:
             ON content_chunks(cache_id)
         """
         )
+        self._init_chunk_fts_index(c)
 
         # Link embeddings table for relevance filtering
         c.execute(
@@ -140,6 +142,7 @@ class ResearchCache:
                 link_text TEXT NOT NULL,
                 link_url TEXT NOT NULL,
                 embedding BLOB,
+                embedding_model TEXT,
                 created_at TEXT NOT NULL,
                 FOREIGN KEY (cache_id) REFERENCES research_cache(id) ON DELETE CASCADE,
                 UNIQUE(cache_id, link_url)
@@ -152,6 +155,13 @@ class ResearchCache:
             CREATE INDEX IF NOT EXISTS idx_link_embeddings_cache_id
             ON link_embeddings(cache_id)
         """
+        )
+
+        self._ensure_column(
+            cursor=c,
+            table_name="link_embeddings",
+            column_name="embedding_model",
+            column_sql_type="TEXT",
         )
 
         # Research findings table for persistent memory across sessions
@@ -181,6 +191,88 @@ class ResearchCache:
         conn.commit()
         conn.close()
         logger.debug("Research cache database initialized")
+
+    def _init_chunk_fts_index(self, cursor: sqlite3.Cursor) -> None:
+        """Initialize FTS index and triggers for chunk_text BM25 search."""
+        try:
+            cursor.execute(
+                f"""
+                CREATE VIRTUAL TABLE IF NOT EXISTS {CHUNK_FTS_TABLE_NAME}
+                USING fts5(
+                    chunk_text,
+                    content='content_chunks',
+                    content_rowid='id'
+                )
+                """
+            )
+            cursor.execute(
+                f"""
+                CREATE TRIGGER IF NOT EXISTS content_chunks_ai
+                AFTER INSERT ON content_chunks
+                BEGIN
+                    INSERT INTO {CHUNK_FTS_TABLE_NAME}(rowid, chunk_text)
+                    VALUES (new.id, new.chunk_text);
+                END
+                """
+            )
+            cursor.execute(
+                f"""
+                CREATE TRIGGER IF NOT EXISTS content_chunks_ad
+                AFTER DELETE ON content_chunks
+                BEGIN
+                    INSERT INTO {CHUNK_FTS_TABLE_NAME}({CHUNK_FTS_TABLE_NAME}, rowid, chunk_text)
+                    VALUES('delete', old.id, old.chunk_text);
+                END
+                """
+            )
+            cursor.execute(
+                f"""
+                CREATE TRIGGER IF NOT EXISTS content_chunks_au
+                AFTER UPDATE ON content_chunks
+                BEGIN
+                    INSERT INTO {CHUNK_FTS_TABLE_NAME}({CHUNK_FTS_TABLE_NAME}, rowid, chunk_text)
+                    VALUES('delete', old.id, old.chunk_text);
+                    INSERT INTO {CHUNK_FTS_TABLE_NAME}(rowid, chunk_text)
+                    VALUES (new.id, new.chunk_text);
+                END
+                """
+            )
+
+            # Ensure legacy rows (before trigger/index creation) are indexed.
+            cursor.execute(
+                f"INSERT INTO {CHUNK_FTS_TABLE_NAME}({CHUNK_FTS_TABLE_NAME}) VALUES('rebuild')"
+            )
+        except sqlite3.OperationalError as exc:
+            logger.warning(f"FTS5 unavailable, BM25 lexical search disabled: {exc}")
+
+    def _ensure_column(
+        self,
+        cursor: sqlite3.Cursor,
+        table_name: str,
+        column_name: str,
+        column_sql_type: str,
+    ) -> None:
+        """Add a missing column for backward-compatible schema evolution."""
+        cursor.execute(f"PRAGMA table_info({table_name})")
+        existing_columns = {row[1] for row in cursor.fetchall()}
+        if column_name in existing_columns:
+            return
+        cursor.execute(
+            f"ALTER TABLE {table_name} ADD COLUMN {column_name} {column_sql_type}"
+        )
+
+    def _clear_stale_vectors(
+        self,
+        cursor: sqlite3.Cursor,
+        cache_id: int,
+        clear_chunks: bool,
+        clear_links: bool,
+    ) -> None:
+        """Remove stale vector rows tied to outdated cached payloads."""
+        if clear_chunks:
+            cursor.execute("DELETE FROM content_chunks WHERE cache_id = ?", (cache_id,))
+        if clear_links:
+            cursor.execute("DELETE FROM link_embeddings WHERE cache_id = ?", (cache_id,))
 
     def _url_hash(self, url: str) -> str:
         """Generate hash for URL."""
@@ -244,6 +336,7 @@ class ResearchCache:
         expires = now + timedelta(hours=self.ttl_hours)
         url_hash = self._url_hash(url)
         content_hash = self._content_hash(content)
+        links_json = json.dumps(links)
 
         with self._db_lock:
             conn = self._get_conn()
@@ -251,15 +344,18 @@ class ResearchCache:
 
             # Check if content changed (for re-summarization)
             c.execute(
-                "SELECT id, content_hash, summary_status FROM research_cache WHERE url_hash = ?",
+                "SELECT id, content_hash, links_json FROM research_cache WHERE url_hash = ?",
                 (url_hash,),
             )
             existing = c.fetchone()
 
             content_changed = True
+            links_changed = True
             if existing:
                 old_hash = existing[1]
+                old_links_json = existing[2]
                 content_changed = old_hash != content_hash
+                links_changed = old_links_json != links_json
 
             c.execute(
                 """
@@ -291,7 +387,7 @@ class ResearchCache:
                     url_hash,
                     content,
                     title,
-                    json.dumps(links),
+                    links_json,
                     now.isoformat(),
                     expires.isoformat(),
                     content_hash,
@@ -309,6 +405,14 @@ class ResearchCache:
                 )
                 result = c.fetchone()
                 cache_id = result[0] if result else 0
+
+            if existing:
+                self._clear_stale_vectors(
+                    cursor=c,
+                    cache_id=cache_id,
+                    clear_chunks=content_changed,
+                    clear_links=links_changed,
+                )
 
             conn.commit()
             conn.close()

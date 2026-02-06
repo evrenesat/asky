@@ -1,3 +1,52 @@
+## 2026-02-06 - Research RAG Quality and Freshness Upgrade
+
+**Summary**: Upgraded research-mode retrieval to be more reliable and higher quality by fixing chunk overlap behavior, invalidating stale vectors on cache updates, introducing hybrid dense+BM25 ranking with diversity filtering, and hardening embedding API calls with retry/backoff.
+
+**Changes**:
+- **Chunking** (`src/asky/research/chunker.py`):
+  - Fixed overlap progression logic so configured overlap is preserved deterministically and cannot collapse due a faulty loop guard.
+  - Added explicit constants for sentence-boundary search window and lookahead.
+- **Cache Freshness** (`src/asky/research/cache.py`):
+  - Added schema migration support for `link_embeddings.embedding_model`.
+  - Added stale-vector invalidation when cached content or link lists change (`content_chunks` / `link_embeddings` cleanup by `cache_id`).
+- **Vector Store** (`src/asky/research/vector_store.py`):
+  - Added model-aware freshness checks:
+    - `has_chunk_embeddings_for_model(...)`
+    - `has_link_embeddings_for_model(...)`
+  - Added `search_chunks_hybrid(...)` for combined semantic (cosine) + BM25 lexical ranking via SQLite FTS5.
+  - Improved storage behavior by clearing old rows before re-indexing chunks/links to avoid stale leftovers.
+- **Research Tools** (`src/asky/research/tools.py`):
+  - Replaced non-deterministic URL dedupe (`set`) with order-preserving dedupe.
+  - `get_relevant_content` now supports optional `dense_weight` and `min_relevance`.
+  - Added chunk diversity filtering to reduce near-duplicate snippets.
+  - Added compatibility fallbacks so tools still work with stores that only implement legacy dense search methods.
+- **Embedding Client** (`src/asky/research/embeddings.py`, `src/asky/config/__init__.py`, `src/asky/data/config/research.toml`):
+  - Added bounded retry/backoff for transient embedding API failures.
+  - Switched embedding requests to a persistent session.
+  - Added new config fields:
+    - `research.embedding.retry_attempts`
+    - `research.embedding.retry_backoff_seconds`
+- **Tests**:
+  - Added/updated tests in:
+    - `tests/test_research_chunker.py`
+    - `tests/test_research_cache.py`
+    - `tests/test_research_vector_store.py`
+    - `tests/test_research_embeddings.py`
+    - `tests/test_research_tools.py`
+  - New coverage includes overlap determinism, cache-driven vector invalidation, model-aware freshness checks, retry behavior, and URL order preservation.
+
+**Verification**:
+- Focused research suite:
+  - `HOME=/tmp/asky-test-home uv run pytest tests/test_research_chunker.py tests/test_research_embeddings.py tests/test_research_vector_store.py tests/test_research_tools.py tests/test_research_cache.py`
+  - Result: `148 passed`
+- Full project tests (excluding scratch instability from `temp/` by using the committed suite path):
+  - `HOME=/tmp/asky-test-home uv run pytest tests`
+  - Result: `327 passed`
+
+**Gotchas / Follow-up**:
+- FTS5 support depends on the SQLite build; code falls back to token-overlap lexical scoring if FTS5 is unavailable.
+- Existing scratch tests under `temp/` may still affect `uv run pytest` if they are intentionally left failing.
+
 ## 2026-02-06 - Refactoring File Generation and Session Utils
 
 **Summary**: Refactored the HTML file generation mechanism to save files in a persistent archive directory (`~/.config/asky/archive`) with meaningful, timestamped names. Also extracted session slug generation logic into a reusable utility module.

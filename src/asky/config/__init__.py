@@ -129,6 +129,10 @@ RESEARCH_EMBEDDING_MODEL = _research_embedding.get(
 RESEARCH_EMBEDDING_DIMENSION = _research_embedding.get("dimension", 768)
 RESEARCH_EMBEDDING_BATCH_SIZE = _research_embedding.get("batch_size", 32)
 RESEARCH_EMBEDDING_TIMEOUT = _research_embedding.get("timeout", 30)
+RESEARCH_EMBEDDING_RETRY_ATTEMPTS = _research_embedding.get("retry_attempts", 3)
+RESEARCH_EMBEDDING_RETRY_BACKOFF_SECONDS = _research_embedding.get(
+    "retry_backoff_seconds", 0.5
+)
 
 # Research Prompts
 RESEARCH_SYSTEM_PROMPT = _prompts.get("research_system", "")

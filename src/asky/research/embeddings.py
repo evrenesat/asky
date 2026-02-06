@@ -2,6 +2,7 @@
 
 import logging
 import struct
+import time
 from typing import List, Optional
 
 import requests
@@ -11,9 +12,12 @@ from asky.config import (
     RESEARCH_EMBEDDING_MODEL,
     RESEARCH_EMBEDDING_TIMEOUT,
     RESEARCH_EMBEDDING_BATCH_SIZE,
+    RESEARCH_EMBEDDING_RETRY_ATTEMPTS,
+    RESEARCH_EMBEDDING_RETRY_BACKOFF_SECONDS,
 )
 
 logger = logging.getLogger(__name__)
+RETRYABLE_HTTP_STATUS_CODES = {429, 500, 502, 503, 504}
 
 
 class EmbeddingClient:
@@ -34,6 +38,8 @@ class EmbeddingClient:
         model: str = None,
         timeout: int = None,
         batch_size: int = None,
+        retry_attempts: int = None,
+        retry_backoff_seconds: float = None,
     ):
         # Skip re-initialization for singleton
         if self._initialized:
@@ -43,6 +49,11 @@ class EmbeddingClient:
         self.model = model or RESEARCH_EMBEDDING_MODEL
         self.timeout = timeout or RESEARCH_EMBEDDING_TIMEOUT
         self.batch_size = batch_size or RESEARCH_EMBEDDING_BATCH_SIZE
+        self.retry_attempts = retry_attempts or RESEARCH_EMBEDDING_RETRY_ATTEMPTS
+        self.retry_backoff_seconds = (
+            retry_backoff_seconds or RESEARCH_EMBEDDING_RETRY_BACKOFF_SECONDS
+        )
+        self._session = requests.Session()
 
         # Usage tracking
         self.texts_embedded: int = 0
@@ -80,48 +91,69 @@ class EmbeddingClient:
 
     def _embed_batch(self, texts: List[str]) -> List[List[float]]:
         """Generate embeddings for a single batch."""
-        try:
-            response = requests.post(
-                self.api_url,
-                json={"input": texts, "model": self.model},
-                timeout=self.timeout,
-            )
-            response.raise_for_status()
+        last_error: Optional[Exception] = None
 
-            data = response.json()
+        for attempt in range(1, self.retry_attempts + 1):
+            try:
+                response = self._session.post(
+                    self.api_url,
+                    json={"input": texts, "model": self.model},
+                    timeout=self.timeout,
+                )
+                response.raise_for_status()
 
-            # Track usage
-            self.api_calls += 1
-            self.texts_embedded += len(texts)
-            usage = data.get("usage", {})
-            self.prompt_tokens += usage.get("prompt_tokens", 0)
+                data = response.json()
 
-            # Handle different response formats
-            if "data" in data:
-                # OpenAI format
-                embeddings = [item["embedding"] for item in data["data"]]
-            elif "embeddings" in data:
-                # Alternative format
-                embeddings = data["embeddings"]
-            else:
+                # Track usage
+                self.api_calls += 1
+                self.texts_embedded += len(texts)
+                usage = data.get("usage", {})
+                self.prompt_tokens += usage.get("prompt_tokens", 0)
+
+                # Handle different response formats
+                if "data" in data:
+                    # OpenAI format
+                    return [item["embedding"] for item in data["data"]]
+                if "embeddings" in data:
+                    # Alternative format
+                    return data["embeddings"]
                 raise ValueError(f"Unexpected response format: {list(data.keys())}")
+            except requests.exceptions.HTTPError as e:
+                last_error = e
+                status_code = e.response.status_code if e.response is not None else None
+                is_retryable = status_code in RETRYABLE_HTTP_STATUS_CODES
+                if is_retryable and attempt < self.retry_attempts:
+                    self._sleep_before_retry(attempt)
+                    continue
+                logger.error(f"Embedding API HTTP error: status={status_code}")
+                raise
+            except (requests.exceptions.ConnectionError, requests.exceptions.Timeout) as e:
+                last_error = e
+                if attempt < self.retry_attempts:
+                    self._sleep_before_retry(attempt)
+                    continue
+                if isinstance(e, requests.exceptions.ConnectionError):
+                    logger.error(
+                        f"Failed to connect to embedding API at {self.api_url}. "
+                        "Is LM Studio running with an embedding model loaded?"
+                    )
+                else:
+                    logger.error(
+                        f"Embedding API request timed out after {self.timeout}s"
+                    )
+                raise
+            except Exception as e:
+                logger.error(f"Embedding API error: {e}")
+                raise
 
-            return embeddings
+        if last_error is not None:
+            raise last_error
+        raise RuntimeError("Embedding API request failed unexpectedly")
 
-        except requests.exceptions.ConnectionError:
-            logger.error(
-                f"Failed to connect to embedding API at {self.api_url}. "
-                "Is LM Studio running with an embedding model loaded?"
-            )
-            raise
-        except requests.exceptions.Timeout:
-            logger.error(
-                f"Embedding API request timed out after {self.timeout}s"
-            )
-            raise
-        except Exception as e:
-            logger.error(f"Embedding API error: {e}")
-            raise
+    def _sleep_before_retry(self, attempt: int) -> None:
+        """Sleep with linear backoff before retrying transient errors."""
+        delay_seconds = self.retry_backoff_seconds * attempt
+        time.sleep(delay_seconds)
 
     def embed_single(self, text: str) -> List[float]:
         """Generate embedding for a single text."""
