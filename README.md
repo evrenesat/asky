@@ -8,16 +8,20 @@
 asky is an AI-powered web search CLI with LLM tool-calling capabilities.
 
 It (can be invoked as `asky` or `ask`) provides a powerful command-line interface that brings AI-powered search and research capabilities directly to your terminal. It uses LLMs and tools to synthesize answers from the web (or from files and cli commands you expose as tools).
+
 ## Key Features
 
 - **Multi-Model Support**: Easily define and switch between various LLMs and providers that supports OpenAI compatible API.
+- **Deep Research Mode**: A specialized mode where the agent iteratively searches, extracts links, and reads content using RAG (Retrieval Augmented Generation) to answer complex queries.
 - **Tool-Calling Integration**: Models can autonomously perform web searches (via SearXNG or Serper API), fetch URL content, and get current date/time to provide accurate, up-to-date answers.
 - **Custom Tools**: Expose any CLI command as a tool for the LLM. Define your own commands and parameters in `config.toml`.
-- **Intelligent Content Fetching**: Automatically strips HTML noise (scripts, styles) to provide clean text context to the models. It can also summarize the content of the URLs and use the summaries for chat context. 
+- **File Prompts**: Load complex prompts directly from files using `file://` URIs (e.g., `asky file://my_prompt.txt`).
+- **Smart Context Management**: Automatically summarizes web content and older conversation history to maximize the LLM's context window usage.
 - **Conversation History**: Maintains a local SQLite database of your queries and answers (with their summaries), allowing for context-aware follow-up questions.
 - **Predefined Prompts**: Users can define and quickly invoke common prompt patterns using simple slashes (e.g., `/gn` for get latest news from The Guardian).
 - **Clipboard Integration**: Use `/cp` to expand the query with clipboard content.
-- **Token Efficient**: It counts token usage and keep the model informed about remaining context capacity to encourage it to finish the task before hitting the limit. Together with summaries, this makes asky very token efficient.
+- **Actionable Outputs**: Send results via email (`--mail`) or push them to an external endpoint (`--push-data`) directly from the CLI.
+- **Token Efficient**: It counts token usage and keep the model informed about remaining context capacity to encourage it to finish the task before hitting the limit.
 
 ## How it Works
 
@@ -59,12 +63,21 @@ uv tool install -e ".[iterm]"
 ## Usage
 
 > [!NOTE]
-> **asky is powerful**: These examples are weak! Better examples and documentation are coming soon!
+> **asky is powerful**: These examples show just a fraction of what you can do.
 
 ```
 
 # Basic query
-asky what is the weather in Berlin
+asky what is the correct temperature for green tea
+
+# Research Mode (Iterative deep search)
+asky -r "Compare the latest iPhone vs Samsung flagship specs and reviews"
+
+# Use a specific model
+asky -m gf "Explain quantum entanglement"
+
+# File Prompt (Great for code reviews or complex analysis)
+asky file://code_review_checklist.txt
 
 # Continue from previous query (by ID)
 asky -c 1 tell me more about that
@@ -74,10 +87,17 @@ asky -c~1 explain more
 # OR
 asky -c "~2" what about the one before that?
 
+# Send result to email
+asky --mail user@example.com --subject "Meeting Summary" "Summarize the last 3 emails about Project X"
+
+```
+
 > [!NOTE]
 > **Zsh Users**: When using `~` for relative IDs, you must either quote the value (e.g., `asky -c "~1"`) or place it immediately after the flag without a space (e.g., `asky -c~1`). If you use a space without quotes (e.g., `asky -c ~1`), zsh will attempt to expand it as a directory stack entry.
 
 
+
+```console
 ➜  ~ asky -p
 
 === USER PROMPTS ===
@@ -119,7 +139,6 @@ options:
   --all                 Used with --delete-messages or --delete-sessions to delete ALL records.
   -H, --history [N]
                         Show last N queries and answer summaries (default 10).
-                        Use with --print-answer to print the full answer(s).
   -pa, --print-answer PRINT_IDS
                         Print the answer(s) for specific history IDs (comma-separated).
   -ps, --print-session PRINT_SESSION
@@ -133,55 +152,49 @@ options:
   --push-data PUSH_DATA_ENDPOINT
                         Push query result to a configured endpoint after query completes.
   --push-param KEY VALUE
-                        Dynamic parameter for --push-data. Can be repeated. Example: --push-param title 'My Title'
-  -ss, --sticky-session Session Name
-                        Create and activate a new named session (then exits). Usage: -ss My Session Name
-  -rs, --resume-session Session Name, Session ID
-                        Resume an existing session by ID or name (partial match supported).
+                        Dynamic parameter for --push-data. Can be repeated.
+  -ss, --sticky-session STICKY_SESSION [STICKY_SESSION ...]
+                        Create and activate a new named session (then exits).
+  -rs, --resume-session RESUME_SESSION [RESUME_SESSION ...]
+                        Resume an existing session by ID or name.
   -se, --session-end    End the current active session
-  -sh, --session-history [N]
+  -sh, --session-history [SESSION_HISTORY]
                         Show last N sessions (default 10).
   -r, --research        Enable deep research mode with link extraction and RAG-based content retrieval.
-                        In this mode, the LLM uses specialized tools:
-                          - extract_links: Discover links (content cached, only links returned)
-                          - get_link_summaries: Get AI summaries of cached pages
-                          - get_relevant_content: RAG-based retrieval of relevant sections
-                          - get_full_content: Get complete cached content
   -tl, --terminal-lines [TERMINAL_LINES]
-                        Include the last N lines of terminal context in the query (default 10 if flag used without value).
+                        Include the last N lines of terminal context in the query.
 ```
 
-**Deep research mode** (encourages model to perform multiple searches)
+## Features in Depth
 
-asky -d 5 comprehensive analysis of topic
+### Deep Research Mode (`-r`)
+For complex topics, use the `--research` flag. This enables a specialized system prompt and toolset:
+- **extract_links**: Scans pages to find relevant citations without loading full content.
+- **get_link_summaries**: Rapidly summarizes multiple pages to decide which ones to read.
+- **get_relevant_content**: Uses vector embeddings (via RAG) to pull only the specific paragrahps you need from a long document.
 
-**Deep dive mode** (encourages model to read multiple pages from same domain)
+### File Prompts
+You can store complex prompts in a file and feed them to `asky`:
+```bash
+asky file://my_complex_prompt.txt
+```
+This is useful for repetitive tasks like "Code Review", "Summarize Release Notes", etc.
+File prompts are validated for size limits (configurable in `config.toml`).
 
-asky -dd https://example.com
+### Session Management
+Organize your work into named sessions:
+```bash
+# Start a new session for a specific project
+asky -ss "Project Alpha"
 
-**Use a specific model**
+# Later, resume it
+asky -rs "Project Alpha" what were we discussing?
+```
 
-asky -m gf what is quantum computing
-
-**Force web search**
-
-asky -fs latest news on topic
-
-
-**Pre-configured model definitions**
-
-Followin model definitions ship with default config.toml, but you can add any number of models that are served with an OpenAI compatible API.
-
-- `gf` - Google Gemini Flash (default)
-- `lfm` - Liquid LFM 2.5
-- `q8` - Qwen3 8B
-- `q30` - Qwen3 30B
-- `q34` - Qwen3 4B
-- `q34t` - Qwen3 4B Thinking
-
-
-
-## Optional Features
+### Output Actions
+Automate your workflow by pushing results to other services:
+- **Email**: `asky --mail me@work.com "Send me the daily briefing"`
+- **Push Data**: `asky --push-data https://my-webhook.com/endpoint "Analyze this log"`
 
 ### Terminal Context Integration
 This feature allows you to include the last N lines of your terminal screen as context for your query. Useful when you want to ask "why am I getting this error?".
@@ -208,6 +221,7 @@ Example configuration for a `list_dir` tool:
 [tool.list_dir]
 command = "ls"
 description = "List the contents of a directory."
+enabled = true
 
 [tool.list_dir.parameters]
 type = "object"
@@ -224,6 +238,7 @@ Example configuration for a `grep_search` tool:
 [tool.grep_search]
 command = "grep -r {pattern} {path}"
 description = "Search for a pattern in files recursively."
+enabled = false # Disabled by default for safety
 
 [tool.grep_search.parameters]
 type = "object"
@@ -243,7 +258,7 @@ default = "."
 > **Security Risk**: Custom tools execute commands using your system shell. While asky attempts to quote arguments safely, exposing powerful CLI tools to an LLM can be risky. Use this feature with caution.
 
 ### How it works:
-- **Placeholders**: Use `{param_name}` in the `command` string to inject arguments. If no placeholders are found, arguments are appended to the command.
+- **Placeholders**: Use `{param_name}` in the `command` string to inject arguments. If no placeholders are found, argument is appended to command.
 - **Quoting**: All arguments are automatically cleaned (inner double-quotes removed) and wrapped in double-quotes for safety.
 - **Execution**: Commands are executed via terminal shell, allowing for advanced piping and redirection.
 
@@ -269,6 +284,8 @@ Example `config.toml`:
 ```toml
 [general]
 default_model = "gf"
+compact_banner = true
+terminal_context_lines = 10
 
 [api.gemini]
 api_key_env = "GOOGLE_API_KEY"
