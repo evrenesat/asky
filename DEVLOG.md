@@ -1,3 +1,19 @@
+## 2026-02-06 - Terminal Context Fix
+
+**Summary**: Fixed a bug where terminal context was being fetched and appended unconditionally because of the default configuration value, even when the `-tl` flag was not provided.
+
+**Changes**:
+- **Logic Fix**: Updated `src/asky/cli/chat.py` to ensure terminal context is only fetched when `args.terminal_lines` is explicitly provided (either with a value or as a flag using the default from config).
+- **Default Behavior**: If the flag is missing, `lines_count` now defaults to 0, effectively disabling the feature unless opted-in.
+- **Testing**:
+  - Updated `tests/test_cli.py` to explicitly request terminal lines in verbose flow tests.
+  - Added new test case `test_main_flow_default_no_context` to verify that no context is injected by default.
+
+**Verification**:
+- Ran full test suite (`uv run pytest`), all 31 tests in `test_cli.py` passed (and others).
+
+---
+
 ## 2026-02-06 - Compact Two-Line Banner
 
 **Summary**: Introduced an optional "compact banner" mode that reduces the CLI header to two lines using unicode icons and emojis, suitable for smaller screens or power users who prefer minimal UI.

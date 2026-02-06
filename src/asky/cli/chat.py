@@ -202,13 +202,13 @@ def run_chat(args: argparse.Namespace, query_text: str) -> None:
 
     # Handle Terminal Context
     # Check if requested via flag OR configured default
-    from asky.config import TERMINAL_CONTEXT_LINES
+    # from asky.config import TERMINAL_CONTEXT_LINES
 
     # Determine effective lines count
     if args.terminal_lines is not None:
         lines_count = args.terminal_lines
     else:
-        lines_count = TERMINAL_CONTEXT_LINES
+        lines_count = 0
 
     if lines_count > 0:
         from asky.cli.terminal import inject_terminal_context

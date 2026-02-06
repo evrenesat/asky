@@ -428,7 +428,7 @@ def test_main_flow_verbose(
         sticky_session=None,
         session_end=False,
         session_history=None,
-        terminal_lines=None,
+        terminal_lines=10,
     )
     mock_run.return_value = "Final Answer"
     mock_gen_sum.return_value = ("q_sum", "a_sum")
@@ -457,6 +457,71 @@ def test_main_flow_verbose(
         ],
         display_callback=ANY,
     )
+
+
+@patch("asky.cli.main.parse_args")
+@patch("asky.cli.main.init_db")
+@patch("asky.cli.main.get_db_record_count")
+@patch("asky.cli.chat.ConversationEngine.run")
+@patch("asky.cli.chat.generate_summaries")
+@patch("asky.cli.chat.save_interaction")
+@patch("asky.cli.terminal.get_terminal_context")
+def test_main_flow_default_no_context(
+    mock_get_term,
+    mock_save,
+    mock_gen_sum,
+    mock_run,
+    mock_db_count,
+    mock_init,
+    mock_parse,
+):
+    """Test that terminal context is NOT injected by default if flag is missing."""
+    # Even if terminal has content
+    mock_get_term.return_value = "Should Not Be Used"
+    mock_parse.return_value = argparse.Namespace(
+        model="gf",
+        history=None,
+        continue_ids=None,
+        summarize=False,
+        delete_messages=None,
+        delete_sessions=None,
+        all=False,
+        print_session=None,
+        print_ids=None,
+        prompts=False,
+        query=["test"],
+        verbose=False,
+        open=False,
+        mail_recipients=None,
+        subject=None,
+        sticky_session=None,
+        session_end=False,
+        session_history=None,
+        terminal_lines=None,  # Flag missing
+    )
+    mock_run.return_value = "Final Answer"
+    mock_gen_sum.return_value = ("q_sum", "a_sum")
+
+    with (
+        patch(
+            "asky.cli.main.MODELS",
+            {"gf": {"id": "gemini-flash-latest"}, "lfm": {"id": "llama-fallback"}},
+        ),
+        patch("asky.cli.main.SUMMARIZATION_MODEL", "gf"),
+    ):
+        main()
+
+    # Verify context was NOT called/injected
+    mock_run.assert_called_once_with(
+        [
+            {"role": "system", "content": ANY},
+            {"role": "user", "content": "test"},
+        ],
+        display_callback=ANY,
+    )
+    # inject_terminal_context calls get_terminal_context if lines > 0
+    # validation: get_terminal_context should NOT be called
+    mock_get_term.assert_not_called()
 
 
 # Tests for slash command prompt listing
