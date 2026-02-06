@@ -160,3 +160,12 @@ def test_compaction_llm_strategy(temp_repo):
                 mock_sum.assert_called_once()
                 s = temp_repo.get_session_by_id(sid)
                 assert s.compacted_summary == "LLM COMPACTED"
+
+
+def test_count_sessions(temp_repo):
+    """Regression test for missing count_sessions method."""
+    assert temp_repo.count_sessions() == 0
+    temp_repo.create_session("model", "s1")
+    assert temp_repo.count_sessions() == 1
+    temp_repo.create_session("model", "s2")
+    assert temp_repo.count_sessions() == 2

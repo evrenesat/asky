@@ -47,6 +47,21 @@
 - FTS5 support depends on the SQLite build; code falls back to token-overlap lexical scoring if FTS5 is unavailable.
 - Existing scratch tests under `temp/` may still affect `uv run pytest` if they are intentionally left failing.
 
+## 2026-02-06 - Fixed Session Count Crash
+
+**Summary**: Fixed an `AttributeError` crash when starting the CLI or viewing sessions, caused by a missing `count_sessions` method in the `SQLiteHistoryRepository`.
+
+**Changes**:
+- **Storage**: Added `count_sessions` method to `HistoryRepository` ABC in `src/asky/storage/interface.py`.
+- **Implementation**: Implemented `count_sessions` in `src/asky/storage/sqlite.py` to return the count of rows in the `sessions` table.
+- **Testing**: Added `test_count_sessions` regression test to `tests/test_sessions.py`.
+
+**Verification**:
+- Verified with reproduction script `temp_reproduce_crash.py`.
+- Ran full test suite: 346 tests passed. (Note: One unrelated failure in `temp/test_visual_indicators.py` observed).
+
+---
+
 ## 2026-02-06 - Refactoring File Generation and Session Utils
 
 **Summary**: Refactored the HTML file generation mechanism to save files in a persistent archive directory (`~/.config/asky/archive`) with meaningful, timestamped names. Also extracted session slug generation logic into a reusable utility module.

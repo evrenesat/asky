@@ -119,6 +119,11 @@ class HistoryRepository(ABC):
         pass
 
     @abstractmethod
+    def count_sessions(self) -> int:
+        """Return total number of sessions."""
+        pass
+
+    @abstractmethod
     def delete_sessions(
         self,
         ids: Optional[str] = None,

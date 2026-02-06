@@ -481,6 +481,16 @@ class SQLiteHistoryRepository(HistoryRepository):
         conn.close()
         return count
 
+    def count_sessions(self) -> int:
+        """Return the total number of sessions."""
+        self.init_db()
+        conn = self._get_conn()
+        c = conn.cursor()
+        c.execute("SELECT COUNT(*) FROM sessions")
+        count = c.fetchone()[0]
+        conn.close()
+        return count
+
     # Session management methods (from SessionRepository)
 
     def create_session(self, model: str, name: Optional[str] = None) -> int:
