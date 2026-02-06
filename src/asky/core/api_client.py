@@ -59,6 +59,7 @@ def get_llm_msg(
     usage_tracker: Optional[UsageTracker] = None,
     tool_schemas: Optional[List[Dict[str, Any]]] = None,
     status_callback: Optional[Callable[[Optional[str]], None]] = None,
+    parameters: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     """Send messages to the LLM and get a response."""
     # Importing here to avoid circular dependencies during initialization
@@ -101,6 +102,13 @@ def get_llm_msg(
         "model": model_id,
         "messages": messages,
     }
+
+    # Add generation parameters if provided
+    if parameters:
+        for key, value in parameters.items():
+            if value is not None:
+                payload[key] = value
+
     if use_tools:
         payload["tools"] = tool_schemas
         payload["tool_choice"] = "auto"

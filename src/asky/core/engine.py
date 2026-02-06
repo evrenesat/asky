@@ -118,6 +118,7 @@ class ConversationEngine:
                     # Pass schemas from registry
                     tool_schemas=self.tool_registry.get_schemas(),
                     status_callback=status_reporter,
+                    parameters=self.model_config.get("parameters"),
                 )
 
                 calls = extract_calls(msg, turn)

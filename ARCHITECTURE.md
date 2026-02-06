@@ -131,7 +131,10 @@ The CLI is modularized for maintainability:
 | `chat.py` | Main chat flow: context loading, message building, engine invocation |
 | `history.py` | `-H`, `-pa`, `--delete-messages` commands |
 | `sessions.py` | `-sH`, `-ps`, `--delete-sessions`, `--session-end` commands |
+| `sessions.py` | `-sH`, `-ps`, `--delete-sessions`, `--session-end` commands |
 | `prompts.py` | `-p` command to list user prompts |
+| `models.py` | `--add-model`, `--edit-model` interactive commands |
+| `openrouter.py` | OpenRouter API client and caching logic |
 | `utils.py` | Query expansion (`/cp`, `/prompt_key`), verbose config printing |
 
 #### Key CLI Flags
@@ -151,6 +154,8 @@ The CLI is modularized for maintainability:
 | `--mail` | Send result via email |
 | `--push-data` | Push result to configured endpoint |
 | `--push-param KEY VALUE` | Dynamic parameter for push-data (repeatable) |
+| `--add-model` | Interactively add a new model |
+| `--edit-model` | Interactively edit a model |
 
 ---
 

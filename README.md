@@ -21,6 +21,7 @@ It (can be invoked as `asky` or `ask`) provides a powerful command-line interfac
 - **Predefined Prompts**: Users can define and quickly invoke common prompt patterns using simple slashes (e.g., `/gn` for get latest news from The Guardian).
 - **Clipboard Integration**: Use `/cp` to expand the query with clipboard content.
 - **Actionable Outputs**: Send results via email (`--mail`) or push them to an external endpoint (`--push-data`) directly from the CLI.
+- **Model Management**: Interactive CLI commands (`--add-model`, `--edit-model`) to easily add and configure new models (including OpenRouter integration).
 - **Token Efficient**: It counts token usage and keep the model informed about remaining context capacity to encourage it to finish the task before hitting the limit.
 
 ## How it Works
@@ -195,6 +196,16 @@ asky -rs "Project Alpha" what were we discussing?
 Automate your workflow by pushing results to other services:
 - **Email**: `asky --mail me@work.com "Send me the daily briefing"`
 - **Push Data**: `asky --push-data https://my-webhook.com/endpoint "Analyze this log"`
+
+### Model Management
+Easily manage your model configurations directly from the CLI:
+```bash
+# Interactively add a new model (searches OpenRouter)
+asky --add-model
+
+# Edit an existing model configuration
+asky --edit-model my-alias
+```
 
 ### Terminal Context Integration
 This feature allows you to include the last N lines of your terminal screen as context for your query. Useful when you want to ask "why am I getting this error?".

@@ -47,6 +47,8 @@ class TestStartupCleanup:
                 args.session_end = False
                 args.session_history = None
                 args.research = False
+                args.add_model = False
+                args.edit_model = None
                 args.query = ["test", "query"]
 
                 mock_parse.return_value = args

@@ -1,3 +1,21 @@
+## 2026-02-06 - Terminal Context Status in Banner
+
+**Summary**: Moved the "Fetching last N lines..." message from stdout to the CLI banner status line using a callback mechanism. This improves the UI by keeping the history clean and preventing status messages from cluttering the scrollback.
+
+**Changes**:
+- **UI**: Added `status_callback` to `inject_terminal_context` in `src/asky/cli/terminal.py`.
+- **Integration**: Updated `src/asky/cli/chat.py` to:
+  - Initialize `InterfaceRenderer` earlier in the startup flow.
+  - Start the live banner before fetching terminal context.
+  - Pass a lambda callback that updates the banner status message instead of printing.
+- **Testing**: Added `test_main_terminal_lines_callback` to `tests/test_cli.py` to verify the callback invocation.
+
+**Verification**:
+- Verified that `asky -tl 5` updates the banner status line and does not print to stdout.
+- Ran full test suite, all tests passed.
+
+---
+
 ## 2026-02-06 - Terminal Context Fix
 
 **Summary**: Fixed a bug where terminal context was being fetched and appended unconditionally because of the default configuration value, even when the `-tl` flag was not provided.

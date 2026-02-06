@@ -2,6 +2,7 @@
 
 from rich.console import Console
 
+from typing import Optional, Callable
 import logging
 import asyncio
 
@@ -98,12 +99,18 @@ def inject_terminal_context(
     lines_count: int,
     verbose: bool = False,
     warn_on_error: bool = False,
+    status_callback: Optional[Callable[[str], None]] = None,
 ) -> None:
     """Fetch and inject terminal context into the messages list."""
     if lines_count <= 0:
         return
 
-    print(f"\n[Fetching last {lines_count} lines of terminal context...]")
+    msg = f"Fetching last {lines_count} lines of terminal context..."
+    if status_callback:
+        status_callback(msg)
+    else:
+        print(f"\n[{msg}]")
+
     term_ctx = get_terminal_context(lines_count)
 
     if term_ctx:

@@ -36,6 +36,7 @@ dependencies = [
     "pyperclip>=1.11.0",
     "requests",
     "rich",
+    "tomlkit>=0.14.0",
 ]
 
 [project.urls]

@@ -200,45 +200,6 @@ def run_chat(args: argparse.Namespace, query_text: str) -> None:
         research_mode=research_mode,
     )
 
-    # Handle Terminal Context
-    # Check if requested via flag OR configured default
-    # from asky.config import TERMINAL_CONTEXT_LINES
-
-    # Determine effective lines count
-    if args.terminal_lines is not None:
-        lines_count = args.terminal_lines
-    else:
-        lines_count = 0
-
-    if lines_count > 0:
-        from asky.cli.terminal import inject_terminal_context
-
-        # Warn if the flag was explicitly provided but failed.
-        # Note: args.terminal_lines is None if not provided (so logic uses config default).
-        # If it IS provided (even as 0? No, 0 check handles that), we want to warn.
-        warn_on_error = args.terminal_lines is not None
-        inject_terminal_context(
-            messages, lines_count, verbose=args.verbose, warn_on_error=warn_on_error
-        )
-
-    # Use research registry if in research mode, otherwise default
-    if research_mode:
-        registry = create_research_tool_registry(usage_tracker=usage_tracker)
-    else:
-        registry = create_default_tool_registry(
-            usage_tracker=usage_tracker, summarization_tracker=summarization_tracker
-        )
-
-    engine = ConversationEngine(
-        model_config=model_config,
-        tool_registry=registry,
-        summarize=args.summarize,
-        verbose=args.verbose,
-        usage_tracker=usage_tracker,
-        open_browser=args.open,
-        session_manager=session_manager,
-    )
-
     # Setup display renderer
     renderer = InterfaceRenderer(
         model_config=model_config,
@@ -266,12 +227,64 @@ def run_chat(args: argparse.Namespace, query_text: str) -> None:
             # Update banner in-place
             renderer.update_banner(current_turn, status_message)
 
-    # Run loop
-    try:
-        # Start Live banner display if enabled
-        if LIVE_BANNER:
-            renderer.start_live()
+    # Start Live banner display if enabled, BEFORE terminal context
+    if LIVE_BANNER:
+        renderer.start_live()
 
+    # Wrap in try/finally to ensure renderer.stop_live() is called
+    try:
+        # Handle Terminal Context
+        # Check if requested via flag OR configured default
+        # from asky.config import TERMINAL_CONTEXT_LINES
+
+        # Determine effective lines count
+        if args.terminal_lines is not None:
+            lines_count = args.terminal_lines
+        else:
+            lines_count = 0
+
+        if lines_count > 0:
+            from asky.cli.terminal import inject_terminal_context
+
+            # Warn if the flag was explicitly provided but failed.
+            warn_on_error = args.terminal_lines is not None
+
+            # Use banner callback if live mode is active
+            status_cb = lambda msg: (
+                renderer.update_banner(0, status_message=msg) if LIVE_BANNER else None
+            )
+
+            inject_terminal_context(
+                messages,
+                lines_count,
+                verbose=args.verbose,
+                warn_on_error=warn_on_error,
+                status_callback=status_cb,
+            )
+
+            # Clear status after context fetch
+            if LIVE_BANNER:
+                renderer.update_banner(0, status_message=None)
+
+        # Use research registry if in research mode, otherwise default
+        if research_mode:
+            registry = create_research_tool_registry(usage_tracker=usage_tracker)
+        else:
+            registry = create_default_tool_registry(
+                usage_tracker=usage_tracker, summarization_tracker=summarization_tracker
+            )
+
+        engine = ConversationEngine(
+            model_config=model_config,
+            tool_registry=registry,
+            summarize=args.summarize,
+            verbose=args.verbose,
+            usage_tracker=usage_tracker,
+            open_browser=args.open,
+            session_manager=session_manager,
+        )
+
+        # Run loop
         display_cb = display_callback if LIVE_BANNER else None
         final_answer = engine.run(messages, display_callback=display_cb)
 

@@ -1,0 +1,93 @@
+[
+  {
+    "BTTLastUpdatedAt" : 1770385631.753979,
+    "BTTTriggerType" : 0,
+    "BTTTriggerClass" : "BTTTriggerTypeKeyboardShortcut",
+    "BTTUUID" : "490AD488-8F26-4712-9DEA-1CCECBA668C1",
+    "BTTAdditionalConfiguration" : "8388608",
+    "BTTShortcutKeyboardType" : 9024,
+    "BTTTriggerOnDown" : 1,
+    "BTTLayoutIndependentChar" : "F1",
+    "BTTShortcutKeyCode" : 122,
+    "BTTShortcutAdvancedModifierKeys" : "8388608",
+    "BTTShortcutModifierKeys" : 8388608,
+    "BTTOrder" : 0,
+    "BTTAutoAdaptToKeyboardLayout" : 0,
+    "BTTActionsToExecute" : [
+      {
+        "BTTLastUpdatedAt" : 1770385789.519968,
+        "BTTTriggerParentUUID" : "490AD488-8F26-4712-9DEA-1CCECBA668C1",
+        "BTTIsPureAction" : true,
+        "BTTTriggerClass" : "BTTTriggerTypeKeyboardShortcut",
+        "BTTUUID" : "EFDD09CA-234F-4724-9C42-3A748AD94C3E",
+        "BTTLayoutIndependentActionChar" : "l",
+        "BTTShortcutToSend" : "55,37",
+        "BTTShortcutKeyboardType" : 0,
+        "BTTShortcutKeyCode" : -1,
+        "BTTOrder" : 0,
+        "BTTAutoAdaptToKeyboardLayout" : 0
+      },
+      {
+        "BTTLastUpdatedAt" : 1770385789.519978,
+        "BTTTriggerParentUUID" : "490AD488-8F26-4712-9DEA-1CCECBA668C1",
+        "BTTIsPureAction" : true,
+        "BTTTriggerClass" : "BTTTriggerTypeKeyboardShortcut",
+        "BTTUUID" : "911F59D2-C2EC-4E35-88B5-4E9EDC9F6FC3",
+        "BTTPredefinedActionType" : 256,
+        "BTTPredefinedActionName" : "Save selected text to variable",
+        "BTTGenericActionConfig" : "selection",
+        "BTTShortcutKeyboardType" : 0,
+        "BTTShortcutKeyCode" : -1,
+        "BTTOrder" : 1,
+        "BTTAutoAdaptToKeyboardLayout" : 0
+      },
+      {
+        "BTTLastUpdatedAt" : 1770385789.5199342,
+        "BTTTriggerParentUUID" : "490AD488-8F26-4712-9DEA-1CCECBA668C1",
+        "BTTIsPureAction" : true,
+        "BTTTriggerClass" : "BTTTriggerTypeKeyboardShortcut",
+        "BTTUUID" : "2A74EAAB-A8BC-462E-BF85-72CCE3361128",
+        "BTTPredefinedActionType" : 254,
+        "BTTPredefinedActionName" : "Show HUD Overlay",
+        "BTTHUDActionConfiguration" : "{\"BTTActionHUDBlur\":0,\"BTTActionHUDBackground\":\"100.000000, 178.000000, 233.000000, 57.095822\",\"BTTIconConfigImageHeight\":100,\"BTTActionHUDPosition\":3,\"BTTActionHUDDetail\":\"\",\"BTTActionHUDDuration\":1.3000000715255737,\"BTTActionHUDCloseOnClick\":0,\"BTTActionHUDDisplayToUse\":2,\"BTTIconConfigImageWidth\":100,\"BTTActionHUDSlideDirection\":1,\"BTTActionHUDHideWhenOtherHUDAppears\":false,\"BTTActionHUDAttributedTitle\":\"{\\\\rtf1\\\\ansi\\\\ansicpg1252\\\\cocoartf2822\\n\\\\cocoatextscaling0\\\\cocoaplatform0{\\\\fonttbl\\\\f0\\\\fnil\\\\fcharset0 Futura-Medium;}\\n{\\\\colortbl;\\\\red255\\\\green255\\\\blue255;}\\n{\\\\*\\\\expandedcolortbl;;}\\n\\\\deftab720\\n\\\\pard\\\\pardeftab720\\\\qc\\\\partightenfactor0\\n\\n\\\\f0\\\\fs68 \\\\cf0 \\\\expnd0\\\\expndtw0\\\\kerning0\\nSummarizing \\\\\\n\\\\{selection\\\\}}\",\"BTTActionHUDWidth\":900,\"BTTActionHUDBorderWidth\":0,\"BTTActionHUDTitle\":\"\",\"BTTIconConfigIconType\":2,\"BTTActionHUDHeight\":220}",
+        "BTTShortcutKeyboardType" : 0,
+        "BTTShortcutKeyCode" : -1,
+        "BTTOrder" : 2,
+        "BTTAutoAdaptToKeyboardLayout" : 0
+      },
+      {
+        "BTTLastUpdatedAt" : 1770385789.5199561,
+        "BTTTriggerParentUUID" : "490AD488-8F26-4712-9DEA-1CCECBA668C1",
+        "BTTIsPureAction" : true,
+        "BTTTriggerClass" : "BTTTriggerTypeKeyboardShortcut",
+        "BTTUUID" : "542F6CF9-42FB-4C1D-B584-2C13435D2B69",
+        "BTTPredefinedActionType" : 128,
+        "BTTPredefinedActionName" : "Send Shortcut to Specific App",
+        "BTTLayoutIndependentActionChar" : "app under mouse cursor",
+        "BTTShortcutApp" : "app under mouse cursor",
+        "BTTShortcutAppUnderCursor" : "app under mouse cursor",
+        "BTTShortcutToSend" : "97",
+        "BTTShortcutKeyboardType" : 0,
+        "BTTShortcutKeyCode" : -1,
+        "BTTOrder" : 3,
+        "BTTAutoAdaptToKeyboardLayout" : 0
+      },
+      {
+        "BTTLastUpdatedAt" : 1770385789.51999,
+        "BTTTriggerParentUUID" : "490AD488-8F26-4712-9DEA-1CCECBA668C1",
+        "BTTIsPureAction" : true,
+        "BTTTriggerClass" : "BTTTriggerTypeKeyboardShortcut",
+        "BTTUUID" : "548976A6-516E-43B1-93EE-20E1090284AB",
+        "BTTPredefinedActionType" : 206,
+        "BTTPredefinedActionName" : "Execute Shell Script  or  Task",
+        "BTTShellTaskActionScript" : "~\/.local\/bin\/asky -o \/sumurl \"{selection}\" ",
+        "BTTShellTaskIdentifier" : "",
+        "BTTShellTaskActionConfig" : "\/bin\/bash:::-c:::-:::OPENROUTER_API_KEY=sk-or-v1-replace-with-your-actual-api-key",
+        "BTTShortcutKeyboardType" : 0,
+        "BTTShortcutKeyCode" : -1,
+        "BTTOrder" : 4,
+        "BTTAutoAdaptToKeyboardLayout" : 0
+      }
+    ]
+  }
+]

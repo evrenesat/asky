@@ -12,8 +12,6 @@ from asky.cli import (
     main,
 )
 from asky.cli.sessions import handle_delete_sessions_command as handle_delete_sessions
-from asky.config import MODELS
-from asky.core import construct_system_prompt
 from asky.storage.interface import Interaction
 
 
@@ -39,6 +37,8 @@ def mock_args():
         session_end=False,
         session_history=None,
         terminal_lines=None,
+        add_model=False,
+        edit_model=None,
         query=["test", "query"],
     )
 
@@ -360,6 +360,8 @@ def test_main_flow(
         session_end=False,
         session_history=None,
         terminal_lines=None,
+        add_model=False,
+        edit_model=None,
     )
     mock_run.return_value = "Final Answer"
     mock_gen_sum.return_value = ("q_sum", "a_sum")
@@ -429,6 +431,8 @@ def test_main_flow_verbose(
         session_end=False,
         session_history=None,
         terminal_lines=10,
+        add_model=False,
+        edit_model=None,
     )
     mock_run.return_value = "Final Answer"
     mock_gen_sum.return_value = ("q_sum", "a_sum")
@@ -498,6 +502,8 @@ def test_main_flow_default_no_context(
         session_end=False,
         session_history=None,
         terminal_lines=None,  # Flag missing
+        add_model=False,
+        edit_model=None,
     )
     mock_run.return_value = "Final Answer"
     mock_gen_sum.return_value = ("q_sum", "a_sum")
@@ -522,6 +528,82 @@ def test_main_flow_default_no_context(
     # inject_terminal_context calls get_terminal_context if lines > 0
     # validation: get_terminal_context should NOT be called
     mock_get_term.assert_not_called()
+
+
+@patch("asky.cli.main.parse_args")
+@patch("asky.cli.main.init_db")
+@patch("asky.cli.main.get_db_record_count")
+@patch("asky.cli.chat.ConversationEngine.run")
+@patch("asky.cli.chat.generate_summaries")
+@patch("asky.cli.chat.save_interaction")
+@patch("asky.cli.terminal.get_terminal_context")
+@patch("asky.cli.chat.InterfaceRenderer")
+def test_main_terminal_lines_callback(
+    mock_renderer_cls,
+    mock_get_term,
+    mock_save,
+    mock_gen_sum,
+    mock_run,
+    mock_db_count,
+    mock_init,
+    mock_parse,
+):
+    """Test that terminal lines fetch invokes renderer status update via callback."""
+    # Setup
+    mock_get_term.return_value = "Ctx"
+    mock_parse.return_value = argparse.Namespace(
+        model="gf",
+        history=None,
+        continue_ids=None,
+        summarize=False,
+        delete_messages=None,
+        delete_sessions=None,
+        all=False,
+        print_session=None,
+        print_ids=None,
+        prompts=False,
+        query=["test"],
+        verbose=False,
+        open=False,
+        mail_recipients=None,
+        subject=None,
+        sticky_session=None,
+        session_end=False,
+        session_history=None,
+        terminal_lines=5,  # Valid logic trigger
+        add_model=False,
+        edit_model=None,
+    )
+    mock_run.return_value = "Ans"
+    mock_gen_sum.return_value = ("q", "a")
+
+    # Mock renderer instance
+    mock_renderer = MagicMock()
+    mock_renderer_cls.return_value = mock_renderer
+
+    # We need LIVE_BANNER to be True for the callback to be active
+    with (
+        patch(
+            "asky.cli.main.MODELS",
+            {"gf": {"id": "gemini-flash-latest"}, "lfm": {"id": "llama-fallback"}},
+        ),
+        patch("asky.cli.main.SUMMARIZATION_MODEL", "gf"),
+        patch("asky.cli.chat.LIVE_BANNER", True),
+    ):
+        main()
+
+    # Verification
+    # 1. Renderer should be instantiated
+    mock_renderer_cls.assert_called_once()
+
+    # 2. update_banner should be called with status message
+    # We expect call(0, status_message="Fetching...")
+    mock_renderer.update_banner.assert_any_call(
+        0, status_message="Fetching last 5 lines of terminal context..."
+    )
+
+    # 3. update_banner should be cleared afterwards
+    mock_renderer.update_banner.assert_any_call(0, status_message=None)
 
 
 # Tests for slash command prompt listing
@@ -553,6 +635,8 @@ def test_slash_only_lists_all_prompts(mock_init, mock_parse, mock_list_prompts):
         session_end=False,
         session_history=None,
         terminal_lines=None,
+        add_model=False,
+        edit_model=None,
     )
 
     with (
@@ -593,6 +677,8 @@ def test_slash_partial_filters_prompts(mock_init, mock_parse, mock_list_prompts)
         session_end=False,
         session_history=None,
         terminal_lines=None,
+        add_model=False,
+        edit_model=None,
     )
 
     with (
@@ -653,6 +739,8 @@ def test_main_terminal_lines_logic(
             session_end=False,
             session_history=None,
             terminal_lines=20,  # argparse converts int
+            add_model=False,
+            edit_model=None,
             query=["query"],
         )
         main()
@@ -681,6 +769,8 @@ def test_main_terminal_lines_logic(
             session_end=False,
             session_history=None,
             terminal_lines="__default__",  # argparse const
+            add_model=False,
+            edit_model=None,
             query=["query"],
         )
         main()
@@ -711,6 +801,8 @@ def test_main_terminal_lines_logic(
             session_end=False,
             session_history=None,
             terminal_lines="why",  # parsed as string
+            add_model=False,
+            edit_model=None,
             query=["is", "this"],
         )
         main()
@@ -749,6 +841,8 @@ def test_slash_nonexistent_shows_filtered_list(
         session_end=False,
         session_history=None,
         terminal_lines=None,
+        add_model=False,
+        edit_model=None,
     )
 
     with (

@@ -126,12 +126,27 @@ def parse_args() -> argparse.Namespace:
         metavar=("KEY", "VALUE"),
         help="Dynamic parameter for --push-data. Can be repeated. Example: --push-param title 'My Title'",
     )
+
     parser.add_argument(
         "-ss",
         "--sticky-session",
         nargs="+",
         help="Create and activate a new named session (then exits). Usage: -ss My Session Name",
     )
+
+    parser.add_argument(
+        "--add-model",
+        action="store_true",
+        help="Interactively add a new model definition.",
+    )
+
+    parser.add_argument(
+        "--edit-model",
+        nargs="?",
+        const="",
+        help="Interactively edit an existing model definition.",
+    )
+
     parser.add_argument(
         "-rs",
         "--resume-session",
@@ -251,6 +266,18 @@ def main() -> None:
 
     # Load file-based custom prompts
     utils.load_custom_prompts()
+
+    if args.add_model:
+        from asky.cli.models import add_model_command
+
+        add_model_command()
+        return
+
+    if args.edit_model is not None:
+        from asky.cli.models import edit_model_command
+
+        edit_model_command(args.edit_model or None)
+        return
 
     # Commands that don't require banner or query
     if args.history is not None:

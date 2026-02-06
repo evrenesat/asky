@@ -1,19 +1,45 @@
-# --- User Prompts (Shortcuts) ---
-# Define shortcuts that can be used via '/key' in the CLI.
-# Example: 'ask /gn' will be expanded to the prompt below.
 [user_prompts]
-gn = "Give me latest news from The Guardian, use https://www.theguardian.com/europe"
+gn = """Give me latest news from "https://www.theguardian.com/europe". 
+You should read details of a few most important new stories from this site before providing your report.
+"""
+
+gs = """Extract all news from Guardian main page: "https://www.theguardian.com". 
+Do not go deeper, just list all news, prefrebly with their links.
+"""
+
 wh = "how is weather in "
 ex = "Explain this: /cp"
+sumc = "Summarize  in detail and explain this link: /cp "
+sumurl = "Summarize  in detail and explain this link:  "
+wd = "how is weather in Delft, use web_search"
+www = "where were we?"
 
-# --- User defined tools ---
-# These tools allow you to expose CLI commands to the LLM.
-# Use {parameter_name} in the command to inject arguments, or they will be appended.
+hn = """
+Read https://news.ycombinator.com/ Look for enties with more than 30 comments. 
+First visit the news source, then read the comments to understand what people thinks about the subject. 
+Then create a daily news report enriched with people's reactions.
+"""
+
+ttttt = """
+
+"""
+
+dd = """
+You are in DEEP DIVE mode. Follow these instructions:
+0. Do not use web_search!
+1. Use 'get_url_details' for the INITIAL page to retrieve content and links.
+2. Follow relevant links within the same domain to gather comprehensive information.
+3. Review the returns, found interesting links? 
+4. Request additional pages using get_url_content(urls=["url1", "url2", ...]). 
+5. Request all the links you need in one get_url_content call, no need to make seperate calls 
+6. Base your answer strictly on the retrieved content, not internal knowledge.
+"""
+foo="file:///tmp/foo.txt"
+
 [tool.list_dir]
 command = "ls {flags} {path}"
 description = "List the contents of a directory."
 parameter_type = "object"
-enabled = true
 [tool.list_dir.parameters]
 type = "object"
 required = ["path"]
@@ -27,19 +53,19 @@ type = "string"
 default = "-la"
 
 
-# [tool.grep_search]
-# command = "grep -r --exclude-dir=.venv --exclude-dir=node_modules {pattern} {path}"
-# description = "Search for a pattern in files recursively."
+[tool.grep_search]
+command = "grep -r --exclude-dir={.venv,node_modules} {pattern} {path}"
+description = "Search for a pattern in files recursively."
 
-# [tool.grep_search.parameters]
-# type = "object"
-# required = ["pattern"]
+[tool.grep_search.parameters]
+type = "object"
+required = ["pattern"]
 
-# [tool.grep_search.parameters.properties.pattern]
-# type = "string"
-# description = "The regex pattern to search for."
+[tool.grep_search.parameters.properties.pattern]
+type = "string"
+description = "The regex pattern to search for."
 
-# [tool.grep_search.parameters.properties.path]
-# type = "string"
-# description = "The directory path to search in."
-# default = "."
+[tool.grep_search.parameters.properties.path]
+type = "string"
+description = "The directory path to search in."
+default = "."
