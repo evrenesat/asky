@@ -101,8 +101,8 @@ src/asky/
 ├── research/           # Research mode cache, RAG, and adapters
 │   ├── adapters.py     # Map custom tools to research source fetches
 │   ├── cache.py        # Research cache, findings persistence, vector invalidation
-│   ├── chunker.py      # Overlap-safe text chunking utilities
-│   ├── embeddings.py   # Embedding API client with retry/backoff
+│   ├── chunker.py      # Token-aware sentence chunking with char fallback
+│   ├── embeddings.py   # In-memory sentence-transformers embedding client
 │   ├── tools.py        # Research tool executors
 │   └── vector_store.py # Chroma-backed dense retrieval + SQLite lexical fallback
 ├── config.toml         # Default configuration file
@@ -340,6 +340,12 @@ Execution via `subprocess.run()` with argument quoting.
   - Lexical relevance from SQLite BM25 (FTS5) or token overlap fallback
 - If Chroma is unavailable at runtime, the system gracefully falls back to SQLite-based cosine scanning so research mode remains functional.
 
+#### In-Memory Embedding Backend (`research/embeddings.py`)
+- Embeddings are generated locally with `sentence-transformers` using `all-MiniLM-L6-v2` by default.
+- The model is loaded lazily and kept in-memory via a singleton client.
+- Embedding usage stats (`texts_embedded`, `api_calls`, `prompt_tokens`) are still exposed for banner rendering.
+- The tokenizer from the embedding model is reused by the chunker to keep chunk sizes aligned with model sequence limits.
+
 ---
 
 ### 6. Supporting Modules
@@ -431,6 +437,8 @@ if cached content/links changed:
     clear stale content_chunks/link_embeddings rows + Chroma vectors
     ↓
 get_relevant_content(urls, query)
+    ↓
+chunk_text(content) uses token-aware sentence windows
     ↓
 VectorStore ensures embeddings exist for current embedding model
     ↓

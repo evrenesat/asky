@@ -13,11 +13,11 @@ max_links_per_url = 50
 # Maximum links after relevance filtering (when query is provided)
 max_relevant_links = 20
 
-# Chunk size for content splitting (characters)
-chunk_size = 1000
+# Chunk size for content splitting (tokens, clamped by embedding model max length)
+chunk_size = 256
 
-# Chunk overlap for context continuity (characters)
-chunk_overlap = 200
+# Chunk overlap for context continuity (tokens)
+chunk_overlap = 48
 
 # Number of relevant chunks to retrieve per URL in RAG queries
 max_chunks_per_retrieval = 5
@@ -56,25 +56,19 @@ chunks_collection = "asky_content_chunks"
 links_collection = "asky_link_embeddings"
 findings_collection = "asky_research_findings"
 
-# Embedding API settings (LM Studio compatible)
+# Local sentence-transformers settings
 [research.embedding]
-# API endpoint for embeddings (OpenAI-compatible format)
-api_url = "http://localhost:1234/v1/embeddings"
+# Model name to load in-process
+model = "all-MiniLM-L6-v2"
 
-# Model to use for embeddings (must be loaded in LM Studio)
-model = "gaianet/text-embedding-nomic-embed-text-v1.5-embedding"
-
-# Embedding dimension (depends on model - nomic is 768)
-dimension = 768
-
-# Batch size for embedding requests
+# Batch size for local encoding
 batch_size = 32
 
-# Timeout for embedding API requests in seconds
-timeout = 30
+# Torch device for embedding model (cpu, cuda, mps)
+device = "cpu"
 
-# Number of retry attempts for transient embedding API failures
-retry_attempts = 3
+# Normalize vectors so cosine similarity is stable across retrieval calls
+normalize = true
 
-# Base sleep (seconds) used for linear retry backoff: base * attempt_number
-retry_backoff_seconds = 0.5
+# If true, do not download models and use only local cache
+local_files_only = false

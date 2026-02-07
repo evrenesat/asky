@@ -1,3 +1,54 @@
+## 2026-02-07 - Sentence-Transformers Memory Embeddings (all-MiniLM-L6-v2)
+
+**Summary**: Replaced research embedding generation with an in-memory `sentence-transformers` backend (`all-MiniLM-L6-v2` by default), and updated chunking to use tokenizer-aware sentence windows with legacy char fallback.
+
+**Changes**:
+- **Embedding Backend Migration** (`src/asky/research/embeddings.py`):
+  - Replaced the LM Studio/OpenAI-compatible HTTP embedding client with a local `SentenceTransformer` backend.
+  - Added lazy model loading so the singleton client can be created without immediately loading torch/model weights.
+  - Preserved existing client contract (`embed`, `embed_single`, `get_usage_stats`, serialization helpers) for compatibility with vector store, tools, and banner rendering.
+  - Kept compatibility constructor arguments (`api_url`, `timeout`, retry fields) as no-ops to avoid breakage in existing call sites/tests.
+- **Chunking Update** (`src/asky/research/chunker.py`):
+  - `chunk_text` now prefers token-aware sentence chunking using the active embedding tokenizer.
+  - Effective chunk size is clamped by embedding model max sequence length when available.
+  - Added robust fallback to prior character-overlap chunking when tokenizer/model is unavailable.
+  - Added long-sentence token window splitting with overlap for cases that exceed the target token budget.
+- **Config Defaults and Schema**:
+  - `src/asky/config/__init__.py`:
+    - Updated research defaults to token-oriented chunk sizing (`chunk_size=256`, `chunk_overlap=48`).
+    - Replaced API embedding settings exports with sentence-transformer settings:
+      - `research.embedding.model`
+      - `research.embedding.batch_size`
+      - `research.embedding.device`
+      - `research.embedding.normalize`
+      - `research.embedding.local_files_only`
+  - `src/asky/data/config/research.toml`:
+    - Updated comments and defaults for token-based chunking + local embedding model config.
+- **Vector Store Safety Fix** (`src/asky/research/vector_store.py`):
+  - Added a guard to `search_findings` that returns early when SQLite has no finding embeddings for the current model.
+  - This prevents stale Chroma-only hits from leaking into memory search when no persisted embeddings exist locally.
+- **Dependencies**:
+  - Added `sentence-transformers>=3.0.0` to `pyproject.toml`.
+- **Tests**:
+  - Reworked `tests/test_research_embeddings.py` to validate sentence-transformers behavior using mocked local model objects.
+  - Reworked `tests/test_banner_embedding.py` to validate usage counters and banner integration without HTTP embedding mocks.
+  - Updated `tests/test_research_chunker.py`:
+    - Existing coverage still validates char fallback path.
+    - Added token-aware chunking tests (model max-length clamping and long-sentence overlap behavior).
+
+**Verification**:
+- Baseline before changes: `uv run pytest tests` had 1 pre-existing failure in `tests/test_research_vector_store.py::test_search_findings_no_embeddings`.
+- Focused suite:
+  - `uv run pytest tests/test_research_embeddings.py tests/test_research_chunker.py tests/test_banner_embedding.py tests/test_research_vector_store.py`
+  - Result: `89 passed`
+- Full suite:
+  - `uv run pytest tests`
+  - Result: `340 passed`
+
+**Gotchas / Follow-up**:
+- `sentence-transformers` model loading requires local model availability or network/model cache unless `local_files_only = true`.
+- Token-aware chunking uses tokenizer boundaries when possible, but automatically degrades to char-based chunking if the embedding backend is unavailable.
+
 ## 2026-02-07 - Research RAG Migration to ChromaDB Backend
 
 **Summary**: Replaced the research-mode vector retrieval path with a ChromaDB-backed dense retrieval layer while preserving existing research tool interfaces and adding graceful SQLite fallback when Chroma is unavailable.

@@ -1,10 +1,59 @@
 """Tests for the research embeddings module."""
 
-import struct
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 
 import pytest
-import requests
+
+
+class _FakeTokenizer:
+    def encode(self, text, add_special_tokens=False):  # noqa: ARG002
+        words = [word for word in text.split() if word]
+        return list(range(len(words)))
+
+    def decode(self, token_ids, skip_special_tokens=True):  # noqa: ARG002
+        return " ".join(f"tok{token_id}" for token_id in token_ids)
+
+
+class _FakeArray:
+    def __init__(self, rows):
+        self.rows = rows
+
+    def tolist(self):
+        return self.rows
+
+
+class _FakeSentenceTransformer:
+    def __init__(self, model_name, device="cpu", **kwargs):
+        self.model_name = model_name
+        self.device = device
+        self.kwargs = kwargs
+        self.max_seq_length = 16
+        self.tokenizer = _FakeTokenizer()
+        self.encode_calls = []
+
+    def encode(
+        self,
+        texts,
+        batch_size,
+        convert_to_numpy,
+        show_progress_bar,
+        normalize_embeddings,
+    ):
+        self.encode_calls.append(
+            {
+                "texts": list(texts),
+                "batch_size": batch_size,
+                "convert_to_numpy": convert_to_numpy,
+                "show_progress_bar": show_progress_bar,
+                "normalize_embeddings": normalize_embeddings,
+            }
+        )
+        rows = []
+        for text in texts:
+            token_count = max(1, len([word for word in text.split() if word]))
+            base = float(token_count)
+            rows.append([base, base + 1.0, base + 2.0])
+        return _FakeArray(rows)
 
 
 class TestEmbeddingClient:
@@ -15,75 +64,49 @@ class TestEmbeddingClient:
         """Create an EmbeddingClient instance for testing."""
         from asky.research.embeddings import EmbeddingClient
 
-        # Reset singleton
         EmbeddingClient._instance = None
-
-        client = EmbeddingClient(
-            api_url="http://localhost:1234/v1/embeddings",
-            model="test-model",
-            timeout=10,
-            batch_size=2,
-            retry_attempts=1,
-            retry_backoff_seconds=0,
-        )
-        yield client
+        with patch(
+            "asky.research.embeddings.SentenceTransformer",
+            _FakeSentenceTransformer,
+        ):
+            instance = EmbeddingClient(
+                model="test-model",
+                batch_size=2,
+                device="cpu",
+                normalize_embeddings=True,
+                local_files_only=True,
+            )
+            yield instance
+        EmbeddingClient._instance = None
 
     def test_init_sets_parameters(self, client):
         """Test that initialization sets parameters correctly."""
-        assert client.api_url == "http://localhost:1234/v1/embeddings"
         assert client.model == "test-model"
-        assert client.timeout == 10
         assert client.batch_size == 2
+        assert client.device == "cpu"
+        assert client.normalize_embeddings is True
+        assert client.local_files_only is True
 
-    @patch("requests.sessions.Session.post")
-    def test_embed_single_text(self, mock_post, client):
+    def test_embed_single_text(self, client):
         """Test embedding a single text."""
-        mock_response = MagicMock()
-        mock_response.json.return_value = {
-            "data": [{"embedding": [0.1, 0.2, 0.3]}]
-        }
-        mock_post.return_value = mock_response
-
         result = client.embed_single("test text")
+        assert result == [2.0, 3.0, 4.0]
+        assert client.texts_embedded == 1
+        assert client.api_calls == 1
+        assert client.prompt_tokens == 2
 
-        assert result == [0.1, 0.2, 0.3]
-        mock_post.assert_called_once()
-
-    @patch("requests.sessions.Session.post")
-    def test_embed_multiple_texts(self, mock_post, client):
+    def test_embed_multiple_texts(self, client):
         """Test embedding multiple texts."""
-        mock_response = MagicMock()
-        mock_response.json.return_value = {
-            "data": [
-                {"embedding": [0.1, 0.2]},
-                {"embedding": [0.3, 0.4]},
-            ]
-        }
-        mock_post.return_value = mock_response
-
-        result = client.embed(["text1", "text2"])
-
+        result = client.embed(["text one", "text two"])
         assert len(result) == 2
-        assert result[0] == [0.1, 0.2]
-        assert result[1] == [0.3, 0.4]
+        assert result[0] == [2.0, 3.0, 4.0]
+        assert result[1] == [2.0, 3.0, 4.0]
 
-    @patch("requests.sessions.Session.post")
-    def test_embed_batches_large_inputs(self, mock_post, client):
+    def test_embed_batches_large_inputs(self, client):
         """Test that large inputs are batched."""
-        mock_response = MagicMock()
-        mock_response.json.return_value = {
-            "data": [
-                {"embedding": [0.1]},
-                {"embedding": [0.2]},
-            ]
-        }
-        mock_post.return_value = mock_response
-
-        # With batch_size=2, this should make 2 API calls
-        result = client.embed(["text1", "text2", "text3", "text4"])
-
-        assert mock_post.call_count == 2
+        result = client.embed(["a", "b", "c", "d"])
         assert len(result) == 4
+        assert client.api_calls == 2
 
     def test_embed_empty_list_returns_empty(self, client):
         """Test that embedding empty list returns empty list."""
@@ -92,16 +115,9 @@ class TestEmbeddingClient:
 
     def test_embed_filters_empty_strings(self, client):
         """Test that empty strings are filtered out."""
-        with patch("requests.sessions.Session.post") as mock_post:
-            mock_response = MagicMock()
-            mock_response.json.return_value = {
-                "data": [{"embedding": [0.1]}]
-            }
-            mock_post.return_value = mock_response
-
-            result = client.embed(["text", "", "  "])
-            # Only "text" should be embedded
-            assert len(result) == 1
+        result = client.embed(["text", "", "  "])
+        assert len(result) == 1
+        assert client.texts_embedded == 1
 
     def test_embed_single_empty_raises(self, client):
         """Test that embedding empty string raises error."""
@@ -111,84 +127,25 @@ class TestEmbeddingClient:
         with pytest.raises(ValueError):
             client.embed_single("   ")
 
-    @patch("requests.sessions.Session.post")
-    def test_embed_handles_alternative_response_format(self, mock_post, client):
-        """Test handling of alternative response format."""
-        mock_response = MagicMock()
-        mock_response.json.return_value = {
-            "embeddings": [[0.1, 0.2], [0.3, 0.4]]
-        }
-        mock_post.return_value = mock_response
-
-        result = client.embed(["text1", "text2"])
-
-        assert result == [[0.1, 0.2], [0.3, 0.4]]
-
-    @patch("requests.sessions.Session.post")
-    def test_embed_connection_error(self, mock_post, client):
-        """Test handling of connection errors."""
-        import requests
-
-        mock_post.side_effect = requests.exceptions.ConnectionError()
-
-        with pytest.raises(requests.exceptions.ConnectionError):
-            client.embed_single("test")
-
-    @patch("requests.sessions.Session.post")
-    def test_embed_timeout_error(self, mock_post, client):
-        """Test handling of timeout errors."""
-        import requests
-
-        mock_post.side_effect = requests.exceptions.Timeout()
-
-        with pytest.raises(requests.exceptions.Timeout):
-            client.embed_single("test")
-
-    @patch("requests.sessions.Session.post")
-    def test_is_available_returns_true(self, mock_post, client):
-        """Test is_available returns True when API works."""
-        mock_response = MagicMock()
-        mock_response.json.return_value = {
-            "data": [{"embedding": [0.1]}]
-        }
-        mock_post.return_value = mock_response
-
+    def test_is_available_returns_true(self, client):
+        """Test is_available returns True when model loads."""
         assert client.is_available() is True
 
-    @patch("requests.sessions.Session.post")
-    def test_is_available_returns_false_on_error(self, mock_post, client):
-        """Test is_available returns False when API fails."""
-        mock_post.side_effect = Exception("API error")
-
-        assert client.is_available() is False
-
-    @patch("requests.sessions.Session.post")
-    def test_embed_retries_transient_errors(self, mock_post):
-        """Test transient failures are retried before succeeding."""
+    def test_is_available_returns_false_on_error(self):
+        """Test is_available returns False when backend is missing."""
         from asky.research.embeddings import EmbeddingClient
 
         EmbeddingClient._instance = None
-        client = EmbeddingClient(
-            api_url="http://localhost:1234/v1/embeddings",
-            model="test-model",
-            timeout=10,
-            batch_size=2,
-            retry_attempts=3,
-            retry_backoff_seconds=0,
-        )
+        with patch("asky.research.embeddings.SentenceTransformer", None):
+            client = EmbeddingClient(model="test-model")
+            assert client.is_available() is False
+        EmbeddingClient._instance = None
 
-        timeout_error = requests.exceptions.Timeout()
-        success_response = MagicMock()
-        success_response.json.return_value = {
-            "data": [{"embedding": [0.11, 0.22, 0.33]}]
-        }
-        success_response.raise_for_status.return_value = None
-        mock_post.side_effect = [timeout_error, success_response]
-
-        result = client.embed_single("retry test")
-
-        assert result == [0.11, 0.22, 0.33]
-        assert mock_post.call_count == 2
+    def test_get_tokenizer_and_max_seq_length(self, client):
+        """Test tokenizer and max sequence length accessors."""
+        tokenizer = client.get_tokenizer()
+        assert tokenizer is not None
+        assert client.max_seq_length == 16
 
 
 class TestEmbeddingSerialization:
@@ -200,8 +157,6 @@ class TestEmbeddingSerialization:
 
         embedding = [1.0, 2.0, 3.0]
         serialized = EmbeddingClient.serialize_embedding(embedding)
-
-        # Should be 12 bytes (3 floats * 4 bytes)
         assert len(serialized) == 12
         assert isinstance(serialized, bytes)
 
@@ -248,8 +203,11 @@ class TestGetEmbeddingClient:
         from asky.research.embeddings import EmbeddingClient, get_embedding_client
 
         EmbeddingClient._instance = None
-
-        client1 = get_embedding_client()
-        client2 = get_embedding_client()
-
-        assert client1 is client2
+        with patch(
+            "asky.research.embeddings.SentenceTransformer",
+            _FakeSentenceTransformer,
+        ):
+            client1 = get_embedding_client()
+            client2 = get_embedding_client()
+            assert client1 is client2
+        EmbeddingClient._instance = None

@@ -739,3 +739,481 @@ Query completed in 0.00 seconds
 2026-02-07 20:59:33,974 - asky.research.vector_store - WARNING - ChromaDB is unavailable; falling back to SQLite-only vector search: No module named 'chromadb'
 2026-02-07 20:59:33,974 - asky.research.cache - INFO - Cleaned up 1 expired cache entries
 2026-02-07 20:59:33,978 - asky.research.cache - DEBUG - Research cache database initialized
+2026-02-07 21:15:26,126 - chromadb.config - DEBUG - Starting component System
+2026-02-07 21:15:26,126 - chromadb.config - DEBUG - Starting component Posthog
+2026-02-07 21:15:26,148 - asky.research.cache - INFO - Cleaned up 2 expired cache entries
+2026-02-07 21:15:26,170 - asky.core.engine - INFO - Starting turn 1/5
+2026-02-07 21:15:26,171 - asky.core.api_client - INFO - Sending request to LLM: test-model
+2026-02-07 21:15:26,171 - asky.core.api_client - DEBUG - Payload: {"model": "test-model", "messages": [{"role": "user", "content": "test"}], "tools": [], "tool_choice": "auto"}
+2026-02-07 21:15:26,171 - asky.core.api_client - INFO - [test] Sent: 1 tokens
+2026-02-07 21:15:26,171 - asky.core.engine - ERROR - API Error 400: 400 Client Error: Bad Request
+2026-02-07 21:15:26,171 - asky.core.engine - INFO - 
+Query completed in 0.00 seconds
+2026-02-07 21:15:26,171 - asky.core.engine - INFO - Context threshold reached (628/500). Compacting...
+2026-02-07 21:15:26,171 - asky.core.engine - INFO - Compaction failed to preserve history. Returning minimal context: 625 tokens.
+2026-02-07 21:15:26,172 - asky.core.engine - INFO - Starting turn 1/5
+2026-02-07 21:15:26,172 - asky.core.engine - INFO - 
+Query completed in 0.00 seconds
+2026-02-07 21:15:26,173 - asky.core.engine - INFO - Context threshold reached (520/100). Compacting...
+2026-02-07 21:15:26,173 - asky.core.engine - DEBUG - [Smart Compaction] Found summary for URL https://example.com/long-article (dict). Replacing content.
+2026-02-07 21:15:26,173 - asky.core.engine - INFO - Smart compaction successful. Reduced from 520 to 42
+2026-02-07 21:15:26,175 - asky.tools - INFO - Executing custom tool command: ls "."
+2026-02-07 21:15:26,176 - asky.tools - INFO - Executing custom tool command: ls "/tmp/test"
+2026-02-07 21:15:26,178 - asky.tools - INFO - Executing custom tool command: echo "hello world"
+2026-02-07 21:15:26,180 - asky.tools - INFO - Executing custom tool command: echo "already quoted"
+2026-02-07 21:15:26,197 - asky.tools - INFO - Executing custom tool command: echo "test"
+2026-02-07 21:15:26,204 - MARKDOWN - DEBUG - Successfully loaded extension "markdown.extensions.fenced_code.FencedCodeExtension".
+2026-02-07 21:15:26,204 - MARKDOWN - DEBUG - Successfully loaded extension "markdown.extensions.footnotes.FootnoteExtension".
+2026-02-07 21:15:26,204 - MARKDOWN - DEBUG - Successfully loaded extension "markdown.extensions.attr_list.AttrListExtension".
+2026-02-07 21:15:26,204 - MARKDOWN - DEBUG - Successfully loaded extension "markdown.extensions.def_list.DefListExtension".
+2026-02-07 21:15:26,205 - MARKDOWN - DEBUG - Successfully loaded extension "markdown.extensions.tables.TableExtension".
+2026-02-07 21:15:26,205 - MARKDOWN - DEBUG - Successfully loaded extension "markdown.extensions.abbr.AbbrExtension".
+2026-02-07 21:15:26,206 - MARKDOWN - DEBUG - Successfully loaded extension "markdown.extensions.md_in_html.MarkdownInHtmlExtension".
+2026-02-07 21:15:26,206 - MARKDOWN - DEBUG - Successfully loaded extension "markdown.extensions.extra.ExtraExtension".
+2026-02-07 21:15:26,206 - MARKDOWN - DEBUG - Successfully loaded extension "markdown.extensions.codehilite.CodeHiliteExtension".
+2026-02-07 21:15:26,206 - MARKDOWN - DEBUG - Successfully loaded extension "markdown.extensions.tables.TableExtension".
+2026-02-07 21:15:26,206 - MARKDOWN - DEBUG - Successfully loaded extension "markdown.extensions.toc.TocExtension".
+2026-02-07 21:15:26,207 - MARKDOWN - DEBUG - Successfully loaded extension "markdown.extensions.fenced_code.FencedCodeExtension".
+2026-02-07 21:15:26,207 - MARKDOWN - DEBUG - Successfully loaded extension "markdown.extensions.footnotes.FootnoteExtension".
+2026-02-07 21:15:26,207 - MARKDOWN - DEBUG - Successfully loaded extension "markdown.extensions.attr_list.AttrListExtension".
+2026-02-07 21:15:26,207 - MARKDOWN - DEBUG - Successfully loaded extension "markdown.extensions.def_list.DefListExtension".
+2026-02-07 21:15:26,207 - MARKDOWN - DEBUG - Successfully loaded extension "markdown.extensions.tables.TableExtension".
+2026-02-07 21:15:26,207 - MARKDOWN - DEBUG - Successfully loaded extension "markdown.extensions.abbr.AbbrExtension".
+2026-02-07 21:15:26,208 - MARKDOWN - DEBUG - Successfully loaded extension "markdown.extensions.md_in_html.MarkdownInHtmlExtension".
+2026-02-07 21:15:26,208 - MARKDOWN - DEBUG - Successfully loaded extension "markdown.extensions.extra.ExtraExtension".
+2026-02-07 21:15:26,208 - MARKDOWN - DEBUG - Successfully loaded extension "markdown.extensions.codehilite.CodeHiliteExtension".
+2026-02-07 21:15:26,208 - MARKDOWN - DEBUG - Successfully loaded extension "markdown.extensions.tables.TableExtension".
+2026-02-07 21:15:26,208 - MARKDOWN - DEBUG - Successfully loaded extension "markdown.extensions.toc.TocExtension".
+2026-02-07 21:15:26,209 - asky.email_sender - ERROR - SMTP credentials not configured. Please set ASKY_SMTP_USER and ASKY_SMTP_PASSWORD.
+2026-02-07 21:15:26,210 - MARKDOWN - DEBUG - Successfully loaded extension "markdown.extensions.fenced_code.FencedCodeExtension".
+2026-02-07 21:15:26,210 - MARKDOWN - DEBUG - Successfully loaded extension "markdown.extensions.footnotes.FootnoteExtension".
+2026-02-07 21:15:26,210 - MARKDOWN - DEBUG - Successfully loaded extension "markdown.extensions.attr_list.AttrListExtension".
+2026-02-07 21:15:26,210 - MARKDOWN - DEBUG - Successfully loaded extension "markdown.extensions.def_list.DefListExtension".
+2026-02-07 21:15:26,210 - MARKDOWN - DEBUG - Successfully loaded extension "markdown.extensions.tables.TableExtension".
+2026-02-07 21:15:26,210 - MARKDOWN - DEBUG - Successfully loaded extension "markdown.extensions.abbr.AbbrExtension".
+2026-02-07 21:15:26,210 - MARKDOWN - DEBUG - Successfully loaded extension "markdown.extensions.md_in_html.MarkdownInHtmlExtension".
+2026-02-07 21:15:26,210 - MARKDOWN - DEBUG - Successfully loaded extension "markdown.extensions.extra.ExtraExtension".
+2026-02-07 21:15:26,210 - MARKDOWN - DEBUG - Successfully loaded extension "markdown.extensions.codehilite.CodeHiliteExtension".
+2026-02-07 21:15:26,210 - MARKDOWN - DEBUG - Successfully loaded extension "markdown.extensions.tables.TableExtension".
+2026-02-07 21:15:26,210 - MARKDOWN - DEBUG - Successfully loaded extension "markdown.extensions.toc.TocExtension".
+2026-02-07 21:15:26,210 - asky.email_sender - ERROR - Failed to send email: Auth failed
+2026-02-07 21:15:26,226 - asky.rendering - WARNING - Template not found at <MagicMock name='TEMPLATE_PATH' id='4416975408'>
+2026-02-07 21:15:26,229 - asky.rendering - DEBUG - Extracted title for filename: Test Content
+2026-02-07 21:15:26,250 - asky.core.api_client - INFO - Sending request to LLM: q34
+2026-02-07 21:15:26,250 - asky.core.api_client - DEBUG - Payload: {"model": "q34", "messages": [{"role": "user", "content": "Hi"}], "tools": null, "tool_choice": "auto"}
+2026-02-07 21:15:26,250 - asky.core.api_client - INFO - [q34] Sent: 0 tokens
+2026-02-07 21:15:26,250 - asky.core.api_client - DEBUG - Response message: {'role': 'assistant', 'content': 'Hello'}
+2026-02-07 21:15:26,251 - asky.core.api_client - INFO - Sending request to LLM: q34
+2026-02-07 21:15:26,251 - asky.core.api_client - DEBUG - Payload: {"model": "q34", "messages": [], "tools": null, "tool_choice": "auto"}
+2026-02-07 21:15:26,251 - asky.core.api_client - INFO - [q34] Sent: 0 tokens
+2026-02-07 21:15:26,251 - asky.core.api_client - INFO - Rate limit exceeded (429). Retrying in 1 seconds...
+2026-02-07 21:15:26,251 - asky.core.api_client - DEBUG - Response message: {'role': 'assistant', 'content': 'Success'}
+2026-02-07 21:15:26,252 - asky.core.api_client - INFO - Sending request to LLM: q34
+2026-02-07 21:15:26,252 - asky.core.api_client - DEBUG - Payload: {"model": "q34", "messages": [], "tools": null, "tool_choice": "auto"}
+2026-02-07 21:15:26,252 - asky.core.api_client - INFO - [q34] Sent: 0 tokens
+2026-02-07 21:15:26,252 - asky.core.api_client - INFO - Rate limit exceeded (429). Retrying in 5 seconds...
+2026-02-07 21:15:26,252 - asky.core.api_client - DEBUG - Response message: {'role': 'assistant', 'content': 'Success'}
+2026-02-07 21:15:26,253 - asky.core.engine - INFO - Starting turn 1/5
+2026-02-07 21:15:26,253 - asky.core.engine - DEBUG - Tool call [71 chrs]: {'id': 'call_1', 'function': {'name': 'web_search', 'arguments': '{}'}}
+2026-02-07 21:15:26,253 - asky.core.engine - DEBUG - Tool result [29 chrs]: {'results': 'search results'}
+2026-02-07 21:15:26,253 - asky.core.engine - INFO - Starting turn 2/5
+2026-02-07 21:15:26,253 - asky.core.engine - INFO - 
+Query completed in 0.00 seconds
+2026-02-07 21:15:26,256 - asky.rendering - INFO - [Opening browser: /path/to/archive/file.html]
+2026-02-07 21:15:26,257 - asky.core.engine - INFO - Starting turn 1/5
+2026-02-07 21:15:26,257 - asky.core.engine - DEBUG - Tool call [93 chrs]: {'id': 'call_123', 'type': 'function', 'function': {'name': 'web_search', 'arguments': '{}'}}
+2026-02-07 21:15:26,257 - asky.core.engine - DEBUG - Tool result [29 chrs]: {'results': 'search results'}
+2026-02-07 21:15:26,257 - asky.core.engine - INFO - Starting turn 2/5
+2026-02-07 21:15:26,258 - asky.core.engine - INFO - 
+Query completed in 0.00 seconds
+2026-02-07 21:15:26,258 - asky.core.engine - INFO - Starting turn 1/2
+2026-02-07 21:15:26,258 - asky.core.engine - DEBUG - Tool call [65 chrs]: {'id': 'call_1', 'function': {'name': 'test', 'arguments': '{}'}}
+2026-02-07 21:15:26,258 - asky.core.engine - DEBUG - Tool result [16 chrs]: {'result': 'ok'}
+2026-02-07 21:15:26,258 - asky.core.engine - INFO - Starting turn 2/2
+2026-02-07 21:15:26,259 - asky.core.engine - DEBUG - Tool call [65 chrs]: {'id': 'call_2', 'function': {'name': 'test', 'arguments': '{}'}}
+2026-02-07 21:15:26,259 - asky.core.engine - DEBUG - Tool result [16 chrs]: {'result': 'ok'}
+2026-02-07 21:15:26,259 - asky.core.engine - INFO - Max turns reached. Forcing graceful exit.
+2026-02-07 21:15:26,259 - asky.core.engine - INFO - 
+Query completed in 0.00 seconds
+2026-02-07 21:15:26,260 - asky.core.api_client - INFO - Sending request to LLM: test-v1
+2026-02-07 21:15:26,260 - asky.core.api_client - DEBUG - Payload: {"model": "test-v1", "messages": [{"role": "user", "content": "Hi"}], "temperature": 0.5, "top_p": 0.9, "tools": null, "tool_choice": "auto"}
+2026-02-07 21:15:26,260 - asky.core.api_client - INFO - [test-v1] Sent: 0 tokens
+2026-02-07 21:15:26,260 - asky.core.api_client - DEBUG - Response message: {'role': 'assistant', 'content': 'Hello'}
+2026-02-07 21:15:26,261 - asky.core.api_client - INFO - Sending request to LLM: test-v1
+2026-02-07 21:15:26,261 - asky.core.api_client - DEBUG - Payload: {"model": "test-v1", "messages": [], "temperature": 0.7, "tools": null, "tool_choice": "auto"}
+2026-02-07 21:15:26,261 - asky.core.api_client - INFO - [test-v1] Sent: 0 tokens
+2026-02-07 21:15:26,261 - asky.core.api_client - DEBUG - Response message: {'role': 'assistant', 'content': 'Hello'}
+2026-02-07 21:15:26,280 - asky.push_data - INFO - Successfully pushed data to 'test_endpoint': 200
+2026-02-07 21:15:26,281 - asky.push_data - INFO - Successfully pushed data to 'test_endpoint': 200
+2026-02-07 21:15:26,284 - asky.push_data - ERROR - Failed to push data to 'test_endpoint': Network error
+2026-02-07 21:15:26,285 - asky.push_data - ERROR - Failed to build payload for endpoint 'test_endpoint': Missing required parameter: title
+2026-02-07 21:15:26,286 - asky.push_data - INFO - Successfully pushed data to 'test_endpoint': 200
+2026-02-07 21:15:26,300 - asky.research.cache - DEBUG - Research cache database initialized
+2026-02-07 21:15:26,306 - asky.research.cache - DEBUG - Research cache database initialized
+2026-02-07 21:15:26,307 - asky.research.cache - DEBUG - Cached URL http://example.com with id=1
+2026-02-07 21:15:26,311 - asky.research.cache - DEBUG - Research cache database initialized
+2026-02-07 21:15:26,311 - asky.research.cache - DEBUG - Cached URL http://example.com with id=1
+2026-02-07 21:15:26,312 - asky.research.cache - DEBUG - Cached URL http://example.com with id=1
+2026-02-07 21:15:26,316 - asky.research.cache - DEBUG - Research cache database initialized
+2026-02-07 21:15:26,316 - asky.research.cache - DEBUG - Cached URL http://example.com/chunks with id=1
+2026-02-07 21:15:26,318 - asky.research.cache - DEBUG - Cached URL http://example.com/chunks with id=1
+2026-02-07 21:15:26,322 - asky.research.cache - DEBUG - Research cache database initialized
+2026-02-07 21:15:26,322 - asky.research.cache - DEBUG - Cached URL http://example.com/links with id=1
+2026-02-07 21:15:26,323 - asky.research.cache - DEBUG - Cached URL http://example.com/links with id=1
+2026-02-07 21:15:26,326 - asky.research.cache - DEBUG - Research cache database initialized
+2026-02-07 21:15:26,330 - asky.research.cache - DEBUG - Research cache database initialized
+2026-02-07 21:15:26,335 - asky.research.cache - DEBUG - Research cache database initialized
+2026-02-07 21:15:26,335 - asky.research.cache - DEBUG - Cached URL http://example.com with id=1
+2026-02-07 21:15:26,339 - asky.research.cache - DEBUG - Research cache database initialized
+2026-02-07 21:15:26,340 - asky.research.cache - DEBUG - Cached URL http://example.com with id=1
+2026-02-07 21:15:26,343 - asky.research.cache - DEBUG - Research cache database initialized
+2026-02-07 21:15:26,343 - asky.research.cache - DEBUG - Cached URL http://example.com with id=1
+2026-02-07 21:15:26,347 - asky.research.cache - DEBUG - Research cache database initialized
+2026-02-07 21:15:26,348 - asky.research.cache - INFO - Cleaned up 1 expired cache entries
+2026-02-07 21:15:26,351 - asky.research.cache - DEBUG - Research cache database initialized
+2026-02-07 21:15:26,352 - asky.research.cache - DEBUG - Cached URL http://example1.com with id=1
+2026-02-07 21:15:26,352 - asky.research.cache - DEBUG - Cached URL http://example2.com with id=2
+2026-02-07 21:15:26,356 - asky.research.cache - DEBUG - Research cache database initialized
+2026-02-07 21:15:26,357 - asky.research.cache - DEBUG - Scheduled background summarization for http://example.com
+2026-02-07 21:15:26,357 - asky.research.cache - DEBUG - Cached URL http://example.com with id=1
+2026-02-07 21:15:26,358 - asky.research.cache - DEBUG - Background summarization completed for http://example.com
+2026-02-07 21:15:26,864 - asky.research.cache - DEBUG - Shutting down research cache executor...
+2026-02-07 21:15:26,865 - asky.research.cache - DEBUG - Research cache executor shutdown complete
+2026-02-07 21:15:26,877 - asky.research.cache - DEBUG - Research cache database initialized
+2026-02-07 21:15:26,887 - asky.research.cache - DEBUG - Research cache database initialized
+2026-02-07 21:15:26,895 - asky.research.cache - DEBUG - Research cache database initialized
+2026-02-07 21:15:26,900 - asky.research.cache - DEBUG - Research cache database initialized
+2026-02-07 21:15:26,906 - asky.research.cache - DEBUG - Research cache database initialized
+2026-02-07 21:15:26,907 - asky.research.cache - DEBUG - Saved finding id=1
+2026-02-07 21:15:26,912 - asky.research.cache - DEBUG - Research cache database initialized
+2026-02-07 21:15:26,913 - asky.research.cache - DEBUG - Saved finding id=1
+2026-02-07 21:15:26,917 - asky.research.cache - DEBUG - Research cache database initialized
+2026-02-07 21:15:26,922 - asky.research.cache - DEBUG - Research cache database initialized
+2026-02-07 21:15:26,926 - asky.research.cache - DEBUG - Research cache database initialized
+2026-02-07 21:15:26,927 - asky.research.cache - DEBUG - Saved finding id=1
+2026-02-07 21:15:26,927 - asky.research.cache - DEBUG - Saved finding id=2
+2026-02-07 21:15:26,928 - asky.research.cache - DEBUG - Saved finding id=3
+2026-02-07 21:15:26,933 - asky.research.cache - DEBUG - Research cache database initialized
+2026-02-07 21:15:26,933 - asky.research.cache - DEBUG - Saved finding id=1
+2026-02-07 21:15:26,934 - asky.research.cache - DEBUG - Saved finding id=2
+2026-02-07 21:15:26,934 - asky.research.cache - DEBUG - Saved finding id=3
+2026-02-07 21:15:26,935 - asky.research.cache - DEBUG - Saved finding id=4
+2026-02-07 21:15:26,935 - asky.research.cache - DEBUG - Saved finding id=5
+2026-02-07 21:15:26,936 - asky.research.cache - DEBUG - Saved finding id=6
+2026-02-07 21:15:26,936 - asky.research.cache - DEBUG - Saved finding id=7
+2026-02-07 21:15:26,936 - asky.research.cache - DEBUG - Saved finding id=8
+2026-02-07 21:15:26,937 - asky.research.cache - DEBUG - Saved finding id=9
+2026-02-07 21:15:26,937 - asky.research.cache - DEBUG - Saved finding id=10
+2026-02-07 21:15:26,941 - asky.research.cache - DEBUG - Research cache database initialized
+2026-02-07 21:15:26,941 - asky.research.cache - DEBUG - Saved finding id=1
+2026-02-07 21:15:26,942 - asky.research.cache - DEBUG - Saved finding id=2
+2026-02-07 21:15:26,942 - asky.research.cache - DEBUG - Saved finding id=3
+2026-02-07 21:15:26,946 - asky.research.cache - DEBUG - Research cache database initialized
+2026-02-07 21:15:26,946 - asky.research.cache - DEBUG - Saved finding id=1
+2026-02-07 21:15:26,947 - asky.research.cache - DEBUG - Deleted finding id=1
+2026-02-07 21:15:26,951 - asky.research.cache - DEBUG - Research cache database initialized
+2026-02-07 21:15:26,954 - asky.research.cache - DEBUG - Research cache database initialized
+2026-02-07 21:15:26,955 - asky.research.cache - DEBUG - Saved finding id=1
+2026-02-07 21:15:26,959 - asky.research.cache - DEBUG - Research cache database initialized
+2026-02-07 21:15:26,960 - asky.research.cache - DEBUG - Saved finding id=1
+2026-02-07 21:15:26,960 - asky.research.cache - DEBUG - Saved finding id=2
+2026-02-07 21:15:26,964 - asky.research.cache - DEBUG - Research cache database initialized
+2026-02-07 21:15:26,965 - asky.research.cache - DEBUG - Saved finding id=1
+2026-02-07 21:15:26,968 - asky.research.cache - DEBUG - Research cache database initialized
+2026-02-07 21:15:26,968 - asky.research.cache - DEBUG - Saved finding id=1
+2026-02-07 21:15:26,986 - asky.research.embeddings - DEBUG - EmbeddingClient initialized: url=http://localhost:1234/v1/embeddings, model=test-model
+2026-02-07 21:15:26,987 - asky.research.embeddings - DEBUG - EmbeddingClient initialized: url=http://localhost:1234/v1/embeddings, model=test-model
+2026-02-07 21:15:26,988 - asky.research.embeddings - DEBUG - EmbeddingClient initialized: url=http://localhost:1234/v1/embeddings, model=test-model
+2026-02-07 21:15:26,989 - asky.research.embeddings - DEBUG - EmbeddingClient initialized: url=http://localhost:1234/v1/embeddings, model=test-model
+2026-02-07 21:15:26,990 - asky.research.embeddings - DEBUG - EmbeddingClient initialized: url=http://localhost:1234/v1/embeddings, model=test-model
+2026-02-07 21:15:26,991 - asky.research.embeddings - DEBUG - EmbeddingClient initialized: url=http://localhost:1234/v1/embeddings, model=test-model
+2026-02-07 21:15:26,992 - asky.research.embeddings - DEBUG - EmbeddingClient initialized: url=http://localhost:1234/v1/embeddings, model=test-model
+2026-02-07 21:15:26,993 - asky.research.embeddings - DEBUG - EmbeddingClient initialized: url=http://localhost:1234/v1/embeddings, model=test-model
+2026-02-07 21:15:26,994 - asky.research.embeddings - DEBUG - EmbeddingClient initialized: url=http://localhost:1234/v1/embeddings, model=test-model
+2026-02-07 21:15:26,994 - asky.research.embeddings - ERROR - Failed to connect to embedding API at http://localhost:1234/v1/embeddings. Is LM Studio running with an embedding model loaded?
+2026-02-07 21:15:26,995 - asky.research.embeddings - DEBUG - EmbeddingClient initialized: url=http://localhost:1234/v1/embeddings, model=test-model
+2026-02-07 21:15:26,995 - asky.research.embeddings - ERROR - Embedding API request timed out after 10s
+2026-02-07 21:15:26,997 - asky.research.embeddings - DEBUG - EmbeddingClient initialized: url=http://localhost:1234/v1/embeddings, model=test-model
+2026-02-07 21:15:26,998 - asky.research.embeddings - DEBUG - EmbeddingClient initialized: url=http://localhost:1234/v1/embeddings, model=test-model
+2026-02-07 21:15:26,998 - asky.research.embeddings - ERROR - Embedding API error: API error
+2026-02-07 21:15:26,999 - asky.research.embeddings - DEBUG - EmbeddingClient initialized: url=http://localhost:1234/v1/embeddings, model=test-model
+2026-02-07 21:15:27,522 - asky.research.embeddings - DEBUG - EmbeddingClient initialized: url=http://localhost:1234/v1/embeddings, model=gaianet/text-embedding-nomic-embed-text-v1.5-embedding
+2026-02-07 21:15:27,534 - asky.research.tools - DEBUG - Cache hit for http://example.com
+2026-02-07 21:15:27,538 - asky.research.tools - DEBUG - Fetching http://example.com
+2026-02-07 21:15:27,540 - asky.research.tools - DEBUG - Fetching http://example.com
+2026-02-07 21:15:27,542 - asky.research.tools - DEBUG - Cache hit for http://example.com
+2026-02-07 21:15:27,544 - asky.research.tools - DEBUG - Cache hit for http://example.com
+2026-02-07 21:15:27,547 - asky.research.tools - DEBUG - Cache hit for http://b.com
+2026-02-07 21:15:27,548 - asky.research.tools - DEBUG - Cache hit for http://a.com
+2026-02-07 21:15:27,550 - asky.research.tools - DEBUG - Cache hit for http://example.com
+2026-02-07 21:15:27,553 - asky.research.tools - DEBUG - Cache hit for http://example.com
+2026-02-07 21:15:27,565 - asky.research.tools - DEBUG - Generating chunk embeddings for http://example.com
+2026-02-07 21:15:27,566 - asky.research.tools - ERROR - RAG retrieval failed for http://example.com: DB error
+2026-02-07 21:15:27,576 - asky.research.tools - WARNING - Finding embedding failed (will still be saved): Embedding API unavailable
+2026-02-07 21:15:27,581 - asky.research.tools - WARNING - Semantic search unavailable: API unavailable
+2026-02-07 21:15:27,601 - asky.research.vector_store - DEBUG - Stored 2 chunk embeddings for cache_id=1
+2026-02-07 21:15:27,610 - asky.research.vector_store - DEBUG - Stored 2 link embeddings for cache_id=1
+2026-02-07 21:15:27,618 - asky.research.vector_store - DEBUG - Stored 2 chunk embeddings for cache_id=1
+2026-02-07 21:15:27,619 - asky.research.vector_store - WARNING - Chroma chunk query failed; falling back to SQLite: Expected where to have exactly one operator, got {'cache_id': 1, 'embedding_model': 'test-model'} in query.
+2026-02-07 21:15:27,627 - asky.research.vector_store - DEBUG - Stored 2 link embeddings for cache_id=1
+2026-02-07 21:15:27,627 - asky.research.vector_store - WARNING - Chroma link query failed; falling back to SQLite: Expected where to have exactly one operator, got {'cache_id': 1, 'embedding_model': 'test-model'} in query.
+2026-02-07 21:15:27,641 - asky.research.vector_store - DEBUG - Stored 2 chunk embeddings for cache_id=1
+2026-02-07 21:15:27,647 - asky.research.vector_store - DEBUG - Stored 2 link embeddings for cache_id=1
+2026-02-07 21:15:27,650 - asky.research.vector_store - DEBUG - Stored 2 chunk embeddings for cache_id=1
+2026-02-07 21:15:27,658 - asky.research.vector_store - DEBUG - Stored 2 chunk embeddings for cache_id=1
+2026-02-07 21:15:27,658 - asky.research.vector_store - WARNING - Chroma hybrid query failed; using SQLite dense scores: Expected where to have exactly one operator, got {'cache_id': 1, 'embedding_model': 'test-model'} in query.
+2026-02-07 21:15:27,665 - asky.research.vector_store - DEBUG - Stored 2 chunk embeddings for cache_id=1
+2026-02-07 21:15:27,668 - asky.research.vector_store - WARNING - Embedding count mismatch: 2 vs 3
+2026-02-07 21:15:27,669 - asky.research.vector_store - WARNING - Chroma chunk query failed; falling back to SQLite: Expected where to have exactly one operator, got {'cache_id': 1, 'embedding_model': 'test-model'} in query.
+2026-02-07 21:15:27,675 - asky.research.vector_store - DEBUG - Stored 5 chunk embeddings for cache_id=1
+2026-02-07 21:15:27,675 - asky.research.vector_store - WARNING - Chroma chunk query failed; falling back to SQLite: Expected where to have exactly one operator, got {'cache_id': 1, 'embedding_model': 'test-model'} in query.
+2026-02-07 21:15:27,681 - asky.research.vector_store - DEBUG - Stored embedding for finding id=1
+2026-02-07 21:15:27,717 - asky.research.vector_store - DEBUG - Stored embedding for finding id=1
+2026-02-07 21:15:27,719 - asky.research.vector_store - DEBUG - Stored embedding for finding id=2
+2026-02-07 21:15:27,728 - asky.research.vector_store - DEBUG - Stored embedding for finding id=1
+2026-02-07 21:15:27,731 - asky.research.vector_store - DEBUG - Stored embedding for finding id=2
+2026-02-07 21:15:27,737 - asky.research.vector_store - DEBUG - Stored embedding for finding id=1
+2026-02-07 21:15:27,739 - asky.research.vector_store - DEBUG - Stored embedding for finding id=2
+2026-02-07 21:15:27,759 - asky.core.session_manager - INFO - Session 1 reached threshold (10/5). Compacting...
+2026-02-07 21:15:27,759 - asky.core.session_manager - INFO - Found 1 messages to compact for session 1
+2026-02-07 21:15:27,759 - asky.core.session_manager - INFO - Compacted content length: 9 chars
+2026-02-07 21:15:27,759 - asky.core.session_manager - INFO - Compaction saved for session 1
+2026-02-07 21:15:27,769 - asky.research.cache - DEBUG - Research cache database initialized
+2026-02-07 21:15:27,774 - asky.research.cache - INFO - Cleaned up 1 expired cache entries
+2026-02-07 21:15:27,778 - asky.research.cache - DEBUG - Research cache database initialized
+2026-02-07 21:23:52,724 - asky.core.engine - INFO - Starting turn 1/5
+2026-02-07 21:23:52,724 - asky.core.api_client - INFO - Sending request to LLM: test-model
+2026-02-07 21:23:52,725 - asky.core.api_client - DEBUG - Payload: {"model": "test-model", "messages": [{"role": "user", "content": "test"}], "tools": [], "tool_choice": "auto"}
+2026-02-07 21:23:52,725 - asky.core.api_client - INFO - [test] Sent: 1 tokens
+2026-02-07 21:23:52,725 - asky.core.engine - ERROR - API Error 400: 400 Client Error: Bad Request
+2026-02-07 21:23:52,725 - asky.core.engine - INFO - 
+Query completed in 0.00 seconds
+2026-02-07 21:23:52,725 - asky.core.engine - INFO - Context threshold reached (628/500). Compacting...
+2026-02-07 21:23:52,725 - asky.core.engine - INFO - Compaction failed to preserve history. Returning minimal context: 625 tokens.
+2026-02-07 21:23:52,727 - asky.core.engine - INFO - Starting turn 1/5
+2026-02-07 21:23:52,727 - asky.core.engine - INFO - 
+Query completed in 0.00 seconds
+2026-02-07 21:23:52,728 - asky.core.engine - INFO - Context threshold reached (520/100). Compacting...
+2026-02-07 21:23:52,728 - asky.core.engine - DEBUG - [Smart Compaction] Found summary for URL https://example.com/long-article (dict). Replacing content.
+2026-02-07 21:23:52,728 - asky.core.engine - INFO - Smart compaction successful. Reduced from 520 to 42
+2026-02-07 21:23:52,730 - asky.tools - INFO - Executing custom tool command: ls "."
+2026-02-07 21:23:52,731 - asky.tools - INFO - Executing custom tool command: ls "/tmp/test"
+2026-02-07 21:23:52,732 - asky.tools - INFO - Executing custom tool command: echo "hello world"
+2026-02-07 21:23:52,733 - asky.tools - INFO - Executing custom tool command: echo "already quoted"
+2026-02-07 21:23:52,734 - asky.tools - INFO - Executing custom tool command: echo "test"
+2026-02-07 21:23:52,741 - MARKDOWN - DEBUG - Successfully loaded extension "markdown.extensions.fenced_code.FencedCodeExtension".
+2026-02-07 21:23:52,741 - MARKDOWN - DEBUG - Successfully loaded extension "markdown.extensions.footnotes.FootnoteExtension".
+2026-02-07 21:23:52,742 - MARKDOWN - DEBUG - Successfully loaded extension "markdown.extensions.attr_list.AttrListExtension".
+2026-02-07 21:23:52,742 - MARKDOWN - DEBUG - Successfully loaded extension "markdown.extensions.def_list.DefListExtension".
+2026-02-07 21:23:52,742 - MARKDOWN - DEBUG - Successfully loaded extension "markdown.extensions.tables.TableExtension".
+2026-02-07 21:23:52,742 - MARKDOWN - DEBUG - Successfully loaded extension "markdown.extensions.abbr.AbbrExtension".
+2026-02-07 21:23:52,743 - MARKDOWN - DEBUG - Successfully loaded extension "markdown.extensions.md_in_html.MarkdownInHtmlExtension".
+2026-02-07 21:23:52,743 - MARKDOWN - DEBUG - Successfully loaded extension "markdown.extensions.extra.ExtraExtension".
+2026-02-07 21:23:52,743 - MARKDOWN - DEBUG - Successfully loaded extension "markdown.extensions.codehilite.CodeHiliteExtension".
+2026-02-07 21:23:52,743 - MARKDOWN - DEBUG - Successfully loaded extension "markdown.extensions.tables.TableExtension".
+2026-02-07 21:23:52,744 - MARKDOWN - DEBUG - Successfully loaded extension "markdown.extensions.toc.TocExtension".
+2026-02-07 21:23:52,745 - MARKDOWN - DEBUG - Successfully loaded extension "markdown.extensions.fenced_code.FencedCodeExtension".
+2026-02-07 21:23:52,745 - MARKDOWN - DEBUG - Successfully loaded extension "markdown.extensions.footnotes.FootnoteExtension".
+2026-02-07 21:23:52,745 - MARKDOWN - DEBUG - Successfully loaded extension "markdown.extensions.attr_list.AttrListExtension".
+2026-02-07 21:23:52,745 - MARKDOWN - DEBUG - Successfully loaded extension "markdown.extensions.def_list.DefListExtension".
+2026-02-07 21:23:52,745 - MARKDOWN - DEBUG - Successfully loaded extension "markdown.extensions.tables.TableExtension".
+2026-02-07 21:23:52,745 - MARKDOWN - DEBUG - Successfully loaded extension "markdown.extensions.abbr.AbbrExtension".
+2026-02-07 21:23:52,745 - MARKDOWN - DEBUG - Successfully loaded extension "markdown.extensions.md_in_html.MarkdownInHtmlExtension".
+2026-02-07 21:23:52,745 - MARKDOWN - DEBUG - Successfully loaded extension "markdown.extensions.extra.ExtraExtension".
+2026-02-07 21:23:52,745 - MARKDOWN - DEBUG - Successfully loaded extension "markdown.extensions.codehilite.CodeHiliteExtension".
+2026-02-07 21:23:52,745 - MARKDOWN - DEBUG - Successfully loaded extension "markdown.extensions.tables.TableExtension".
+2026-02-07 21:23:52,745 - MARKDOWN - DEBUG - Successfully loaded extension "markdown.extensions.toc.TocExtension".
+2026-02-07 21:23:52,746 - asky.email_sender - ERROR - SMTP credentials not configured. Please set ASKY_SMTP_USER and ASKY_SMTP_PASSWORD.
+2026-02-07 21:23:52,747 - MARKDOWN - DEBUG - Successfully loaded extension "markdown.extensions.fenced_code.FencedCodeExtension".
+2026-02-07 21:23:52,747 - MARKDOWN - DEBUG - Successfully loaded extension "markdown.extensions.footnotes.FootnoteExtension".
+2026-02-07 21:23:52,747 - MARKDOWN - DEBUG - Successfully loaded extension "markdown.extensions.attr_list.AttrListExtension".
+2026-02-07 21:23:52,747 - MARKDOWN - DEBUG - Successfully loaded extension "markdown.extensions.def_list.DefListExtension".
+2026-02-07 21:23:52,747 - MARKDOWN - DEBUG - Successfully loaded extension "markdown.extensions.tables.TableExtension".
+2026-02-07 21:23:52,747 - MARKDOWN - DEBUG - Successfully loaded extension "markdown.extensions.abbr.AbbrExtension".
+2026-02-07 21:23:52,747 - MARKDOWN - DEBUG - Successfully loaded extension "markdown.extensions.md_in_html.MarkdownInHtmlExtension".
+2026-02-07 21:23:52,747 - MARKDOWN - DEBUG - Successfully loaded extension "markdown.extensions.extra.ExtraExtension".
+2026-02-07 21:23:52,747 - MARKDOWN - DEBUG - Successfully loaded extension "markdown.extensions.codehilite.CodeHiliteExtension".
+2026-02-07 21:23:52,747 - MARKDOWN - DEBUG - Successfully loaded extension "markdown.extensions.tables.TableExtension".
+2026-02-07 21:23:52,747 - MARKDOWN - DEBUG - Successfully loaded extension "markdown.extensions.toc.TocExtension".
+2026-02-07 21:23:52,747 - asky.email_sender - ERROR - Failed to send email: Auth failed
+2026-02-07 21:23:52,767 - asky.rendering - WARNING - Template not found at <MagicMock name='TEMPLATE_PATH' id='4649600064'>
+2026-02-07 21:23:52,769 - asky.rendering - DEBUG - Extracted title for filename: Test Content
+2026-02-07 21:23:52,789 - asky.core.api_client - INFO - Sending request to LLM: q34
+2026-02-07 21:23:52,789 - asky.core.api_client - DEBUG - Payload: {"model": "q34", "messages": [{"role": "user", "content": "Hi"}], "tools": null, "tool_choice": "auto"}
+2026-02-07 21:23:52,789 - asky.core.api_client - INFO - [q34] Sent: 0 tokens
+2026-02-07 21:23:52,789 - asky.core.api_client - DEBUG - Response message: {'role': 'assistant', 'content': 'Hello'}
+2026-02-07 21:23:52,790 - asky.core.api_client - INFO - Sending request to LLM: q34
+2026-02-07 21:23:52,790 - asky.core.api_client - DEBUG - Payload: {"model": "q34", "messages": [], "tools": null, "tool_choice": "auto"}
+2026-02-07 21:23:52,790 - asky.core.api_client - INFO - [q34] Sent: 0 tokens
+2026-02-07 21:23:52,791 - asky.core.api_client - INFO - Rate limit exceeded (429). Retrying in 1 seconds...
+2026-02-07 21:23:52,791 - asky.core.api_client - DEBUG - Response message: {'role': 'assistant', 'content': 'Success'}
+2026-02-07 21:23:52,792 - asky.core.api_client - INFO - Sending request to LLM: q34
+2026-02-07 21:23:52,792 - asky.core.api_client - DEBUG - Payload: {"model": "q34", "messages": [], "tools": null, "tool_choice": "auto"}
+2026-02-07 21:23:52,792 - asky.core.api_client - INFO - [q34] Sent: 0 tokens
+2026-02-07 21:23:52,792 - asky.core.api_client - INFO - Rate limit exceeded (429). Retrying in 5 seconds...
+2026-02-07 21:23:52,792 - asky.core.api_client - DEBUG - Response message: {'role': 'assistant', 'content': 'Success'}
+2026-02-07 21:23:52,793 - asky.core.engine - INFO - Starting turn 1/5
+2026-02-07 21:23:52,793 - asky.core.engine - DEBUG - Tool call [71 chrs]: {'id': 'call_1', 'function': {'name': 'web_search', 'arguments': '{}'}}
+2026-02-07 21:23:52,793 - asky.core.engine - DEBUG - Tool result [29 chrs]: {'results': 'search results'}
+2026-02-07 21:23:52,793 - asky.core.engine - INFO - Starting turn 2/5
+2026-02-07 21:23:52,794 - asky.core.engine - INFO - 
+Query completed in 0.00 seconds
+2026-02-07 21:23:52,797 - asky.rendering - INFO - [Opening browser: /path/to/archive/file.html]
+2026-02-07 21:23:52,798 - asky.core.engine - INFO - Starting turn 1/5
+2026-02-07 21:23:52,798 - asky.core.engine - DEBUG - Tool call [93 chrs]: {'id': 'call_123', 'type': 'function', 'function': {'name': 'web_search', 'arguments': '{}'}}
+2026-02-07 21:23:52,798 - asky.core.engine - DEBUG - Tool result [29 chrs]: {'results': 'search results'}
+2026-02-07 21:23:52,798 - asky.core.engine - INFO - Starting turn 2/5
+2026-02-07 21:23:52,799 - asky.core.engine - INFO - 
+Query completed in 0.00 seconds
+2026-02-07 21:23:52,800 - asky.core.engine - INFO - Starting turn 1/2
+2026-02-07 21:23:52,800 - asky.core.engine - DEBUG - Tool call [65 chrs]: {'id': 'call_1', 'function': {'name': 'test', 'arguments': '{}'}}
+2026-02-07 21:23:52,800 - asky.core.engine - DEBUG - Tool result [16 chrs]: {'result': 'ok'}
+2026-02-07 21:23:52,800 - asky.core.engine - INFO - Starting turn 2/2
+2026-02-07 21:23:52,800 - asky.core.engine - DEBUG - Tool call [65 chrs]: {'id': 'call_2', 'function': {'name': 'test', 'arguments': '{}'}}
+2026-02-07 21:23:52,800 - asky.core.engine - DEBUG - Tool result [16 chrs]: {'result': 'ok'}
+2026-02-07 21:23:52,800 - asky.core.engine - INFO - Max turns reached. Forcing graceful exit.
+2026-02-07 21:23:52,800 - asky.core.engine - INFO - 
+Query completed in 0.00 seconds
+2026-02-07 21:23:52,801 - asky.core.api_client - INFO - Sending request to LLM: test-v1
+2026-02-07 21:23:52,802 - asky.core.api_client - DEBUG - Payload: {"model": "test-v1", "messages": [{"role": "user", "content": "Hi"}], "temperature": 0.5, "top_p": 0.9, "tools": null, "tool_choice": "auto"}
+2026-02-07 21:23:52,802 - asky.core.api_client - INFO - [test-v1] Sent: 0 tokens
+2026-02-07 21:23:52,802 - asky.core.api_client - DEBUG - Response message: {'role': 'assistant', 'content': 'Hello'}
+2026-02-07 21:23:52,802 - asky.core.api_client - INFO - Sending request to LLM: test-v1
+2026-02-07 21:23:52,802 - asky.core.api_client - DEBUG - Payload: {"model": "test-v1", "messages": [], "temperature": 0.7, "tools": null, "tool_choice": "auto"}
+2026-02-07 21:23:52,802 - asky.core.api_client - INFO - [test-v1] Sent: 0 tokens
+2026-02-07 21:23:52,803 - asky.core.api_client - DEBUG - Response message: {'role': 'assistant', 'content': 'Hello'}
+2026-02-07 21:23:52,821 - asky.push_data - INFO - Successfully pushed data to 'test_endpoint': 200
+2026-02-07 21:23:52,822 - asky.push_data - INFO - Successfully pushed data to 'test_endpoint': 200
+2026-02-07 21:23:52,825 - asky.push_data - ERROR - Failed to push data to 'test_endpoint': Network error
+2026-02-07 21:23:52,826 - asky.push_data - ERROR - Failed to build payload for endpoint 'test_endpoint': Missing required parameter: title
+2026-02-07 21:23:52,827 - asky.push_data - INFO - Successfully pushed data to 'test_endpoint': 200
+2026-02-07 21:23:52,841 - asky.research.cache - DEBUG - Research cache database initialized
+2026-02-07 21:23:52,844 - asky.research.cache - DEBUG - Research cache database initialized
+2026-02-07 21:23:52,845 - asky.research.cache - DEBUG - Cached URL http://example.com with id=1
+2026-02-07 21:23:52,848 - asky.research.cache - DEBUG - Research cache database initialized
+2026-02-07 21:23:52,849 - asky.research.cache - DEBUG - Cached URL http://example.com with id=1
+2026-02-07 21:23:53,142 - chromadb.config - DEBUG - Starting component System
+2026-02-07 21:23:53,142 - chromadb.config - DEBUG - Starting component Posthog
+2026-02-07 21:23:53,151 - asky.research.cache - DEBUG - Cached URL http://example.com with id=1
+2026-02-07 21:23:53,156 - asky.research.cache - DEBUG - Research cache database initialized
+2026-02-07 21:23:53,156 - asky.research.cache - DEBUG - Cached URL http://example.com/chunks with id=1
+2026-02-07 21:23:53,158 - asky.research.cache - DEBUG - Cached URL http://example.com/chunks with id=1
+2026-02-07 21:23:53,162 - asky.research.cache - DEBUG - Research cache database initialized
+2026-02-07 21:23:53,163 - asky.research.cache - DEBUG - Cached URL http://example.com/links with id=1
+2026-02-07 21:23:53,164 - asky.research.cache - DEBUG - Cached URL http://example.com/links with id=1
+2026-02-07 21:23:53,168 - asky.research.cache - DEBUG - Research cache database initialized
+2026-02-07 21:23:53,171 - asky.research.cache - DEBUG - Research cache database initialized
+2026-02-07 21:23:53,175 - asky.research.cache - DEBUG - Research cache database initialized
+2026-02-07 21:23:53,175 - asky.research.cache - DEBUG - Cached URL http://example.com with id=1
+2026-02-07 21:23:53,179 - asky.research.cache - DEBUG - Research cache database initialized
+2026-02-07 21:23:53,179 - asky.research.cache - DEBUG - Cached URL http://example.com with id=1
+2026-02-07 21:23:53,183 - asky.research.cache - DEBUG - Research cache database initialized
+2026-02-07 21:23:53,183 - asky.research.cache - DEBUG - Cached URL http://example.com with id=1
+2026-02-07 21:23:53,188 - asky.research.cache - DEBUG - Research cache database initialized
+2026-02-07 21:23:53,189 - asky.research.cache - INFO - Cleaned up 1 expired cache entries
+2026-02-07 21:23:53,193 - asky.research.cache - DEBUG - Research cache database initialized
+2026-02-07 21:23:53,194 - asky.research.cache - DEBUG - Cached URL http://example1.com with id=1
+2026-02-07 21:23:53,194 - asky.research.cache - DEBUG - Cached URL http://example2.com with id=2
+2026-02-07 21:23:53,198 - asky.research.cache - DEBUG - Research cache database initialized
+2026-02-07 21:23:53,199 - asky.research.cache - DEBUG - Scheduled background summarization for http://example.com
+2026-02-07 21:23:53,199 - asky.research.cache - DEBUG - Cached URL http://example.com with id=1
+2026-02-07 21:23:53,200 - asky.research.cache - DEBUG - Background summarization completed for http://example.com
+2026-02-07 21:23:53,707 - asky.research.cache - DEBUG - Shutting down research cache executor...
+2026-02-07 21:23:53,707 - asky.research.cache - DEBUG - Research cache executor shutdown complete
+2026-02-07 21:23:53,724 - asky.research.cache - DEBUG - Research cache database initialized
+2026-02-07 21:23:53,734 - asky.research.cache - DEBUG - Research cache database initialized
+2026-02-07 21:23:53,740 - asky.research.cache - DEBUG - Research cache database initialized
+2026-02-07 21:23:53,746 - asky.research.cache - DEBUG - Research cache database initialized
+2026-02-07 21:23:53,752 - asky.research.cache - DEBUG - Research cache database initialized
+2026-02-07 21:23:53,753 - asky.research.cache - DEBUG - Saved finding id=1
+2026-02-07 21:23:53,758 - asky.research.cache - DEBUG - Research cache database initialized
+2026-02-07 21:23:53,758 - asky.research.cache - DEBUG - Saved finding id=1
+2026-02-07 21:23:53,763 - asky.research.cache - DEBUG - Research cache database initialized
+2026-02-07 21:23:53,782 - asky.research.cache - DEBUG - Research cache database initialized
+2026-02-07 21:23:53,787 - asky.research.cache - DEBUG - Research cache database initialized
+2026-02-07 21:23:53,788 - asky.research.cache - DEBUG - Saved finding id=1
+2026-02-07 21:23:53,789 - asky.research.cache - DEBUG - Saved finding id=2
+2026-02-07 21:23:53,789 - asky.research.cache - DEBUG - Saved finding id=3
+2026-02-07 21:23:53,793 - asky.research.cache - DEBUG - Research cache database initialized
+2026-02-07 21:23:53,794 - asky.research.cache - DEBUG - Saved finding id=1
+2026-02-07 21:23:53,794 - asky.research.cache - DEBUG - Saved finding id=2
+2026-02-07 21:23:53,794 - asky.research.cache - DEBUG - Saved finding id=3
+2026-02-07 21:23:53,795 - asky.research.cache - DEBUG - Saved finding id=4
+2026-02-07 21:23:53,795 - asky.research.cache - DEBUG - Saved finding id=5
+2026-02-07 21:23:53,796 - asky.research.cache - DEBUG - Saved finding id=6
+2026-02-07 21:23:53,796 - asky.research.cache - DEBUG - Saved finding id=7
+2026-02-07 21:23:53,796 - asky.research.cache - DEBUG - Saved finding id=8
+2026-02-07 21:23:53,797 - asky.research.cache - DEBUG - Saved finding id=9
+2026-02-07 21:23:53,797 - asky.research.cache - DEBUG - Saved finding id=10
+2026-02-07 21:23:53,801 - asky.research.cache - DEBUG - Research cache database initialized
+2026-02-07 21:23:53,801 - asky.research.cache - DEBUG - Saved finding id=1
+2026-02-07 21:23:53,802 - asky.research.cache - DEBUG - Saved finding id=2
+2026-02-07 21:23:53,802 - asky.research.cache - DEBUG - Saved finding id=3
+2026-02-07 21:23:53,806 - asky.research.cache - DEBUG - Research cache database initialized
+2026-02-07 21:23:53,806 - asky.research.cache - DEBUG - Saved finding id=1
+2026-02-07 21:23:53,807 - asky.research.cache - DEBUG - Deleted finding id=1
+2026-02-07 21:23:53,810 - asky.research.cache - DEBUG - Research cache database initialized
+2026-02-07 21:23:53,813 - asky.research.cache - DEBUG - Research cache database initialized
+2026-02-07 21:23:53,814 - asky.research.cache - DEBUG - Saved finding id=1
+2026-02-07 21:23:53,818 - asky.research.cache - DEBUG - Research cache database initialized
+2026-02-07 21:23:53,819 - asky.research.cache - DEBUG - Saved finding id=1
+2026-02-07 21:23:53,819 - asky.research.cache - DEBUG - Saved finding id=2
+2026-02-07 21:23:53,823 - asky.research.cache - DEBUG - Research cache database initialized
+2026-02-07 21:23:53,824 - asky.research.cache - DEBUG - Saved finding id=1
+2026-02-07 21:23:53,827 - asky.research.cache - DEBUG - Research cache database initialized
+2026-02-07 21:23:53,828 - asky.research.cache - DEBUG - Saved finding id=1
+2026-02-07 21:23:53,850 - asky.research.embeddings - DEBUG - EmbeddingClient initialized: model=test-model, device=cpu
+2026-02-07 21:23:53,850 - asky.research.embeddings - DEBUG - EmbeddingClient initialized: model=test-model, device=cpu
+2026-02-07 21:23:53,851 - asky.research.embeddings - DEBUG - EmbeddingClient initialized: model=test-model, device=cpu
+2026-02-07 21:23:53,852 - asky.research.embeddings - DEBUG - EmbeddingClient initialized: model=test-model, device=cpu
+2026-02-07 21:23:53,853 - asky.research.embeddings - DEBUG - EmbeddingClient initialized: model=test-model, device=cpu
+2026-02-07 21:23:53,854 - asky.research.embeddings - DEBUG - EmbeddingClient initialized: model=test-model, device=cpu
+2026-02-07 21:23:53,854 - asky.research.embeddings - DEBUG - EmbeddingClient initialized: model=test-model, device=cpu
+2026-02-07 21:23:53,855 - asky.research.embeddings - DEBUG - EmbeddingClient initialized: model=test-model, device=cpu
+2026-02-07 21:23:53,856 - asky.research.embeddings - DEBUG - EmbeddingClient initialized: model=test-model, device=cpu
+2026-02-07 21:23:53,857 - asky.research.embeddings - DEBUG - EmbeddingClient initialized: model=test-model, device=cpu
+2026-02-07 21:23:53,861 - asky.research.embeddings - DEBUG - EmbeddingClient initialized: model=gaianet/text-embedding-nomic-embed-text-v1.5-embedding, device=cpu
+2026-02-07 21:23:53,865 - asky.research.tools - DEBUG - Cache hit for http://example.com
+2026-02-07 21:23:53,865 - asky.research.embeddings - DEBUG - EmbeddingClient initialized: model=gaianet/text-embedding-nomic-embed-text-v1.5-embedding, device=cpu
+2026-02-07 21:23:53,867 - asky.research.tools - DEBUG - Fetching http://example.com
+2026-02-07 21:23:53,868 - asky.research.tools - DEBUG - Fetching http://example.com
+2026-02-07 21:23:53,869 - asky.research.tools - DEBUG - Cache hit for http://example.com
+2026-02-07 21:23:53,870 - asky.research.tools - DEBUG - Cache hit for http://example.com
+2026-02-07 21:23:53,872 - asky.research.tools - DEBUG - Cache hit for http://b.com
+2026-02-07 21:23:53,872 - asky.research.tools - DEBUG - Cache hit for http://a.com
+2026-02-07 21:23:53,874 - asky.research.tools - DEBUG - Cache hit for http://example.com
+2026-02-07 21:23:53,877 - asky.research.tools - DEBUG - Cache hit for http://example.com
+2026-02-07 21:23:53,886 - asky.research.tools - DEBUG - Generating chunk embeddings for http://example.com
+2026-02-07 21:23:53,887 - asky.research.tools - ERROR - RAG retrieval failed for http://example.com: DB error
+2026-02-07 21:23:53,895 - asky.research.tools - WARNING - Finding embedding failed (will still be saved): Embedding API unavailable
+2026-02-07 21:23:53,900 - asky.research.tools - WARNING - Semantic search unavailable: API unavailable
+2026-02-07 21:23:53,917 - asky.research.vector_store - DEBUG - Stored 2 chunk embeddings for cache_id=1
+2026-02-07 21:23:53,927 - asky.research.vector_store - DEBUG - Stored 2 link embeddings for cache_id=1
+2026-02-07 21:23:53,936 - asky.research.vector_store - DEBUG - Stored 2 chunk embeddings for cache_id=1
+2026-02-07 21:23:53,936 - asky.research.vector_store - WARNING - Chroma chunk query failed; falling back to SQLite: Expected where to have exactly one operator, got {'cache_id': 1, 'embedding_model': 'test-model'} in query.
+2026-02-07 21:23:53,944 - asky.research.vector_store - DEBUG - Stored 2 link embeddings for cache_id=1
+2026-02-07 21:23:53,944 - asky.research.vector_store - WARNING - Chroma link query failed; falling back to SQLite: Expected where to have exactly one operator, got {'cache_id': 1, 'embedding_model': 'test-model'} in query.
+2026-02-07 21:23:53,957 - asky.research.vector_store - DEBUG - Stored 2 chunk embeddings for cache_id=1
+2026-02-07 21:23:53,964 - asky.research.vector_store - DEBUG - Stored 2 link embeddings for cache_id=1
+2026-02-07 21:23:53,967 - asky.research.vector_store - DEBUG - Stored 2 chunk embeddings for cache_id=1
+2026-02-07 21:23:53,976 - asky.research.vector_store - DEBUG - Stored 2 chunk embeddings for cache_id=1
+2026-02-07 21:23:53,976 - asky.research.vector_store - WARNING - Chroma hybrid query failed; using SQLite dense scores: Expected where to have exactly one operator, got {'cache_id': 1, 'embedding_model': 'test-model'} in query.
+2026-02-07 21:23:53,984 - asky.research.vector_store - DEBUG - Stored 2 chunk embeddings for cache_id=1
+2026-02-07 21:23:53,987 - asky.research.vector_store - WARNING - Embedding count mismatch: 2 vs 3
+2026-02-07 21:23:53,987 - asky.research.vector_store - WARNING - Chroma chunk query failed; falling back to SQLite: Expected where to have exactly one operator, got {'cache_id': 1, 'embedding_model': 'test-model'} in query.
+2026-02-07 21:23:53,995 - asky.research.vector_store - DEBUG - Stored 5 chunk embeddings for cache_id=1
+2026-02-07 21:23:53,995 - asky.research.vector_store - WARNING - Chroma chunk query failed; falling back to SQLite: Expected where to have exactly one operator, got {'cache_id': 1, 'embedding_model': 'test-model'} in query.
+2026-02-07 21:23:54,002 - asky.research.vector_store - DEBUG - Stored embedding for finding id=1
+2026-02-07 21:23:54,012 - asky.research.vector_store - DEBUG - Stored embedding for finding id=1
+2026-02-07 21:23:54,015 - asky.research.vector_store - DEBUG - Stored embedding for finding id=2
+2026-02-07 21:23:54,023 - asky.research.vector_store - DEBUG - Stored embedding for finding id=1
+2026-02-07 21:23:54,026 - asky.research.vector_store - DEBUG - Stored embedding for finding id=2
+2026-02-07 21:23:54,031 - asky.research.vector_store - DEBUG - Stored embedding for finding id=1
+2026-02-07 21:23:54,034 - asky.research.vector_store - DEBUG - Stored embedding for finding id=2
+2026-02-07 21:23:54,055 - asky.core.session_manager - INFO - Session 1 reached threshold (10/5). Compacting...
+2026-02-07 21:23:54,055 - asky.core.session_manager - INFO - Found 1 messages to compact for session 1
+2026-02-07 21:23:54,055 - asky.core.session_manager - INFO - Compacted content length: 9 chars
+2026-02-07 21:23:54,055 - asky.core.session_manager - INFO - Compaction saved for session 1
+2026-02-07 21:23:54,065 - asky.research.cache - DEBUG - Research cache database initialized
+2026-02-07 21:23:54,071 - asky.research.cache - INFO - Cleaned up 1 expired cache entries
+2026-02-07 21:23:54,075 - asky.research.cache - DEBUG - Research cache database initialized

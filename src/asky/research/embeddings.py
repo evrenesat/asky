@@ -1,27 +1,28 @@
-"""Embedding client for LM Studio (OpenAI-compatible API)."""
+"""Embedding client backed by sentence-transformers."""
 
 import logging
 import struct
-import time
-from typing import List, Optional
-
-import requests
+from typing import Any, List, Optional
 
 from asky.config import (
-    RESEARCH_EMBEDDING_API_URL,
-    RESEARCH_EMBEDDING_MODEL,
-    RESEARCH_EMBEDDING_TIMEOUT,
     RESEARCH_EMBEDDING_BATCH_SIZE,
-    RESEARCH_EMBEDDING_RETRY_ATTEMPTS,
-    RESEARCH_EMBEDDING_RETRY_BACKOFF_SECONDS,
+    RESEARCH_EMBEDDING_DEVICE,
+    RESEARCH_EMBEDDING_LOCAL_FILES_ONLY,
+    RESEARCH_EMBEDDING_MODEL,
+    RESEARCH_EMBEDDING_NORMALIZE,
 )
 
 logger = logging.getLogger(__name__)
-RETRYABLE_HTTP_STATUS_CODES = {429, 500, 502, 503, 504}
+UNBOUNDED_TOKENIZER_LIMIT = 100_000
+
+try:
+    from sentence_transformers import SentenceTransformer
+except ImportError:
+    SentenceTransformer = None  # type: ignore[assignment]
 
 
 class EmbeddingClient:
-    """Client for local embedding API (LM Studio / OpenAI-compatible)."""
+    """Singleton sentence-transformers client used across research tools."""
 
     _instance: Optional["EmbeddingClient"] = None
 
@@ -34,26 +35,41 @@ class EmbeddingClient:
 
     def __init__(
         self,
-        api_url: str = None,
+        api_url: str = None,  # Backward-compatible no-op
         model: str = None,
-        timeout: int = None,
+        timeout: int = None,  # Backward-compatible no-op
         batch_size: int = None,
-        retry_attempts: int = None,
-        retry_backoff_seconds: float = None,
+        retry_attempts: int = None,  # Backward-compatible no-op
+        retry_backoff_seconds: float = None,  # Backward-compatible no-op
+        device: str = None,
+        normalize_embeddings: Optional[bool] = None,
+        local_files_only: Optional[bool] = None,
     ):
-        # Skip re-initialization for singleton
         if self._initialized:
             return
 
-        self.api_url = api_url or RESEARCH_EMBEDDING_API_URL
+        self.api_url = api_url
+        self.timeout = timeout
+        self.retry_attempts = retry_attempts
+        self.retry_backoff_seconds = retry_backoff_seconds
+
         self.model = model or RESEARCH_EMBEDDING_MODEL
-        self.timeout = timeout or RESEARCH_EMBEDDING_TIMEOUT
         self.batch_size = batch_size or RESEARCH_EMBEDDING_BATCH_SIZE
-        self.retry_attempts = retry_attempts or RESEARCH_EMBEDDING_RETRY_ATTEMPTS
-        self.retry_backoff_seconds = (
-            retry_backoff_seconds or RESEARCH_EMBEDDING_RETRY_BACKOFF_SECONDS
+        self.device = device or RESEARCH_EMBEDDING_DEVICE
+        self.normalize_embeddings = (
+            RESEARCH_EMBEDDING_NORMALIZE
+            if normalize_embeddings is None
+            else bool(normalize_embeddings)
         )
-        self._session = requests.Session()
+        self.local_files_only = (
+            RESEARCH_EMBEDDING_LOCAL_FILES_ONLY
+            if local_files_only is None
+            else bool(local_files_only)
+        )
+
+        self._model: Optional[Any] = None
+        self._tokenizer: Optional[Any] = None
+        self._model_load_error: Optional[Exception] = None
 
         # Usage tracking
         self.texts_embedded: int = 0
@@ -61,99 +77,109 @@ class EmbeddingClient:
         self.prompt_tokens: int = 0
 
         self._initialized = True
-
         logger.debug(
-            f"EmbeddingClient initialized: url={self.api_url}, model={self.model}"
+            "EmbeddingClient initialized: model=%s, device=%s",
+            self.model,
+            self.device,
         )
 
-    def embed(self, texts: List[str]) -> List[List[float]]:
-        """Generate embeddings for a list of texts.
+    def _ensure_model_loaded(self) -> Any:
+        """Load sentence-transformer lazily and cache it."""
+        if self._model is not None:
+            return self._model
+        if self._model_load_error is not None:
+            raise RuntimeError("Embedding model is unavailable") from self._model_load_error
 
-        Automatically batches requests if needed.
-        """
-        if not texts:
+        if SentenceTransformer is None:
+            self._model_load_error = RuntimeError(
+                "sentence-transformers is required for research embeddings. "
+                "Install dependencies and retry."
+            )
+            raise RuntimeError("Embedding model is unavailable") from self._model_load_error
+
+        try:
+            kwargs = {"device": self.device}
+            if self.local_files_only:
+                kwargs["local_files_only"] = True
+            try:
+                self._model = SentenceTransformer(self.model, **kwargs)
+            except TypeError:
+                kwargs.pop("local_files_only", None)
+                self._model = SentenceTransformer(self.model, **kwargs)
+        except Exception as exc:
+            self._model_load_error = exc
+            logger.error("Failed to load sentence-transformer model '%s': %s", self.model, exc)
+            raise RuntimeError("Embedding model is unavailable") from exc
+
+        self._tokenizer = getattr(self._model, "tokenizer", None)
+        return self._model
+
+    def _to_embedding_rows(self, encoded: Any) -> List[List[float]]:
+        """Normalize model output to List[List[float]]."""
+        rows = encoded.tolist() if hasattr(encoded, "tolist") else encoded
+        if rows is None:
             return []
-
-        # Filter out empty texts
-        texts = [t for t in texts if t and t.strip()]
-        if not texts:
+        if isinstance(rows, tuple):
+            rows = list(rows)
+        if not isinstance(rows, list):
             return []
+        if rows and isinstance(rows[0], (int, float)):
+            rows = [rows]
+        normalized: List[List[float]] = []
+        for row in rows:
+            if not isinstance(row, list):
+                continue
+            normalized.append([float(value) for value in row])
+        return normalized
 
-        all_embeddings = []
+    def _count_text_tokens(self, texts: List[str]) -> int:
+        """Estimate total input tokens for lightweight usage tracking."""
+        tokenizer = self.get_tokenizer()
+        if tokenizer is None:
+            return 0
 
-        # Process in batches
-        for i in range(0, len(texts), self.batch_size):
-            batch = texts[i : i + self.batch_size]
-            batch_embeddings = self._embed_batch(batch)
-            all_embeddings.extend(batch_embeddings)
-
-        return all_embeddings
+        total = 0
+        for text in texts:
+            try:
+                token_ids = tokenizer.encode(text, add_special_tokens=False)
+            except TypeError:
+                token_ids = tokenizer.encode(text)
+            except Exception:
+                continue
+            total += len(token_ids)
+        return total
 
     def _embed_batch(self, texts: List[str]) -> List[List[float]]:
-        """Generate embeddings for a single batch."""
-        last_error: Optional[Exception] = None
+        """Encode one text batch using sentence-transformers."""
+        model = self._ensure_model_loaded()
+        encoded = model.encode(
+            texts,
+            batch_size=len(texts),
+            convert_to_numpy=True,
+            show_progress_bar=False,
+            normalize_embeddings=self.normalize_embeddings,
+        )
+        rows = self._to_embedding_rows(encoded)
 
-        for attempt in range(1, self.retry_attempts + 1):
-            try:
-                response = self._session.post(
-                    self.api_url,
-                    json={"input": texts, "model": self.model},
-                    timeout=self.timeout,
-                )
-                response.raise_for_status()
+        self.api_calls += 1
+        self.texts_embedded += len(texts)
+        self.prompt_tokens += self._count_text_tokens(texts)
+        return rows
 
-                data = response.json()
+    def embed(self, texts: List[str]) -> List[List[float]]:
+        """Generate embeddings for a list of texts."""
+        if not texts:
+            return []
 
-                # Track usage
-                self.api_calls += 1
-                self.texts_embedded += len(texts)
-                usage = data.get("usage", {})
-                self.prompt_tokens += usage.get("prompt_tokens", 0)
+        filtered_texts = [text for text in texts if text and text.strip()]
+        if not filtered_texts:
+            return []
 
-                # Handle different response formats
-                if "data" in data:
-                    # OpenAI format
-                    return [item["embedding"] for item in data["data"]]
-                if "embeddings" in data:
-                    # Alternative format
-                    return data["embeddings"]
-                raise ValueError(f"Unexpected response format: {list(data.keys())}")
-            except requests.exceptions.HTTPError as e:
-                last_error = e
-                status_code = e.response.status_code if e.response is not None else None
-                is_retryable = status_code in RETRYABLE_HTTP_STATUS_CODES
-                if is_retryable and attempt < self.retry_attempts:
-                    self._sleep_before_retry(attempt)
-                    continue
-                logger.error(f"Embedding API HTTP error: status={status_code}")
-                raise
-            except (requests.exceptions.ConnectionError, requests.exceptions.Timeout) as e:
-                last_error = e
-                if attempt < self.retry_attempts:
-                    self._sleep_before_retry(attempt)
-                    continue
-                if isinstance(e, requests.exceptions.ConnectionError):
-                    logger.error(
-                        f"Failed to connect to embedding API at {self.api_url}. "
-                        "Is LM Studio running with an embedding model loaded?"
-                    )
-                else:
-                    logger.error(
-                        f"Embedding API request timed out after {self.timeout}s"
-                    )
-                raise
-            except Exception as e:
-                logger.error(f"Embedding API error: {e}")
-                raise
-
-        if last_error is not None:
-            raise last_error
-        raise RuntimeError("Embedding API request failed unexpectedly")
-
-    def _sleep_before_retry(self, attempt: int) -> None:
-        """Sleep with linear backoff before retrying transient errors."""
-        delay_seconds = self.retry_backoff_seconds * attempt
-        time.sleep(delay_seconds)
+        all_embeddings: List[List[float]] = []
+        for i in range(0, len(filtered_texts), self.batch_size):
+            batch = filtered_texts[i : i + self.batch_size]
+            all_embeddings.extend(self._embed_batch(batch))
+        return all_embeddings
 
     def embed_single(self, text: str) -> List[float]:
         """Generate embedding for a single text."""
@@ -163,20 +189,40 @@ class EmbeddingClient:
         return result[0] if result else []
 
     def is_available(self) -> bool:
-        """Check if the embedding API is available."""
+        """Check whether the embedding model is loadable."""
         try:
-            # Try a simple embedding request
-            self.embed_single("test")
+            self._ensure_model_loaded()
             return True
         except Exception:
             return False
 
+    def get_tokenizer(self) -> Optional[Any]:
+        """Expose tokenizer for token-aware chunking."""
+        try:
+            self._ensure_model_loaded()
+        except Exception:
+            return None
+        return self._tokenizer
+
+    @property
+    def max_seq_length(self) -> int:
+        """Expose finite model sequence length when available."""
+        try:
+            model = self._ensure_model_loaded()
+        except Exception:
+            return 0
+        raw_value = getattr(model, "max_seq_length", 0)
+        try:
+            max_length = int(raw_value)
+        except (TypeError, ValueError):
+            return 0
+        if max_length <= 0 or max_length >= UNBOUNDED_TOKENIZER_LIMIT:
+            return 0
+        return max_length
+
     @staticmethod
     def serialize_embedding(embedding: List[float]) -> bytes:
-        """Convert embedding to bytes for SQLite storage.
-
-        Uses float32 format (4 bytes per float).
-        """
+        """Convert embedding to bytes for SQLite storage."""
         return struct.pack(f"{len(embedding)}f", *embedding)
 
     @staticmethod
@@ -184,7 +230,7 @@ class EmbeddingClient:
         """Convert bytes back to embedding list."""
         if not data:
             return []
-        count = len(data) // 4  # 4 bytes per float32
+        count = len(data) // 4
         return list(struct.unpack(f"{count}f", data))
 
     def get_usage_stats(self) -> dict:

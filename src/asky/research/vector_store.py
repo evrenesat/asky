@@ -1120,6 +1120,29 @@ class VectorStore:
         results.sort(key=lambda x: x[1], reverse=True)
         return results[:top_k]
 
+    def _has_finding_embeddings_for_model(self, model: str) -> bool:
+        """Check whether SQLite has any stored finding embeddings for the model."""
+        conn = self._get_conn()
+        c = conn.cursor()
+        if model:
+            c.execute(
+                """
+                SELECT COUNT(*) FROM research_findings
+                WHERE embedding IS NOT NULL AND embedding_model = ?
+            """,
+                (model,),
+            )
+        else:
+            c.execute(
+                """
+                SELECT COUNT(*) FROM research_findings
+                WHERE embedding IS NOT NULL
+            """
+            )
+        count = c.fetchone()[0]
+        conn.close()
+        return count > 0
+
     def search_findings(
         self,
         query: str,
@@ -1130,6 +1153,8 @@ class VectorStore:
             return []
 
         try:
+            if not self._has_finding_embeddings_for_model(self.embedding_client.model):
+                return []
             query_embedding = self.embedding_client.embed_single(query)
 
             chroma_ranked_ids = self._search_findings_with_chroma(

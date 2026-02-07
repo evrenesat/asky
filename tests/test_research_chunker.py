@@ -5,6 +5,15 @@ import pytest
 from asky.research.chunker import chunk_text, chunk_by_paragraphs, chunk_by_sentences
 
 
+@pytest.fixture(autouse=True)
+def disable_tokenizer_chunking(monkeypatch):
+    """Default to legacy char-based chunking for compatibility tests."""
+    monkeypatch.setattr(
+        "asky.research.chunker._get_embedding_tokenizer",
+        lambda: (None, 0),
+    )
+
+
 class TestChunkText:
     """Tests for chunk_text function."""
 
@@ -228,3 +237,47 @@ class TestChunkingEdgeCases:
 
         assert len(result) >= 1
         assert "@#$%^&*()" in result[0][1]
+
+
+class _FakeTokenizer:
+    def encode(self, text, add_special_tokens=False):  # noqa: ARG002
+        tokens = [token for token in text.split() if token]
+        return list(range(len(tokens)))
+
+    def decode(self, token_ids, skip_special_tokens=True):  # noqa: ARG002
+        return " ".join(f"t{token_id}" for token_id in token_ids)
+
+
+class TestTokenAwareChunking:
+    """Tests for token-aware sentence chunking."""
+
+    def test_token_chunking_respects_model_max_length(self, monkeypatch):
+        """Configured chunk size is clamped by model max sequence length."""
+        tokenizer = _FakeTokenizer()
+        monkeypatch.setattr(
+            "asky.research.chunker._get_embedding_tokenizer",
+            lambda: (tokenizer, 6),
+        )
+
+        text = "One two three four. Five six seven eight. Nine ten eleven."
+        result = chunk_text(text, chunk_size=20, overlap=2)
+
+        assert len(result) >= 2
+        for _, chunk in result:
+            assert len(tokenizer.encode(chunk)) <= 6
+
+    def test_token_chunking_splits_long_sentence(self, monkeypatch):
+        """Long sentence is split into overlapping token windows."""
+        tokenizer = _FakeTokenizer()
+        monkeypatch.setattr(
+            "asky.research.chunker._get_embedding_tokenizer",
+            lambda: (tokenizer, 5),
+        )
+
+        text = "one two three four five six seven eight nine ten eleven twelve"
+        result = chunk_text(text, chunk_size=5, overlap=2)
+
+        assert len(result) > 1
+        first_tokens = result[0][1].split()
+        second_tokens = result[1][1].split()
+        assert first_tokens[-2:] == second_tokens[:2]

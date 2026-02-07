@@ -1,9 +1,52 @@
 """Tests for embedding usage tracking in banner (research mode)."""
 
+from io import StringIO
+from unittest.mock import patch
+
 import pytest
-from unittest.mock import patch, MagicMock
+from rich.console import Console
 
 from asky.banner import BannerState, get_banner
+
+
+class _FakeTokenizer:
+    def encode(self, text, add_special_tokens=False):  # noqa: ARG002
+        words = [word for word in text.split() if word]
+        return list(range(len(words)))
+
+    def decode(self, token_ids, skip_special_tokens=True):  # noqa: ARG002
+        return " ".join(f"tok{token_id}" for token_id in token_ids)
+
+
+class _FakeArray:
+    def __init__(self, rows):
+        self.rows = rows
+
+    def tolist(self):
+        return self.rows
+
+
+class _FakeSentenceTransformer:
+    def __init__(self, model_name, device="cpu", **kwargs):  # noqa: ARG002
+        self.model_name = model_name
+        self.device = device
+        self.max_seq_length = 16
+        self.tokenizer = _FakeTokenizer()
+
+    def encode(
+        self,
+        texts,
+        batch_size,
+        convert_to_numpy,
+        show_progress_bar,
+        normalize_embeddings,
+    ):  # noqa: ARG002
+        rows = []
+        for text in texts:
+            token_count = max(1, len([word for word in text.split() if word]))
+            base = float(token_count)
+            rows.append([base, base + 1.0, base + 2.0])
+        return _FakeArray(rows)
 
 
 class TestEmbeddingClientUsageTracking:
@@ -11,11 +54,15 @@ class TestEmbeddingClientUsageTracking:
 
     @pytest.fixture(autouse=True)
     def reset_singleton(self):
-        """Reset the EmbeddingClient singleton before each test."""
+        """Reset singleton and mock sentence-transformers for each test."""
         from asky.research.embeddings import EmbeddingClient
 
         EmbeddingClient._instance = None
-        yield
+        with patch(
+            "asky.research.embeddings.SentenceTransformer",
+            _FakeSentenceTransformer,
+        ):
+            yield
         EmbeddingClient._instance = None
 
     def test_usage_counters_increment_on_embed(self):
@@ -23,96 +70,51 @@ class TestEmbeddingClientUsageTracking:
         from asky.research.embeddings import EmbeddingClient
 
         client = EmbeddingClient()
+        client.embed(["text1", "text2"])
 
-        # Mock the embedding HTTP call
-        with patch("requests.sessions.Session.post") as mock_post:
-            mock_response = MagicMock()
-            mock_response.json.return_value = {
-                "data": [
-                    {"embedding": [0.1, 0.2, 0.3]},
-                    {"embedding": [0.4, 0.5, 0.6]},
-                ],
-                "usage": {"prompt_tokens": 50},
-            }
-            mock_post.return_value = mock_response
-
-            # Embed 2 texts
-            client.embed(["text1", "text2"])
-
-            # Verify counters
-            assert client.texts_embedded == 2
-            assert client.api_calls == 1
-            assert client.prompt_tokens == 50
+        assert client.texts_embedded == 2
+        assert client.api_calls == 1
+        assert client.prompt_tokens == 2
 
     def test_usage_counters_accumulate_across_calls(self):
         """Test that usage counters accumulate across multiple embed calls."""
         from asky.research.embeddings import EmbeddingClient
 
         client = EmbeddingClient()
+        client.embed(["text1"])
+        assert client.texts_embedded == 1
+        assert client.api_calls == 1
+        assert client.prompt_tokens == 1
 
-        with patch("requests.sessions.Session.post") as mock_post:
-            mock_response = MagicMock()
-            mock_response.json.return_value = {
-                "data": [{"embedding": [0.1, 0.2]}],
-                "usage": {"prompt_tokens": 20},
-            }
-            mock_post.return_value = mock_response
-
-            # First call
-            client.embed(["text1"])
-            assert client.texts_embedded == 1
-            assert client.api_calls == 1
-            assert client.prompt_tokens == 20
-
-            # Second call
-            client.embed(["text2"])
-            assert client.texts_embedded == 2
-            assert client.api_calls == 2
-            assert client.prompt_tokens == 40
+        client.embed(["text2"])
+        assert client.texts_embedded == 2
+        assert client.api_calls == 2
+        assert client.prompt_tokens == 2
 
     def test_get_usage_stats_returns_correct_dict(self):
         """Test that get_usage_stats returns the correct dictionary."""
         from asky.research.embeddings import EmbeddingClient
 
         client = EmbeddingClient()
+        client.embed(["test"])
 
-        with patch("requests.sessions.Session.post") as mock_post:
-            mock_response = MagicMock()
-            mock_response.json.return_value = {
-                "data": [{"embedding": [0.1, 0.2, 0.3]}],
-                "usage": {"prompt_tokens": 15},
-            }
-            mock_post.return_value = mock_response
+        stats = client.get_usage_stats()
+        assert stats == {
+            "texts_embedded": 1,
+            "api_calls": 1,
+            "prompt_tokens": 1,
+        }
 
-            client.embed(["test"])
-
-            stats = client.get_usage_stats()
-            assert stats == {
-                "texts_embedded": 1,
-                "api_calls": 1,
-                "prompt_tokens": 15,
-            }
-
-    def test_usage_handles_missing_usage_field(self):
-        """Test that usage tracking handles missing 'usage' field in API response."""
+    def test_usage_filters_empty_values(self):
+        """Test that usage tracking ignores empty embedding inputs."""
         from asky.research.embeddings import EmbeddingClient
 
         client = EmbeddingClient()
+        client.embed(["test", "", "  "])
 
-        with patch("requests.sessions.Session.post") as mock_post:
-            # Response without 'usage' field
-            mock_response = MagicMock()
-            mock_response.json.return_value = {
-                "data": [{"embedding": [0.1, 0.2]}],
-            }
-            mock_post.return_value = mock_response
-
-            client.embed(["test"])
-
-            # Should still track texts and calls, but not tokens
-            assert client.texts_embedded == 1
-            assert client.api_calls == 1
-            assert client.prompt_tokens == 0
+        assert client.texts_embedded == 1
+        assert client.api_calls == 1
+        assert client.prompt_tokens == 1
 
 
 class TestBannerEmbeddingDisplay:
@@ -120,9 +122,6 @@ class TestBannerEmbeddingDisplay:
 
     def test_banner_shows_embedding_row_when_research_mode_true(self):
         """Test that Embedding row appears when research_mode=True."""
-        from rich.console import Console
-        from io import StringIO
-
         state = BannerState(
             model_alias="test-model",
             model_id="test-id",
@@ -134,32 +133,26 @@ class TestBannerEmbeddingDisplay:
             current_turn=1,
             db_count=5,
             research_mode=True,
-            embedding_model="nomic-embed-text-v1.5",
+            embedding_model="all-MiniLM-L6-v2",
             embedding_texts=42,
             embedding_api_calls=3,
             embedding_prompt_tokens=1200,
         )
 
         banner = get_banner(state)
-
-        # Render to string
         string_io = StringIO()
         console = Console(file=string_io, force_terminal=True, width=120)
         console.print(banner)
         output = string_io.getvalue()
 
-        # Check that the embedding row is rendered
         assert "Embedding" in output
-        assert "nomic-embed-text-v1.5" in output
+        assert "all-MiniLM-L6-v2" in output
         assert "Texts: 42" in output
         assert "API Calls: 3" in output
         assert "Tokens: 1,200" in output
 
     def test_banner_hides_embedding_row_when_research_mode_false(self):
         """Test that Embedding row is hidden when research_mode=False."""
-        from rich.console import Console
-        from io import StringIO
-
         state = BannerState(
             model_alias="test-model",
             model_id="test-id",
@@ -178,21 +171,15 @@ class TestBannerEmbeddingDisplay:
         )
 
         banner = get_banner(state)
-
-        # Render to string
         string_io = StringIO()
         console = Console(file=string_io, force_terminal=True, width=120)
         console.print(banner)
         output = string_io.getvalue()
 
-        # The word "Embedding" should not appear in the banner
         assert "Embedding" not in output
 
     def test_banner_embedding_row_shows_tokens_when_greater_than_zero(self):
         """Test that tokens are shown when > 0."""
-        from rich.console import Console
-        from io import StringIO
-
         state = BannerState(
             model_alias="test-model",
             model_id="test-id",
@@ -204,21 +191,18 @@ class TestBannerEmbeddingDisplay:
             current_turn=1,
             db_count=5,
             research_mode=True,
-            embedding_model="nomic-embed-text-v1.5",
+            embedding_model="all-MiniLM-L6-v2",
             embedding_texts=10,
             embedding_api_calls=2,
             embedding_prompt_tokens=500,
         )
 
         banner = get_banner(state)
-
-        # Render to string
         string_io = StringIO()
         console = Console(file=string_io, force_terminal=True, width=120)
         console.print(banner)
         output = string_io.getvalue()
 
-        # Should contain "Tokens:" since prompt_tokens > 0
         assert "Tokens: 500" in output
 
     def test_banner_embedding_row_hides_tokens_when_zero(self):
@@ -234,15 +218,13 @@ class TestBannerEmbeddingDisplay:
             current_turn=1,
             db_count=5,
             research_mode=True,
-            embedding_model="nomic-embed-text-v1.5",
+            embedding_model="all-MiniLM-L6-v2",
             embedding_texts=5,
             embedding_api_calls=1,
             embedding_prompt_tokens=0,
         )
 
         banner = get_banner(state)
-        # We can't easily verify absence in rich output, but we can verify
-        # the banner renders without error
         assert banner is not None
 
 
@@ -251,18 +233,19 @@ class TestInterfaceRendererEmbeddingIntegration:
 
     @pytest.fixture(autouse=True)
     def reset_singleton(self):
-        """Reset the EmbeddingClient singleton before each test."""
+        """Reset singleton and mock sentence-transformers for each test."""
         from asky.research.embeddings import EmbeddingClient
 
         EmbeddingClient._instance = None
-        yield
+        with patch(
+            "asky.research.embeddings.SentenceTransformer",
+            _FakeSentenceTransformer,
+        ):
+            yield
         EmbeddingClient._instance = None
 
     @patch("asky.cli.display.get_db_record_count")
-    @patch("requests.sessions.Session.post")
-    def test_renderer_pulls_embedding_stats_when_research_mode_true(
-        self, mock_post, mock_db_count
-    ):
+    def test_renderer_pulls_embedding_stats_when_research_mode_true(self, mock_db_count):
         """Test that InterfaceRenderer fetches and passes embedding stats."""
         from asky.cli.display import InterfaceRenderer
         from asky.core import UsageTracker
@@ -270,19 +253,9 @@ class TestInterfaceRendererEmbeddingIntegration:
 
         mock_db_count.return_value = 10
 
-        # Mock embedding API call
-        mock_response = MagicMock()
-        mock_response.json.return_value = {
-            "data": [{"embedding": [0.1, 0.2, 0.3]}],
-            "usage": {"prompt_tokens": 25},
-        }
-        mock_post.return_value = mock_response
-
-        # Simulate some embedding activity
         client = get_embedding_client()
         client.embed(["test text"])
 
-        # Create renderer with research_mode=True
         model_config = {"id": "test-model", "context_size": 4096}
         usage_tracker = UsageTracker()
 
@@ -293,17 +266,13 @@ class TestInterfaceRendererEmbeddingIntegration:
             research_mode=True,
         )
 
-        # Build banner
         banner = renderer._build_banner(current_turn=1)
-
-        # The banner should be created without error and contain embedding info
         assert banner is not None
 
-        # Verify client stats were read
         stats = client.get_usage_stats()
         assert stats["texts_embedded"] == 1
         assert stats["api_calls"] == 1
-        assert stats["prompt_tokens"] == 25
+        assert stats["prompt_tokens"] == 2
 
     @patch("asky.cli.display.get_db_record_count")
     def test_renderer_skips_embedding_stats_when_research_mode_false(
@@ -325,6 +294,5 @@ class TestInterfaceRendererEmbeddingIntegration:
             research_mode=False,
         )
 
-        # Build banner - should not try to import embedding client
         banner = renderer._build_banner(current_turn=1)
         assert banner is not None

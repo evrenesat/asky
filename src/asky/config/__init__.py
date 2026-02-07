@@ -111,8 +111,8 @@ RESEARCH_ENABLED = _research.get("enabled", True)
 RESEARCH_CACHE_TTL_HOURS = _research.get("cache_ttl_hours", 24)
 RESEARCH_MAX_LINKS_PER_URL = _research.get("max_links_per_url", 50)
 RESEARCH_MAX_RELEVANT_LINKS = _research.get("max_relevant_links", 20)
-RESEARCH_CHUNK_SIZE = _research.get("chunk_size", 1000)
-RESEARCH_CHUNK_OVERLAP = _research.get("chunk_overlap", 200)
+RESEARCH_CHUNK_SIZE = _research.get("chunk_size", 256)
+RESEARCH_CHUNK_OVERLAP = _research.get("chunk_overlap", 48)
 RESEARCH_MAX_CHUNKS_PER_RETRIEVAL = _research.get("max_chunks_per_retrieval", 5)
 RESEARCH_SUMMARIZATION_WORKERS = _research.get("summarization_workers", 2)
 RESEARCH_MEMORY_MAX_RESULTS = _research.get("memory_max_results", 10)
@@ -133,18 +133,12 @@ RESEARCH_CHROMA_FINDINGS_COLLECTION = _research_chromadb.get(
 
 # Research Embedding Settings
 _research_embedding = _research.get("embedding", {})
-RESEARCH_EMBEDDING_API_URL = _research_embedding.get(
-    "api_url", "http://localhost:1234/v1/embeddings"
-)
-RESEARCH_EMBEDDING_MODEL = _research_embedding.get(
-    "model", "text-embedding-nomic-embed-text-v1.5"
-)
-RESEARCH_EMBEDDING_DIMENSION = _research_embedding.get("dimension", 768)
+RESEARCH_EMBEDDING_MODEL = _research_embedding.get("model", "all-MiniLM-L6-v2")
 RESEARCH_EMBEDDING_BATCH_SIZE = _research_embedding.get("batch_size", 32)
-RESEARCH_EMBEDDING_TIMEOUT = _research_embedding.get("timeout", 30)
-RESEARCH_EMBEDDING_RETRY_ATTEMPTS = _research_embedding.get("retry_attempts", 3)
-RESEARCH_EMBEDDING_RETRY_BACKOFF_SECONDS = _research_embedding.get(
-    "retry_backoff_seconds", 0.5
+RESEARCH_EMBEDDING_DEVICE = _research_embedding.get("device", "cpu")
+RESEARCH_EMBEDDING_NORMALIZE = _research_embedding.get("normalize", True)
+RESEARCH_EMBEDDING_LOCAL_FILES_ONLY = _research_embedding.get(
+    "local_files_only", False
 )
 
 # Research Prompts
