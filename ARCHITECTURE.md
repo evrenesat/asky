@@ -103,6 +103,7 @@ src/asky/
 │   ├── cache.py        # Research cache, findings persistence, vector invalidation
 │   ├── chunker.py      # Token-aware sentence chunking with char fallback
 │   ├── embeddings.py   # In-memory sentence-transformers embedding client
+│   ├── source_shortlist.py # Pre-LLM source candidate ranking (shared across modes)
 │   ├── tools.py        # Research tool executors
 │   └── vector_store.py # Chroma-backed dense retrieval + SQLite lexical fallback
 ├── config.toml         # Default configuration file
@@ -281,6 +282,7 @@ Unified storage for both history and sessions:
 | `[tool.name]` | Custom tool definitions |
 | `[research.source_adapters.name]` | Map research targets (e.g. `local://`) to custom tools |
 | `[research.chromadb]` | ChromaDB persist path and collection names for research vectors |
+| `[research.source_shortlist]` | Shared pre-LLM source shortlisting (seed URL parsing, search, fetch, scoring) |
 | `[push_data.name]` | HTTP endpoint definitions for data push |
 | `[session]` | Compaction threshold and strategy |
 | `[email]` | SMTP settings |
@@ -346,6 +348,17 @@ Execution via `subprocess.run()` with argument quoting.
 - Embedding usage stats (`texts_embedded`, `api_calls`, `prompt_tokens`) are still exposed for banner rendering.
 - The tokenizer from the embedding model is reused by the chunker to keep chunk sizes aligned with model sequence limits.
 
+#### Shared Source Shortlisting (`research/source_shortlist.py`)
+- Runs before the first LLM call and can be enabled independently for research and standard chat modes.
+- Pipeline:
+  - Extract seed URLs from prompt and build URL-stripped query text
+  - Optionally extract keyphrases (YAKE) for search query construction
+  - Gather candidates from prompt URLs and/or `web_search` results
+  - Normalize and deduplicate URLs (tracking param stripping, fragment removal)
+  - Fetch/extract main text with `trafilatura` plus `HTMLStripper` fallback
+  - Score candidates with embedding cosine similarity + lightweight heuristics
+- Produces a ranked shortlist payload and an optional compact context block injected into the user message.
+
 ---
 
 ### 6. Supporting Modules
@@ -392,7 +405,11 @@ User Query
     ↓
 CLI (main.py) → parse_args()
     ↓
-chat.py → load_context() → build_messages()
+chat.py → load_context()
+    ↓
+optional source_shortlist.py (pre-LLM URL/search retrieval + ranking)
+    ↓
+build_messages()
     ↓
 ConversationEngine.run()
     ↓
@@ -474,6 +491,9 @@ Uses `chars / 4` approximation instead of actual tokenizer, reducing dependencie
 
 ### 5. Chroma Dense + SQLite Lexical Hybrid
 Research mode stores dense vectors in ChromaDB for fast semantic search while keeping SQLite tables for lexical/BM25 scoring and metadata joins. Cache invalidation clears both SQLite vector rows and Chroma vectors so retrieval freshness remains aligned with cached source content.
+
+### 6. Shared Pre-LLM Source Shortlisting
+Source shortlisting is implemented once and reused by both research and standard chat flows, with mode-specific enablement flags in config. This avoids duplicated retrieval logic while letting rollout stay controlled per mode.
 
 ---
 

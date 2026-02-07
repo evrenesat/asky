@@ -131,6 +131,50 @@ RESEARCH_CHROMA_FINDINGS_COLLECTION = _research_chromadb.get(
     "findings_collection", "asky_research_findings"
 )
 
+# Source Shortlist Settings (shared by research and standard modes)
+_source_shortlist = _research.get("source_shortlist", {})
+SOURCE_SHORTLIST_ENABLED = _source_shortlist.get("enabled", True)
+SOURCE_SHORTLIST_ENABLE_RESEARCH_MODE = _source_shortlist.get(
+    "enable_research_mode", True
+)
+SOURCE_SHORTLIST_ENABLE_STANDARD_MODE = _source_shortlist.get(
+    "enable_standard_mode", False
+)
+SOURCE_SHORTLIST_SEARCH_WITH_SEED_URLS = _source_shortlist.get(
+    "search_with_seed_urls", False
+)
+SOURCE_SHORTLIST_SEARCH_RESULT_COUNT = _source_shortlist.get(
+    "search_result_count", 25
+)
+SOURCE_SHORTLIST_MAX_CANDIDATES = _source_shortlist.get("max_candidates", 30)
+SOURCE_SHORTLIST_MAX_FETCH_URLS = _source_shortlist.get("max_fetch_urls", 15)
+SOURCE_SHORTLIST_TOP_K = _source_shortlist.get("top_k", 8)
+SOURCE_SHORTLIST_MIN_CONTENT_CHARS = _source_shortlist.get("min_content_chars", 300)
+SOURCE_SHORTLIST_MAX_SCORING_CHARS = _source_shortlist.get("max_scoring_chars", 5000)
+SOURCE_SHORTLIST_SNIPPET_CHARS = _source_shortlist.get("snippet_chars", 700)
+SOURCE_SHORTLIST_DOC_LEAD_CHARS = _source_shortlist.get("doc_lead_chars", 1400)
+SOURCE_SHORTLIST_QUERY_FALLBACK_CHARS = _source_shortlist.get(
+    "query_fallback_chars", 600
+)
+SOURCE_SHORTLIST_KEYPHRASE_MIN_QUERY_CHARS = _source_shortlist.get(
+    "keyphrase_min_query_chars", 220
+)
+SOURCE_SHORTLIST_KEYPHRASE_TOP_K = _source_shortlist.get("keyphrase_top_k", 20)
+SOURCE_SHORTLIST_SEARCH_PHRASE_COUNT = _source_shortlist.get("search_phrase_count", 5)
+SOURCE_SHORTLIST_SHORT_TEXT_THRESHOLD = _source_shortlist.get(
+    "short_text_threshold", 700
+)
+SOURCE_SHORTLIST_SAME_DOMAIN_BONUS = _source_shortlist.get("same_domain_bonus", 0.05)
+SOURCE_SHORTLIST_OVERLAP_BONUS_WEIGHT = _source_shortlist.get(
+    "overlap_bonus_weight", 0.10
+)
+SOURCE_SHORTLIST_SHORT_TEXT_PENALTY = _source_shortlist.get(
+    "short_text_penalty", 0.10
+)
+SOURCE_SHORTLIST_NOISE_PATH_PENALTY = _source_shortlist.get(
+    "noise_path_penalty", 0.15
+)
+
 # Research Embedding Settings
 _research_embedding = _research.get("embedding", {})
 RESEARCH_EMBEDDING_MODEL = _research_embedding.get("model", "all-MiniLM-L6-v2")

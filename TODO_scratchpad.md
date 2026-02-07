@@ -33,4 +33,20 @@ CRITICAL - Security
   [ ] thin version of banner: 1 and 2 line versions.
   [] research on file/directory: done, needs testing.
   [ ] Insert date time to end of final results as a footnote. (except when we are in concise mode)
- you
+ 
+
+
+ I want to replace current research mode flow and prompting with a bit more preprocessing to be able to get better results from smaller models.
+ We are also going to modify improve on normal querying.  We will start with that one because it's simpler. 
+ 
+ in normal querying: (non-research mode)
+ When user enters prompt with  URLs,
+ before sending prompt to model, we are going to directly visit the URL and  to extract the main content as a markdown using (trafilatura.extract(html_string, output_format="markdown"))
+ and we are going to get the same. Yeah, this is the for now this is the only change. And
+ for get URL details where we also give links
+ to the model we are we will use our our ag tooling
+ to count sorry two two
+ to rank the links that are most relevant to the query of the user of course that's only possible for short queries. But even for longer, very long user prompt, we can use our summarization model with a different summary prompt to extract questions from the user prompt. The main benefit is we assume summary model is running locally so it doesn't cost to user. So we try to benefit from that as much as possible. 
+
+
+ 

@@ -38,7 +38,9 @@ dependencies = [
     "requests",
     "rich",
     "sentence-transformers>=3.0.0",
+    "trafilatura>=1.12.2",
     "tomlkit>=0.14.0",
+    "yake>=0.6.0",
 ]
 
 [project.urls]

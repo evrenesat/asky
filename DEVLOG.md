@@ -1,3 +1,46 @@
+## 2026-02-07 - Shared Pre-LLM Source Shortlisting Pipeline
+
+**Summary**: Added a shared pre-LLM source shortlisting pipeline that extracts prompt URLs, optionally performs web search, fetches/extracts page content, and ranks candidates before the first model call.
+
+**Changes**:
+- **New shared module** (`src/asky/research/source_shortlist.py`):
+  - Added prompt parsing for seed URL extraction and URL-stripped query text.
+  - Added URL normalization/deduplication (fragment removal, default-port cleanup, tracking param stripping, query sorting).
+  - Added optional YAKE keyphrase extraction for long prompts with token-based fallback when YAKE is unavailable.
+  - Added candidate collection from prompt URLs and optional `web_search` results.
+  - Added content extraction pipeline:
+    - Primary: `trafilatura` main-text extraction.
+    - Fallback: `requests` + `HTMLStripper`.
+  - Added relevance scoring:
+    - Semantic similarity via existing sentence-transformers embedding client.
+    - Heuristic bonuses/penalties (keyphrase overlap, same-domain bonus, short/noisy page penalties).
+  - Added formatted shortlist context generation for prompt injection.
+- **Chat integration** (`src/asky/cli/chat.py`):
+  - `run_chat` now builds a pre-LLM shortlist payload and injects compact ranked context into the user message when enabled for the active mode.
+  - `build_messages` now accepts optional `source_shortlist_context`.
+- **Config additions**:
+  - Added `[research.source_shortlist]` section to `src/asky/data/config/research.toml`.
+  - Exported `SOURCE_SHORTLIST_*` settings in `src/asky/config/__init__.py`.
+  - Current defaults: enabled in research mode, disabled in standard mode (can be enabled via config).
+- **Dependencies** (`pyproject.toml`, `uv.lock`):
+  - Added `trafilatura>=1.12.2`
+  - Added `yake>=0.6.0`
+- **Tests**:
+  - Added `tests/test_source_shortlist.py` (URL parsing/normalization, ranking flow, seed-only behavior, context formatting).
+  - Added `test_build_messages_with_source_shortlist_context` in `tests/test_cli.py`.
+
+**Verification**:
+- Focused suite:
+  - `uv run pytest tests/test_source_shortlist.py tests/test_cli.py`
+  - Result: `39 passed`
+- Full suite:
+  - `uv run pytest tests`
+  - Result: `347 passed`
+
+**Gotchas / Follow-up**:
+- `trafilatura`/`yake` are optional at runtime in code paths; if unavailable, shortlist flow degrades to fallback extraction and simple keyphrase behavior.
+- Non-research mode shortlisting is currently off by default (`research.source_shortlist.enable_standard_mode = false`) to keep rollout controlled.
+
 ## 2026-02-07 - Sentence-Transformers Memory Embeddings (all-MiniLM-L6-v2)
 
 **Summary**: Replaced research embedding generation with an in-memory `sentence-transformers` backend (`all-MiniLM-L6-v2` by default), and updated chunking to use tokenizer-aware sentence windows with legacy char fallback.

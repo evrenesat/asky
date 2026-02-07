@@ -250,6 +250,19 @@ def test_build_messages_with_context(mock_args):
     assert "Previous Context" in messages[1]["content"]
 
 
+def test_build_messages_with_source_shortlist_context(mock_args):
+    shortlist_context = "1. Example source (score=0.81)\nURL: https://example.com"
+    messages = build_messages(
+        mock_args,
+        "",
+        "test query",
+        source_shortlist_context=shortlist_context,
+    )
+    assert len(messages) == 2
+    assert "Pre-ranked sources gathered before tool calls" in messages[1]["content"]
+    assert "https://example.com" in messages[1]["content"]
+
+
 @patch("asky.cli.history.get_interaction_context")
 def test_print_answers(mock_get_context, capsys):
     mock_get_context.return_value = "Answer Content"

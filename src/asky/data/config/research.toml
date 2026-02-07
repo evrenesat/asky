@@ -56,6 +56,49 @@ chunks_collection = "asky_content_chunks"
 links_collection = "asky_link_embeddings"
 findings_collection = "asky_research_findings"
 
+# Shared pre-LLM source shortlisting configuration
+[research.source_shortlist]
+# Master switch for source shortlisting before first LLM call
+enabled = true
+
+# Enable source shortlisting in research mode
+enable_research_mode = true
+
+# Enable source shortlisting in standard (non-research) mode
+enable_standard_mode = true
+
+# If true, run web search even when the prompt already includes URLs
+search_with_seed_urls = false
+
+# Number of search results to pull as initial candidates
+search_result_count = 25
+
+# Candidate caps to control pre-LLM fetch cost
+max_candidates = 30
+max_fetch_urls = 15
+
+# Number of ranked candidates to pass forward
+top_k = 8
+
+# Extracted text thresholds and payload sizing
+min_content_chars = 300
+max_scoring_chars = 5000
+snippet_chars = 700
+doc_lead_chars = 1400
+query_fallback_chars = 600
+
+# Keyphrase extraction controls
+keyphrase_min_query_chars = 220
+keyphrase_top_k = 20
+search_phrase_count = 5
+
+# Scoring heuristics
+short_text_threshold = 700
+same_domain_bonus = 0.05
+overlap_bonus_weight = 0.10
+short_text_penalty = 0.10
+noise_path_penalty = 0.15
+
 # Local sentence-transformers settings
 [research.embedding]
 # Model name to load in-process

@@ -24,6 +24,10 @@ from asky.storage import (
     save_interaction,
 )
 from asky.cli.display import InterfaceRenderer
+from asky.research.source_shortlist import (
+    shortlist_prompt_sources,
+    format_shortlist_context,
+)
 
 
 def load_context(continue_ids: str, summarize: bool) -> Optional[str]:
@@ -81,6 +85,7 @@ def build_messages(
     query_text: str,
     session_manager: Optional[SessionManager] = None,
     research_mode: bool = False,
+    source_shortlist_context: Optional[str] = None,
 ) -> List[Dict[str, str]]:
     """Build the initial message list for the conversation."""
     # Use research prompt if in research mode
@@ -106,7 +111,16 @@ def build_messages(
             }
         )
 
-    messages.append({"role": "user", "content": query_text})
+    user_content = query_text
+    if source_shortlist_context:
+        user_content = (
+            f"{query_text}\n\n"
+            f"Pre-ranked sources gathered before tool calls:\n"
+            f"{source_shortlist_context}\n\n"
+            "Use this shortlist as a starting point, then verify with tools before citing."
+        )
+
+    messages.append({"role": "user", "content": user_content})
     return messages
 
 
@@ -184,12 +198,21 @@ def run_chat(args: argparse.Namespace, query_text: str) -> None:
     if research_mode:
         print("\n[Research mode enabled - using link extraction and RAG tools]")
 
+    shortlist_context: Optional[str] = None
+    shortlist_payload = shortlist_prompt_sources(
+        user_prompt=query_text,
+        research_mode=research_mode,
+    )
+    if shortlist_payload.get("enabled"):
+        shortlist_context = format_shortlist_context(shortlist_payload)
+
     messages = build_messages(
         args,
         context_str,
         query_text,
         session_manager=session_manager,
         research_mode=research_mode,
+        source_shortlist_context=shortlist_context,
     )
 
     # Setup display renderer
