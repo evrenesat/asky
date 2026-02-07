@@ -41,14 +41,77 @@ def parse_textual_tool_call(text: str) -> Optional[Dict[str, Any]]:
         return None
 
 
+def parse_xml_tool_calls(text: str) -> List[Dict[str, Any]]:
+    """Parse tool calls from XML-like format used by some models.
+
+    Format: <tool_call> <function=name> <parameter=key> value </tool_call>
+    """
+    if not text:
+        return []
+
+    calls = []
+    # Pattern to find tool_call blocks
+    tc_pattern = re.compile(r"<tool_call>(.*?)</tool_call>", re.DOTALL)
+    # Pattern to find function name
+    func_pattern = re.compile(r"<function=([a-zA-Z0-9_]+)>")
+
+    for match in tc_pattern.finditer(text):
+        content = match.group(1).strip()
+
+        func_match = func_pattern.search(content)
+        if not func_match:
+            continue
+
+        function_name = func_match.group(1)
+        params = {}
+
+        # Remove the function part to process parameters
+        remaining = content[func_match.end() :].strip()
+
+        # Split by <parameter= taking advantage of capture group in split
+        parts = re.split(r"(<parameter=[^>]+>)", remaining)
+
+        current_param = None
+        for part in parts:
+            if not part.strip():
+                continue
+
+            p_match = re.match(r"<parameter=([^>]+)>", part)
+            if p_match:
+                current_param = p_match.group(1)
+            elif current_param:
+                # This part is the value for current_param
+                params[current_param] = part.strip()
+                current_param = None
+
+        calls.append(
+            {
+                "id": f"xml_call_{len(calls)}",
+                "type": "function",
+                "function": {"name": function_name, "arguments": json.dumps(params)},
+            }
+        )
+
+    return calls
+
+
 def extract_calls(msg: Dict[str, Any], turn: int) -> List[Dict[str, Any]]:
     """Extract tool calls from an LLM message."""
     tc = msg.get("tool_calls")
     if tc:
         return tc
-    parsed = parse_textual_tool_call(msg.get("content", ""))
+
+    content = msg.get("content", "")
+
+    # Try XML parsing first as it's more structured
+    xml_calls = parse_xml_tool_calls(content)
+    if xml_calls:
+        return xml_calls
+
+    # Fallback to legacy textual format
+    parsed = parse_textual_tool_call(content)
     if parsed:
-        return [{"id": f"textual_call_{turn}", "function": parsed}]
+        return [{"id": f"textual_call_{turn}", "function": parsed, "type": "function"}]
     return []
 
 

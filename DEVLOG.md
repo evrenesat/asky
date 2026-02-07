@@ -1,3 +1,20 @@
+## 2026-02-07 - XML Tool Call Support
+
+**Summary**: Added support for parsing XML-style tool calls (e.g., `<tool_call>...`) to handle models that deviate from standard JSON output.
+
+**Changes**:
+- **Prompts** (`src/asky/core/prompts.py`):
+  - Implemented `parse_xml_tool_calls` to detect and parse `<tool_call>` blocks with `<function=NAME>` and `<parameter=KEY> VALUE` tags.
+  - Updated `extract_calls` to attempt XML parsing before fallback to textual format.
+- **Testing**:
+  - Added `tests/test_xml_tool_parsing.py` with unit tests for various XML patterns.
+  - Verified with manual script `temp_reproduce_xml_parsing.py`.
+
+**Verification**:
+- Manual verification script passed (exit code 0).
+
+---
+
 ## 2026-02-07 - Smart Archive Filename Extraction
 
 **Summary**: Improved archive file naming by prompting models to use H1 markdown headers and automatically extracting titles for filenames.
