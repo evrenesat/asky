@@ -1,32 +1,30 @@
 """Logging configuration for asky."""
 
 import logging
+import datetime
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
 
-def setup_logging(level_name: str, log_file: str) -> None:
+def generate_timestamped_log_path(base_path: str) -> Path:
+    """Generate a log file path with a timestamp prefix."""
+    path = Path(base_path).expanduser()
+    timestamp = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    return path.parent / f"{timestamp}_{path.name}"
+
+
+def setup_logging(level_name: str = "INFO", log_file: str = None) -> None:
     """Configure logging to write to a file."""
     level = getattr(logging, level_name.upper(), logging.INFO)
 
-    # Expand user path
-    log_path = Path(log_file).expanduser()
+    if log_file:
+        # Use provided log file path
+        log_path = Path(log_file)
+    else:
+        return
 
     # Ensure directory exists
     log_path.parent.mkdir(parents=True, exist_ok=True)
-
-    # Clear existing log file and any rotated backups
-    # if log_path.exists():
-    #     try:
-    #         log_path.unlink()
-    #     except OSError:
-    #         pass
-
-    # for backup in log_path.parent.glob(f"{log_path.name}.*"):
-    #     try:
-    #         backup.unlink()
-    #     except OSError:
-    #         pass
 
     # Configure root logger
     logger = logging.getLogger()
@@ -35,14 +33,14 @@ def setup_logging(level_name: str, log_file: str) -> None:
     # Create file handler
     handler = RotatingFileHandler(
         log_path,
-        mode="w",
+        mode="a",  # Append to allow multiple handlers or re-opens
         maxBytes=5 * 1024 * 1024,  # 5 MB
         backupCount=3,
         encoding="utf-8",
     )
 
     formatter = logging.Formatter(
-        "\n" + "-" * 80 + "\n" + "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+        "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
     )
     handler.setFormatter(formatter)
 

@@ -325,11 +325,15 @@ def test_handle_print_answer_implicit_fail():
 @patch("asky.cli.chat.ConversationEngine.run")
 @patch("asky.cli.chat.generate_summaries")
 @patch("asky.cli.chat.save_interaction")
+@patch("asky.cli.main.generate_timestamped_log_path")
+@patch("asky.cli.main.setup_logging")
 @patch("asky.cli.main.ResearchCache")
 @patch("asky.cli.terminal.get_terminal_context")
 def test_main_flow(
     mock_get_term,
     mock_research_cache,
+    mock_setup_logging,
+    mock_generate_log_path,
     mock_save,
     mock_gen_sum,
     mock_run,
@@ -376,6 +380,11 @@ def test_main_flow(
         main()
 
     mock_init.assert_called_once()
+    # Should use default logging setup (LOG_LEVEL, LOG_FILE)
+    mock_setup_logging.assert_called_once_with(ANY, ANY)
+    # In default flow, it shouldn't be generating a timestamped path
+    mock_generate_log_path.assert_not_called()
+
     mock_run.assert_called_once_with(
         [
             {"role": "system", "content": ANY},
@@ -394,11 +403,15 @@ def test_main_flow(
 @patch("asky.cli.chat.generate_summaries")
 @patch("asky.cli.chat.save_interaction")
 @patch("asky.cli.utils.os.environ.get")
+@patch("asky.cli.main.generate_timestamped_log_path")
+@patch("asky.cli.main.setup_logging")
 @patch("asky.cli.main.ResearchCache")
 @patch("asky.cli.terminal.get_terminal_context")
 def test_main_flow_verbose(
     mock_get_term,
     mock_research_cache,
+    mock_setup_logging,
+    mock_generate_log_path,
     mock_env_get,
     mock_save,
     mock_gen_sum,
@@ -410,6 +423,7 @@ def test_main_flow_verbose(
 ):
     # Mock terminal context to prevent iTerm2 connection attempts in tests
     mock_get_term.return_value = "Mocked Terminal Context"
+    mock_generate_log_path.return_value = "/tmp/test.log"
     mock_env_get.return_value = "fake_key_123456789"
     mock_parse.return_value = argparse.Namespace(
         model="gf",
@@ -447,9 +461,17 @@ def test_main_flow_verbose(
         main()
 
     captured = capsys.readouterr()
-    assert "=== CONFIGURATION ===" in captured.out
-    assert "Selected Model: gf" in captured.out
-    assert "DEFAULT_MODEL:" in captured.out
+    # Verbose no longer prints config, it sets debug log level
+    assert "=== CONFIGURATION ===" not in captured.out
+
+    # Verify logging setup for verbose mode
+    mock_generate_log_path.assert_called_once()
+    mock_setup_logging.assert_called_once_with("DEBUG", "/tmp/test.log")
+
+    # We can't easily check the root logger level here without mocking logging.getLogger
+    # but we can rely on verifying behavior through integration or assuming the code
+    # we wrote is correct if we had injected a mock logger.
+    # For now, asserting it DOES NOT print config is good.
 
     mock_run.assert_called_once_with(
         [

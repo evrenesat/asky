@@ -18,7 +18,7 @@ from asky.config import (
     USER_PROMPTS,
 )
 from asky.banner import get_banner, BannerState
-from asky.logger import setup_logging
+from asky.logger import setup_logging, generate_timestamped_log_path
 from asky.storage import init_db, get_db_record_count
 from . import history, prompts, chat, utils, sessions
 
@@ -245,8 +245,20 @@ from asky.research.cache import ResearchCache
 
 def main() -> None:
     """Main entry point."""
-    setup_logging(LOG_LEVEL, LOG_FILE)
     args = parse_args()
+
+    # Configure logging based on verbose flag
+    if args.verbose:
+        # Verbose: Timestamped file, DEBUG level
+        session_log_file = generate_timestamped_log_path(LOG_FILE)
+        setup_logging("DEBUG", session_log_file)
+        import logging
+
+        logging.debug("Verbose mode enabled. Log level set to DEBUG.")
+    else:
+        # Default: Standard file, Configured level
+        setup_logging(LOG_LEVEL, LOG_FILE)
+
     init_db()
 
     # Cleanup expired research cache entries
@@ -254,12 +266,6 @@ def main() -> None:
         ResearchCache().cleanup_expired()
     except Exception as e:
         # Don't fail startup if cleanup fails, just log it
-        # We need to import logger here or use the one from main scope if available
-        # But main.py doesn't have a global logger object exposed easily at top level
-        # except via setup_logging which configures root.
-        # Using a local import to avoid circular dep issues if any, or just print if valid.
-        # However, checking imports, logging IS imported.
-        # But let's just use the root logger configured by setup_logging
         import logging
 
         logging.getLogger(__name__).warning(f"Failed to cleanup research cache: {e}")
@@ -374,16 +380,7 @@ def main() -> None:
             prompts.list_prompts_command(filter_prefix=prefix)
             return
 
-    # Verbose config
-    if args.verbose:
-        utils.print_config(
-            args,
-            MODELS,
-            DEFAULT_MODEL,
-            MAX_TURNS,
-            QUERY_SUMMARY_MAX_CHARS,
-            ANSWER_SUMMARY_MAX_CHARS,
-        )
+    # Verbose config logic is now handled at start of main (logging setup)
 
     # Note: When LIVE_BANNER is enabled, the InterfaceRenderer in run_chat
     # handles all banner display. When disabled, no banner is shown during chat.
