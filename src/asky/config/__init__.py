@@ -117,6 +117,19 @@ RESEARCH_MAX_CHUNKS_PER_RETRIEVAL = _research.get("max_chunks_per_retrieval", 5)
 RESEARCH_SUMMARIZATION_WORKERS = _research.get("summarization_workers", 2)
 RESEARCH_MEMORY_MAX_RESULTS = _research.get("memory_max_results", 10)
 RESEARCH_SOURCE_ADAPTERS = _research.get("source_adapters", {})
+_research_chromadb = _research.get("chromadb", {})
+RESEARCH_CHROMA_PERSIST_DIRECTORY = Path(
+    _research_chromadb.get("persist_directory", "~/.config/asky/chromadb")
+).expanduser()
+RESEARCH_CHROMA_CHUNKS_COLLECTION = _research_chromadb.get(
+    "chunks_collection", "asky_content_chunks"
+)
+RESEARCH_CHROMA_LINKS_COLLECTION = _research_chromadb.get(
+    "links_collection", "asky_link_embeddings"
+)
+RESEARCH_CHROMA_FINDINGS_COLLECTION = _research_chromadb.get(
+    "findings_collection", "asky_research_findings"
+)
 
 # Research Embedding Settings
 _research_embedding = _research.get("embedding", {})
@@ -136,6 +149,10 @@ RESEARCH_EMBEDDING_RETRY_BACKOFF_SECONDS = _research_embedding.get(
 
 # Research Prompts
 RESEARCH_SYSTEM_PROMPT = _prompts.get("research_system", "")
+RESEARCH_SYSTEM_PREFIX = _research.get("system_prefix")
+RESEARCH_SYSTEM_SUFFIX = _research.get("system_suffix")
+RESEARCH_FORCE_SEARCH = _research.get("force_search")
+
 SUMMARIZE_PAGE_PROMPT = _prompts.get(
     "summarize_page", "Summarize this webpage content concisely in 2-3 sentences."
 )

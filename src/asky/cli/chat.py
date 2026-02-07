@@ -5,13 +5,14 @@ from typing import List, Dict, Optional
 
 from rich.console import Console
 
-from asky.config import MODELS, LIVE_BANNER, RESEARCH_SYSTEM_PROMPT
+from asky.config import MODELS, LIVE_BANNER
 from asky.core import (
     ConversationEngine,
     create_default_tool_registry,
     create_research_tool_registry,
     UsageTracker,
     construct_system_prompt,
+    construct_research_system_prompt,
     generate_summaries,
     SessionManager,
     get_shell_session_id,
@@ -72,15 +73,6 @@ def load_context(continue_ids: str, summarize: bool) -> Optional[str]:
             "Error: Invalid format for -c/--continue-chat. Use comma-separated integers or ~N for relative."
         )
         return None
-
-
-def construct_research_system_prompt() -> str:
-    """Construct the system prompt for research mode."""
-    from datetime import datetime
-
-    current_date = datetime.now().strftime("%A, %B %d, %Y at %H:%M")
-    prompt = RESEARCH_SYSTEM_PROMPT.replace("{CURRENT_DATE}", current_date)
-    return prompt
 
 
 def build_messages(

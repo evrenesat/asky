@@ -141,13 +141,19 @@ class TestResearchCache:
         conn.commit()
         conn.close()
 
-        cache.cache_url(
-            url=url,
-            content="Updated content",
-            title="Title",
-            links=links,
-            trigger_summarization=False,
-        )
+        with patch.object(cache, "_clear_chroma_vectors") as mock_clear_chroma:
+            cache.cache_url(
+                url=url,
+                content="Updated content",
+                title="Title",
+                links=links,
+                trigger_summarization=False,
+            )
+            mock_clear_chroma.assert_called_once_with(
+                cache_id=cache_id,
+                clear_chunks=True,
+                clear_links=False,
+            )
 
         conn = sqlite3.connect(cache.db_path)
         c = conn.cursor()
@@ -191,13 +197,19 @@ class TestResearchCache:
         conn.commit()
         conn.close()
 
-        cache.cache_url(
-            url=url,
-            content="Same content",
-            title="Title",
-            links=[{"text": "New link", "href": "http://new-link.com"}],
-            trigger_summarization=False,
-        )
+        with patch.object(cache, "_clear_chroma_vectors") as mock_clear_chroma:
+            cache.cache_url(
+                url=url,
+                content="Same content",
+                title="Title",
+                links=[{"text": "New link", "href": "http://new-link.com"}],
+                trigger_summarization=False,
+            )
+            mock_clear_chroma.assert_called_once_with(
+                cache_id=cache_id,
+                clear_chunks=False,
+                clear_links=True,
+            )
 
         conn = sqlite3.connect(cache.db_path)
         c = conn.cursor()
@@ -336,8 +348,10 @@ class TestResearchCache:
         conn.commit()
         conn.close()
 
-        # Cleanup should remove expired entry
-        deleted = cache.cleanup_expired()
+        with patch.object(cache, "_clear_chroma_vectors_bulk") as mock_clear_bulk:
+            # Cleanup should remove expired entry
+            deleted = cache.cleanup_expired()
+            mock_clear_bulk.assert_called_once()
         assert deleted == 1
 
     def test_get_cache_stats(self, cache):

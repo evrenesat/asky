@@ -104,7 +104,7 @@ src/asky/
 │   ├── chunker.py      # Overlap-safe text chunking utilities
 │   ├── embeddings.py   # Embedding API client with retry/backoff
 │   ├── tools.py        # Research tool executors
-│   └── vector_store.py # Embedding storage and hybrid dense+lexical retrieval
+│   └── vector_store.py # Chroma-backed dense retrieval + SQLite lexical fallback
 ├── config.toml         # Default configuration file
 ├── tools.py            # Tool execution (web search, URL fetch, custom tools)
 ├── push_data.py        # HTTP data push to external endpoints
@@ -280,6 +280,7 @@ Unified storage for both history and sessions:
 | `[user_prompts]` | User-defined shortcuts (`/gn`, `/wh`) |
 | `[tool.name]` | Custom tool definitions |
 | `[research.source_adapters.name]` | Map research targets (e.g. `local://`) to custom tools |
+| `[research.chromadb]` | ChromaDB persist path and collection names for research vectors |
 | `[push_data.name]` | HTTP endpoint definitions for data push |
 | `[session]` | Compaction threshold and strategy |
 | `[email]` | SMTP settings |
@@ -318,12 +319,26 @@ Execution via `subprocess.run()` with argument quoting.
 
 #### Research Source Adapters (`research/adapters.py`)
 
-Research mode supports adapter routing for non-HTTP sources while keeping the existing research tool schemas unchanged.
-
+- Research mode supports adapter routing for non-HTTP sources while keeping the existing research tool schemas unchanged.
 - Define adapters under `[research.source_adapters.*]` with `prefix` and either `tool` or `discover_tool` + `read_tool`
 - Matching targets (such as `local://papers`) are fetched via the configured custom tool
 - Adapter tool stdout must return JSON with `title`, `content`, and `links`
 - Cached adapter content is reused by `get_link_summaries`, `get_relevant_content`, and `get_full_content`
+
+#### Modular Research Prompts
+- Research mode prompts can be constructed from components: `system_prefix`, `force_search`, and `system_suffix` defined in `research.toml`.
+- If these modular components are present, they are joined with the current date injected into the prefix.
+- This allows fine-grained control over research strategies (e.g., forcing search) without modifying the monolithic `research_system` prompt in `prompts.toml`.
+
+#### Chroma-Backed Vector Retrieval (`research/vector_store.py`)
+- Dense vector indexing and semantic retrieval for:
+  - Content chunks (`content_chunks` in SQLite + Chroma collection)
+  - Extracted links (`link_embeddings` in SQLite + Chroma collection)
+  - Research findings (`research_findings` in SQLite + Chroma collection)
+- Hybrid chunk ranking still combines:
+  - Dense relevance from Chroma nearest-neighbor retrieval
+  - Lexical relevance from SQLite BM25 (FTS5) or token overlap fallback
+- If Chroma is unavailable at runtime, the system gracefully falls back to SQLite-based cosine scanning so research mode remains functional.
 
 ---
 
@@ -413,13 +428,13 @@ extract_links(urls, query?)
 ResearchCache.cache_url()  # stores content + links with TTL
     ↓
 if cached content/links changed:
-    clear stale content_chunks/link_embeddings rows
+    clear stale content_chunks/link_embeddings rows + Chroma vectors
     ↓
 get_relevant_content(urls, query)
     ↓
 VectorStore ensures embeddings exist for current embedding model
     ↓
-Hybrid ranking = dense cosine + BM25 lexical search (FTS5)
+Hybrid ranking = Chroma dense search + BM25 lexical search (FTS5)
     ↓
 Diversity filter removes near-duplicate chunks
     ↓
@@ -449,8 +464,8 @@ Tools are registered dynamically at runtime, enabling:
 ### 4. Naive Token Counting
 Uses `chars / 4` approximation instead of actual tokenizer, reducing dependencies while providing "good enough" estimates for context management.
 
-### 5. Vector Freshness and Hybrid Retrieval
-Research cache updates actively invalidate stale vectors when cached content or link sets change. Retrieval uses hybrid scoring (semantic embedding similarity + BM25 lexical relevance via SQLite FTS5) with a diversity filter to improve relevance quality while avoiding repetitive snippets.
+### 5. Chroma Dense + SQLite Lexical Hybrid
+Research mode stores dense vectors in ChromaDB for fast semantic search while keeping SQLite tables for lexical/BM25 scoring and metadata joins. Cache invalidation clears both SQLite vector rows and Chroma vectors so retrieval freshness remains aligned with cached source content.
 
 ---
 

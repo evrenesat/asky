@@ -32,6 +32,7 @@ classifiers = [
 ]
 keywords = ["cli", "search", "llm", "ai", "agent", "web-search"]
 dependencies = [
+    "chromadb>=1.4.1",
     "markdown>=3.10.1",
     "pyperclip>=1.11.0",
     "requests",

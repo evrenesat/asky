@@ -273,6 +273,52 @@ class ResearchCache:
             cursor.execute("DELETE FROM content_chunks WHERE cache_id = ?", (cache_id,))
         if clear_links:
             cursor.execute("DELETE FROM link_embeddings WHERE cache_id = ?", (cache_id,))
+        if clear_chunks or clear_links:
+            self._clear_chroma_vectors(
+                cache_id=cache_id,
+                clear_chunks=clear_chunks,
+                clear_links=clear_links,
+            )
+
+    def _clear_chroma_vectors(
+        self,
+        cache_id: int,
+        clear_chunks: bool = True,
+        clear_links: bool = True,
+    ) -> None:
+        """Best-effort cleanup of Chroma vectors for a specific cache entry."""
+        try:
+            from asky.research.vector_store import get_vector_store
+
+            get_vector_store().clear_cache_embeddings(
+                cache_id=cache_id,
+                clear_chunks=clear_chunks,
+                clear_links=clear_links,
+            )
+        except Exception as exc:
+            logger.debug(
+                "Skipping Chroma vector cleanup for cache_id=%s: %s", cache_id, exc
+            )
+
+    def _clear_chroma_vectors_bulk(
+        self,
+        cache_ids: List[int],
+        clear_chunks: bool = True,
+        clear_links: bool = True,
+    ) -> None:
+        """Best-effort cleanup of Chroma vectors for multiple cache entries."""
+        if not cache_ids:
+            return
+        try:
+            from asky.research.vector_store import get_vector_store
+
+            get_vector_store().clear_cache_embeddings_bulk(
+                cache_ids=cache_ids,
+                clear_chunks=clear_chunks,
+                clear_links=clear_links,
+            )
+        except Exception as exc:
+            logger.debug("Skipping Chroma bulk vector cleanup: %s", exc)
 
     def _url_hash(self, url: str) -> str:
         """Generate hash for URL."""
@@ -513,6 +559,7 @@ class ResearchCache:
             expired_ids = [row[0] for row in c.fetchall()]
 
             if expired_ids:
+                self._clear_chroma_vectors_bulk(expired_ids)
                 placeholders = ",".join("?" * len(expired_ids))
 
                 # Delete related chunks

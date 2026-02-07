@@ -16,6 +16,7 @@ from asky.core.session_manager import (
 )
 from asky.core.prompts import (
     construct_system_prompt,
+    construct_research_system_prompt,
     extract_calls,
     is_markdown,
     parse_textual_tool_call,

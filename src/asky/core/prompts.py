@@ -131,3 +131,28 @@ def construct_system_prompt() -> str:
     system_content += SYSTEM_PROMPT_SUFFIX
 
     return system_content
+
+
+def construct_research_system_prompt() -> str:
+    """Build the system prompt for research mode."""
+    from asky.config import (
+        RESEARCH_SYSTEM_PROMPT,
+        RESEARCH_SYSTEM_PREFIX,
+        RESEARCH_SYSTEM_SUFFIX,
+        RESEARCH_FORCE_SEARCH,
+    )
+
+    # Inject current date
+    current_date = datetime.now().strftime("%A, %B %d, %Y at %H:%M")
+
+    # If components are present in research config, use them to build the prompt
+    if RESEARCH_SYSTEM_PREFIX:
+        parts = [RESEARCH_SYSTEM_PREFIX.format(CURRENT_DATE=current_date)]
+        if RESEARCH_FORCE_SEARCH:
+            parts.append(RESEARCH_FORCE_SEARCH)
+        if RESEARCH_SYSTEM_SUFFIX:
+            parts.append(RESEARCH_SYSTEM_SUFFIX)
+        return "\n\n".join(parts)
+
+    # Fallback to monolithic prompt if components are missing
+    return RESEARCH_SYSTEM_PROMPT.replace("{CURRENT_DATE}", current_date)

@@ -47,6 +47,15 @@ memory_max_results = 10
 # discover_tool = "local_list_content" # Optional override for extract_links-style discovery
 # read_tool = "local_read_content"     # Optional override for full/relevant content retrieval
 
+[research.chromadb]
+# Directory used by ChromaDB's persistent client.
+persist_directory = "~/.config/asky/chromadb"
+
+# Collection names for research mode vectors.
+chunks_collection = "asky_content_chunks"
+links_collection = "asky_link_embeddings"
+findings_collection = "asky_research_findings"
+
 # Embedding API settings (LM Studio compatible)
 [research.embedding]
 # API endpoint for embeddings (OpenAI-compatible format)

@@ -1,3 +1,69 @@
+## 2026-02-07 - Research RAG Migration to ChromaDB Backend
+
+**Summary**: Replaced the research-mode vector retrieval path with a ChromaDB-backed dense retrieval layer while preserving existing research tool interfaces and adding graceful SQLite fallback when Chroma is unavailable.
+
+**Changes**:
+- **Vector Store Migration** (`src/asky/research/vector_store.py`):
+  - Refactored `VectorStore` to use Chroma collections for:
+    - Content chunk embeddings
+    - Link embeddings
+    - Research finding embeddings
+  - Kept existing method contracts (`store_*`, `search_*`, `rank_*`, `has_*`) so `research/tools.py` required no API-level change.
+  - Implemented deterministic Chroma IDs per entity (`chunk:{cache_id}:{chunk_index}`, `link:{cache_id}:{url}`, `finding:{id}`).
+  - Added runtime fallback to SQLite-only cosine search when Chroma import/client setup is unavailable.
+  - Preserved hybrid retrieval behavior by combining:
+    - Dense relevance from Chroma nearest-neighbor results
+    - Lexical relevance from SQLite BM25 (FTS5) / token overlap fallback
+- **Cache Invalidation** (`src/asky/research/cache.py`):
+  - Extended stale-vector invalidation and expired-cache cleanup to also clear Chroma vectors (`clear_cache_embeddings`, bulk variant).
+  - Cleanup is best-effort and non-fatal; failures are debug-logged to avoid interrupting cache writes.
+- **Configuration**:
+  - Added Chroma config exports in `src/asky/config/__init__.py`:
+    - `RESEARCH_CHROMA_PERSIST_DIRECTORY`
+    - `RESEARCH_CHROMA_CHUNKS_COLLECTION`
+    - `RESEARCH_CHROMA_LINKS_COLLECTION`
+    - `RESEARCH_CHROMA_FINDINGS_COLLECTION`
+  - Added `[research.chromadb]` section in `src/asky/data/config/research.toml` for persist directory and collection names.
+- **Tests**:
+  - Updated `tests/test_research_vector_store.py` with Chroma-path coverage:
+    - Chunk upsert writes to Chroma collection
+    - Query path prefers Chroma results before SQLite fallback
+  - Updated `tests/test_research_cache.py` to verify Chroma cleanup hooks are invoked on:
+    - Content-change invalidation
+    - Link-change invalidation
+    - Expired-entry cleanup
+
+**Verification**:
+- Focused research suite:
+  - `.venv/bin/pytest tests/test_research_vector_store.py tests/test_research_tools.py tests/test_research_cache.py tests/test_research_embeddings.py tests/test_research_chunker.py tests/test_research_adapters.py`
+  - Result: `154 passed`
+- Full project tests:
+  - `.venv/bin/pytest tests`
+  - Result: `341 passed`
+
+**Gotchas / Follow-up**:
+- Chroma is currently runtime-optional in code; if not installed, research mode falls back to SQLite dense scan.
+- To enforce a hard Chroma dependency, add `chromadb` to `pyproject.toml` dependencies after confirming dependency-policy preference.
+
+## 2026-02-07 - Modular Research Prompts
+
+**Summary**: Enabled modular system prompt construction for Research Mode, allowing users to define `system_prefix`, `force_search`, and `system_suffix` in `research.toml` to override or supplement the default research prompt.
+
+**Changes**:
+- **Configuration** (`src/asky/config/__init__.py`):
+    - Exported `RESEARCH_SYSTEM_PREFIX`, `RESEARCH_SYSTEM_SUFFIX`, and `RESEARCH_FORCE_SEARCH` from the `research` config section.
+- **Core** (`src/asky/core/prompts.py`):
+    - Implemented `construct_research_system_prompt` to build the prompt dynamically from components if available.
+    - Added `{CURRENT_DATE}` injection support to the `system_prefix`.
+- **CLI** (`src/asky/cli/chat.py`):
+    - Refactored research prompt construction to use the centralized core function.
+- **Verification**:
+    - Added `temp/verify_prompts.py` to validate both modular and monolithic fallback scenarios.
+
+**Impact**: Users can now customize specific parts of the research behavior (like forcing web search) directly in `research.toml` without losing the benefits of dynamic date injection.
+
+---
+
 ## 2026-02-07 - XML Tool Call Support
 
 **Summary**: Added support for parsing XML-style tool calls (e.g., `<tool_call>...`) to handle models that deviate from standard JSON output.

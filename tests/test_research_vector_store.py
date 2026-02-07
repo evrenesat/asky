@@ -272,6 +272,43 @@ class TestVectorStore:
         assert vector_store.has_link_embeddings_for_model(1, "test-model") is True
         assert vector_store.has_link_embeddings_for_model(1, "other-model") is False
 
+    def test_store_chunk_embeddings_upserts_to_chroma(self, vector_store):
+        """Test that chunk embeddings are also written to Chroma when available."""
+        fake_collection = MagicMock()
+        with patch.object(
+            vector_store,
+            "_get_chroma_collection",
+            return_value=fake_collection,
+        ):
+            stored = vector_store.store_chunk_embeddings(
+                cache_id=1,
+                chunks=[(0, "Chunk A"), (1, "Chunk B")],
+            )
+
+        assert stored == 2
+        fake_collection.delete.assert_called_once_with(where={"cache_id": 1})
+        fake_collection.add.assert_called_once()
+        add_kwargs = fake_collection.add.call_args.kwargs
+        assert add_kwargs["ids"] == ["chunk:1:0", "chunk:1:1"]
+        assert add_kwargs["documents"] == ["Chunk A", "Chunk B"]
+
+    def test_search_chunks_prefers_chroma_results(self, vector_store):
+        """Test that non-empty Chroma query results short-circuit SQLite fallback."""
+        with patch.object(
+            vector_store,
+            "_search_chunks_with_chroma",
+            return_value=[("From Chroma", 0.91)],
+        ):
+            with patch.object(vector_store, "_search_chunks_with_sqlite") as sqlite_mock:
+                results = vector_store.search_chunks(
+                    cache_id=1,
+                    query="test query",
+                    top_k=1,
+                )
+
+        assert results == [("From Chroma", 0.91)]
+        sqlite_mock.assert_not_called()
+
     def test_search_chunks_hybrid_returns_ranked_dicts(self, vector_store):
         """Test hybrid chunk search returns score-rich dictionaries."""
         chunks = [
