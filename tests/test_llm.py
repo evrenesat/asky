@@ -356,5 +356,58 @@ def test_run_conversation_loop_max_turns_graceful_exit(mock_dispatch, mock_get_m
         # The messages list passed to the final call is mutable and has the final answer appended after the call returns.
         # So the injected instruction is at index -2.
         final_messages = args[1]
-        assert final_messages[-2]["role"] == "user"
-        assert "Finish your task now" in final_messages[-2]["content"]
+        assert final_messages[-1]["role"] == "user"
+        assert "Provide your final answer" in final_messages[-1]["content"]
+
+
+@patch("asky.core.engine.get_llm_msg")
+@patch("asky.core.engine.ToolRegistry.dispatch")
+def test_graceful_exit_replaces_system_prompt(mock_dispatch, mock_get_msg):
+    # Test that graceful exit replaces the system prompt with a tool-free version
+    from asky.core.engine import ConversationEngine
+    import asky.core.engine as engine_mod
+
+    msg_tool_call = {
+        "content": None,
+        "tool_calls": [
+            {"id": "call_1", "function": {"name": "test", "arguments": "{}"}}
+        ],
+    }
+    msg_forced_final = {"content": "Forced Final Answer"}
+
+    # Turn 1: Tool call, Turn 2: Graceful Exit
+    mock_get_msg.side_effect = [msg_tool_call, msg_forced_final]
+    mock_dispatch.return_value = {"result": "ok"}
+
+    with patch.object(engine_mod, "MAX_TURNS", new=1):
+        model_config = {"id": "test", "alias": "test"}
+        registry_mock = MagicMock()
+        registry_mock.dispatch.return_value = {"result": "ok"}
+        registry_mock.get_schemas.return_value = []
+
+        engine = ConversationEngine(
+            model_config=model_config, tool_registry=registry_mock
+        )
+
+        messages = [
+            {"role": "system", "content": "ORIGINAL SYSTEM PROMPT WITH web_search"}
+        ]
+        engine.run(messages)
+
+        # Verify calls
+        assert mock_get_msg.call_count == 2
+
+        # Check the messages passed to the second call (graceful exit)
+        # kwargs are used for use_tools=False
+        args, kwargs = mock_get_msg.call_args_list[1]
+        exit_messages = args[1]
+
+        # Find the system message in exit_messages
+        system_msg = next(m for m in exit_messages if m["role"] == "system")
+
+        # Verify it was replaced and does not contain "web_search"
+        assert "ORIGINAL SYSTEM PROMPT" not in system_msg["content"]
+        assert "web_search" not in system_msg["content"]
+        assert "final answer" in system_msg["content"].lower()
+        # Verify it includes the "no longer available" instruction from our new prompt
+        assert "no longer available" in system_msg["content"].lower()

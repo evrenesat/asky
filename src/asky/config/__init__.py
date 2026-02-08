@@ -91,6 +91,7 @@ SUMMARIZE_SESSION_PROMPT = _prompts.get(
     "summarize_session",
     "Summarize this conversation history into a concise context summary.",
 )
+GRACEFUL_EXIT_SYSTEM = _prompts.get("graceful_exit", "")
 
 # Session
 _session = _CONFIG.get("session", {})
@@ -143,9 +144,7 @@ SOURCE_SHORTLIST_ENABLE_STANDARD_MODE = _source_shortlist.get(
 SOURCE_SHORTLIST_SEARCH_WITH_SEED_URLS = _source_shortlist.get(
     "search_with_seed_urls", False
 )
-SOURCE_SHORTLIST_SEARCH_RESULT_COUNT = _source_shortlist.get(
-    "search_result_count", 25
-)
+SOURCE_SHORTLIST_SEARCH_RESULT_COUNT = _source_shortlist.get("search_result_count", 25)
 SOURCE_SHORTLIST_MAX_CANDIDATES = _source_shortlist.get("max_candidates", 30)
 SOURCE_SHORTLIST_MAX_FETCH_URLS = _source_shortlist.get("max_fetch_urls", 15)
 SOURCE_SHORTLIST_TOP_K = _source_shortlist.get("top_k", 8)
@@ -168,12 +167,8 @@ SOURCE_SHORTLIST_SAME_DOMAIN_BONUS = _source_shortlist.get("same_domain_bonus", 
 SOURCE_SHORTLIST_OVERLAP_BONUS_WEIGHT = _source_shortlist.get(
     "overlap_bonus_weight", 0.10
 )
-SOURCE_SHORTLIST_SHORT_TEXT_PENALTY = _source_shortlist.get(
-    "short_text_penalty", 0.10
-)
-SOURCE_SHORTLIST_NOISE_PATH_PENALTY = _source_shortlist.get(
-    "noise_path_penalty", 0.15
-)
+SOURCE_SHORTLIST_SHORT_TEXT_PENALTY = _source_shortlist.get("short_text_penalty", 0.10)
+SOURCE_SHORTLIST_NOISE_PATH_PENALTY = _source_shortlist.get("noise_path_penalty", 0.15)
 
 # Research Embedding Settings
 _research_embedding = _research.get("embedding", {})
@@ -181,9 +176,7 @@ RESEARCH_EMBEDDING_MODEL = _research_embedding.get("model", "all-MiniLM-L6-v2")
 RESEARCH_EMBEDDING_BATCH_SIZE = _research_embedding.get("batch_size", 32)
 RESEARCH_EMBEDDING_DEVICE = _research_embedding.get("device", "cpu")
 RESEARCH_EMBEDDING_NORMALIZE = _research_embedding.get("normalize", True)
-RESEARCH_EMBEDDING_LOCAL_FILES_ONLY = _research_embedding.get(
-    "local_files_only", False
-)
+RESEARCH_EMBEDDING_LOCAL_FILES_ONLY = _research_embedding.get("local_files_only", False)
 
 # Research Prompts
 RESEARCH_SYSTEM_PROMPT = _prompts.get("research_system", "")

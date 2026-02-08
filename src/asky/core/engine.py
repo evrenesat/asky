@@ -180,29 +180,9 @@ class ConversationEngine:
 
             # Only enter graceful exit if we hit max turns WITHOUT already having a final answer
             if turn >= MAX_TURNS and not self.final_answer:
-                logger.info("Max turns reached. Forcing graceful exit.")
-
-                # Force a final turn to wrap up
-                messages.append(
-                    {
-                        "role": "user",
-                        "content": "SYSTEM: Finish your task now. You cannot make any more tool calls.",
-                    }
+                self.final_answer = self._execute_graceful_exit(
+                    messages, status_reporter
                 )
-
-                # Make final call without tools
-                final_msg = get_llm_msg(
-                    self.model_config["id"],
-                    messages,
-                    use_tools=False,
-                    verbose=self.verbose,
-                    model_alias=self.model_config.get("alias"),
-                    usage_tracker=self.usage_tracker,
-                    status_callback=status_reporter,
-                )
-
-                self.final_answer = final_msg.get("content", "")
-                messages.append({"role": "assistant", "content": self.final_answer})
 
                 # Render/Print the forced final answer
                 if display_callback:
@@ -394,6 +374,54 @@ class ConversationEngine:
             f"Compaction failed to preserve history. Returning minimal context: {count_tokens(final_attempt)} tokens."
         )
         return final_attempt
+
+    def _execute_graceful_exit(
+        self, messages: List[Dict[str, Any]], status_reporter: Any
+    ) -> str:
+        """Execute graceful exit when max turns reached without final answer.
+
+        Replaces the system prompt with a tool-free version to prevent
+        models from generating imaginary tool calls.
+        """
+        from asky.config import GRACEFUL_EXIT_SYSTEM
+
+        logger.info("Max turns reached. Forcing graceful exit.")
+
+        # Build a clean message list with tool-free system prompt
+        exit_messages = []
+        for msg in messages:
+            if msg.get("role") == "system":
+                # Replace with graceful exit prompt (no tool mentions)
+                exit_messages.append(
+                    {"role": "system", "content": GRACEFUL_EXIT_SYSTEM}
+                )
+            else:
+                exit_messages.append(msg)
+
+        # Add the final instruction
+        exit_messages.append(
+            {
+                "role": "user",
+                "content": "SYSTEM: Provide your final answer now based on the research above.",
+            }
+        )
+
+        # Make final call without tools AND without tool-mentioning system prompt
+        final_msg = get_llm_msg(
+            self.model_config["id"],
+            exit_messages,
+            use_tools=False,  # No tool schemas sent to API
+            verbose=self.verbose,
+            model_alias=self.model_config.get("alias"),
+            usage_tracker=self.usage_tracker,
+            status_callback=status_reporter,
+        )
+
+        final_answer = final_msg.get("content", "")
+        # Append the final answer to the original messages for history tracking
+        messages.append({"role": "assistant", "content": final_answer})
+
+        return final_answer
 
     def _handle_400_error(self, e, messages, status_reporter):
         """Handle 400 Bad Request errors interactively."""

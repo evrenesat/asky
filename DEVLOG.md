@@ -1,3 +1,27 @@
+## 2026-02-08 - Final Warning Refactor & Import Fix
+
+**Summary**: Refactored the "graceful exit" mechanism to prevent models from generating imaginary XML tool calls when max turns are reached. Fixed a major `ImportError` where `construct_research_system_prompt` was incorrectly named.
+
+**Changes**:
+- **Core Engine** (`src/asky/core/engine.py`):
+  - Extracted graceful exit logic into `_execute_graceful_exit` helper method.
+  - Implemented **system prompt replacement**: the original tool-mentioning system prompt is now swapped for a clean, tool-free version (`GRACEFUL_EXIT_SYSTEM`) during the final turn.
+- **Configuration** (`prompts.toml`, `config/__init__.py`):
+  - Added new `graceful_exit` prompt template.
+  - Exported `GRACEFUL_EXIT_SYSTEM` constant.
+- **Bug Fix** (`src/asky/core/prompts.py`):
+  - Renamed `construct_ch_system_prompt` back to `construct_research_system_prompt` to match usages in `chat.py` and `__init__.py`, fixing a critical `ImportError`.
+- **Testing**:
+  - Updated `tests/test_llm.py`:
+    - Adjusted `test_run_conversation_loop_max_turns_graceful_exit` to match new message structure.
+    - Added `test_graceful_exit_replaces_system_prompt` to verify the tool-free prompt swap.
+
+**Verification**:
+- Fixed `ImportError` preventing test collection.
+- Ran focused suite: `pytest tests/test_llm.py`
+- Result: `17 passed` (including new and updated graceful exit tests).
+- All tool calls avoided in final turn as verified by mocks.
+
 ## 2026-02-07 - Shared Pre-LLM Source Shortlisting Pipeline
 
 **Summary**: Added a shared pre-LLM source shortlisting pipeline that extracts prompt URLs, optionally performs web search, fetches/extracts page content, and ranks candidates before the first model call.

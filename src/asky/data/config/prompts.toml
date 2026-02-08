@@ -87,9 +87,20 @@ The current date and time is: {CURRENT_DATE}
 - `save_finding` - Save a discovered fact to research memory
 - `query_research_memory` - Search your research memory for past findings
 
-Always prioritize using markdown formatting in your final response."""
+Always prioritize using markdown formatting in your final response.
+Always start your final response with a single H1 markdown header (# Title) that captures the essence of your answer in a concise title (3-7 words).
+"""
 
 # Prompt for summarizing cached page content (used in background)
 summarize_page = """Summarize this webpage content concisely in 2-3 sentences.
 Highlight: main topic, key facts, and what information this page provides.
 Be factual and specific - include any important numbers, dates, or names."""
+
+# Prompt for graceful exit when max turns are reached (no tools available)
+graceful_exit = """You must provide your final answer now. This is your last message.
+
+DO NOT suggest using any tools or functions. DO NOT write any tool calls, XML tags, or function invocations. 
+Tools are NO LONGER AVAILABLE to you.
+
+Summarize what you have learned and provide the best possible answer based on the information you have gathered so far.
+Always use markdown formatting for clarity."""
