@@ -41,6 +41,7 @@ class InterfaceRenderer:
         self.console = Console()
         self.live: Optional[Live] = None
         self.shortlist_stats: Dict[str, Any] = {}
+        self.current_turn: int = 0
 
     def start_live(self) -> None:
         """Start the Live context for in-place banner updates."""
@@ -57,6 +58,7 @@ class InterfaceRenderer:
         self, current_turn: int, status_message: Optional[str] = None
     ) -> None:
         """Update the banner in-place without screen clearing."""
+        self.current_turn = current_turn
         if self.live:
             banner = self._build_banner(current_turn, status_message)
             self.live.update(banner)

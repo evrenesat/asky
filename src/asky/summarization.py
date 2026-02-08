@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 import re
 import time
-from typing import Any, List, Optional
+from typing import Any, Callable, Dict, List, Optional
 
 from asky.config import (
     ANSWER_SUMMARY_MAX_CHARS,
@@ -32,6 +32,8 @@ HIERARCHICAL_MERGE_MAX_OUTPUT_CHARS = 950
 HIERARCHICAL_MAX_REDUCTION_ROUNDS = 8
 
 PARAGRAPH_SPLIT_PATTERN = re.compile(r"\n\s*\n+")
+SummarizationProgressCallback = Callable[[Dict[str, Any]], None]
+SummarizationStatusCallback = Callable[[Optional[str]], None]
 
 MAP_STAGE_PROMPT_TEMPLATE = """You are summarizing section {index} of {total} from a larger document.
 
@@ -65,11 +67,25 @@ def _summarize_single_pass(
     max_output_chars: int,
     llm_func: Any,
     usage_tracker: Optional[UsageTracker],
+    stage: str,
+    call_index: int,
+    call_total: int,
+    hierarchical: bool,
+    status_callback: Optional[SummarizationStatusCallback],
+    progress_callback: Optional[SummarizationProgressCallback],
 ) -> str:
     """Execute a single summarization call against the configured model."""
+    truncated_content = content[:SUMMARIZATION_INPUT_LIMIT]
+    input_chars = len(truncated_content)
+    started = time.perf_counter()
+    if status_callback:
+        status_callback(
+            f"Summarizer: {stage} {call_index}/{call_total} (input {input_chars:,} chars)"
+        )
+
     msgs = [
         {"role": "system", "content": prompt_template},
-        {"role": "user", "content": content[:SUMMARIZATION_INPUT_LIMIT]},
+        {"role": "user", "content": truncated_content},
     ]
     model_id = MODELS[SUMMARIZATION_MODEL]["id"]
     model_alias = MODELS[SUMMARIZATION_MODEL].get("alias", SUMMARIZATION_MODEL)
@@ -79,9 +95,30 @@ def _summarize_single_pass(
         use_tools=False,
         model_alias=model_alias,
         usage_tracker=usage_tracker,
+        status_callback=None,
     )
     summary = strip_think_tags(msg.get("content", "")).strip()
-    return _truncate_text(summary, max_output_chars)
+    output = _truncate_text(summary, max_output_chars)
+    elapsed_ms = (time.perf_counter() - started) * 1000
+
+    _emit_progress(
+        progress_callback=progress_callback,
+        payload={
+            "stage": stage,
+            "call_index": call_index,
+            "call_total": call_total,
+            "hierarchical": hierarchical,
+            "input_chars": input_chars,
+            "output_chars": len(output),
+            "elapsed_ms": elapsed_ms,
+        },
+    )
+    if status_callback:
+        status_callback(
+            f"Summarizer: {stage} {call_index}/{call_total} "
+            f"(input {input_chars:,}, output {len(output):,}, {elapsed_ms:.0f}ms)"
+        )
+    return output
 
 
 def _summarize_content(
@@ -90,6 +127,8 @@ def _summarize_content(
     max_output_chars: int,
     get_llm_msg_func: Optional[Any] = None,  # Keep for backward compatibility.
     usage_tracker: Optional[UsageTracker] = None,
+    status_callback: Optional[SummarizationStatusCallback] = None,
+    progress_callback: Optional[SummarizationProgressCallback] = None,
 ) -> str:
     """Summarize content with hierarchical fallback for long documents."""
     if not content:
@@ -107,6 +146,12 @@ def _summarize_content(
                 max_output_chars=max_output_chars,
                 llm_func=llm_func,
                 usage_tracker=usage_tracker,
+                stage="single",
+                call_index=1,
+                call_total=1,
+                hierarchical=False,
+                status_callback=status_callback,
+                progress_callback=progress_callback,
             )
 
         chunks = _semantic_chunk_text(
@@ -122,6 +167,12 @@ def _summarize_content(
                 max_output_chars=max_output_chars,
                 llm_func=llm_func,
                 usage_tracker=usage_tracker,
+                stage="single",
+                call_index=1,
+                call_total=1,
+                hierarchical=False,
+                status_callback=status_callback,
+                progress_callback=progress_callback,
             )
 
         logger.debug(
@@ -132,18 +183,27 @@ def _summarize_content(
         )
 
         map_summaries: List[str] = []
+        total_calls = len(chunks) + _estimate_merge_calls(len(chunks)) + 1
+        call_index = 0
         for index, chunk in enumerate(chunks, start=1):
             map_prompt = MAP_STAGE_PROMPT_TEMPLATE.format(
                 index=index,
                 total=len(chunks),
                 focus_requirement=prompt_template,
             )
+            call_index += 1
             map_summary = _summarize_single_pass(
                 content=chunk,
                 prompt_template=map_prompt,
                 max_output_chars=HIERARCHICAL_MAP_MAX_OUTPUT_CHARS,
                 llm_func=llm_func,
                 usage_tracker=usage_tracker,
+                stage=f"map[{index}/{len(chunks)}]",
+                call_index=call_index,
+                call_total=total_calls,
+                hierarchical=True,
+                status_callback=status_callback,
+                progress_callback=progress_callback,
             )
             map_summaries.append(map_summary)
 
@@ -170,23 +230,37 @@ def _summarize_content(
                     + "\n\nPartial summary B:\n"
                     + pair[1]
                 )
+                call_index += 1
                 merged = _summarize_single_pass(
                     content=pair_input,
                     prompt_template=merge_prompt,
                     max_output_chars=HIERARCHICAL_MERGE_MAX_OUTPUT_CHARS,
                     llm_func=llm_func,
                     usage_tracker=usage_tracker,
+                    stage=f"merge[r{reduction_round}]",
+                    call_index=call_index,
+                    call_total=total_calls,
+                    hierarchical=True,
+                    status_callback=status_callback,
+                    progress_callback=progress_callback,
                 )
                 next_round.append(merged)
             merged_summaries = next_round
 
         final_input = merged_summaries[0] if merged_summaries else ""
+        call_index += 1
         final_summary = _summarize_single_pass(
             content=final_input,
             prompt_template=prompt_template,
             max_output_chars=max_output_chars,
             llm_func=llm_func,
             usage_tracker=usage_tracker,
+            stage="final",
+            call_index=call_index,
+            call_total=total_calls,
+            hierarchical=True,
+            status_callback=status_callback,
+            progress_callback=progress_callback,
         )
 
         logger.debug(
@@ -268,6 +342,29 @@ def _truncate_text(text: str, max_output_chars: int) -> str:
     if len(text) <= max_output_chars:
         return text
     return text[: max_output_chars - 3] + "..."
+
+
+def _estimate_merge_calls(chunk_count: int) -> int:
+    """Estimate number of pairwise merge calls needed for map-reduce reduction."""
+    merges = 0
+    current = chunk_count
+    while current > 1:
+        merges += current // 2
+        current = (current + 1) // 2
+    return merges
+
+
+def _emit_progress(
+    progress_callback: Optional[SummarizationProgressCallback],
+    payload: Dict[str, Any],
+) -> None:
+    """Emit summarization progress events without interrupting summarization flow."""
+    if not progress_callback:
+        return
+    try:
+        progress_callback(payload)
+    except Exception:
+        logger.debug("summarization progress callback failed")
 
 
 def generate_summaries(

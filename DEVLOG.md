@@ -1,3 +1,46 @@
+## 2026-02-08 - Verbose Summarization Telemetry + Live Banner Refresh During Hierarchical Summaries
+
+**Summary**: Improved observability for long summarization runs by exposing per-stage summarization progress to the live banner and verbose terminal output.
+
+**Changes**:
+- **Summarization progress hooks** (`src/asky/summarization.py`):
+  - Added optional progress/status callbacks to `_summarize_content(...)`.
+  - Each summarization call (single-pass or hierarchical `map`/`merge`/`final`) now emits:
+    - stage
+    - call index/total
+    - input/output char lengths
+    - elapsed milliseconds
+  - Added helper for merge-call estimation to produce stable call totals in hierarchical mode.
+- **Default tool registry wiring** (`src/asky/core/engine.py`):
+  - `create_default_tool_registry(...)` now accepts:
+    - `summarization_status_callback`
+    - `summarization_verbose_callback`
+  - `get_url_content` summarization path now forwards summarization progress to banner status updates.
+  - In verbose mode, prints per-URL Rich panel with:
+    - input chars
+    - summary chars
+    - compression ratio
+- **Renderer turn tracking** (`src/asky/cli/display.py`):
+  - `InterfaceRenderer` now tracks `current_turn` so asynchronous status updates (including summarization telemetry) refresh banner state on the active turn line.
+- **Chat integration** (`src/asky/cli/chat.py`):
+  - Added summarization status callback that updates live banner immediately while internal summarization calls are running.
+  - Passes verbose callback into default tool registry so summarization stats print through Rich/live console consistently.
+
+**Tests**:
+- Updated `tests/test_summarization_tracking.py` with callback wiring coverage for registry-integrated summarization progress.
+- Existing summarization/CLI/LLM/tool tests continue to pass with callback-enabled behavior.
+
+**Verification**:
+- Focused suites:
+  - `uv run pytest tests/test_summarization_tracking.py tests/test_summarization.py tests/test_llm.py tests/test_cli.py tests/test_tools.py`
+  - Result: `68 passed`
+- Full suite:
+  - `uv run pytest tests`
+  - Result: `366 passed`
+
+**Gotchas / Follow-up**:
+- Live banner refresh frequency depends on summarization call boundaries; very small summaries may still update quickly enough to appear near-instant.
+
 ## 2026-02-08 - Shared Trafilatura Retrieval + Hierarchical Summarization
 
 **Summary**: Unified URL retrieval across standard/research/shortlist flows and upgraded summarization for long content using a bounded hierarchical map-reduce pipeline designed for small models.

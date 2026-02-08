@@ -59,3 +59,47 @@ def test_registry_binds_summarization_tracker():
         # Verify _summarize_content called with our tracker
         assert mock_summarize.call_count == 1
         assert mock_summarize.call_args.kwargs["usage_tracker"] == tracker
+
+
+def test_registry_wires_summarization_progress_callbacks():
+    tracker = UsageTracker()
+    status_messages = []
+
+    registry = create_default_tool_registry(
+        summarization_tracker=tracker,
+        summarization_status_callback=status_messages.append,
+    )
+
+    with (
+        patch("asky.core.engine.execute_get_url_content") as mock_get_content,
+        patch("asky.summarization._summarize_content") as mock_summarize,
+    ):
+        mock_get_content.return_value = {"http://example.com": "Long content"}
+        mock_summarize.return_value = "Summary"
+
+        call = {
+            "function": {
+                "name": "get_url_content",
+                "arguments": '{"urls": ["http://example.com"], "summarize": true}',
+            }
+        }
+
+        registry.dispatch(call)
+
+        kwargs = mock_summarize.call_args.kwargs
+        assert callable(kwargs["progress_callback"])
+        kwargs["progress_callback"](
+            {
+                "stage": "single",
+                "call_index": 1,
+                "call_total": 1,
+                "input_chars": 100,
+                "output_chars": 30,
+                "elapsed_ms": 12.0,
+            }
+        )
+        assert status_messages
+        assert any(
+            message and "Summarizer: URL 1/1 single 1/1" in message
+            for message in status_messages
+        )

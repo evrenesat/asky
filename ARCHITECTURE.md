@@ -393,6 +393,8 @@ Execution via `subprocess.run()` with argument quoting.
   - elapsed time
 - Tool execution updates the same status region with transient per-tool messages.
 - Verbose rich output (shortlist tables/tool argument panels) is routed through the active Live console to avoid breaking in-place banner redraw.
+- Internal URL-content summarization now emits progress callbacks during hierarchical map/merge/final stages, and these callbacks refresh the same live banner status region so summarizer token usage changes are visible during long pre-answer processing.
+- In verbose mode, URL summarization also prints Rich panels with per-URL input length, summary length, and compression ratio.
 
 ---
 
@@ -400,7 +402,7 @@ Execution via `subprocess.run()` with argument quoting.
 
 | Module | Purpose |
 |--------|---------|
-| `summarization.py` | Query/answer summarization with semantic chunking + hierarchical map-reduce for long text |
+| `summarization.py` | Query/answer summarization with semantic chunking + hierarchical map-reduce for long text, plus per-call progress telemetry hooks |
 | `retrieval.py` | Shared URL retrieval and Trafilatura-based extraction for standard/research/shortlist flows |
 | `html.py` | `HTMLStripper`: Remove scripts/styles, extract links |
 | `email_sender.py` | Send results via SMTP (markdown → HTML conversion) |

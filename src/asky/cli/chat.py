@@ -407,6 +407,12 @@ def run_chat(args: argparse.Namespace, query_text: str) -> None:
             return
         renderer.console.print(renderable)
 
+    def summarization_status_callback(message: Optional[str]) -> None:
+        """Refresh banner during internal summarization calls."""
+        if not LIVE_BANNER:
+            return
+        renderer.update_banner(renderer.current_turn, status_message=message)
+
     # Wrap in try/finally to ensure renderer.stop_live() is called
     try:
         # Handle Terminal Context
@@ -447,7 +453,12 @@ def run_chat(args: argparse.Namespace, query_text: str) -> None:
             registry = create_research_tool_registry(usage_tracker=usage_tracker)
         else:
             registry = create_default_tool_registry(
-                usage_tracker=usage_tracker, summarization_tracker=summarization_tracker
+                usage_tracker=usage_tracker,
+                summarization_tracker=summarization_tracker,
+                summarization_status_callback=summarization_status_callback,
+                summarization_verbose_callback=(
+                    verbose_output_callback if args.verbose else None
+                ),
             )
 
         engine = ConversationEngine(

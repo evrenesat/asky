@@ -546,6 +546,8 @@ class ConversationEngine:
 def create_default_tool_registry(
     usage_tracker: Optional[UsageTracker] = None,
     summarization_tracker: Optional[UsageTracker] = None,
+    summarization_status_callback: Optional[Callable[[Optional[str]], None]] = None,
+    summarization_verbose_callback: Optional[Callable[[Any], None]] = None,
 ) -> ToolRegistry:
     """Create a ToolRegistry with all default and custom tools."""
     registry = ToolRegistry()
@@ -575,18 +577,62 @@ def create_default_tool_registry(
         # LLM can override the global summarize flag in its tool call
         effective_summarize = args.get("summarize", summarize)
         if effective_summarize:
-            for url, content in result.items():
+            content_items = list(result.items())
+            total_urls = len(content_items)
+            for url_index, (url, content) in enumerate(content_items, start=1):
                 if not content.startswith("Error:"):
+                    def summary_progress(payload: Dict[str, Any]) -> None:
+                        stage = str(payload.get("stage", "single"))
+                        call_index = int(payload.get("call_index", 0) or 0)
+                        call_total = int(payload.get("call_total", 0) or 0)
+                        input_chars = int(payload.get("input_chars", 0) or 0)
+                        output_chars = int(payload.get("output_chars", 0) or 0)
+                        elapsed_ms = float(payload.get("elapsed_ms", 0.0) or 0.0)
+                        status_msg = (
+                            f"Summarizer: URL {url_index}/{total_urls} "
+                            f"{stage} {call_index}/{call_total} "
+                            f"(in {input_chars:,}, out {output_chars:,}, {elapsed_ms:.0f}ms)"
+                        )
+                        if summarization_status_callback:
+                            summarization_status_callback(status_msg)
+
+                    summary_text = summarization._summarize_content(
+                        content=content,
+                        prompt_template=SUMMARIZE_ANSWER_PROMPT_TEMPLATE,
+                        max_output_chars=ANSWER_SUMMARY_MAX_CHARS,
+                        get_llm_msg_func=get_llm_msg,
+                        usage_tracker=summarization_tracker,
+                        progress_callback=summary_progress,
+                    )
                     result[url] = (
                         f"Summary of {url}:\n"
-                        + summarization._summarize_content(
-                            content=content,
-                            prompt_template=SUMMARIZE_ANSWER_PROMPT_TEMPLATE,
-                            max_output_chars=ANSWER_SUMMARY_MAX_CHARS,
-                            get_llm_msg_func=get_llm_msg,
-                            usage_tracker=summarization_tracker,
-                        )
+                        + summary_text
                     )
+                    if summarization_verbose_callback:
+                        input_chars = len(content)
+                        output_chars = len(summary_text)
+                        ratio = (
+                            (output_chars / input_chars) if input_chars > 0 else 0.0
+                        )
+                        summarization_verbose_callback(
+                            Panel(
+                                "\n".join(
+                                    [
+                                        f"URL: {url}",
+                                        f"Input chars: {input_chars:,}",
+                                        f"Summary chars: {output_chars:,}",
+                                        f"Compression ratio: {ratio:.3f}",
+                                    ]
+                                ),
+                                title=(
+                                    f"Summarization Stats {url_index}/{total_urls}"
+                                ),
+                                border_style="magenta",
+                                expand=False,
+                            )
+                        )
+            if summarization_status_callback:
+                summarization_status_callback(None)
         return result
 
     registry.register(
