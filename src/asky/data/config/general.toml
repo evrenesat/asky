@@ -7,8 +7,8 @@ db_path_env_var = "ASKY_DB_PATH"
 # Logging Configuration
 # Level: DEBUG, INFO, WARNING, ERROR, CRITICAL
 log_level = "INFO"
-# Log file path. Defaults to ~/.config/asky/asky.log
-log_file = "~/.config/asky/asky.log"
+# Log file path. Defaults to ~/.config/asky/logs/asky.log
+log_file = "~/.config/asky/logs/asky.log"
 
 # Maximum length of the query and answer summaries shown in 'asky -H'.
 query_summary_max_chars = 100

@@ -432,7 +432,7 @@ Execution via `subprocess.run()` with argument quoting.
 | `push_data.py` | HTTP data push to external endpoints (GET/POST) |
 | `rendering.py` | `render_to_browser()`: Open markdown in browser |
 | `banner.py` | Display CLI banner with model info |
-| `logger.py` | Configure file-based logging |
+| `logger.py` | Configure rotating file-based logging (default `~/.config/asky/logs/asky.log`, with legacy path migration) |
 
 #### Push Data Module (`push_data.py`)
 

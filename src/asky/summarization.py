@@ -22,14 +22,27 @@ from asky.html import strip_think_tags
 logger = logging.getLogger(__name__)
 
 # Long inputs are summarized hierarchically to improve small-model quality.
-HIERARCHICAL_TRIGGER_CHARS = 3200
-HIERARCHICAL_MAX_INPUT_CHARS = 32000
-HIERARCHICAL_CHUNK_TARGET_CHARS = 1800
-HIERARCHICAL_CHUNK_OVERLAP_CHARS = 220
-HIERARCHICAL_MAX_CHUNKS = 12
-HIERARCHICAL_MAP_MAX_OUTPUT_CHARS = 750
-HIERARCHICAL_MERGE_MAX_OUTPUT_CHARS = 950
-HIERARCHICAL_MAX_REDUCTION_ROUNDS = 8
+# Long inputs are summarized hierarchically to improve small-model quality.
+HIERARCHICAL_TRIGGER_CHARS = (
+    3200  # Minimum content length to trigger hierarchical strategy
+)
+HIERARCHICAL_MAX_INPUT_CHARS = (
+    32000  # Hard cap on input length; content beyond this is truncated
+)
+HIERARCHICAL_CHUNK_TARGET_CHARS = (
+    2800  # Target size for semantic chunks in splitting phase
+)
+HIERARCHICAL_CHUNK_OVERLAP_CHARS = (
+    220  # Overlap between chunks to preserve context at boundaries
+)
+HIERARCHICAL_MAX_CHUNKS = (
+    12  # Maximum number of map-stage calls (merges groups if exceeded)
+)
+HIERARCHICAL_MAP_MAX_OUTPUT_CHARS = (
+    750  # Max chars for initial chunk summaries (bullets focus)
+)
+HIERARCHICAL_MERGE_MAX_OUTPUT_CHARS = 950  # Max chars for intermediate merge outputs
+HIERARCHICAL_MAX_REDUCTION_ROUNDS = 8  # Safety limit for recursive reduction depth
 
 PARAGRAPH_SPLIT_PATTERN = re.compile(r"\n\s*\n+")
 SummarizationProgressCallback = Callable[[Dict[str, Any]], None]
