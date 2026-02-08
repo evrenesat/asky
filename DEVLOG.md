@@ -1,3 +1,129 @@
+## 2026-02-08 - Startup Performance Guardrail Tests (Latency + Idle RSS)
+
+**Summary**: Added two automated guardrail tests to detect regressions in CLI startup latency and idle memory footprint.
+
+**Changes**:
+- Added new test module:
+  - `tests/test_startup_performance.py`
+- New latency guardrail:
+  - Runs `python -m asky --help` multiple times.
+  - Uses median wall-clock time over repeated runs (with warmup).
+  - Asserts median is below configured threshold (`HELP_STARTUP_MEDIAN_MAX_SECONDS`).
+- New memory guardrail:
+  - Spawns `python -m asky --edit-model`.
+  - Samples idle RSS via `ps` while process waits for input.
+  - Asserts peak sampled RSS is below configured threshold (`EDIT_MODEL_IDLE_MAX_RSS_KB`).
+  - Ensures process is terminated/cleaned up after measurement.
+- Platform behavior:
+  - Tests are skipped on Windows because RSS sampling uses `ps`.
+
+**Verification**:
+- New tests:
+  - `uv run pytest tests/test_startup_performance.py`
+  - Result: `2 passed`
+- Full suite:
+  - `uv run pytest`
+  - Result: `373 passed`
+
+**Gotchas / Follow-up**:
+- Thresholds are intentionally conservative to reduce flakiness across machines while still catching large regressions.
+- If CI hardware differs significantly, thresholds may need tuning while preserving guardrail intent.
+- 2026-02-08 follow-up: tightened idle RSS guardrail from `180_000` KiB to `80_000` KiB after local observation (`~22_000` KiB) to make regression detection meaningful.
+
+## 2026-02-08 - Global Lazy Imports + Startup Path Slimming + Background Cache Cleanup
+
+**Summary**: Reduced baseline startup/import cost across the app by making core package exports lazy, deferring heavy module loads to execution paths that actually need them, and moving research cache cleanup to a background startup task.
+
+**Changes**:
+- **Package-level lazy exports**:
+  - `src/asky/__init__.py` now exposes a lazy `main()` wrapper (no eager `asky.cli` import).
+  - `src/asky/cli/__init__.py`, `src/asky/core/__init__.py`, `src/asky/research/__init__.py` now use lazy export resolution so importing package namespaces does not eagerly import chat/engine/research stacks.
+  - Updated entry wrappers to bypass eager package imports:
+    - `src/asky/__main__.py`
+    - `asky`
+- **CLI startup flow slimming** (`src/asky/cli/main.py`):
+  - Replaced eager CLI submodule imports with lazy module proxies.
+  - Reordered `main()` to short-circuit fast commands (`--add-model`, `--edit-model`, prompt listing) before DB/cache work.
+  - `init_db()` is now conditional on command path instead of always-on at process start.
+  - File-based prompt loading is now conditional (prompt listing or slash-command usage), not unconditional.
+  - Research cache cleanup moved to background daemon thread on chat path with a short head-start join (`CACHE_CLEANUP_JOIN_TIMEOUT_SECONDS`) to keep startup responsive while preserving cleanup behavior.
+- **Core engine lazy tool/cache loading** (`src/asky/core/engine.py`):
+  - Standard tool executors (`web_search`, `get_url_content`, `get_url_details`, custom tool execution) are now imported lazily inside wrappers.
+  - Research tool schemas/executors are imported only when building research registry.
+  - Research cache is instantiated lazily on first compaction use instead of engine construction.
+- **Direct imports to avoid aggregator-triggered heavy loads**:
+  - `src/asky/cli/history.py` now imports `is_markdown` from `asky.core.prompts`.
+  - `src/asky/cli/sessions.py` now imports session helpers from `asky.core.session_manager`.
+  - `src/asky/cli/models.py` now imports OpenRouter via local package import.
+- **Tests updated for async cleanup + lazy export behavior**:
+  - `tests/test_startup_cleanup.py` now forces cleanup-thread startup hook to run synchronously in the integration test for deterministic assertions.
+
+**Verification**:
+- Focused suites:
+  - `uv run pytest tests/test_cli.py tests/test_startup_cleanup.py tests/test_expansion.py tests/test_openrouter.py tests/test_sessions.py`
+  - Result: `61 passed`
+- Full suite:
+  - `uv run pytest tests`
+  - Result: `371 passed`
+- Startup/import spot checks:
+  - `import asky.cli.main`: ~39ms, `ru_maxrss=28655616`
+  - `import asky.cli`: ~2.8ms, `ru_maxrss=15384576`
+  - `asky --edit-model` reaches interactive prompt in ~0.11s on local run.
+
+**Gotchas / Follow-up**:
+- Research cache cleanup is now asynchronous; app startup no longer waits for full cleanup completion.
+- Interactive model editor still requires TTY input by design; non-interactive runs will terminate with `EOFError` after rendering model list.
+
+## 2026-02-08 - Per-Model Shortlist Control + Lean Override + Lazy Shortlist Imports
+
+**Summary**: Added model-level control for pre-LLM source shortlisting, a `--lean` runtime override, and lazy shortlist imports so shortlist-disabled runs avoid shortlist startup overhead.
+
+**Changes**:
+- **CLI runtime override** (`src/asky/cli/main.py`):
+  - Added `-L` / `--lean` flag to disable pre-LLM source shortlisting for the current run.
+- **Shortlist enablement resolution** (`src/asky/cli/chat.py`):
+  - Added `_shortlist_enabled_for_request(...)` with precedence:
+    1. `--lean`
+    2. model override (`models.<alias>.source_shortlist_enabled`)
+    3. global shortlist config (`[research.source_shortlist]`)
+  - Added explicit skip logging with reason when shortlist is disabled.
+- **Lazy shortlist loading** (`src/asky/cli/chat.py`):
+  - Replaced module-level shortlist imports with lazy wrapper functions so shortlist code is loaded only when enabled.
+  - Keeps existing patch points (`asky.cli.chat.shortlist_prompt_sources`) intact for tests.
+- **Additional lazy loading inside shortlist module** (`src/asky/research/source_shortlist.py`):
+  - Lazy-load YAKE module on first keyphrase extraction.
+  - Lazy-load search executor, embedding client factory, and cosine helper only when needed.
+- **Model management CLI updates** (`src/asky/cli/models.py`):
+  - `--add-model` now always prompts for editable `context_size`.
+  - Added per-model shortlist setting prompt with `auto/on/off` choices.
+  - `--edit-model` now edits both `context_size` and per-model shortlist mode.
+  - `save_model_config(...)` now persists `source_shortlist_enabled` when explicitly set.
+- **Model config docs** (`src/asky/data/config/models.toml`):
+  - Added inline comment documentation for `source_shortlist_enabled`.
+
+**Tests**:
+- Added CLI tests in `tests/test_cli.py` for:
+  - `-L/--lean` parsing
+  - shortlist enablement precedence helper
+- Added `tests/test_models_cli.py` for model persistence:
+  - stores `context_size` + `source_shortlist_enabled`
+  - omits shortlist field when in `auto` mode
+
+**Verification**:
+- Baseline before edits:
+  - `uv run pytest tests`
+  - Result: `366 passed`
+- Focused suites after edits:
+  - `uv run pytest tests/test_cli.py tests/test_models_cli.py tests/test_summarization_tracking.py tests/test_source_shortlist.py`
+  - Result: `55 passed`
+- Full suite after edits:
+  - `uv run pytest tests`
+  - Result: `371 passed`
+
+**Gotchas / Follow-up**:
+- Existing models without `source_shortlist_enabled` continue using global shortlist settings.
+- `--lean` only affects pre-LLM shortlist; it does not disable regular tool-calling behavior.
+
 ## 2026-02-08 - Verbose Summarization Telemetry + Live Banner Refresh During Hierarchical Summaries
 
 **Summary**: Improved observability for long summarization runs by exposing per-stage summarization progress to the live banner and verbose terminal output.

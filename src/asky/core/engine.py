@@ -11,7 +11,6 @@ from rich.markdown import Markdown
 from rich.panel import Panel
 from rich.pretty import Pretty
 
-from asky.research.cache import ResearchCache
 from asky.config import (
     DEFAULT_CONTEXT_SIZE,
     MAX_TURNS,
@@ -27,24 +26,84 @@ from asky.rendering import render_to_browser
 from asky.core.api_client import get_llm_msg, count_tokens, UsageTracker
 from asky.core.prompts import extract_calls, is_markdown
 from asky.core.registry import ToolRegistry
-from asky.tools import (
-    _execute_custom_tool,
-    execute_get_url_content,
-    execute_get_url_details,
-    execute_web_search,
-)
 from asky import summarization
-from asky.research.tools import (
-    execute_extract_links,
-    execute_get_link_summaries,
-    execute_get_relevant_content,
-    execute_get_full_content,
-    execute_save_finding,
-    execute_query_research_memory,
-    RESEARCH_TOOL_SCHEMAS,
-)
 
 logger = logging.getLogger(__name__)
+
+
+def ResearchCache(*args, **kwargs):
+    """Lazy constructor proxy retained for test patch compatibility."""
+    from asky.research.cache import ResearchCache as research_cache_cls
+
+    return research_cache_cls(*args, **kwargs)
+
+
+def execute_web_search(args: Dict[str, Any]) -> Dict[str, Any]:
+    from asky.tools import execute_web_search as execute_web_search_impl
+
+    return execute_web_search_impl(args)
+
+
+def execute_get_url_content(args: Dict[str, Any]) -> Dict[str, Any]:
+    from asky.tools import execute_get_url_content as execute_get_url_content_impl
+
+    return execute_get_url_content_impl(args)
+
+
+def execute_get_url_details(args: Dict[str, Any]) -> Dict[str, Any]:
+    from asky.tools import execute_get_url_details as execute_get_url_details_impl
+
+    return execute_get_url_details_impl(args)
+
+
+def _execute_custom_tool(name: str, args: Dict[str, Any]) -> Dict[str, Any]:
+    from asky.tools import _execute_custom_tool as execute_custom_tool_impl
+
+    return execute_custom_tool_impl(name, args)
+
+
+def _get_research_cache():
+    """Lazy-load research cache to avoid startup import overhead."""
+    return ResearchCache()
+
+
+def _execute_web_search_lazy(args: Dict[str, Any]) -> Dict[str, Any]:
+    return execute_web_search(args)
+
+
+def _execute_get_url_content_lazy(args: Dict[str, Any]) -> Dict[str, Any]:
+    return execute_get_url_content(args)
+
+
+def _execute_get_url_details_lazy(args: Dict[str, Any]) -> Dict[str, Any]:
+    return execute_get_url_details(args)
+
+
+def _execute_custom_tool_lazy(name: str, args: Dict[str, Any]) -> Dict[str, Any]:
+    return _execute_custom_tool(name, args)
+
+
+def _load_research_tool_bindings():
+    """Lazy-load research tool schemas and executors."""
+    from asky.research.tools import (
+        RESEARCH_TOOL_SCHEMAS,
+        execute_extract_links,
+        execute_get_full_content,
+        execute_get_link_summaries,
+        execute_get_relevant_content,
+        execute_query_research_memory,
+        execute_save_finding,
+    )
+
+    return {
+        "schemas": RESEARCH_TOOL_SCHEMAS,
+        "extract_links": execute_extract_links,
+        "get_link_summaries": execute_get_link_summaries,
+        "get_relevant_content": execute_get_relevant_content,
+        "get_full_content": execute_get_full_content,
+        "save_finding": execute_save_finding,
+        "query_research_memory": execute_query_research_memory,
+    }
 
 
 class ConversationEngine:
@@ -69,9 +128,15 @@ class ConversationEngine:
         self.open_browser = open_browser
         self.session_manager = session_manager
         self.verbose_output_callback = verbose_output_callback
-        self.research_cache = ResearchCache()
+        self._research_cache = None
         self.start_time: float = 0
         self.final_answer: str = ""
+
+    @property
+    def research_cache(self):
+        if self._research_cache is None:
+            self._research_cache = _get_research_cache()
+        return self._research_cache
 
     def run(self, messages: List[Dict[str, Any]], display_callback=None) -> str:
         """Run the multi-turn conversation loop."""
@@ -566,14 +631,14 @@ def create_default_tool_registry(
                 "required": ["q"],
             },
         },
-        execute_web_search,
+        _execute_web_search_lazy,
     )
 
     def url_content_executor(
         args: Dict[str, Any],
         summarize: bool = False,
     ) -> Dict[str, Any]:
-        result = execute_get_url_content(args)
+        result = _execute_get_url_content_lazy(args)
         # LLM can override the global summarize flag in its tool call
         effective_summarize = args.get("summarize", summarize)
         if effective_summarize:
@@ -674,7 +739,7 @@ def create_default_tool_registry(
                 "required": ["url"],
             },
         },
-        execute_get_url_details,
+        _execute_get_url_details_lazy,
     )
 
     # Register custom tools from config
@@ -692,7 +757,7 @@ def create_default_tool_registry(
                     "parameters", {"type": "object", "properties": {}}
                 ),
             },
-            lambda args, name=tool_name: _execute_custom_tool(name, args),
+            lambda args, name=tool_name: _execute_custom_tool_lazy(name, args),
         )
 
     # Register enabled push_data endpoints as LLM tools
@@ -786,24 +851,39 @@ def create_research_tool_registry(
                 "required": ["q"],
             },
         },
-        execute_web_search,
+        _execute_web_search_lazy,
     )
 
+    research_bindings = _load_research_tool_bindings()
+    schemas = research_bindings["schemas"]
+
     # Research mode tools
-    for schema in RESEARCH_TOOL_SCHEMAS:
+    for schema in schemas:
         tool_name = schema["name"]
         if tool_name == "extract_links":
-            registry.register(tool_name, schema, execute_extract_links)
+            registry.register(tool_name, schema, research_bindings["extract_links"])
         elif tool_name == "get_link_summaries":
-            registry.register(tool_name, schema, execute_get_link_summaries)
+            registry.register(
+                tool_name,
+                schema,
+                research_bindings["get_link_summaries"],
+            )
         elif tool_name == "get_relevant_content":
-            registry.register(tool_name, schema, execute_get_relevant_content)
+            registry.register(
+                tool_name,
+                schema,
+                research_bindings["get_relevant_content"],
+            )
         elif tool_name == "get_full_content":
-            registry.register(tool_name, schema, execute_get_full_content)
+            registry.register(tool_name, schema, research_bindings["get_full_content"])
         elif tool_name == "save_finding":
-            registry.register(tool_name, schema, execute_save_finding)
+            registry.register(tool_name, schema, research_bindings["save_finding"])
         elif tool_name == "query_research_memory":
-            registry.register(tool_name, schema, execute_query_research_memory)
+            registry.register(
+                tool_name,
+                schema,
+                research_bindings["query_research_memory"],
+            )
 
     # Register custom tools from config
     for tool_name, tool_data in CUSTOM_TOOLS.items():
@@ -820,7 +900,7 @@ def create_research_tool_registry(
                     "parameters", {"type": "object", "properties": {}}
                 ),
             },
-            lambda args, name=tool_name: _execute_custom_tool(name, args),
+            lambda args, name=tool_name: _execute_custom_tool_lazy(name, args),
         )
 
     return registry

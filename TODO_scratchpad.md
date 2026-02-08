@@ -48,5 +48,8 @@ CRITICAL - Security
  to count sorry two two
  to rank the links that are most relevant to the query of the user of course that's only possible for short queries. But even for longer, very long user prompt, we can use our summarization model with a different summary prompt to extract questions from the user prompt. The main benefit is we assume summary model is running locally so it doesn't cost to user. So we try to benefit from that as much as possible. 
 
-
- 
+Extending tool definitions with system prompt updates.
+ -------
+ Right now we have hardcoded guidelines in the system prompt about how and when to use tools. This is not flexible because I want to easily disable enable
+ certain tools from even command line. So we need to do a few things in order. First we should introduce another field to tool definitions also for user-defined tools of course. That the guideline we added to system prompt when the tool is
+ enabled for the session or the current invocation. And the other part of that. I want easy. We exclude some tools from command line.

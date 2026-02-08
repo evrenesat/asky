@@ -74,18 +74,18 @@ graph TB
 
 ```
 src/asky/
-├── __init__.py         # Package initialization
+├── __init__.py         # Package init + lazy CLI entry wrapper
 ├── __main__.py         # Module entry point
 ├── cli/                # Command-line interface layer
-│   ├── __init__.py     # CLI exports
-│   ├── main.py         # Argument parsing, entry point
+│   ├── __init__.py     # Lazy CLI exports for lightweight imports
+│   ├── main.py         # Argument parsing, command routing, lazy startup path
 │   ├── chat.py         # Chat conversation flow
 │   ├── history.py      # History viewing/deletion commands
 │   ├── sessions.py     # Session management commands
 │   ├── prompts.py      # User prompt listing
 │   └── utils.py        # Query expansion, config printing
 ├── core/               # Core conversation engine
-│   ├── __init__.py     # Core exports
+│   ├── __init__.py     # Lazy core exports
 │   ├── engine.py       # ConversationEngine, tool registries
 │   ├── registry.py     # ToolRegistry for tool management
 │   ├── api_client.py   # LLM API calls, UsageTracker
@@ -140,6 +140,15 @@ The CLI is modularized for maintainability:
 | `openrouter.py` | OpenRouter API client and caching logic |
 | `utils.py` | Query expansion (`/cp`, `/prompt_key`), verbose config printing |
 
+#### Startup Strategy (Lazy-by-Default)
+
+- `asky/__init__.py`, `asky/cli/__init__.py`, `asky/core/__init__.py`, and `asky/research/__init__.py` now expose symbols lazily via wrapper functions / `__getattr__`.
+- `cli/main.py` avoids eager imports of `chat`, `history`, `sessions`, `prompts`, and `utils` using lazy module proxies.
+- `main()` now short-circuits quick commands (`--add-model`, `--edit-model`, prompt listing) before DB/cache startup work.
+- Database initialization is conditional per command path instead of unconditional at process start.
+- Research cache expiry cleanup is launched on chat path via a background daemon thread with a short non-blocking join head-start.
+- File-based custom prompts are loaded only when needed (prompt listing or slash-command expansion).
+
 #### Key CLI Flags
 
 | Flag | Purpose |
@@ -147,6 +156,7 @@ The CLI is modularized for maintainability:
 | `-m, --model` | Select model alias |
 | `-c, --continue-chat` | Continue with context from previous IDs |
 | `-s, --summarize` | Use summaries for context/URL content |
+| `-L, --lean` | Disable pre-LLM source shortlisting for current run |
 | `-H, --history [N]` | Show last N history entries |
 | `-pa, --print-answer` | Print specific answer(s) by ID |
 | `-ps, --print-session` | Print session content |
@@ -184,6 +194,10 @@ class ConversationEngine:
 - Multi-turn tool execution loop (up to `MAX_TURNS`)
 - Token usage tracking
 - Integration with `SessionManager` for persistent sessions
+- Lazy research/tool loading:
+  - Research cache is instantiated only when message compaction needs cached summaries.
+  - Standard tool executors (`web_search`, `get_url_content`, `get_url_details`, custom tool execution) are imported on first use.
+  - Research tool schemas/executors are imported only when constructing the research registry.
 
 #### ToolRegistry (`registry.py`)
 
@@ -278,7 +292,7 @@ Unified storage for both history and sessions:
 | `[general]` | Default model, timeouts, log settings, search provider |
 | `[limits]` | Retry counts, snippet lengths, backoff settings |
 | `[api.name]` | API endpoint definitions (URL, key) |
-| `[models.alias]` | Model definitions referencing APIs |
+| `[models.alias]` | Model definitions referencing APIs (including per-model shortlist override) |
 | `[prompts]` | System prompt templates |
 | `[user_prompts]` | User-defined shortcuts (`/gn`, `/wh`) |
 | `[tool.name]` | Custom tool definitions |
@@ -366,6 +380,7 @@ Execution via `subprocess.run()` with argument quoting.
 
 #### Shared Source Shortlisting (`research/source_shortlist.py`)
 - Runs before the first LLM call and can be enabled independently for research and standard chat modes.
+- Effective enablement precedence is: `--lean` flag > model override (`models.<alias>.source_shortlist_enabled`) > global shortlist mode flags.
 - Pipeline:
   - Extract seed URLs from prompt and build URL-stripped query text
   - Optionally extract keyphrases (YAKE) for search query construction
@@ -382,6 +397,7 @@ Execution via `subprocess.run()` with argument quoting.
 - Debug-level observability includes per-stage timings and counters (search calls/results, seed-link extraction calls/discovered/added, fetch attempts/success/failures, embedding calls/doc counts).
 - Produces a ranked shortlist payload, a trace block (`processed_candidates`, `selected_candidates`), and an optional compact context block injected into the user message.
 - Supports optional status callbacks so the CLI banner can show pre-LLM shortlist progress while retrieval/scoring is running.
+- Chat flow lazy-loads shortlist module entrypoints, and shortlist internals lazy-load YAKE/search/embedding helpers, so non-shortlist runs avoid shortlist-related import overhead.
 
 #### Live Banner + Pre-LLM Progress
 - `run_chat` starts the live banner before source shortlisting begins, so users see progress even before the first LLM request.

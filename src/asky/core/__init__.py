@@ -1,23 +1,40 @@
-"""Core logic and orchestration for asky."""
+"""Core logic and orchestration for asky (lazy exports)."""
 
-from asky.core.api_client import get_llm_msg, count_tokens, UsageTracker
-from asky.core.engine import (
-    ConversationEngine,
-    create_default_tool_registry,
-    create_research_tool_registry,
-    generate_summaries,
-)
-from asky.core.registry import ToolRegistry
-from asky.core.session_manager import (
-    SessionManager,
-    get_shell_session_id,
-    set_shell_session_id,
-    clear_shell_session,
-)
-from asky.core.prompts import (
-    construct_system_prompt,
-    construct_research_system_prompt,
-    extract_calls,
-    is_markdown,
-    parse_textual_tool_call,
-)
+from __future__ import annotations
+
+from importlib import import_module
+from typing import Dict, Tuple
+
+_EXPORTS: Dict[str, Tuple[str, str]] = {
+    "get_llm_msg": ("asky.core.api_client", "get_llm_msg"),
+    "count_tokens": ("asky.core.api_client", "count_tokens"),
+    "UsageTracker": ("asky.core.api_client", "UsageTracker"),
+    "ConversationEngine": ("asky.core.engine", "ConversationEngine"),
+    "create_default_tool_registry": ("asky.core.engine", "create_default_tool_registry"),
+    "create_research_tool_registry": ("asky.core.engine", "create_research_tool_registry"),
+    "generate_summaries": ("asky.core.engine", "generate_summaries"),
+    "ToolRegistry": ("asky.core.registry", "ToolRegistry"),
+    "SessionManager": ("asky.core.session_manager", "SessionManager"),
+    "get_shell_session_id": ("asky.core.session_manager", "get_shell_session_id"),
+    "set_shell_session_id": ("asky.core.session_manager", "set_shell_session_id"),
+    "clear_shell_session": ("asky.core.session_manager", "clear_shell_session"),
+    "construct_system_prompt": ("asky.core.prompts", "construct_system_prompt"),
+    "construct_research_system_prompt": (
+        "asky.core.prompts",
+        "construct_research_system_prompt",
+    ),
+    "extract_calls": ("asky.core.prompts", "extract_calls"),
+    "is_markdown": ("asky.core.prompts", "is_markdown"),
+    "parse_textual_tool_call": ("asky.core.prompts", "parse_textual_tool_call"),
+}
+
+
+def __getattr__(name: str):
+    if name not in _EXPORTS:
+        raise AttributeError(f"module 'asky.core' has no attribute {name!r}")
+    module_name, attr_name = _EXPORTS[name]
+    module = import_module(module_name)
+    return getattr(module, attr_name)
+
+
+__all__ = sorted(_EXPORTS.keys())

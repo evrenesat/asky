@@ -4,7 +4,7 @@ from rich.console import Console
 from rich.table import Table
 from rich.markdown import Markdown
 
-from asky.core import is_markdown
+from asky.core.prompts import is_markdown
 from asky.rendering import render_to_browser
 from asky.storage import (
     get_history,

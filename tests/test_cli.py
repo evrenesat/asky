@@ -72,6 +72,13 @@ def test_parse_args_options():
         assert args.summarize is True
 
 
+def test_parse_args_lean_flag():
+    with patch("sys.argv", ["asky", "-L", "query"]):
+        args = parse_args()
+        assert args.lean is True
+        assert args.query == ["query"]
+
+
 def test_parse_args_terminal_lines_explicit():
     """Test -tl with explicit integer."""
     with patch("sys.argv", ["asky", "-tl", "20", "query"]):
@@ -286,6 +293,34 @@ def test_build_shortlist_banner_stats():
         "warnings": 1,
         "elapsed_ms": 123.4,
     }
+
+
+def test_shortlist_enabled_resolution_prefers_lean():
+    from asky.cli.chat import _shortlist_enabled_for_request
+
+    args = argparse.Namespace(lean=True)
+    model_cfg = {"id": "test-model", "source_shortlist_enabled": True}
+    enabled, reason = _shortlist_enabled_for_request(
+        args=args,
+        model_config=model_cfg,
+        research_mode=False,
+    )
+    assert enabled is False
+    assert reason == "lean_flag"
+
+
+def test_shortlist_enabled_resolution_prefers_model_override():
+    from asky.cli.chat import _shortlist_enabled_for_request
+
+    args = argparse.Namespace(lean=False)
+    model_cfg = {"id": "test-model", "source_shortlist_enabled": False}
+    enabled, reason = _shortlist_enabled_for_request(
+        args=args,
+        model_config=model_cfg,
+        research_mode=True,
+    )
+    assert enabled is False
+    assert reason == "model_override"
 
 
 def test_print_shortlist_verbose(capsys):

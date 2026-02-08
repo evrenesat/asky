@@ -3,6 +3,10 @@
 #   id: The exact model ID used by the API provider.
 #   api: Reference to a name defined in the [api] section.
 #   context_size: Total context window size (tokens/chars approximation) for trimming history.
+#   source_shortlist_enabled: Optional per-model override for pre-LLM source shortlisting.
+#     - true: force-enable shortlist for this model
+#     - false: force-disable shortlist for this model
+#     - unset: use global shortlist settings
 
 # Note: max_chars is the context_size values of the following models are arbitrarily set for my own use.
 # Check model provider's documentation for the actual context size of the models.

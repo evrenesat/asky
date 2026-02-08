@@ -9,7 +9,13 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 
-from asky.config import MODELS, LIVE_BANNER
+from asky.config import (
+    MODELS,
+    LIVE_BANNER,
+    SOURCE_SHORTLIST_ENABLED,
+    SOURCE_SHORTLIST_ENABLE_RESEARCH_MODE,
+    SOURCE_SHORTLIST_ENABLE_STANDARD_MODE,
+)
 from asky.core import (
     ConversationEngine,
     create_default_tool_registry,
@@ -28,12 +34,24 @@ from asky.storage import (
     save_interaction,
 )
 from asky.cli.display import InterfaceRenderer
-from asky.research.source_shortlist import (
-    shortlist_prompt_sources,
-    format_shortlist_context,
-)
 
 logger = logging.getLogger(__name__)
+
+
+def shortlist_prompt_sources(*args: Any, **kwargs: Any) -> Dict[str, Any]:
+    """Lazy-import shortlist pipeline so startup cost is paid only when enabled."""
+    from asky.research.source_shortlist import shortlist_prompt_sources as shortlist_impl
+
+    return shortlist_impl(*args, **kwargs)
+
+
+def format_shortlist_context(shortlist_payload: Dict[str, Any]) -> str:
+    """Lazy-import shortlist formatter for same startup behavior as shortlist collection."""
+    from asky.research.source_shortlist import (
+        format_shortlist_context as format_shortlist_context_impl,
+    )
+
+    return format_shortlist_context_impl(shortlist_payload)
 
 
 def load_context(continue_ids: str, summarize: bool) -> Optional[str]:
@@ -155,6 +173,27 @@ def _build_shortlist_banner_stats(
         "warnings": len(shortlist_payload.get("warnings", []) or []),
         "elapsed_ms": float(shortlist_elapsed_ms),
     }
+
+
+def _shortlist_enabled_for_request(
+    args: argparse.Namespace,
+    model_config: Dict[str, Any],
+    research_mode: bool,
+) -> tuple[bool, str]:
+    """Resolve shortlist enablement with precedence: lean > model > global flags."""
+    if bool(getattr(args, "lean", False)):
+        return False, "lean_flag"
+
+    model_override = model_config.get("source_shortlist_enabled")
+    if isinstance(model_override, bool):
+        return model_override, "model_override"
+
+    if not SOURCE_SHORTLIST_ENABLED:
+        return False, "global_disabled"
+
+    if research_mode:
+        return bool(SOURCE_SHORTLIST_ENABLE_RESEARCH_MODE), "global_research_mode"
+    return bool(SOURCE_SHORTLIST_ENABLE_STANDARD_MODE), "global_standard_mode"
 
 
 def _print_shortlist_verbose(console: Console, shortlist_payload: Dict[str, Any]) -> None:
@@ -303,6 +342,12 @@ def run_chat(args: argparse.Namespace, query_text: str) -> None:
     if research_mode:
         console.print("\n[Research mode enabled - using link extraction and RAG tools]")
 
+    shortlist_enabled, shortlist_reason = _shortlist_enabled_for_request(
+        args=args,
+        model_config=model_config,
+        research_mode=research_mode,
+    )
+
     # Setup display renderer early so pre-LLM shortlist work is visible in banner
     renderer = InterfaceRenderer(
         model_config=model_config,
@@ -315,24 +360,51 @@ def run_chat(args: argparse.Namespace, query_text: str) -> None:
     )
     if LIVE_BANNER:
         renderer.start_live()
-        renderer.update_banner(0, status_message="Shortlist: starting pre-LLM retrieval")
+        if shortlist_enabled:
+            renderer.update_banner(
+                0, status_message="Shortlist: starting pre-LLM retrieval"
+            )
+        else:
+            renderer.update_banner(
+                0, status_message=f"Shortlist disabled ({shortlist_reason})"
+            )
 
     def shortlist_status_reporter(message: str) -> None:
         if LIVE_BANNER and message:
             renderer.update_banner(0, status_message=message)
 
     shortlist_context: Optional[str] = None
-    try:
-        shortlist_start = time.perf_counter()
-        shortlist_payload = shortlist_prompt_sources(
-            user_prompt=query_text,
-            research_mode=research_mode,
-            status_callback=shortlist_status_reporter if LIVE_BANNER else None,
+    shortlist_payload: Dict[str, Any] = {
+        "enabled": False,
+        "candidates": [],
+        "warnings": [],
+        "stats": {},
+        "trace": {
+            "processed_candidates": [],
+            "selected_candidates": [],
+        },
+    }
+    shortlist_elapsed = 0.0
+    if shortlist_enabled:
+        try:
+            shortlist_start = time.perf_counter()
+            shortlist_payload = shortlist_prompt_sources(
+                user_prompt=query_text,
+                research_mode=research_mode,
+                status_callback=shortlist_status_reporter if LIVE_BANNER else None,
+            )
+            shortlist_elapsed = (time.perf_counter() - shortlist_start) * 1000
+        except Exception:
+            renderer.stop_live()
+            raise
+    else:
+        logger.debug(
+            "chat shortlist skipped mode=%s reason=%s model_override=%s lean=%s",
+            "research" if research_mode else "standard",
+            shortlist_reason,
+            model_config.get("source_shortlist_enabled"),
+            bool(getattr(args, "lean", False)),
         )
-        shortlist_elapsed = (time.perf_counter() - shortlist_start) * 1000
-    except Exception:
-        renderer.stop_live()
-        raise
     shortlist_banner_stats = _build_shortlist_banner_stats(
         shortlist_payload, shortlist_elapsed
     )
@@ -358,12 +430,15 @@ def run_chat(args: argparse.Namespace, query_text: str) -> None:
         )
     if LIVE_BANNER:
         warnings_count = len(shortlist_payload.get("warnings", []) or [])
-        status_msg = (
-            f"Shortlist ready: {shortlist_banner_stats['selected']} selected "
-            f"in {shortlist_elapsed:.0f}ms"
-        )
-        if warnings_count > 0:
-            status_msg += f" ({warnings_count} warning(s))"
+        if shortlist_enabled:
+            status_msg = (
+                f"Shortlist ready: {shortlist_banner_stats['selected']} selected "
+                f"in {shortlist_elapsed:.0f}ms"
+            )
+            if warnings_count > 0:
+                status_msg += f" ({warnings_count} warning(s))"
+        else:
+            status_msg = f"Shortlist disabled ({shortlist_reason})"
         renderer.update_banner(0, status_message=status_msg)
 
     if args.verbose:

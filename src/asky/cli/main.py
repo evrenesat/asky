@@ -1,7 +1,11 @@
 """Command-line interface for asky."""
 
 import argparse
+import importlib
 import re
+import threading
+from types import ModuleType
+from typing import Optional
 
 from rich.console import Console
 
@@ -20,7 +24,32 @@ from asky.config import (
 from asky.banner import get_banner, BannerState
 from asky.logger import setup_logging, generate_timestamped_log_path
 from asky.storage import init_db, get_db_record_count
-from . import history, prompts, chat, utils, sessions
+
+
+class _LazyModuleProxy:
+    """Module proxy that defers imports until first attribute access."""
+
+    def __init__(self, module_name: str):
+        self._module_name = module_name
+        self._module: Optional[ModuleType] = None
+
+    def _load(self) -> ModuleType:
+        if self._module is None:
+            self._module = importlib.import_module(self._module_name)
+        return self._module
+
+    def __getattr__(self, item: str):
+        return getattr(self._load(), item)
+
+
+# Keep these names stable for tests while avoiding eager imports.
+history = _LazyModuleProxy("asky.cli.history")
+prompts = _LazyModuleProxy("asky.cli.prompts")
+chat = _LazyModuleProxy("asky.cli.chat")
+utils = _LazyModuleProxy("asky.cli.utils")
+sessions = _LazyModuleProxy("asky.cli.sessions")
+
+CACHE_CLEANUP_JOIN_TIMEOUT_SECONDS = 0.05
 
 
 def parse_args() -> argparse.Namespace:
@@ -179,6 +208,12 @@ def parse_args() -> argparse.Namespace:
         "  - get_full_content: Get complete cached content",
     )
     parser.add_argument(
+        "-L",
+        "--lean",
+        action="store_true",
+        help="Disable pre-LLM source shortlisting for this run (lean mode).",
+    )
+    parser.add_argument(
         "-tl",
         "--terminal-lines",
         nargs="?",
@@ -240,7 +275,32 @@ def handle_print_answer_implicit(args) -> bool:
     return False
 
 
-from asky.research.cache import ResearchCache
+def ResearchCache(*args, **kwargs):
+    """Lazy constructor proxy used for startup cleanup and tests."""
+    from asky.research.cache import ResearchCache as research_cache_cls
+
+    return research_cache_cls(*args, **kwargs)
+
+
+def _run_research_cache_cleanup() -> None:
+    """Best-effort cleanup of expired research cache entries."""
+    import logging
+
+    try:
+        ResearchCache().cleanup_expired()
+    except Exception as e:
+        logging.getLogger(__name__).warning(f"Failed to cleanup research cache: {e}")
+
+
+def _start_research_cache_cleanup_thread() -> threading.Thread:
+    """Start expired-cache cleanup in background."""
+    thread = threading.Thread(
+        target=_run_research_cache_cleanup,
+        name="asky-cache-cleanup",
+        daemon=True,
+    )
+    thread.start()
+    return thread
 
 
 def main() -> None:
@@ -259,20 +319,6 @@ def main() -> None:
         # Default: Standard file, Configured level
         setup_logging(LOG_LEVEL, LOG_FILE)
 
-    init_db()
-
-    # Cleanup expired research cache entries
-    try:
-        ResearchCache().cleanup_expired()
-    except Exception as e:
-        # Don't fail startup if cleanup fails, just log it
-        import logging
-
-        logging.getLogger(__name__).warning(f"Failed to cleanup research cache: {e}")
-
-    # Load file-based custom prompts
-    utils.load_custom_prompts()
-
     if args.add_model:
         from asky.cli.models import add_model_command
 
@@ -284,6 +330,26 @@ def main() -> None:
 
         edit_model_command(args.edit_model or None)
         return
+
+    if args.prompts:
+        utils.load_custom_prompts()
+        prompts.list_prompts_command()
+        return
+
+    needs_db = any(
+        [
+            args.history is not None,
+            args.delete_messages is not None,
+            args.delete_sessions is not None,
+            args.print_session,
+            args.print_ids,
+            args.session_history is not None,
+            args.session_end,
+            bool(args.query),
+        ]
+    )
+    if needs_db:
+        init_db()
 
     # Commands that don't require banner or query
     if args.history is not None:
@@ -317,9 +383,6 @@ def main() -> None:
         return
     if args.session_end:
         sessions.end_session_command()
-        return
-    if args.prompts:
-        prompts.list_prompts_command()
         return
 
     # Handle terminal lines argument
@@ -361,7 +424,10 @@ def main() -> None:
         return
 
     # Expand query
-    query_text = utils.expand_query_text(" ".join(args.query), verbose=args.verbose)
+    raw_query_text = " ".join(args.query)
+    if "/" in raw_query_text:
+        utils.load_custom_prompts()
+    query_text = utils.expand_query_text(raw_query_text, verbose=args.verbose)
 
     # Check for unresolved slash command
     if query_text.startswith("/"):
@@ -388,6 +454,9 @@ def main() -> None:
     # in engine.run() would immediately clear it anyway.
 
     # Run Chat
+    cleanup_thread = _start_research_cache_cleanup_thread()
+    # Give the cleanup worker a brief head-start without blocking startup.
+    cleanup_thread.join(timeout=CACHE_CLEANUP_JOIN_TIMEOUT_SECONDS)
     chat.run_chat(args, query_text)
 
 

@@ -10,9 +10,13 @@ from rich.prompt import Prompt, Confirm, FloatPrompt, IntPrompt
 
 import tomlkit
 from asky.config import MODELS, load_config
-from asky.cli import openrouter
+from . import openrouter
 
 console = Console()
+
+SHORTLIST_MODE_AUTO = "auto"
+SHORTLIST_MODE_ON = "on"
+SHORTLIST_MODE_OFF = "off"
 
 
 def update_general_config(key: str, value: str):
@@ -39,6 +43,24 @@ def update_general_config(key: str, value: str):
 
     except Exception as e:
         console.print(f"[red]Failed to update general.toml: {e}[/red]")
+
+
+def _shortlist_mode_from_value(value: Optional[bool]) -> str:
+    """Map model shortlist setting to CLI choice token."""
+    if value is True:
+        return SHORTLIST_MODE_ON
+    if value is False:
+        return SHORTLIST_MODE_OFF
+    return SHORTLIST_MODE_AUTO
+
+
+def _shortlist_value_from_mode(mode: str) -> Optional[bool]:
+    """Map CLI choice token back to stored shortlist setting."""
+    if mode == SHORTLIST_MODE_ON:
+        return True
+    if mode == SHORTLIST_MODE_OFF:
+        return False
+    return None
 
 
 def add_model_command():
@@ -121,8 +143,14 @@ def add_model_command():
         model_id = Prompt.ask("Enter model ID")
         supported_params = list(openrouter.KNOWN_PARAMETERS.keys())
 
-    if not selected_model_data:
-        context_size = IntPrompt.ask("Context size", default=4096)
+    context_size = IntPrompt.ask("Context size", default=int(context_size or 4096))
+
+    shortlist_mode = Prompt.ask(
+        "Pre-LLM source shortlisting for this model",
+        choices=[SHORTLIST_MODE_AUTO, SHORTLIST_MODE_ON, SHORTLIST_MODE_OFF],
+        default=SHORTLIST_MODE_AUTO,
+    )
+    shortlist_enabled = _shortlist_value_from_mode(shortlist_mode)
 
     # Step 3: Configure parameters
     console.print("\n[bold]Step 3: Configure Parameters[/bold]")
@@ -178,6 +206,7 @@ def add_model_command():
     console.print(f"  Model ID: {model_id}")
     console.print(f"  API: {selected_api}")
     console.print(f"  Context Size: {context_size}")
+    console.print(f"  Source Shortlist: {shortlist_mode}")
     if parameters:
         console.print(f"  Parameters: {parameters}")
 
@@ -188,6 +217,7 @@ def add_model_command():
                 "id": model_id,
                 "api": selected_api,
                 "context_size": context_size,
+                "source_shortlist_enabled": shortlist_enabled,
                 "parameters": parameters if parameters else None,
             },
         )
@@ -266,8 +296,26 @@ def edit_model_command(model_alias: Optional[str] = None):
     console.print(f"\n[bold]Editing Model: {model_alias}[/bold]")
     console.print(f"Current ID: {current_config.get('id')}")
     console.print(f"Current API: {current_config.get('api')}")
+    console.print(f"Current Context Size: {current_config.get('context_size')}")
+    console.print(
+        "Current Source Shortlist: "
+        f"{_shortlist_mode_from_value(current_config.get('source_shortlist_enabled'))}"
+    )
 
-    # We allow editing parameters primarily
+    context_size = IntPrompt.ask(
+        "Context size",
+        default=int(current_config.get("context_size", 4096)),
+    )
+
+    shortlist_mode = Prompt.ask(
+        "Pre-LLM source shortlisting for this model",
+        choices=[SHORTLIST_MODE_AUTO, SHORTLIST_MODE_ON, SHORTLIST_MODE_OFF],
+        default=_shortlist_mode_from_value(
+            current_config.get("source_shortlist_enabled")
+        ),
+    )
+    shortlist_enabled = _shortlist_value_from_mode(shortlist_mode)
+
     console.print("\n[bold]Configure Parameters[/bold]")
 
     # Merge existing parameters
@@ -359,7 +407,8 @@ def edit_model_command(model_alias: Optional[str] = None):
             # Actually, MODELS is hydrated, so 'api' key might be the full dict or just string depending on hydration?
             # Hydration copies keys, checks 'api' key exists in CONFIG['api'].
             # 'api' field in model is the string ref.
-            "context_size": current_config.get("context_size"),
+            "context_size": context_size,
+            "source_shortlist_enabled": shortlist_enabled,
             "parameters": parameters if parameters else None,
         }
         # Re-using the api string key is tricky if hydration replaced/augmented it.
@@ -408,6 +457,9 @@ def save_model_config(nickname: str, config: Dict[str, Any]):
         if "api" in config:
             model_data["api"] = config["api"]
         model_data["context_size"] = config["context_size"]
+        shortlist_enabled = config.get("source_shortlist_enabled")
+        if shortlist_enabled is not None:
+            model_data["source_shortlist_enabled"] = bool(shortlist_enabled)
 
         if config.get("parameters"):
             params = tomlkit.table()

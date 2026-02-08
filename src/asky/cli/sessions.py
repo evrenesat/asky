@@ -109,7 +109,7 @@ def end_session_command() -> None:
     This clears the shell lock file but does NOT end the session itself.
     Sessions are persistent and can be resumed anytime.
     """
-    from asky.core import clear_shell_session, get_shell_session_id
+    from asky.core.session_manager import clear_shell_session, get_shell_session_id
     from asky.storage import get_session_by_id
 
     session_id = get_shell_session_id()

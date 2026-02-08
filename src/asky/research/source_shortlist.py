@@ -6,7 +6,17 @@ import logging
 import re
 import time
 from dataclasses import dataclass, field
-from typing import Any, Callable, Dict, Iterable, List, Optional, Sequence, Tuple
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    Callable,
+    Dict,
+    Iterable,
+    List,
+    Optional,
+    Sequence,
+    Tuple,
+)
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 import requests
@@ -41,16 +51,14 @@ from asky.config import (
 )
 from asky.html import HTMLStripper
 from asky.retrieval import fetch_url_document
-from asky.research.embeddings import EmbeddingClient, get_embedding_client
-from asky.research.vector_store import cosine_similarity
-from asky.tools import execute_web_search
 
 logger = logging.getLogger(__name__)
 
-try:
-    import yake
-except ImportError:
-    yake = None  # type: ignore[assignment]
+if TYPE_CHECKING:
+    from asky.research.embeddings import EmbeddingClient
+
+_YAKE_MODULE: Optional[Any] = None
+_YAKE_MODULE_LOADED = False
 
 URL_PATTERN = re.compile(r"https?://[^\s<>\"']+")
 TRAILING_URL_PUNCTUATION = ".,;:!?)]}>\"'"
@@ -225,9 +233,10 @@ def extract_keyphrases(query_text: str) -> List[str]:
     if len(normalized_query) < SOURCE_SHORTLIST_KEYPHRASE_MIN_QUERY_CHARS:
         return []
 
-    if yake is not None:
+    yake_module = _get_yake_module()
+    if yake_module is not None:
         try:
-            extractor = yake.KeywordExtractor(
+            extractor = yake_module.KeywordExtractor(
                 n=3,
                 top=SOURCE_SHORTLIST_KEYPHRASE_TOP_K,
             )
@@ -263,7 +272,7 @@ def shortlist_prompt_sources(
     research_mode: bool,
     search_executor: Optional[SearchExecutor] = None,
     fetch_executor: Optional[FetchExecutor] = None,
-    embedding_client: Optional[EmbeddingClient] = None,
+    embedding_client: Optional["EmbeddingClient"] = None,
     seed_link_extractor: Optional[SeedLinkExtractor] = None,
     status_callback: Optional[StatusCallback] = None,
 ) -> Dict[str, Any]:
@@ -327,7 +336,7 @@ def shortlist_prompt_sources(
     search_query = build_search_query(query_text, keyphrases)
     parse_ms = _elapsed_ms(parse_start)
 
-    active_search_executor = search_executor or execute_web_search
+    active_search_executor = search_executor or _default_search_executor
     active_fetch_executor = fetch_executor or _default_fetch_executor
     active_seed_link_extractor = seed_link_extractor or _default_seed_link_extractor
 
@@ -843,7 +852,7 @@ def _score_candidates(
     scoring_query: str,
     keyphrases: Sequence[str],
     seed_urls: Sequence[str],
-    embedding_client: Optional[EmbeddingClient],
+    embedding_client: Optional["EmbeddingClient"],
     warnings: List[str],
     metrics: Optional[ShortlistMetrics] = None,
 ) -> List[CandidateRecord]:
@@ -858,7 +867,7 @@ def _score_candidates(
     ]
 
     if scoring_query:
-        client = embedding_client or get_embedding_client()
+        client = embedding_client or _get_embedding_client()
         has_cached_failure = getattr(client, "has_model_load_failure", None)
         if callable(has_cached_failure) and has_cached_failure():
             warnings.append("embedding_skipped:cached_model_load_failure")
@@ -923,7 +932,7 @@ def _score_candidates(
         if query_embedding and doc_embeddings:
             semantic_score = max(
                 0.0,
-                cosine_similarity(query_embedding, doc_embeddings[idx]),
+                _cosine_similarity(query_embedding, doc_embeddings[idx]),
             )
 
         overlap_ratio = _keyphrase_overlap_ratio(lowered_keyphrases, document)
@@ -1119,6 +1128,43 @@ def _default_seed_link_extractor(url: str) -> Dict[str, Any]:
             exc,
         )
         return {"links": [], "warning": f"seed_link_extract_error:{exc}"}
+
+
+def _default_search_executor(args: Dict[str, Any]) -> Dict[str, Any]:
+    """Lazy-load web search executor to avoid shortlist import overhead."""
+    from asky.tools import execute_web_search as execute_web_search_impl
+
+    return execute_web_search_impl(args)
+
+
+def _get_embedding_client() -> "EmbeddingClient":
+    """Lazy-load embedding client factory only when scoring needs embeddings."""
+    from asky.research.embeddings import get_embedding_client as get_embedding_client_impl
+
+    return get_embedding_client_impl()
+
+
+def _cosine_similarity(a: List[float], b: List[float]) -> float:
+    """Lazy-load cosine similarity helper when embeddings are available."""
+    from asky.research.vector_store import cosine_similarity as cosine_similarity_impl
+
+    return cosine_similarity_impl(a, b)
+
+
+def _get_yake_module() -> Optional[Any]:
+    """Import YAKE lazily on first use."""
+    global _YAKE_MODULE, _YAKE_MODULE_LOADED
+    if _YAKE_MODULE_LOADED:
+        return _YAKE_MODULE
+
+    try:
+        import yake as yake_module  # type: ignore
+
+        _YAKE_MODULE = yake_module
+    except ImportError:
+        _YAKE_MODULE = None
+    _YAKE_MODULE_LOADED = True
+    return _YAKE_MODULE
 
 
 def _extract_path_tokens(path: str) -> str:

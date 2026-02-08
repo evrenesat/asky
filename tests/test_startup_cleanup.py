@@ -104,7 +104,19 @@ class TestStartupCleanup:
             patch("asky.cli.main.init_db"),
             patch("asky.cli.main.utils.load_custom_prompts"),
             patch("asky.cli.main.utils.expand_query_text", return_value="test query"),
+            patch("asky.cli.main._start_research_cache_cleanup_thread") as mock_start,
         ):
+            # Force cleanup to run synchronously for deterministic assertion.
+            dummy_thread = MagicMock()
+
+            def run_cleanup_sync():
+                from asky.cli.main import _run_research_cache_cleanup
+
+                _run_research_cache_cleanup()
+                return dummy_thread
+
+            mock_start.side_effect = run_cleanup_sync
+
             # We need to ensure ResearchCache uses our test instance
             # Since main instantiates ResearchCache(), we need to patch it or ensure singleton works
             # The test fixture sets _instance = None, then creates one.
@@ -116,7 +128,6 @@ class TestStartupCleanup:
 
             main()
 
-        # Verify entry is gone from DB
         conn = sqlite3.connect(cache.db_path)
         c = conn.cursor()
         c.execute("SELECT count(*) FROM research_cache WHERE url = ?", (url,))
