@@ -389,6 +389,10 @@ def test_main_flow(
             {"gf": {"id": "gemini-flash-latest"}, "lfm": {"id": "llama-fallback"}},
         ),
         patch("asky.cli.main.SUMMARIZATION_MODEL", "gf"),
+        patch(
+            "asky.research.source_shortlist.SOURCE_SHORTLIST_ENABLE_STANDARD_MODE",
+            False,
+        ),
     ):
         main()
 
@@ -470,6 +474,10 @@ def test_main_flow_verbose(
             {"gf": {"id": "gemini-flash-latest"}, "lfm": {"id": "llama-fallback"}},
         ),
         patch("asky.cli.main.SUMMARIZATION_MODEL", "gf"),
+        patch(
+            "asky.research.source_shortlist.SOURCE_SHORTLIST_ENABLE_STANDARD_MODE",
+            False,
+        ),
     ):
         main()
 
@@ -549,6 +557,10 @@ def test_main_flow_default_no_context(
             {"gf": {"id": "gemini-flash-latest"}, "lfm": {"id": "llama-fallback"}},
         ),
         patch("asky.cli.main.SUMMARIZATION_MODEL", "gf"),
+        patch(
+            "asky.research.source_shortlist.SOURCE_SHORTLIST_ENABLE_STANDARD_MODE",
+            False,
+        ),
     ):
         main()
 
@@ -573,7 +585,19 @@ def test_main_flow_default_no_context(
 @patch("asky.cli.chat.save_interaction")
 @patch("asky.cli.terminal.get_terminal_context")
 @patch("asky.cli.chat.InterfaceRenderer")
+@patch("asky.cli.main.ResearchCache")
+@patch("asky.cli.main.setup_logging")
+@patch("asky.cli.main.generate_timestamped_log_path")
+@patch("asky.cli.chat.shortlist_prompt_sources")
+@patch("asky.cli.chat.SessionManager")
+@patch("asky.cli.chat.get_shell_session_id")
 def test_main_terminal_lines_callback(
+    mock_get_shell_id,
+    mock_session_manager,
+    mock_shortlist,
+    mock_generate_log_path,
+    mock_setup_logging,
+    mock_research_cache,
     mock_renderer_cls,
     mock_get_term,
     mock_save,
@@ -586,6 +610,10 @@ def test_main_terminal_lines_callback(
     """Test that terminal lines fetch invokes renderer status update via callback."""
     # Setup
     mock_get_term.return_value = "Ctx"
+    # Mock shortlist to return disabled payload so it's fast
+    mock_shortlist.return_value = {"enabled": False}
+    mock_get_shell_id.return_value = None
+
     mock_parse.return_value = argparse.Namespace(
         model="gf",
         history=None,
