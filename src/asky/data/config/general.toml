@@ -11,8 +11,8 @@ log_level = "INFO"
 log_file = "~/.config/asky/asky.log"
 
 # Maximum length of the query and answer summaries shown in 'asky -H'.
-query_summary_max_chars = 40
-answer_summary_max_chars = 200
+query_summary_max_chars = 100
+answer_summary_max_chars = 2000
 
 # Threshold for using full query vs summary in --continue-chat mode.
 # If query length is below this, it's used as is.

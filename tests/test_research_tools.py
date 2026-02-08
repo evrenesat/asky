@@ -17,9 +17,9 @@ class TestExtractLinks:
             yield cache
 
     @pytest.fixture
-    def mock_requests(self):
-        """Mock requests.get for URL fetching."""
-        with patch("asky.research.tools.requests.get") as mock:
+    def mock_fetch_document(self):
+        """Mock shared URL retrieval helper."""
+        with patch("asky.research.tools.fetch_url_document") as mock:
             yield mock
 
     def test_extract_links_no_urls(self):
@@ -47,16 +47,19 @@ class TestExtractLinks:
         assert result["http://example.com"]["cached"] is True
         assert len(result["http://example.com"]["links"]) == 1
 
-    def test_extract_links_fetches_fresh(self, mock_cache, mock_requests):
+    def test_extract_links_fetches_fresh(self, mock_cache, mock_fetch_document):
         """Test fetching and caching fresh content."""
         from asky.research.tools import execute_extract_links
 
         mock_cache.get_cached.return_value = None
         mock_cache.cache_url.return_value = 1
 
-        mock_response = MagicMock()
-        mock_response.text = '<html><body><a href="http://link.com">Link</a></body></html>'
-        mock_requests.return_value = mock_response
+        mock_fetch_document.return_value = {
+            "error": None,
+            "content": "Main content",
+            "title": "Title",
+            "links": [{"text": "Link", "href": "http://link.com"}],
+        }
 
         with patch("asky.research.tools._try_embed_links", return_value=False):
             result = execute_extract_links({"urls": ["http://example.com"]})
@@ -65,12 +68,17 @@ class TestExtractLinks:
         assert result["http://example.com"]["cached"] is False
         mock_cache.cache_url.assert_called_once()
 
-    def test_extract_links_handles_fetch_error(self, mock_cache, mock_requests):
+    def test_extract_links_handles_fetch_error(self, mock_cache, mock_fetch_document):
         """Test handling of fetch errors."""
         from asky.research.tools import execute_extract_links
 
         mock_cache.get_cached.return_value = None
-        mock_requests.side_effect = Exception("Network error")
+        mock_fetch_document.return_value = {
+            "error": "Network error",
+            "content": "",
+            "title": "",
+            "links": [],
+        }
 
         result = execute_extract_links({"urls": ["http://example.com"]})
 

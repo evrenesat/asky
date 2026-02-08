@@ -80,3 +80,20 @@ def test_html_stripper_links_with_hashes_and_duplicates():
     assert links[0]["href"] == "http://example.com/page"
     assert links[0]["text"] == "Link 1"
     assert links[1]["href"] == "http://example.com"
+
+
+def test_html_stripper_excluded_link_container_tags():
+    html = """
+    <header><a href="https://example.com/signin">Sign in</a></header>
+    <main><a href="https://example.com/world">World</a></main>
+    <footer><a href="https://example.com/privacy">Privacy</a></footer>
+    """
+    stripper = HTMLStripper(
+        base_url="https://example.com",
+        excluded_link_container_tags={"header", "footer"},
+    )
+    stripper.feed(html)
+    links = stripper.get_links()
+
+    assert len(links) == 1
+    assert links[0]["href"] == "https://example.com/world"

@@ -296,3 +296,41 @@ class TestInterfaceRendererEmbeddingIntegration:
 
         banner = renderer._build_banner(current_turn=1)
         assert banner is not None
+
+    @patch("asky.cli.display.get_db_record_count")
+    @patch("asky.cli.display.get_banner")
+    def test_renderer_passes_shortlist_stats_to_banner_state(
+        self, mock_get_banner, mock_db_count
+    ):
+        """Shortlist stats should be exposed to banner state."""
+        from rich.panel import Panel
+        from asky.cli.display import InterfaceRenderer
+        from asky.core import UsageTracker
+
+        mock_db_count.return_value = 10
+        mock_get_banner.return_value = Panel("ok")
+
+        renderer = InterfaceRenderer(
+            model_config={"id": "test-model", "context_size": 4096},
+            model_alias="test",
+            usage_tracker=UsageTracker(),
+            research_mode=False,
+        )
+        renderer.set_shortlist_stats(
+            {
+                "enabled": True,
+                "collected": 9,
+                "processed": 5,
+                "selected": 3,
+                "warnings": 1,
+                "elapsed_ms": 432.1,
+            }
+        )
+
+        _ = renderer._build_banner(current_turn=1)
+        state = mock_get_banner.call_args.args[0]
+        assert state.shortlist_enabled is True
+        assert state.shortlist_collected == 9
+        assert state.shortlist_processed == 5
+        assert state.shortlist_selected == 3
+        assert state.shortlist_warnings == 1

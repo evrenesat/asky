@@ -18,6 +18,8 @@ from asky.config import (
 
 logger = logging.getLogger(__name__)
 CHUNK_FTS_TABLE_NAME = "content_chunks_fts"
+BACKGROUND_SUMMARY_INPUT_CHARS = 24000
+BACKGROUND_SUMMARY_MAX_OUTPUT_CHARS = 800
 
 
 class ResearchCache:
@@ -483,9 +485,9 @@ class ResearchCache:
                 from asky.summarization import _summarize_content
 
                 summary = _summarize_content(
-                    content=content[:10000],  # Limit input size
+                    content=content[:BACKGROUND_SUMMARY_INPUT_CHARS],
                     prompt_template=SUMMARIZE_PAGE_PROMPT,
-                    max_output_chars=500,
+                    max_output_chars=BACKGROUND_SUMMARY_MAX_OUTPUT_CHARS,
                 )
 
                 self._save_summary(cache_id, summary)

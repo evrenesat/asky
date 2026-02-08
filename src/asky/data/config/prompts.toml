@@ -22,12 +22,25 @@ system_suffix = """Use tools, don't say you can't.You have {MAX_TURNS} turns to 
 summarize_query = "Summarize the following query into a single short sentence."
 
 # Prompt for summarizing the final answer.
-summarize_answer = """Summarize the following answer into a short paragraph. Be sure to include all numerical values and dates """
+summarize_answer = """Create a summary following this structure:
+
+1. Main Topic: [one sentence]
+2. Key Points: [3-5 bullet points with specifics]
+3. Important Details: [numbers, dates, names mentioned]
+4. Conclusion: [one sentence] """
 
 # Prompt for LLM-based session compaction
 summarize_session = """Summarize this conversation history into a concise context summary.
 Preserve: key decisions, important facts, user preferences, and final outcomes.
-Omit: pleasantries, redundant information, and failed attempts."""
+Omit: pleasantries, redundant information, and failed attempts.
+Follow this structure:
+
+1. Main Topic: [one sentence]
+2. Key Points: [3-5 bullet points with specifics]
+3. Important Details: [numbers, dates, names mentioned]
+4. Conclusion: [one sentence]
+
+"""
 
 # Research mode system prompt
 research_system = """You are a research assistant conducting deep investigation on behalf of the user.
@@ -92,9 +105,12 @@ Always start your final response with a single H1 markdown header (# Title) that
 """
 
 # Prompt for summarizing cached page content (used in background)
-summarize_page = """Summarize this webpage content concisely in 2-3 sentences.
-Highlight: main topic, key facts, and what information this page provides.
-Be factual and specific - include any important numbers, dates, or names."""
+summarize_page = """Create a summary following this structure:
+
+1. Main Topic: [one sentence]
+2. Key Points: [3-5 bullet points with specifics]
+3. Important Details: [numbers, dates, names mentioned]
+4. Conclusion: [one sentence]."""
 
 # Prompt for graceful exit when max turns are reached (no tools available)
 graceful_exit = """You must provide your final answer now. This is your last message.
@@ -103,4 +119,5 @@ DO NOT suggest using any tools or functions. DO NOT write any tool calls, XML ta
 Tools are NO LONGER AVAILABLE to you.
 
 Summarize what you have learned and provide the best possible answer based on the information you have gathered so far.
-Always use markdown formatting for clarity."""
+Always use markdown formatting for clarity.
+Always start your final response with a single H1 markdown header (# Title) that captures the essence of your answer in a concise title (3-7 words)."""

@@ -263,6 +263,59 @@ def test_build_messages_with_source_shortlist_context(mock_args):
     assert "https://example.com" in messages[1]["content"]
 
 
+def test_build_shortlist_banner_stats():
+    from asky.cli.chat import _build_shortlist_banner_stats
+
+    payload = {
+        "enabled": True,
+        "candidates": [{"url": "https://example.com"}],
+        "warnings": ["w1"],
+        "stats": {
+            "metrics": {
+                "candidate_deduped": 7,
+                "fetch_calls": 4,
+            }
+        },
+    }
+    stats = _build_shortlist_banner_stats(payload, 123.4)
+    assert stats == {
+        "enabled": True,
+        "collected": 7,
+        "processed": 4,
+        "selected": 1,
+        "warnings": 1,
+        "elapsed_ms": 123.4,
+    }
+
+
+def test_print_shortlist_verbose(capsys):
+    from rich.console import Console
+    from asky.cli.chat import _print_shortlist_verbose
+
+    payload = {
+        "enabled": True,
+        "trace": {
+            "processed_candidates": [
+                {"source_type": "seed", "url": "https://example.com/a"}
+            ]
+        },
+        "candidates": [
+            {
+                "rank": 1,
+                "final_score": 0.88,
+                "source_type": "search",
+                "url": "https://example.com/b",
+            }
+        ],
+        "warnings": ["warning_one"],
+    }
+    _print_shortlist_verbose(Console(), payload)
+    captured = capsys.readouterr()
+    assert "https://example.com/a" in captured.out
+    assert "https://example.com/b" in captured.out
+    assert "Shortlist Warnings" in captured.out
+
+
 @patch("asky.cli.history.get_interaction_context")
 def test_print_answers(mock_get_context, capsys):
     mock_get_context.return_value = "Answer Content"

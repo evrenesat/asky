@@ -70,6 +70,15 @@ enable_standard_mode = true
 # If true, run web search even when the prompt already includes URLs
 search_with_seed_urls = false
 
+# If true, shortlist expansion extracts and adds links from seed URLs.
+seed_link_expansion_enabled = true
+
+# Max number of seed pages to expand for links.
+seed_link_max_pages = 3
+
+# Max extracted links to consider from each seed page before dedupe/caps.
+seed_links_per_page = 50
+
 # Number of search results to pull as initial candidates
 search_result_count = 25
 
@@ -113,5 +122,6 @@ device = "cpu"
 # Normalize vectors so cosine similarity is stable across retrieval calls
 normalize = true
 
-# If true, do not download models and use only local cache
+# If true, do not download models and use only local cache.
+# If false, models are downloaded from Hugging Face automatically when missing.
 local_files_only = false

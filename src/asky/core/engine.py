@@ -4,10 +4,12 @@ import json
 import logging
 import requests
 import time
-from typing import Any, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional
 
 from rich.console import Console
 from rich.markdown import Markdown
+from rich.panel import Panel
+from rich.pretty import Pretty
 
 from asky.research.cache import ResearchCache
 from asky.config import (
@@ -57,6 +59,7 @@ class ConversationEngine:
         usage_tracker: Optional[UsageTracker] = None,
         open_browser: bool = False,
         session_manager: Optional[Any] = None,
+        verbose_output_callback: Optional[Callable[[Any], None]] = None,
     ):
         self.model_config = model_config
         self.tool_registry = tool_registry
@@ -65,6 +68,7 @@ class ConversationEngine:
         self.usage_tracker = usage_tracker
         self.open_browser = open_browser
         self.session_manager = session_manager
+        self.verbose_output_callback = verbose_output_callback
         self.research_cache = ResearchCache()
         self.start_time: float = 0
         self.final_answer: str = ""
@@ -150,7 +154,22 @@ class ConversationEngine:
                     break
 
                 messages.append(msg)
-                for call in calls:
+                for call_index, call in enumerate(calls, start=1):
+                    self._print_verbose_tool_call(
+                        call=call,
+                        turn=turn,
+                        call_index=call_index,
+                        total_calls=len(calls),
+                    )
+
+                    tool_name = call.get("function", {}).get("name", "unknown_tool")
+                    if display_callback:
+                        display_callback(
+                            turn,
+                            status_message=(
+                                f"Executing tool {call_index}/{len(calls)}: {tool_name}"
+                            ),
+                        )
                     logger.debug(f"Tool call [{len(str(call))} chrs]: {str(call)}")
                     result = self.tool_registry.dispatch(
                         call,
@@ -173,6 +192,9 @@ class ConversationEngine:
                             "content": json.dumps(result),
                         }
                     )
+
+                if display_callback:
+                    display_callback(turn, status_message=None)
 
                 # Redraw interface after processing all tool calls for this turn
                 if display_callback:
@@ -216,6 +238,30 @@ class ConversationEngine:
             )
 
         return self.final_answer
+
+    def _print_verbose_tool_call(
+        self, call: Dict[str, Any], turn: int, call_index: int, total_calls: int
+    ) -> None:
+        """Print detailed tool call info to terminal when verbose mode is enabled."""
+        if not self.verbose:
+            return
+
+        function = call.get("function", {})
+        tool_name = function.get("name", "unknown_tool")
+        args_str = function.get("arguments", "{}")
+
+        try:
+            parsed_args: Any = json.loads(args_str) if args_str else {}
+        except json.JSONDecodeError:
+            parsed_args = {"_raw_arguments": args_str}
+
+        title = f"Tool {call_index}/{total_calls} | Turn {turn} | {tool_name}"
+        body = Pretty(parsed_args, indent_guides=True, expand_all=False)
+        panel = Panel(body, title=title, border_style="cyan", expand=False)
+        if self.verbose_output_callback:
+            self.verbose_output_callback(panel)
+            return
+        Console().print(panel)
 
     def _compact_tool_message(self, msg: Dict[str, Any]) -> Dict[str, Any]:
         """Replace full URL content with summaries in a tool message.
@@ -327,7 +373,7 @@ class ConversationEngine:
         logger.info(
             f"Context threshold reached ({current_tokens}/{threshold_tokens}). Compacting..."
         )
-        print(f"\n[Context limit reached. Compacting conversation history...]")
+        Console().print("\n[Context limit reached. Compacting conversation history...]")
 
         # Phase 1: Smart Compaction (Non-destructive to message count)
         # Scan for tool messages and try to replace content with summaries
@@ -344,7 +390,7 @@ class ConversationEngine:
             logger.info(
                 f"Smart compaction successful. Reduced from {current_tokens} to {new_tokens}"
             )
-            print(f"[Compaction successful using summaries]")
+            Console().print("[Compaction successful using summaries]")
             return smart_compacted_messages
 
         # Phase 2: Destructive Compaction (Drop messages)
@@ -425,21 +471,22 @@ class ConversationEngine:
 
     def _handle_400_error(self, e, messages, status_reporter):
         """Handle 400 Bad Request errors interactively."""
-        print(f"\n\n[!] API Error: 400 Bad Request (likely context overflow).")
-        print(f"    Message: {str(e)}")
+        console = Console()
+        console.print("\n\n[bold red][!] API Error:[/] 400 Bad Request (likely context overflow).")
+        console.print(f"    Message: {str(e)}")
 
         while True:
-            print("\nOptions:")
-            print("  [r]etry        : Compact context more aggressively and retry")
-            print(
+            console.print("\nOptions:")
+            console.print("  [r]etry        : Compact context more aggressively and retry")
+            console.print(
                 "  [s]witch model : Switch to a different model (e.g. larger context)"
             )
-            print("  [e]xit         : Exit application")
+            console.print("  [e]xit         : Exit application")
 
             choice = input("\nSelect action [r/s/e]: ").lower().strip()
 
             if choice == "r":
-                print("Compacting and retrying...")
+                console.print("Compacting and retrying...")
                 # Aggressive compaction: Force re-run of check_and_compact
                 # effectively, the loop in run() should handle it if we break/continue,
                 # but we are in exception handler.
@@ -477,18 +524,18 @@ class ConversationEngine:
             elif choice == "s":
                 from asky.config import MODELS
 
-                print(f"Available models: {', '.join(MODELS.keys())}")
+                console.print(f"Available models: {', '.join(MODELS.keys())}")
                 new_alias = input("Enter model alias: ").strip()
                 if new_alias in MODELS:
                     self.model_config = MODELS[new_alias]
-                    print(f"Switched to {new_alias}. Retrying...")
+                    console.print(f"Switched to {new_alias}. Retrying...")
                     self.final_answer = self.run(messages)
                     return
                 else:
-                    print("Invalid model alias.")
+                    console.print("Invalid model alias.")
 
             elif choice == "e":
-                print("Exiting...")
+                console.print("Exiting...")
                 return
 
     def _handle_general_error(self, e):
@@ -546,7 +593,7 @@ def create_default_tool_registry(
         "get_url_content",
         {
             "name": "get_url_content",
-            "description": "Fetch the content of one or more URLs and return their text content (HTML stripped).",
+            "description": "Fetch one or more URLs and return extracted main content in lightweight markdown.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -574,7 +621,7 @@ def create_default_tool_registry(
         "get_url_details",
         {
             "name": "get_url_details",
-            "description": "Fetch content and extract links from a URL.",
+            "description": "Fetch extracted main content plus discovered links from a URL.",
             "parameters": {
                 "type": "object",
                 "properties": {"url": {"type": "string"}},

@@ -55,6 +55,14 @@ class BannerState:
     # Compact Mode
     compact_banner: bool = False
 
+    # Pre-LLM Shortlist
+    shortlist_enabled: bool = False
+    shortlist_collected: int = 0
+    shortlist_processed: int = 0
+    shortlist_selected: int = 0
+    shortlist_warnings: int = 0
+    shortlist_elapsed_ms: float = 0.0
+
     def get_token_str(self, alias: str) -> str:
         usage = self.token_usage.get(alias, {"input": 0, "output": 0})
         total = usage["input"] + usage["output"]
@@ -134,6 +142,16 @@ def get_compact_banner(state: BannerState) -> Panel:
     else:
         line2_parts.append("🛠️  0")
 
+    if state.shortlist_enabled:
+        shortlist_stats = (
+            f"🔎 C:{state.shortlist_collected}"
+            f" F:{state.shortlist_processed}"
+            f" S:{state.shortlist_selected}"
+        )
+        if state.shortlist_warnings > 0:
+            shortlist_stats += f" W:{state.shortlist_warnings}"
+        line2_parts.append(shortlist_stats)
+
     grid.add_row(" | ".join(line2_parts))
 
     return Panel(
@@ -201,6 +219,20 @@ def get_banner(state: BannerState) -> Panel:
         grid.add_row(
             "[bold cyan]Embedding  :[/]",
             embedding_str,
+        )
+
+    if state.shortlist_enabled:
+        shortlist_parts = [
+            f"Collected: {state.shortlist_collected}",
+            f"Fetched: {state.shortlist_processed}",
+            f"Selected: {state.shortlist_selected}",
+            f"Elapsed: {state.shortlist_elapsed_ms:.0f}ms",
+        ]
+        if state.shortlist_warnings > 0:
+            shortlist_parts.append(f"Warnings: {state.shortlist_warnings}")
+        grid.add_row(
+            "[bold cyan]Shortlist  :[/]",
+            " | ".join(shortlist_parts),
         )
 
     # 4. Session Info

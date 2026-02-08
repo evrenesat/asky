@@ -1,3 +1,288 @@
+## 2026-02-08 - Shared Trafilatura Retrieval + Hierarchical Summarization
+
+**Summary**: Unified URL retrieval across standard/research/shortlist flows and upgraded summarization for long content using a bounded hierarchical map-reduce pipeline designed for small models.
+
+**Changes**:
+- **Shared retrieval module** (`src/asky/retrieval.py`):
+  - Added a common fetch/extract path:
+    - `requests` fetch with configured timeout/user-agent
+    - Trafilatura main-content extraction (`markdown` or `txt`)
+    - metadata/title/date best-effort extraction
+    - HTML fallback extraction when Trafilatura yields no content
+    - optional link extraction via `HTMLStripper`
+  - Added detailed debug logs with elapsed time, extraction source, content length, and warnings.
+- **Standard tools now use shared retrieval** (`src/asky/tools.py`):
+  - `get_url_content` now returns extracted main content (markdown-oriented) via shared retrieval.
+  - `get_url_details` now returns extracted main content + links + metadata (`title`, `date`, `final_url`) via shared retrieval.
+  - URL dedupe in `get_url_content` now preserves input order.
+- **Research fetch path now uses shared retrieval** (`src/asky/research/tools.py`):
+  - `_fetch_and_parse` now delegates HTTP URL fetching/extraction to `retrieval.py`.
+  - Keeps adapter behavior unchanged for non-HTTP/custom targets.
+- **Shortlist fetch path now uses shared retrieval** (`src/asky/research/source_shortlist.py`):
+  - `_default_fetch_executor` now uses shared retrieval in `txt` mode.
+  - Removed duplicate local Trafilatura/HTML fallback helper functions from shortlist module.
+- **Hierarchical summarization for long documents** (`src/asky/summarization.py`):
+  - Added semantic paragraph chunking with overlap.
+  - Added map stage (fact-preserving bullet extraction per chunk).
+  - Added pairwise merge stage (iterative consolidation).
+  - Added final synthesis stage constrained by the caller’s summary prompt.
+  - Kept `_summarize_content(...)` and `generate_summaries(...)` signatures stable.
+  - Added detailed debug logs for chunk count, reduction rounds, and elapsed time.
+- **Research cache background summarization limits** (`src/asky/research/cache.py`):
+  - Replaced hardcoded values with constants:
+    - `BACKGROUND_SUMMARY_INPUT_CHARS`
+    - `BACKGROUND_SUMMARY_MAX_OUTPUT_CHARS`
+  - Background page summaries now benefit from the new hierarchical summarizer when content is long.
+- **Tool descriptions updated** (`src/asky/core/engine.py`):
+  - Updated built-in tool schemas to describe extracted markdown main-content behavior.
+
+**Tests**:
+- Updated `tests/test_tools.py` to mock shared retrieval helper calls for URL content/details tests.
+- Updated `tests/test_research_tools.py` to mock shared retrieval helper in fresh-fetch/error paths.
+- Added `tests/test_summarization.py` for:
+  - hierarchical map-reduce path on long input
+  - single-pass behavior on short input
+- Adjusted `tests/test_llm.py::test_generate_summaries` input length so answer-summary path is deterministically exercised.
+
+**Verification**:
+- Focused suites:
+  - `uv run pytest tests/test_tools.py tests/test_research_tools.py tests/test_summarization.py tests/test_source_shortlist.py tests/test_research_cache.py tests/test_llm.py`
+  - Result: `112 passed`
+- Full suite:
+  - `uv run pytest tests`
+  - Result: `365 passed`
+
+**Gotchas / Follow-up**:
+- Hierarchical summarization increases LLM call count for long texts; tune constants in `src/asky/summarization.py` if latency/cost trade-offs need adjustment.
+- HTML fallback is intentionally simple; if markdown fidelity is critical for Trafilatura-failure pages, next step is a richer fallback formatter.
+
+## 2026-02-08 - Shortlist Ranking Hardening for Utility Links + Redirect Canonicalization
+
+**Summary**: Reduced low-value shortlist selections (signin/preferences/account/privacy-style links) by hardening candidate filtering and ranking behavior, especially for seed-page link expansion.
+
+**Changes**:
+- **Seed-link expansion filtering** (`src/asky/research/source_shortlist.py`):
+  - Added hard pre-filter denylist for utility/auth patterns:
+    - blocked host prefixes (e.g., `profile.`, `support.`, `accounts.`)
+    - blocked path markers (`/signin`, `/login`, `/account`, `/preferences`, `/privacy`, `/terms`, `/cookie`, etc.)
+  - Added additional tracking query key stripping (e.g., `INTCMP`/`ABCMP` style params via lowercase keys).
+- **Main-content-biased link extraction**:
+  - Extended `HTMLStripper` to support excluded link containers.
+  - Seed-link extractor now excludes links inside `header`/`nav`/`footer`/`aside` sections.
+  - Files:
+    - `src/asky/html.py`
+    - `src/asky/research/source_shortlist.py`
+- **Redirect/canonical dedupe improvements**:
+  - Added redirect-probe for known redirect-prone utility paths.
+  - Fetch stage now applies `final_url` canonicalization (when available) and dedupes extracted candidates by canonical normalized URL.
+  - Added metric: `fetch_canonical_dedupe_skips`.
+- **Same-domain bonus tightening**:
+  - Same-domain bonus now requires relevance signal (semantic score threshold or keyphrase overlap), and is disabled for noise-path URLs.
+  - Prevents unrelated same-domain utility pages from receiving rank inflation.
+- **Tests**:
+  - Added shortlist tests for:
+    - utility-link filtering
+    - canonical dedupe by final URL
+    - same-domain bonus requiring signal
+  - Added `HTMLStripper` test for excluded link container tags.
+  - Stabilized one summary test by patching summary threshold locally:
+    - `tests/test_llm.py::test_generate_summaries_short_query`
+
+**Verification**:
+- Full suite:
+  - `uv run pytest tests`
+  - Result: `363 passed`
+
+**Gotchas / Follow-up**:
+- Utility/auth filtering currently uses static markers. If you want tighter domain-specific behavior, next step is per-domain policy overrides (allow/deny lists) in config.
+
+## 2026-02-08 - Banner Redraw Stability Fix (Live + Embedding Load Noise)
+
+**Summary**: Fixed banner redraw breakage and duplicate/stale banner snapshots caused by noisy model-load stdout/stderr and out-of-band verbose rendering during live updates.
+
+**Changes**:
+- **Embedding load noise suppression** (`src/asky/research/embeddings.py`):
+  - Added process-level fd silencing around `SentenceTransformer(...)` model initialization (`stdout`/`stderr`), in addition to Python stream redirection.
+  - Prevents third-party native/low-level model-load prints (e.g., BERT load report tables) from writing directly to terminal and disrupting Rich Live rendering.
+- **Verbose output routing during live banner**:
+  - `ConversationEngine` now supports `verbose_output_callback` and uses it for verbose tool-call argument panels.
+  - `run_chat` passes a callback that prints through `renderer.live.console` when Live is active.
+  - Verbose shortlist tables are also printed via the active live console instead of an out-of-band console.
+- **Effect**:
+  - In-place banner updates remain stable while verbose traces are shown.
+  - Non-verbose mode no longer gets banner disruption from embedding model-load console chatter.
+
+**Verification**:
+- Focused suites:
+  - `uv run pytest tests/test_llm.py tests/test_cli.py tests/test_research_embeddings.py tests/test_banner_embedding.py tests/test_source_shortlist.py`
+  - Result: `92 passed`
+- Full suite:
+  - `uv run pytest tests`
+  - Result: `359 passed`
+
+## 2026-02-08 - Live Pre-LLM Banner Progress + Verbose Shortlist/Tool Trace
+
+**Summary**: Improved startup and observability UX by showing live banner progress before any LLM call, adding verbose link/tool traces to terminal output, and suppressing noisy embedding-loader console output.
+
+**Changes**:
+- **Chat flow + banner timing** (`src/asky/cli/chat.py`, `src/asky/cli/display.py`, `src/asky/banner.py`):
+  - Live banner now starts before `shortlist_prompt_sources(...)`, so pre-LLM retrieval work is visible immediately.
+  - Added shortlist status updates to banner status region during parse/collect/fetch/score.
+  - Added shortlist metrics to banner state/rendering (collected, processed/fetched, selected, warnings, elapsed).
+- **Verbose shortlist trace** (`src/asky/cli/chat.py`, `src/asky/research/source_shortlist.py`):
+  - Added rich terminal tables (verbose mode) for:
+    - all shortlist links processed
+    - links selected and passed to model context
+  - Added structured shortlist payload sections:
+    - `stats` (timings + metrics)
+    - `trace` (`processed_candidates`, `selected_candidates`)
+- **Verbose tool call trace** (`src/asky/core/engine.py`):
+  - In verbose mode, each tool call now prints a Rich panel containing tool name + parsed arguments.
+  - Banner status region receives transient per-tool execution messages.
+- **Embedding load output cleanup** (`src/asky/research/embeddings.py`):
+  - Wrapped `SentenceTransformer(...)` load with stdout/stderr redirection to suppress confusing model-loader chatter (including BERT load report/unexpected-key console noise).
+- **Rich terminal output consistency**:
+  - Replaced plain `print(...)` usage in touched chat/engine paths with `Console().print(...)`.
+
+**Tests**:
+- Added/updated coverage in:
+  - `tests/test_source_shortlist.py` (status callback + stats/trace payload)
+  - `tests/test_cli.py` (shortlist banner-stats helper + verbose shortlist rendering)
+  - `tests/test_llm.py` (verbose tool trace + status update path)
+  - `tests/test_banner_embedding.py` (renderer -> banner shortlist state propagation)
+
+**Verification**:
+- Focused suites:
+  - `uv run pytest tests/test_source_shortlist.py tests/test_cli.py tests/test_llm.py tests/test_banner_embedding.py`
+  - Result: `73 passed`
+- Full suite:
+  - `uv run pytest tests`
+  - Result: `359 passed`
+
+**Gotchas / Follow-up**:
+- If user config still specifies an invalid embedding model id, each new process still attempts that configured model before fallback; update `~/.config/asky/research.toml` model id to remove repeated configured-model failure attempts.
+
+## 2026-02-08 - Embedding Cache-First Load + Tokenizer Warning Fix
+
+**Summary**: Reduced repeated Hugging Face network activity/noise and removed misleading tokenizer max-length warnings during embedding usage tracking.
+
+**Changes**:
+- **Embedding Client** (`src/asky/research/embeddings.py`):
+  - Added cache-first model loading:
+    - First attempts `local_files_only=True` for the configured/fallback model.
+    - Only attempts remote Hugging Face load when local cache miss occurs and `local_files_only=false`.
+  - Kept fallback behavior, but improved logging to clearly indicate repeated configured-model failure and recommend updating config model value.
+  - Updated token counting to pass truncation parameters (`truncation=True`, `max_length=model.max_seq_length`) when available, preventing tokenizer max-length warnings from usage accounting.
+- **Tests** (`tests/test_research_embeddings.py`):
+  - Added test to ensure local cache is preferred before any remote load attempt.
+  - Added test to ensure token counting truncates and reports bounded token counts.
+
+**Verification**:
+- Focused suites:
+  - `uv run pytest tests/test_research_embeddings.py tests/test_source_shortlist.py`
+  - Result: `27 passed`
+- Full suite:
+  - `uv run pytest tests`
+  - Result: `354 passed`
+
+**Gotchas / Follow-up**:
+- If user config still points to an invalid embedding model, each new process will still attempt that configured model before fallback. Update `~/.config/asky/research.toml` `research.embedding.model` to a valid id (recommended: `sentence-transformers/all-MiniLM-L6-v2`) to remove that startup failure path.
+
+## 2026-02-08 - Seed-Link Expansion for Shared Source Shortlist
+
+**Summary**: Extended the shared pre-LLM shortlist pipeline so prompts containing seed URLs (including a single URL) can expand and rank linked pages by the query, while keeping embedding failure short-circuit behavior.
+
+**Changes**:
+- **Source Shortlist** (`src/asky/research/source_shortlist.py`):
+  - Added seed-page link expansion stage that extracts outbound links from seed URLs and adds them as shortlist candidates (`source_type=seed_link`).
+  - Added injectable `seed_link_extractor` for deterministic tests and easier debugging.
+  - Added default seed-link extractor implementation using `requests` + `HTMLStripper`.
+  - Added detailed debug logs and counters for seed-link expansion:
+    - `seed_link_pages_attempted`, `seed_link_pages_success`
+    - `seed_link_extractor_calls`, `seed_link_discovered`, `seed_link_added`, `seed_link_failures`
+- **Config exports** (`src/asky/config/__init__.py`):
+  - Added shortlist settings:
+    - `seed_link_expansion_enabled`
+    - `seed_link_max_pages`
+    - `seed_links_per_page`
+- **Default config docs** (`src/asky/data/config/research.toml`):
+  - Added/annotated seed-link expansion settings under `[research.source_shortlist]`.
+- **Tests** (`tests/test_source_shortlist.py`):
+  - Added coverage for single-seed URL link expansion/ranking behavior.
+  - Updated seed-only tests to disable link expansion where deterministic no-expansion behavior is required.
+
+**Verification**:
+- Baseline before edits:
+  - `uv run pytest tests`
+  - Result: `351 passed`
+- Focused suites after edits:
+  - `uv run pytest tests/test_source_shortlist.py tests/test_research_embeddings.py`
+  - Result: `25 passed`
+- Full suite after edits:
+  - `uv run pytest tests`
+  - Result: `352 passed`
+
+**Gotchas / Follow-up**:
+- Seed-link expansion adds extra network calls for seed pages. Tune `seed_link_max_pages`, `seed_links_per_page`, `max_candidates`, and `max_fetch_urls` together to balance recall vs latency.
+
+## 2026-02-08 - Fixed Slow Test in CLI Suite
+
+**Summary**: Optimized `test_main_terminal_lines_callback` in `tests/test_cli.py` which was taking ~8 seconds. The test was executing real cache cleanup and logging setup instead of mocking them.
+
+**Changes**:
+- **Test Fix** (`tests/test_cli.py`):
+  - Added mocks for `asky.cli.main.ResearchCache`, `asky.cli.main.setup_logging`, `asky.cli.chat.shortlist_prompt_sources`, and `asky.cli.chat.SessionManager`.
+  - Verified that the test now runs in < 0.2s.
+
+**Verification**:
+- `tests/test_cli.py` runs in ~0.2s total (down from ~8s).
+- Full suite passes.
+
+## 2026-02-08 - Fixed Test Failures
+
+**Summary**: Resolved test suite failures caused by incorrect import names in `prompts.py` and unexpected source shortlist injection in CLI tests.
+
+**Changes**:
+- **Bug Fix** (`src/asky/core/prompts.py`):
+  - Updated `construct_research_system_prompt` to import `RESEARCH_*` constants instead of `CH_*`, aligning with `asky.config` exports.
+- **Test Fix** (`tests/test_cli.py`):
+  - Patched `asky.research.source_shortlist.SOURCE_SHORTLIST_ENABLE_STANDARD_MODE` to `False` in main flow tests to prevent shortlist context injection and match existing assertions.
+
+**Verification**:
+- Ran full test suite: `pytest tests`
+- Result: `367 passed` (All tests passing).
+
+## 2026-02-08 - Embedding Fallback Auto-Download + Cached Failure Short-Circuit
+
+**Summary**: Improved embedding robustness by adding automatic Hugging Face fallback model loading and explicit shortlist short-circuiting after the first model-load failure.
+
+**Changes**:
+- **Embedding Client** (`src/asky/research/embeddings.py`):
+  - Added model loader helper to centralize `SentenceTransformer(...)` init behavior.
+  - Added fallback model constant: `sentence-transformers/all-MiniLM-L6-v2`.
+  - When configured model fails and `local_files_only = false`, client now attempts fallback model load with download enabled.
+  - On successful fallback, `self.model` is updated so downstream metadata reflects the actual model used.
+  - Added `has_model_load_failure()` to expose cached hard-failure state.
+- **Source Shortlist** (`src/asky/research/source_shortlist.py`):
+  - In scoring stage, if embedding client reports cached model-load failure, embedding calls are skipped immediately and heuristic scoring is used.
+  - Added warning marker: `embedding_skipped:cached_model_load_failure`.
+- **Config docs** (`src/asky/data/config/research.toml`):
+  - Clarified that `local_files_only = false` enables automatic Hugging Face model download.
+- **Tests**:
+  - Added embedding fallback/cached-failure coverage in `tests/test_research_embeddings.py`.
+  - Added shortlist cached-failure skip coverage in `tests/test_source_shortlist.py`.
+
+**Verification**:
+- Focused suites:
+  - `uv run pytest tests/test_research_embeddings.py tests/test_source_shortlist.py`
+  - Result: `24 passed`
+- Full suite:
+  - `uv run pytest tests`
+  - Result: `351 passed`
+
+**Gotchas / Follow-up**:
+- If configured model is invalid but fallback succeeds, retrieval quality/cost profile changes to fallback characteristics; logs include fallback activation.
+
 ## 2026-02-08 - Final Warning Refactor & Import Fix
 
 **Summary**: Refactored the "graceful exit" mechanism to prevent models from generating imaginary XML tool calls when max turns are reached. Fixed a major `ImportError` where `construct_research_system_prompt` was incorrectly named.
@@ -21,6 +306,64 @@
 - Ran focused suite: `pytest tests/test_llm.py`
 - Result: `17 passed` (including new and updated graceful exit tests).
 - All tool calls avoided in final turn as verified by mocks.
+
+## 2026-02-08 - Source Shortlist Performance Debug Logging
+
+**Summary**: Added high-granularity debug logging to the pre-LLM source shortlisting path so performance bottlenecks are visible (call counts and per-stage/per-call timings).
+
+**Changes**:
+- **Shortlist instrumentation** (`src/asky/research/source_shortlist.py`):
+  - Added end-to-end timing around `shortlist_prompt_sources` with per-stage timings:
+    - parse
+    - candidate collection
+    - fetch/extract
+    - scoring
+    - total
+  - Added metrics counters emitted in logs:
+    - `search_calls`, `search_results`
+    - `candidate_inputs`, `candidate_deduped`
+    - `fetch_calls`, `fetch_success`, `fetch_short_text_skips`, `fetch_failures`
+    - `embedding_query_calls`, `embedding_doc_calls`, `embedding_doc_count`
+  - Added detailed search logs:
+    - search start/finish timing
+    - result counts
+    - exception/payload errors
+    - explicit skip reason when search is not run
+  - Added per-URL fetch logs:
+    - elapsed time for each candidate fetch
+    - success/skip/failure with text length + warning
+    - stage summary counts
+  - Added embedding logs:
+    - query embedding and document embedding durations
+    - doc counts
+    - mismatch and exception logging
+  - Added per-candidate scoring debug output:
+    - semantic score
+    - overlap
+    - bonus/penalty
+    - final score
+  - Added low-level extractor timings:
+    - trafilatura success/failure/empty cases
+    - HTML fallback success/failure
+- **Chat integration logs** (`src/asky/cli/chat.py`):
+  - Added timing around shortlist invocation in `run_chat`.
+  - Logs mode, enablement, candidate count, warning count, shortlist context length, and elapsed time.
+
+**Verification**:
+- Focused shortlist suite:
+  - `uv run pytest tests/test_source_shortlist.py`
+  - Result: `6 passed`
+- Full suite:
+  - `uv run pytest tests`
+  - Result: `6 failed, 342 passed` (pre-existing workspace issues not introduced by this logging change):
+    - `tests/test_cli.py::{test_main_flow,test_main_flow_verbose,test_main_flow_default_no_context}`
+      - assertions expect no shortlist injection in standard mode, but current runtime config enables standard-mode shortlist.
+    - `tests/test_research_prompts.py::{test_research_prompt_monolithic,test_research_prompt_modular,test_research_prompt_partial_modular}`
+      - import mismatch in `src/asky/core/prompts.py` (`CH_*` symbols not exported from config).
+
+**Gotchas / Follow-up**:
+- New logs are `DEBUG` level; use verbose mode (`-v`) or debug log level to view full timing/counter output.
+- In non-verbose mode, these performance logs remain silent by design.
 
 ## 2026-02-07 - Shared Pre-LLM Source Shortlisting Pipeline
 

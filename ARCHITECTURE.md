@@ -43,6 +43,7 @@ graph TB
 
     subgraph Other["Supporting Modules"]
         summarization["summarization.py"]
+        retrieval["retrieval.py<br/>Shared URL Retrieval"]
         html["html.py<br/>HTML Processing"]
         email_mod["email_sender.py"]
         rendering["rendering.py"]
@@ -108,6 +109,7 @@ src/asky/
 │   └── vector_store.py # Chroma-backed dense retrieval + SQLite lexical fallback
 ├── config.toml         # Default configuration file
 ├── tools.py            # Tool execution (web search, URL fetch, custom tools)
+├── retrieval.py        # Shared URL fetch + Trafilatura extraction (markdown/txt)
 ├── push_data.py        # HTTP data push to external endpoints
 ├── summarization.py    # Query/answer summarization logic
 ├── html.py             # HTML stripping and link extraction
@@ -282,7 +284,7 @@ Unified storage for both history and sessions:
 | `[tool.name]` | Custom tool definitions |
 | `[research.source_adapters.name]` | Map research targets (e.g. `local://`) to custom tools |
 | `[research.chromadb]` | ChromaDB persist path and collection names for research vectors |
-| `[research.source_shortlist]` | Shared pre-LLM source shortlisting (seed URL parsing, search, fetch, scoring) |
+| `[research.source_shortlist]` | Shared pre-LLM source shortlisting (seed URL parsing, seed-link expansion, search, fetch, scoring) |
 | `[push_data.name]` | HTTP endpoint definitions for data push |
 | `[session]` | Compaction threshold and strategy |
 | `[email]` | SMTP settings |
@@ -296,8 +298,18 @@ Unified storage for both history and sessions:
 | Tool | Purpose |
 |------|---------|
 | `web_search` | Search via SearXNG or Serper API |
-| `get_url_content` | Fetch and strip HTML from URLs |
-| `get_url_details` | Fetch content + extract links (Deep Dive) |
+| `get_url_content` | Fetch extracted main content in lightweight markdown |
+| `get_url_details` | Fetch extracted main content + discovered links |
+
+#### Shared Retrieval Pipeline (`retrieval.py`)
+- Standard tools, research tools, and shortlist fetching now share one URL retrieval path.
+- Flow:
+  - `requests` fetch with configured timeout/user-agent
+  - Trafilatura main-content extraction (`markdown` or `txt`)
+  - Metadata/title/date best-effort extraction
+  - HTML fallback extraction when Trafilatura yields no usable content
+  - Optional link extraction via `HTMLStripper`
+- The shared payload includes `requested_url`, `final_url`, `content`, `title`, `date`, `links`, `source`, and optional warnings for debugging.
 
 #### Custom Tools
 
@@ -345,7 +357,11 @@ Execution via `subprocess.run()` with argument quoting.
 #### In-Memory Embedding Backend (`research/embeddings.py`)
 - Embeddings are generated locally with `sentence-transformers` using `all-MiniLM-L6-v2` by default.
 - The model is loaded lazily and kept in-memory via a singleton client.
+- Model loading prefers local Hugging Face cache first; network download is attempted only on local cache miss when `local_files_only = false`.
+- If the configured embedding model fails to load and `local_files_only = false`, the client automatically falls back to `sentence-transformers/all-MiniLM-L6-v2` and allows Hugging Face download.
+- Model-load failures are cached so subsequent requests fail fast without repeated load attempts.
 - Embedding usage stats (`texts_embedded`, `api_calls`, `prompt_tokens`) are still exposed for banner rendering.
+- Lightweight token usage counting truncates to the model max sequence length to avoid tokenizer max-length warnings in logs.
 - The tokenizer from the embedding model is reused by the chunker to keep chunk sizes aligned with model sequence limits.
 
 #### Shared Source Shortlisting (`research/source_shortlist.py`)
@@ -353,11 +369,30 @@ Execution via `subprocess.run()` with argument quoting.
 - Pipeline:
   - Extract seed URLs from prompt and build URL-stripped query text
   - Optionally extract keyphrases (YAKE) for search query construction
-  - Gather candidates from prompt URLs and/or `web_search` results
+  - Gather candidates from prompt URLs, optional seed-page link expansion, and/or `web_search` results
+  - Filter obvious utility/auth candidates early (signin/account/preferences/privacy/terms/cookie patterns and profile/support/account subdomains)
   - Normalize and deduplicate URLs (tracking param stripping, fragment removal)
-  - Fetch/extract main text with `trafilatura` plus `HTMLStripper` fallback
+  - Apply canonicalization and redirect-aware dedupe in fetch stage using final URLs when available
+  - Fetch/extract main text through the shared retrieval pipeline (`retrieval.py`) in `txt` mode
   - Score candidates with embedding cosine similarity + lightweight heuristics
-- Produces a ranked shortlist payload and an optional compact context block injected into the user message.
+- Seed-page link expansion is configurable with per-run caps (`seed_link_max_pages`, `seed_links_per_page`) and is shared across research/non-research modes through the same shortlist module.
+- Seed-page link extraction excludes `header`/`nav`/`footer`/`aside` containers by default in shortlist expansion to reduce boilerplate navigation links.
+- If embedding model load has already failed in-process, shortlist skips embedding attempts and uses non-embedding heuristics only.
+- Same-domain bonus is gated by relevance signal (semantic score or keyphrase overlap) and disabled for noise-path candidates.
+- Debug-level observability includes per-stage timings and counters (search calls/results, seed-link extraction calls/discovered/added, fetch attempts/success/failures, embedding calls/doc counts).
+- Produces a ranked shortlist payload, a trace block (`processed_candidates`, `selected_candidates`), and an optional compact context block injected into the user message.
+- Supports optional status callbacks so the CLI banner can show pre-LLM shortlist progress while retrieval/scoring is running.
+
+#### Live Banner + Pre-LLM Progress
+- `run_chat` starts the live banner before source shortlisting begins, so users see progress even before the first LLM request.
+- Banner state now includes shortlist stats:
+  - candidates collected
+  - URLs processed/fetched
+  - selected shortlist count
+  - warning count
+  - elapsed time
+- Tool execution updates the same status region with transient per-tool messages.
+- Verbose rich output (shortlist tables/tool argument panels) is routed through the active Live console to avoid breaking in-place banner redraw.
 
 ---
 
@@ -365,7 +400,8 @@ Execution via `subprocess.run()` with argument quoting.
 
 | Module | Purpose |
 |--------|---------|
-| `summarization.py` | Query/answer summarization using dedicated model |
+| `summarization.py` | Query/answer summarization with semantic chunking + hierarchical map-reduce for long text |
+| `retrieval.py` | Shared URL retrieval and Trafilatura-based extraction for standard/research/shortlist flows |
 | `html.py` | `HTMLStripper`: Remove scripts/styles, extract links |
 | `email_sender.py` | Send results via SMTP (markdown → HTML conversion) |
 | `push_data.py` | HTTP data push to external endpoints (GET/POST) |
@@ -519,6 +555,10 @@ Tests are organized by component in `tests/`:
 
 Run tests with:
 ```bash
+.venv/bin/pytest
+
+# or 
+
 uv run pytest
 ```
 

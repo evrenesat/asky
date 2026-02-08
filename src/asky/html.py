@@ -9,38 +9,59 @@ from urllib.parse import urljoin
 class HTMLStripper(HTMLParser):
     """Parse HTML and extract text content and links."""
 
-    def __init__(self, base_url: Optional[str] = None) -> None:
+    def __init__(
+        self,
+        base_url: Optional[str] = None,
+        excluded_link_container_tags: Optional[set[str]] = None,
+    ) -> None:
         super().__init__()
         self.reset()
         self.strict = False
         self.convert_charrefs = True
         self.text: List[str] = []
         self.links: List[Dict[str, str]] = []
-        self.ignore = False
+        self.ignore_depth = 0
         self.current_href: Optional[str] = None
         self.base_url = base_url
+        self.excluded_link_container_tags = {
+            tag.lower() for tag in (excluded_link_container_tags or set())
+        }
+        self.excluded_link_depth = 0
 
     def handle_starttag(self, tag: str, attrs: List[Any]) -> None:
+        tag = tag.lower()
         if tag in ("script", "style"):
-            self.ignore = True
+            self.ignore_depth += 1
+            return
+        if tag in self.excluded_link_container_tags:
+            self.excluded_link_depth += 1
+            return
         elif tag == "a":
+            if self.excluded_link_depth > 0:
+                self.current_href = None
+                return
             for k, v in attrs:
                 if k == "href":
                     self.current_href = v
                     break
 
     def handle_endtag(self, tag: str) -> None:
+        tag = tag.lower()
         if tag in ("script", "style"):
-            self.ignore = False
+            if self.ignore_depth > 0:
+                self.ignore_depth -= 1
+        elif tag in self.excluded_link_container_tags:
+            if self.excluded_link_depth > 0:
+                self.excluded_link_depth -= 1
         elif tag == "a":
             self.current_href = None
 
     def handle_data(self, data: str) -> None:
-        if not self.ignore:
+        if self.ignore_depth == 0:
             text = data.strip()
             if text:
                 self.text.append(data)
-                if self.current_href:
+                if self.current_href and self.excluded_link_depth == 0:
                     href = self.current_href
                     if self.base_url:
                         href = urljoin(self.base_url, href)

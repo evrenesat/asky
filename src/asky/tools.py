@@ -4,7 +4,7 @@ import json
 import logging
 import os
 import subprocess
-from typing import Any, Dict
+from typing import Any, Dict, List
 
 import requests
 
@@ -18,9 +18,9 @@ from asky.config import (
     MAX_URL_DETAIL_LINKS,
     SEARCH_SNIPPET_MAX_CHARS,
     SEARCH_TIMEOUT,
-    FETCH_TIMEOUT,
 )
-from asky.html import HTMLStripper, strip_tags
+from asky.html import strip_tags
+from asky.retrieval import fetch_url_document, sanitize_url
 
 logger = logging.getLogger(__name__)
 
@@ -114,39 +114,45 @@ def execute_web_search(args: Dict[str, Any]) -> Dict[str, Any]:
 
 def _sanitize_url(url: str) -> str:
     """Remove artifacts like shell-escaped backslashes from URLs."""
-    if not url:
-        return ""
-    # Remove backslashes which are often artifacts of shell-escaping parentheses or special chars
-    return url.replace("\\", "")
+    return sanitize_url(url)
 
 
 def fetch_single_url(url: str) -> Dict[str, str]:
     """Fetch content from a single URL."""
-    url = _sanitize_url(url)
-
-    try:
-        headers = {"User-Agent": USER_AGENT}
-        resp = requests.get(url, headers=headers, timeout=FETCH_TIMEOUT)
-        resp.raise_for_status()
-        content = strip_tags(resp.text)
-        return {url: content}
-    except Exception as e:
-        return {url: f"Error: {str(e)}"}
+    sanitized_url = _sanitize_url(url)
+    payload = fetch_url_document(sanitized_url, output_format="markdown")
+    if payload.get("error"):
+        return {sanitized_url: f"Error: {payload['error']}"}
+    return {sanitized_url: str(payload.get("content", ""))}
 
 
 def execute_get_url_content(args: Dict[str, Any]) -> Dict[str, Any]:
     """Fetch content from one or more URLs."""
     header_url = args.get("url")
-    urls = args.get("urls", [])
+    urls: List[str] = args.get("urls", [])
+    if isinstance(urls, str):
+        urls = [urls]
     # Support both single 'url' and list 'urls'
+    merged_urls: List[str] = []
     if header_url:
-        urls.append(header_url)
-    # Deduplicate and filter empty
-    urls = list(set([u for u in urls if u]))
+        merged_urls.append(str(header_url))
+    merged_urls.extend([str(url) for url in urls if url])
+
+    # Deduplicate while preserving first-seen order.
+    seen = set()
+    deduped_urls: List[str] = []
+    for url in merged_urls:
+        sanitized_url = _sanitize_url(url)
+        if not sanitized_url or sanitized_url in seen:
+            continue
+        seen.add(sanitized_url)
+        deduped_urls.append(sanitized_url)
+
+    urls = deduped_urls
     if not urls:
         return {"error": "No URLs provided."}
     results = {}
-    for i, url in enumerate(urls):
+    for url in urls:
         results.update(fetch_single_url(url))
     return results
 
@@ -154,23 +160,28 @@ def execute_get_url_content(args: Dict[str, Any]) -> Dict[str, Any]:
 def execute_get_url_details(args: Dict[str, Any]) -> Dict[str, Any]:
     """Fetch content and extract links from a URL."""
     url = _sanitize_url(args.get("url", ""))
+    if not url:
+        return {"error": "Failed to fetch details: URL is empty."}
 
-    try:
-        headers = {"User-Agent": USER_AGENT}
-        resp = requests.get(url, headers=headers, timeout=FETCH_TIMEOUT)
-        resp.raise_for_status()
-        s = HTMLStripper(base_url=url)
-        s.feed(resp.text)
+    payload = fetch_url_document(
+        url=url,
+        output_format="markdown",
+        include_links=True,
+        max_links=MAX_URL_DETAIL_LINKS,
+    )
+    if payload.get("error"):
+        return {"error": f"Failed to fetch details: {payload['error']}"}
 
-        return {
-            "content": s.get_data(),
-            "links": s.get_links()[
-                :MAX_URL_DETAIL_LINKS
-            ],  # Limit links to avoid context overflow
-            "system_note": "IMPORTANT: Do NOT use get_url_details again. Use get_url_content to read links.",
-        }
-    except Exception as e:
-        return {"error": f"Failed to fetch details: {str(e)}"}
+    return {
+        "content": payload.get("content", ""),
+        "links": payload.get("links", [])[
+            :MAX_URL_DETAIL_LINKS
+        ],  # Limit links to avoid context overflow
+        "title": payload.get("title", ""),
+        "date": payload.get("date"),
+        "final_url": payload.get("final_url", url),
+        "system_note": "IMPORTANT: Do NOT use get_url_details again. Use get_url_content to read links.",
+    }
 
 
 def _execute_custom_tool(name: str, args: Dict[str, Any]) -> Dict[str, Any]:

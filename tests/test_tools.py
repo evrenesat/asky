@@ -53,22 +53,25 @@ def test_execute_web_search_failure(mock_requests_get):
 
 
 def test_fetch_single_url_success(mock_requests_get):
-    mock_response = MagicMock()
-    mock_response.text = "<p>Page content</p>"
-    mock_requests_get.return_value = mock_response
+    with patch("asky.tools.fetch_url_document") as mock_fetch:
+        mock_fetch.return_value = {
+            "error": None,
+            "content": "Page content",
+        }
+        result = fetch_single_url("http://example.com")
 
-    result = fetch_single_url("http://example.com")
     assert "http://example.com" in result
     assert result["http://example.com"] == "Page content"
 
 
 def test_execute_get_url_content_batch(mock_requests_get):
-    mock_response = MagicMock()
-    mock_response.text = "content"
-    mock_requests_get.return_value = mock_response
-
-    args = {"urls": ["http://a.com", "http://b.com"]}
-    result = execute_get_url_content(args)
+    with patch("asky.tools.fetch_url_document") as mock_fetch:
+        mock_fetch.side_effect = [
+            {"error": None, "content": "content-a"},
+            {"error": None, "content": "content-b"},
+        ]
+        args = {"urls": ["http://a.com", "http://b.com"]}
+        result = execute_get_url_content(args)
 
     assert "http://a.com" in result
     assert "http://b.com" in result
@@ -76,13 +79,17 @@ def test_execute_get_url_content_batch(mock_requests_get):
 
 
 def test_execute_get_url_details(mock_requests_get):
-    mock_response = MagicMock()
-    mock_response.text = (
-        '<html><body>Text <a href="http://link.com">Link</a></body></html>'
-    )
-    mock_requests_get.return_value = mock_response
+    with patch("asky.tools.fetch_url_document") as mock_fetch:
+        mock_fetch.return_value = {
+            "error": None,
+            "content": "Text Link",
+            "links": [{"text": "Link", "href": "http://link.com"}],
+            "title": "Main Page",
+            "date": None,
+            "final_url": "http://main.com",
+        }
+        result = execute_get_url_details({"url": "http://main.com"})
 
-    result = execute_get_url_details({"url": "http://main.com"})
     assert "content" in result
     assert "links" in result
     assert result["content"] == "Text Link"

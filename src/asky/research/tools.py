@@ -4,16 +4,12 @@ import difflib
 import logging
 from typing import Any, Dict, List, Optional
 
-import requests
-
 from asky.config import (
-    USER_AGENT,
-    FETCH_TIMEOUT,
     RESEARCH_MAX_LINKS_PER_URL,
     RESEARCH_MAX_RELEVANT_LINKS,
     RESEARCH_MEMORY_MAX_RESULTS,
 )
-from asky.html import HTMLStripper
+from asky.retrieval import fetch_url_document
 from asky.research.cache import ResearchCache
 from asky.research.chunker import chunk_text
 from asky.research.embeddings import get_embedding_client
@@ -249,44 +245,25 @@ def _fetch_and_parse(
         return adapter_result
 
     try:
-        headers = {"User-Agent": USER_AGENT}
-        resp = requests.get(url, headers=headers, timeout=FETCH_TIMEOUT)
-        resp.raise_for_status()
-
-        stripper = HTMLStripper(base_url=url)
-        stripper.feed(resp.text)
-
-        content = stripper.get_data()
-        links = stripper.get_links()
-
-        # Extract title (first non-empty line, limited length)
-        title = ""
-        if content:
-            for line in content.split("\n"):
-                line = line.strip()
-                if line:
-                    title = line[:200]
-                    break
+        payload = fetch_url_document(
+            url=url,
+            output_format="markdown",
+            include_links=True,
+            max_links=max_links or RESEARCH_MAX_LINKS_PER_URL,
+        )
+        if payload.get("error"):
+            return {
+                "content": "",
+                "title": "",
+                "links": [],
+                "error": str(payload["error"]),
+            }
 
         return {
-            "content": content,
-            "title": title or url,
-            "links": links,
+            "content": str(payload.get("content", "")),
+            "title": str(payload.get("title", "") or url),
+            "links": payload.get("links", []),
             "error": None,
-        }
-    except requests.exceptions.Timeout:
-        return {
-            "content": "",
-            "title": "",
-            "links": [],
-            "error": f"Request timed out after {FETCH_TIMEOUT}s",
-        }
-    except requests.exceptions.RequestException as e:
-        return {
-            "content": "",
-            "title": "",
-            "links": [],
-            "error": str(e),
         }
     except Exception as e:
         return {

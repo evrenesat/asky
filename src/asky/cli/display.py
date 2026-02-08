@@ -40,6 +40,7 @@ class InterfaceRenderer:
         self.research_mode = research_mode
         self.console = Console()
         self.live: Optional[Live] = None
+        self.shortlist_stats: Dict[str, Any] = {}
 
     def start_live(self) -> None:
         """Start the Live context for in-place banner updates."""
@@ -65,6 +66,10 @@ class InterfaceRenderer:
         if self.live:
             self.live.stop()
             self.live = None
+
+    def set_shortlist_stats(self, stats: Optional[Dict[str, Any]]) -> None:
+        """Store shortlist stats for banner rendering."""
+        self.shortlist_stats = stats or {}
 
     def print_final_answer(self, answer: str) -> None:
         """Print the final answer normally (after stopping Live)."""
@@ -128,6 +133,13 @@ class InterfaceRenderer:
             embedding_api_calls = stats["api_calls"]
             embedding_prompt_tokens = stats["prompt_tokens"]
 
+        shortlist_enabled = bool(self.shortlist_stats.get("enabled"))
+        shortlist_collected = int(self.shortlist_stats.get("collected", 0) or 0)
+        shortlist_processed = int(self.shortlist_stats.get("processed", 0) or 0)
+        shortlist_selected = int(self.shortlist_stats.get("selected", 0) or 0)
+        shortlist_warnings = int(self.shortlist_stats.get("warnings", 0) or 0)
+        shortlist_elapsed_ms = float(self.shortlist_stats.get("elapsed_ms", 0.0) or 0.0)
+
         state = BannerState(
             model_alias=self.model_alias,
             model_id=model_id,
@@ -150,6 +162,12 @@ class InterfaceRenderer:
             embedding_api_calls=embedding_api_calls,
             embedding_prompt_tokens=embedding_prompt_tokens,
             compact_banner=COMPACT_BANNER,
+            shortlist_enabled=shortlist_enabled,
+            shortlist_collected=shortlist_collected,
+            shortlist_processed=shortlist_processed,
+            shortlist_selected=shortlist_selected,
+            shortlist_warnings=shortlist_warnings,
+            shortlist_elapsed_ms=shortlist_elapsed_ms,
         )
 
         return get_banner(state)

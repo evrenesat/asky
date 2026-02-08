@@ -1,6 +1,9 @@
 """Embedding client backed by sentence-transformers."""
 
+import contextlib
+import io
 import logging
+import os
 import struct
 from typing import Any, List, Optional
 
@@ -14,6 +17,7 @@ from asky.config import (
 
 logger = logging.getLogger(__name__)
 UNBOUNDED_TOKENIZER_LIMIT = 100_000
+FALLBACK_EMBEDDING_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
 
 try:
     from sentence_transformers import SentenceTransformer
@@ -83,6 +87,50 @@ class EmbeddingClient:
             self.device,
         )
 
+    def _load_sentence_transformer(
+        self, model_name: str, local_files_only: bool
+    ) -> Any:
+        """Load a sentence-transformer model with compatibility fallback."""
+        kwargs = {"device": self.device}
+        if local_files_only:
+            kwargs["local_files_only"] = True
+        captured_stdout = io.StringIO()
+        captured_stderr = io.StringIO()
+
+        def _construct_model(active_kwargs: dict) -> Any:
+            with _silence_process_output(captured_stdout, captured_stderr):
+                return SentenceTransformer(model_name, **active_kwargs)
+
+        try:
+            return _construct_model(kwargs)
+        except TypeError:
+            kwargs.pop("local_files_only", None)
+            return _construct_model(kwargs)
+
+    def _load_model_with_cache_preference(self, model_name: str) -> Any:
+        """Load from local cache first, then allow network download if configured."""
+        try:
+            model = self._load_sentence_transformer(
+                model_name=model_name,
+                local_files_only=True,
+            )
+            logger.debug(
+                "Loaded embedding model '%s' from local Hugging Face cache.",
+                model_name,
+            )
+            return model
+        except Exception as local_exc:
+            if self.local_files_only:
+                raise local_exc
+            logger.debug(
+                "Embedding model '%s' not available locally, attempting remote load.",
+                model_name,
+            )
+            return self._load_sentence_transformer(
+                model_name=model_name,
+                local_files_only=False,
+            )
+
     def _ensure_model_loaded(self) -> Any:
         """Load sentence-transformer lazily and cache it."""
         if self._model is not None:
@@ -97,19 +145,53 @@ class EmbeddingClient:
             )
             raise RuntimeError("Embedding model is unavailable") from self._model_load_error
 
+        configured_model = self.model
         try:
-            kwargs = {"device": self.device}
-            if self.local_files_only:
-                kwargs["local_files_only"] = True
-            try:
-                self._model = SentenceTransformer(self.model, **kwargs)
-            except TypeError:
-                kwargs.pop("local_files_only", None)
-                self._model = SentenceTransformer(self.model, **kwargs)
-        except Exception as exc:
-            self._model_load_error = exc
-            logger.error("Failed to load sentence-transformer model '%s': %s", self.model, exc)
-            raise RuntimeError("Embedding model is unavailable") from exc
+            self._model = self._load_model_with_cache_preference(
+                model_name=configured_model,
+            )
+        except Exception as primary_exc:
+            should_try_fallback = (
+                not self.local_files_only and configured_model != FALLBACK_EMBEDDING_MODEL
+            )
+            if should_try_fallback:
+                logger.warning(
+                    "Failed to load embedding model '%s'. "
+                    "Falling back to '%s' with Hugging Face auto-download enabled.",
+                    configured_model,
+                    FALLBACK_EMBEDDING_MODEL,
+                )
+                try:
+                    self._model = self._load_model_with_cache_preference(
+                        model_name=FALLBACK_EMBEDDING_MODEL,
+                    )
+                    self.model = FALLBACK_EMBEDDING_MODEL
+                    logger.info(
+                        "Loaded fallback embedding model '%s' successfully. "
+                        "Update research.embedding.model to avoid repeated primary model load failures.",
+                        self.model,
+                    )
+                except Exception as fallback_exc:
+                    self._model_load_error = fallback_exc
+                    logger.error(
+                        "Failed to load sentence-transformer model '%s': %s",
+                        configured_model,
+                        primary_exc,
+                    )
+                    logger.error(
+                        "Fallback embedding model '%s' also failed: %s",
+                        FALLBACK_EMBEDDING_MODEL,
+                        fallback_exc,
+                    )
+                    raise RuntimeError("Embedding model is unavailable") from fallback_exc
+            else:
+                self._model_load_error = primary_exc
+                logger.error(
+                    "Failed to load sentence-transformer model '%s': %s",
+                    configured_model,
+                    primary_exc,
+                )
+                raise RuntimeError("Embedding model is unavailable") from primary_exc
 
         self._tokenizer = getattr(self._model, "tokenizer", None)
         return self._model
@@ -137,11 +219,16 @@ class EmbeddingClient:
         tokenizer = self.get_tokenizer()
         if tokenizer is None:
             return 0
+        max_length = self.max_seq_length
 
         total = 0
         for text in texts:
             try:
-                token_ids = tokenizer.encode(text, add_special_tokens=False)
+                kwargs = {"add_special_tokens": False}
+                if max_length > 0:
+                    kwargs["truncation"] = True
+                    kwargs["max_length"] = max_length
+                token_ids = tokenizer.encode(text, **kwargs)
             except TypeError:
                 token_ids = tokenizer.encode(text)
             except Exception:
@@ -196,6 +283,10 @@ class EmbeddingClient:
         except Exception:
             return False
 
+    def has_model_load_failure(self) -> bool:
+        """Return True if a model load failure has already been cached."""
+        return self._model is None and self._model_load_error is not None
+
     def get_tokenizer(self) -> Optional[Any]:
         """Expose tokenizer for token-aware chunking."""
         try:
@@ -245,3 +336,26 @@ class EmbeddingClient:
 def get_embedding_client() -> EmbeddingClient:
     """Get the singleton embedding client instance."""
     return EmbeddingClient()
+
+
+@contextlib.contextmanager
+def _silence_process_output(
+    captured_stdout: io.StringIO, captured_stderr: io.StringIO
+):
+    """Silence Python-level and native fd stdout/stderr during noisy model loads."""
+    stdout_fd = os.dup(1)
+    stderr_fd = os.dup(2)
+    devnull_fd = os.open(os.devnull, os.O_WRONLY)
+    try:
+        os.dup2(devnull_fd, 1)
+        os.dup2(devnull_fd, 2)
+        with contextlib.redirect_stdout(captured_stdout), contextlib.redirect_stderr(
+            captured_stderr
+        ):
+            yield
+    finally:
+        os.dup2(stdout_fd, 1)
+        os.dup2(stderr_fd, 2)
+        os.close(stdout_fd)
+        os.close(stderr_fd)
+        os.close(devnull_fd)

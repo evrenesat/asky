@@ -56,6 +56,105 @@ class _FakeSentenceTransformer:
         return _FakeArray(rows)
 
 
+class _PrimaryFailSentenceTransformer:
+    def __init__(self, model_name, device="cpu", **kwargs):
+        if model_name == "bad/model":
+            raise RuntimeError("primary load failed")
+        self.model_name = model_name
+        self.device = device
+        self.kwargs = kwargs
+        self.max_seq_length = 16
+        self.tokenizer = _FakeTokenizer()
+
+    def encode(
+        self,
+        texts,
+        batch_size,
+        convert_to_numpy,
+        show_progress_bar,
+        normalize_embeddings,
+    ):
+        rows = []
+        for text in texts:
+            token_count = max(1, len([word for word in text.split() if word]))
+            base = float(token_count)
+            rows.append([base, base + 1.0, base + 2.0])
+        return _FakeArray(rows)
+
+
+class _AlwaysFailSentenceTransformer:
+    def __init__(self, model_name, device="cpu", **kwargs):  # noqa: ARG002
+        raise RuntimeError(f"cannot load {model_name}")
+
+
+class _LocalCacheOnlySentenceTransformer:
+    calls = []
+
+    def __init__(self, model_name, device="cpu", **kwargs):
+        local_files_only = kwargs.get("local_files_only")
+        self.__class__.calls.append(
+            {"model_name": model_name, "local_files_only": local_files_only}
+        )
+        if local_files_only is not True:
+            raise AssertionError("Remote load should not be attempted in this test")
+        self.model_name = model_name
+        self.device = device
+        self.kwargs = kwargs
+        self.max_seq_length = 16
+        self.tokenizer = _FakeTokenizer()
+
+    def encode(
+        self,
+        texts,
+        batch_size,
+        convert_to_numpy,
+        show_progress_bar,
+        normalize_embeddings,
+    ):
+        rows = []
+        for text in texts:
+            token_count = max(1, len([word for word in text.split() if word]))
+            base = float(token_count)
+            rows.append([base, base + 1.0, base + 2.0])
+        return _FakeArray(rows)
+
+
+class _TruncationAwareTokenizer:
+    def __init__(self):
+        self.last_kwargs = {}
+
+    def encode(self, text, **kwargs):
+        self.last_kwargs = kwargs
+        words = [word for word in text.split() if word]
+        if kwargs.get("truncation") and kwargs.get("max_length"):
+            words = words[: kwargs["max_length"]]
+        return list(range(len(words)))
+
+
+class _TruncationAwareSentenceTransformer:
+    def __init__(self, model_name, device="cpu", **kwargs):
+        self.model_name = model_name
+        self.device = device
+        self.kwargs = kwargs
+        self.max_seq_length = 3
+        self.tokenizer = _TruncationAwareTokenizer()
+
+    def encode(
+        self,
+        texts,
+        batch_size,
+        convert_to_numpy,
+        show_progress_bar,
+        normalize_embeddings,
+    ):
+        rows = []
+        for text in texts:
+            token_count = max(1, len([word for word in text.split() if word]))
+            base = float(token_count)
+            rows.append([base, base + 1.0, base + 2.0])
+        return _FakeArray(rows)
+
+
 class TestEmbeddingClient:
     """Tests for EmbeddingClient class."""
 
@@ -146,6 +245,84 @@ class TestEmbeddingClient:
         tokenizer = client.get_tokenizer()
         assert tokenizer is not None
         assert client.max_seq_length == 16
+
+    def test_fallback_model_auto_download_on_primary_failure(self):
+        """Primary model failure should fall back to bundled HF model."""
+        from asky.research.embeddings import (
+            EmbeddingClient,
+            FALLBACK_EMBEDDING_MODEL,
+        )
+
+        EmbeddingClient._instance = None
+        with patch(
+            "asky.research.embeddings.SentenceTransformer",
+            _PrimaryFailSentenceTransformer,
+        ):
+            client = EmbeddingClient(
+                model="bad/model",
+                local_files_only=False,
+            )
+            assert client.is_available() is True
+            assert client.model == FALLBACK_EMBEDDING_MODEL
+            assert client.has_model_load_failure() is False
+        EmbeddingClient._instance = None
+
+    def test_cached_model_load_failure_flag(self):
+        """Model load failures should be cached for fast future checks."""
+        from asky.research.embeddings import EmbeddingClient
+
+        EmbeddingClient._instance = None
+        with patch(
+            "asky.research.embeddings.SentenceTransformer",
+            _AlwaysFailSentenceTransformer,
+        ):
+            client = EmbeddingClient(
+                model="bad/model",
+                local_files_only=False,
+            )
+            assert client.is_available() is False
+            assert client.has_model_load_failure() is True
+        EmbeddingClient._instance = None
+
+    def test_prefers_local_cache_before_remote_load(self):
+        """When cached locally, model loading should avoid remote attempt."""
+        from asky.research.embeddings import EmbeddingClient
+
+        EmbeddingClient._instance = None
+        _LocalCacheOnlySentenceTransformer.calls = []
+        with patch(
+            "asky.research.embeddings.SentenceTransformer",
+            _LocalCacheOnlySentenceTransformer,
+        ):
+            client = EmbeddingClient(
+                model="cached/model",
+                local_files_only=False,
+            )
+            assert client.is_available() is True
+            assert _LocalCacheOnlySentenceTransformer.calls == [
+                {"model_name": "cached/model", "local_files_only": True}
+            ]
+        EmbeddingClient._instance = None
+
+    def test_token_counting_uses_truncation_when_model_has_max_length(self):
+        """Token counting should truncate to model max length to avoid warnings."""
+        from asky.research.embeddings import EmbeddingClient
+
+        EmbeddingClient._instance = None
+        with patch(
+            "asky.research.embeddings.SentenceTransformer",
+            _TruncationAwareSentenceTransformer,
+        ):
+            client = EmbeddingClient(
+                model="trunc/model",
+                local_files_only=True,
+            )
+            _ = client.embed_single("one two three four five six")
+            tokenizer = client.get_tokenizer()
+            assert tokenizer.last_kwargs.get("truncation") is True
+            assert tokenizer.last_kwargs.get("max_length") == 3
+            assert client.prompt_tokens == 3
+        EmbeddingClient._instance = None
 
 
 class TestEmbeddingSerialization:

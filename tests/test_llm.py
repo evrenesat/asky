@@ -178,6 +178,54 @@ def test_conversation_engine_run_basic(mock_dispatch, mock_get_msg):
 
 
 @patch("asky.core.engine.get_llm_msg")
+def test_conversation_engine_verbose_tool_trace_and_status(mock_get_msg):
+    msg_tool_call = {
+        "content": None,
+        "tool_calls": [
+            {
+                "id": "call_1",
+                "function": {
+                    "name": "web_search",
+                    "arguments": json.dumps({"q": "test"}),
+                },
+            }
+        ],
+    }
+    msg_final = {"content": "Final Answer"}
+    mock_get_msg.side_effect = [msg_tool_call, msg_final]
+
+    messages = [{"role": "system", "content": "System Prompt"}]
+    model_config = {"id": "test_model", "max_chars": 1000}
+
+    registry = MagicMock()
+    registry.dispatch.return_value = {"results": "search results"}
+    registry.get_schemas.return_value = []
+
+    status_updates = []
+
+    engine = ConversationEngine(
+        model_config=model_config,
+        tool_registry=registry,
+        summarize=False,
+        verbose=True,
+    )
+    with patch.object(engine, "_print_verbose_tool_call") as mock_verbose_print:
+        final_answer = engine.run(
+            messages,
+            display_callback=lambda turn, status_message=None, **kwargs: status_updates.append(
+                status_message
+            ),
+        )
+
+    assert final_answer == "Final Answer"
+    mock_verbose_print.assert_called_once()
+    assert any(
+        update and "Executing tool 1/1: web_search" in update
+        for update in status_updates
+    )
+
+
+@patch("asky.core.engine.get_llm_msg")
 def test_generate_summaries(mock_get_msg):
     # Mock responses for query summary and answer summary
     # 1. Query summary
@@ -189,7 +237,7 @@ def test_generate_summaries(mock_get_msg):
     ]
 
     # Use a query longer than the default threshold (160)
-    q_sum, a_sum = generate_summaries("Long query " * 20, "Long answer " * 100)
+    q_sum, a_sum = generate_summaries("Long query " * 20, "Long answer " * 220)
 
     assert q_sum == "Short query"
     assert a_sum == "Short answer summary"
@@ -201,7 +249,8 @@ def test_generate_summaries_short_query(mock_get_msg):
     # If query is short, it shouldn't call LLM for query summary
     mock_get_msg.return_value = {"content": "Answer summary"}
 
-    q_sum, a_sum = generate_summaries("Short", "Long answer " * 50)
+    with patch("asky.core.engine.ANSWER_SUMMARY_MAX_CHARS", 200):
+        q_sum, a_sum = generate_summaries("Short", "Long answer " * 50)
 
     assert q_sum == "Short"
     assert a_sum == "Answer summary"

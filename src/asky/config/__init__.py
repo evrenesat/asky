@@ -144,6 +144,13 @@ SOURCE_SHORTLIST_ENABLE_STANDARD_MODE = _source_shortlist.get(
 SOURCE_SHORTLIST_SEARCH_WITH_SEED_URLS = _source_shortlist.get(
     "search_with_seed_urls", False
 )
+SOURCE_SHORTLIST_SEED_LINK_EXPANSION_ENABLED = _source_shortlist.get(
+    "seed_link_expansion_enabled", True
+)
+SOURCE_SHORTLIST_SEED_LINK_MAX_PAGES = _source_shortlist.get("seed_link_max_pages", 3)
+SOURCE_SHORTLIST_SEED_LINKS_PER_PAGE = _source_shortlist.get(
+    "seed_links_per_page", 50
+)
 SOURCE_SHORTLIST_SEARCH_RESULT_COUNT = _source_shortlist.get("search_result_count", 25)
 SOURCE_SHORTLIST_MAX_CANDIDATES = _source_shortlist.get("max_candidates", 30)
 SOURCE_SHORTLIST_MAX_FETCH_URLS = _source_shortlist.get("max_fetch_urls", 15)

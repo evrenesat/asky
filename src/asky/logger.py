@@ -58,6 +58,7 @@ def setup_logging(level_name: str = "INFO", log_file: str = None) -> None:
         "httpcore",
         "httpx",
         "pygments",
+        "trafilatura",
     ]
     for lib in noisy_libraries:
         logging.getLogger(lib).setLevel(logging.WARNING)
