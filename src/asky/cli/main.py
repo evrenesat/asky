@@ -24,6 +24,7 @@ from asky.config import (
 from asky.banner import get_banner, BannerState
 from asky.logger import setup_logging, generate_timestamped_log_path
 from asky.storage import init_db, get_db_record_count
+from asky.storage.sqlite import SQLiteHistoryRepository
 
 
 class _LazyModuleProxy:
@@ -208,6 +209,16 @@ def parse_args() -> argparse.Namespace:
         "  - get_full_content: Get complete cached content",
     )
     parser.add_argument(
+        "--from-message",
+        type=int,
+        help="Convert a specific history message ID into a session and resume it.",
+    )
+    parser.add_argument(
+        "--reply",
+        action="store_true",
+        help="Resume the last conversation (converting history to session if needed).",
+    )
+    parser.add_argument(
         "-L",
         "--lean",
         action="store_true",
@@ -346,10 +357,45 @@ def main() -> None:
             args.session_history is not None,
             args.session_end,
             bool(args.query),
+            args.reply,  # Added for new logic
+            args.from_message,  # Added for new logic
         ]
     )
     if needs_db:
         init_db()
+
+    # Handle Reply / From-Message shortcuts
+    if args.reply or args.from_message:
+        repo = SQLiteHistoryRepository()
+        target_id = args.from_message
+
+        if args.reply:
+            last = repo.get_last_interaction()
+            if not last:
+                print("Error: No conversation history to reply to.")
+                return
+            target_id = last.id
+
+        if target_id:
+            interaction = repo.get_interaction_by_id(target_id)
+            if not interaction:
+                print(f"Error: Message ID {target_id} not found.")
+                return
+
+            if interaction.session_id:
+                # Already in a session
+                args.resume_session = [str(interaction.session_id)]
+                # If using --reply with no query, user might just want to resume?
+                # But typically reply implies sending a message.
+            else:
+                # Convert to session
+                try:
+                    new_sid = repo.convert_history_to_session(target_id)
+                    args.resume_session = [str(new_sid)]
+                    print(f"Converted message {target_id} to Session {new_sid}.")
+                except Exception as e:
+                    print(f"Error converting message to session: {e}")
+                    return
 
     # Commands that don't require banner or query
     if args.history is not None:

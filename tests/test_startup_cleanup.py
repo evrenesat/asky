@@ -50,6 +50,8 @@ class TestStartupCleanup:
                 args.add_model = False
                 args.edit_model = None
                 args.query = ["test", "query"]
+                args.reply = False
+                args.from_message = None
 
                 mock_parse.return_value = args
                 yield mock_parse

@@ -662,3 +662,182 @@ class SQLiteHistoryRepository(HistoryRepository):
             content = row[0]
             return content[:max_chars] + "..." if len(content) > max_chars else content
         return ""
+
+    def get_interaction_by_id(self, interaction_id: int) -> Optional[Interaction]:
+        """Fetch a single interaction (assistant message id) with its details."""
+        conn = self._get_conn()
+        conn.row_factory = sqlite3.Row
+        c = conn.cursor()
+
+        c.execute("SELECT * FROM messages WHERE id = ?", (interaction_id,))
+        row = c.fetchone()
+
+        if not row:
+            conn.close()
+            return None
+
+        # If it's an assistant message, try to find the query
+        query = ""
+        answer = ""
+        role = row["role"]
+
+        if role == "assistant":
+            answer = row["content"]
+            # Try to find preceding user message (same session or history pair)
+            if row["session_id"]:
+                c.execute(
+                    "SELECT content FROM messages WHERE session_id=? AND role='user' AND id < ? ORDER BY id DESC LIMIT 1",
+                    (row["session_id"], interaction_id),
+                )
+            else:
+                c.execute(
+                    "SELECT content FROM messages WHERE session_id IS NULL AND role='user' AND id < ? ORDER BY id DESC LIMIT 1",
+                    (interaction_id,),
+                )
+            q_row = c.fetchone()
+            if q_row:
+                query = q_row["content"]
+        elif role == "user":
+            query = row["content"]
+            # Try to find succeeding assistant message (same session or history pair)
+            if row["session_id"]:
+                c.execute(
+                    "SELECT content FROM messages WHERE session_id=? AND role='assistant' AND id > ? ORDER BY id ASC LIMIT 1",
+                    (row["session_id"], interaction_id),
+                )
+            else:
+                c.execute(
+                    "SELECT content FROM messages WHERE session_id IS NULL AND role='assistant' AND id > ? ORDER BY id ASC LIMIT 1",
+                    (interaction_id,),
+                )
+            a_row = c.fetchone()
+            if a_row:
+                answer = a_row["content"]
+
+        conn.close()
+
+        return Interaction(
+            id=row["id"],
+            timestamp=row["timestamp"],
+            session_id=row["session_id"],
+            role=role,
+            content=row["content"],
+            query=query,
+            answer=answer,
+            summary=row["summary"],
+            model=row["model"],
+            token_count=row["token_count"],
+        )
+
+    def get_last_interaction(self) -> Optional[Interaction]:
+        """Fetch the most recent interaction (message) from the DB."""
+        conn = self._get_conn()
+        conn.row_factory = sqlite3.Row
+        c = conn.cursor()
+
+        # Get the absolute last message ID
+        c.execute("SELECT id FROM messages ORDER BY timestamp DESC, id DESC LIMIT 1")
+        row = c.fetchone()
+        conn.close()
+
+        if row:
+            return self.get_interaction_by_id(row["id"])
+        return None
+
+    def convert_history_to_session(self, interaction_id: int) -> int:
+        """Convert a history interaction into a new session.
+
+        Creates a new session and copies the interaction (user+assistant pair)
+        into it. Returns the new session ID.
+        """
+        interaction = self.get_interaction_by_id(interaction_id)
+        if not interaction:
+            raise ValueError(f"Interaction {interaction_id} not found")
+
+        if interaction.session_id is not None:
+            # Already a session message, return that session ID
+            return interaction.session_id
+
+        user_content = ""
+        user_summary = ""
+        user_tokens = 0
+
+        assistant_content = ""
+        assistant_summary = ""
+        assistant_tokens = 0
+
+        conn = self._get_conn()
+        conn.row_factory = sqlite3.Row
+        c = conn.cursor()
+
+        # If pointing to Assistant message, find User message.
+        # If pointing to User message, find Assistant message.
+        # We want to maintain order: User -> Assistant
+
+        if interaction.role == "assistant":
+            assistant_content = interaction.content
+            assistant_summary = interaction.summary
+            assistant_tokens = interaction.token_count
+
+            # Find partner user message
+            c.execute(
+                "SELECT * FROM messages WHERE session_id IS NULL AND role='user' AND id < ? ORDER BY id DESC LIMIT 1",
+                (interaction.id,),
+            )
+            u_row = c.fetchone()
+            if u_row:
+                user_content = u_row["content"]
+                user_summary = u_row["summary"]
+                user_tokens = u_row["token_count"]
+
+        elif interaction.role == "user":
+            user_content = interaction.content
+            user_summary = interaction.summary
+            user_tokens = interaction.token_count
+
+            # Find partner assistant message
+            c.execute(
+                "SELECT * FROM messages WHERE session_id IS NULL AND role='assistant' AND id > ? ORDER BY id ASC LIMIT 1",
+                (interaction.id,),
+            )
+            a_row = c.fetchone()
+            if a_row:
+                assistant_content = a_row["content"]
+                assistant_summary = a_row["summary"]
+                assistant_tokens = a_row["token_count"]
+
+        conn.close()
+
+        # Create Session Name
+        session_name = "New Session"
+        if user_content:
+            lines = user_content.split("\\n")
+            first_line = lines[0].strip()
+            session_name = (
+                (first_line[:30] + "...") if len(first_line) > 30 else first_line
+            )
+
+        # Create Session
+        new_session_id = self.create_session(model=interaction.model, name=session_name)
+
+        # Copy User Message
+        if user_content:
+            self.save_message(
+                session_id=new_session_id,
+                role="user",
+                content=user_content,
+                summary=user_summary or "",
+                token_count=user_tokens or 0,
+            )
+
+        # Copy Assistant Message
+        if assistant_content:
+            self.save_message(
+                session_id=new_session_id,
+                role="assistant",
+                content=assistant_content,
+                summary=assistant_summary or "",
+                token_count=assistant_tokens or 0,
+            )
+
+        return new_session_id

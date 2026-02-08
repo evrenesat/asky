@@ -40,6 +40,8 @@ def mock_args():
         add_model=False,
         edit_model=None,
         query=["test", "query"],
+        reply=False,
+        from_message=None,
     )
 
 
@@ -467,6 +469,8 @@ def test_main_flow(
         terminal_lines=None,
         add_model=False,
         edit_model=None,
+        reply=False,
+        from_message=None,
     )
     mock_run.return_value = "Final Answer"
     mock_gen_sum.return_value = ("q_sum", "a_sum")
@@ -552,6 +556,8 @@ def test_main_flow_verbose(
         terminal_lines=10,
         add_model=False,
         edit_model=None,
+        reply=False,
+        from_message=None,
     )
     mock_run.return_value = "Final Answer"
     mock_gen_sum.return_value = ("q_sum", "a_sum")
@@ -601,7 +607,9 @@ def test_main_flow_verbose(
 @patch("asky.cli.chat.generate_summaries")
 @patch("asky.cli.chat.save_interaction")
 @patch("asky.cli.terminal.get_terminal_context")
+@patch("asky.cli.main.setup_logging")
 def test_main_flow_default_no_context(
+    mock_setup_logging,
     mock_get_term,
     mock_save,
     mock_gen_sum,
@@ -635,6 +643,8 @@ def test_main_flow_default_no_context(
         terminal_lines=None,  # Flag missing
         add_model=False,
         edit_model=None,
+        reply=False,
+        from_message=None,
     )
     mock_run.return_value = "Final Answer"
     mock_gen_sum.return_value = ("q_sum", "a_sum")
@@ -724,6 +734,8 @@ def test_main_terminal_lines_callback(
         terminal_lines=5,  # Valid logic trigger
         add_model=False,
         edit_model=None,
+        reply=False,
+        from_message=None,
     )
     mock_run.return_value = "Ans"
     mock_gen_sum.return_value = ("q", "a")
@@ -763,7 +775,10 @@ def test_main_terminal_lines_callback(
 @patch("asky.cli.main.prompts.list_prompts_command")
 @patch("asky.cli.main.parse_args")
 @patch("asky.cli.main.init_db")
-def test_slash_only_lists_all_prompts(mock_init, mock_parse, mock_list_prompts):
+@patch("asky.cli.main.setup_logging")
+def test_slash_only_lists_all_prompts(
+    mock_setup_logging, mock_init, mock_parse, mock_list_prompts
+):
     """Test that 'asky /' lists all prompts."""
     mock_parse.return_value = argparse.Namespace(
         model="gf",
@@ -786,6 +801,8 @@ def test_slash_only_lists_all_prompts(mock_init, mock_parse, mock_list_prompts):
         session_end=False,
         session_history=None,
         terminal_lines=None,
+        reply=False,
+        from_message=None,
         add_model=False,
         edit_model=None,
     )
@@ -805,7 +822,10 @@ def test_slash_only_lists_all_prompts(mock_init, mock_parse, mock_list_prompts):
 @patch("asky.cli.main.prompts.list_prompts_command")
 @patch("asky.cli.main.parse_args")
 @patch("asky.cli.main.init_db")
-def test_slash_partial_filters_prompts(mock_init, mock_parse, mock_list_prompts):
+@patch("asky.cli.main.setup_logging")
+def test_slash_partial_filters_prompts(
+    mock_setup_logging, mock_init, mock_parse, mock_list_prompts
+):
     """Test that 'asky /g' filters prompts by prefix."""
     mock_parse.return_value = argparse.Namespace(
         model="gf",
@@ -828,6 +848,8 @@ def test_slash_partial_filters_prompts(mock_init, mock_parse, mock_list_prompts)
         session_end=False,
         session_history=None,
         terminal_lines=None,
+        reply=False,
+        from_message=None,
         add_model=False,
         edit_model=None,
     )
@@ -851,7 +873,9 @@ def test_slash_partial_filters_prompts(mock_init, mock_parse, mock_list_prompts)
 @patch("asky.cli.chat.generate_summaries")
 @patch("asky.cli.chat.save_interaction")
 @patch("asky.cli.terminal.get_terminal_context")
+@patch("asky.cli.main.setup_logging")
 def test_main_terminal_lines_logic(
+    mock_setup_logging,
     mock_get_term,
     mock_save,
     mock_gen_sum,
@@ -893,6 +917,8 @@ def test_main_terminal_lines_logic(
             add_model=False,
             edit_model=None,
             query=["query"],
+            reply=False,
+            from_message=None,
         )
         main()
         args, _ = mock_run_chat.call_args
@@ -923,6 +949,8 @@ def test_main_terminal_lines_logic(
             add_model=False,
             edit_model=None,
             query=["query"],
+            reply=False,
+            from_message=None,
         )
         main()
         args, _ = mock_run_chat.call_args
@@ -955,6 +983,8 @@ def test_main_terminal_lines_logic(
             add_model=False,
             edit_model=None,
             query=["is", "this"],
+            reply=False,
+            from_message=None,
         )
         main()
         args, _ = mock_run_chat.call_args
@@ -967,8 +997,9 @@ def test_main_terminal_lines_logic(
 @patch("asky.cli.main.prompts.list_prompts_command")
 @patch("asky.cli.main.parse_args")
 @patch("asky.cli.main.init_db")
+@patch("asky.cli.main.setup_logging")
 def test_slash_nonexistent_shows_filtered_list(
-    mock_init, mock_parse, mock_list_prompts
+    mock_setup_logging, mock_init, mock_parse, mock_list_prompts
 ):
     """Test that 'asky /nonexistent' shows filtered list (which will show no matches then all)."""
     mock_parse.return_value = argparse.Namespace(
@@ -992,6 +1023,8 @@ def test_slash_nonexistent_shows_filtered_list(
         session_end=False,
         session_history=None,
         terminal_lines=None,
+        reply=False,
+        from_message=None,
         add_model=False,
         edit_model=None,
     )

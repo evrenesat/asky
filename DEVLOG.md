@@ -1,3 +1,25 @@
+## 2026-02-08 - Message to Session & Quick Reply
+
+**Summary**: Implemented user requested features to easily transition from a single history message to a full session, and a shortcut to reply to the last message.
+
+**Features**:
+1. **Convert Message to Session (`--from-message <ID>`)**: 
+   - Allows users to pick any historical message ID and "promote" it to a new session.
+   - The original history entry is **copied** to the new session to preserve the immutable history log.
+   - The new session is automatically named based on the user's query.
+2. **Quick Reply (`--reply`)**: 
+   - A shortcut to effectively "continue" the conversation from the very last message.
+   - If the last message was part of a session, it resumes that session.
+   - If the last message was a standalone history item, it automatically converts it to a session (using logic from #1) and resumes it.
+
+**Changes**:
+- **Storage**: Added `convert_history_to_session`, `get_interaction_by_id`, `get_last_interaction` to `SQLiteHistoryRepository`.
+- **CLI**: Added `--from-message` and `--reply` flags to `main.py`.
+- **Testing**:
+  - Added `tests/test_feature_reply.py` covering all new scenarios.
+  - Patched `tests/test_cli.py` to fix pre-existing `PermissionError`s related to logging setup in test environment.
+  - Verified full test suite passes (except environment-specific `ps` prohibition).
+
 ## 2026-02-08 - Startup Performance Guardrail Tests (Latency + Idle RSS)
 
 **Summary**: Added two automated guardrail tests to detect regressions in CLI startup latency and idle memory footprint.

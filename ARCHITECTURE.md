@@ -169,6 +169,8 @@ The CLI is modularized for maintainability:
 | `--push-param KEY VALUE` | Dynamic parameter for push-data (repeatable) |
 | `--add-model` | Interactively add a new model |
 | `--edit-model` | Interactively edit a model |
+| `--from-message` | Convert history message to new session |
+| `--reply` | Quick reply to last message (history or session) |
 
 ---
 
@@ -272,7 +274,7 @@ Unified storage for both history and sessions:
 - `get_history()`: Retrieve recent interactions
 - `get_interaction_context()`: Build context string from IDs
 - `delete_messages()` / `delete_sessions()`: Cascading deletion
-- Session methods: `create_session`, `save_message`, `compact_session`, etc.
+- Session methods: `create_session`, `save_message`, `compact_session`, `convert_history_to_session`, etc.
 
 ---
 
