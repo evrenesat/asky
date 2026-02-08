@@ -41,7 +41,8 @@ def mock_args():
         edit_model=None,
         query=["test", "query"],
         reply=False,
-        from_message=None,
+        session_from_message=None,
+        completion_script=None,
     )
 
 
@@ -111,6 +112,19 @@ def test_parse_args_terminal_lines_mixed_query():
         # In parse_args, it consumes 'why' as value because nargs='?'
         assert args.terminal_lines == "why"
         assert args.query == ["is", "this"]
+
+
+def test_parse_args_session_from_message_short_flag():
+    with patch("sys.argv", ["asky", "-sfm", "12", "next"]):
+        args = parse_args()
+        assert args.session_from_message == "12"
+        assert args.query == ["next"]
+
+
+def test_parse_args_completion_script():
+    with patch("sys.argv", ["asky", "--completion-script", "zsh"]):
+        args = parse_args()
+        assert args.completion_script == "zsh"
 
 
 @patch("asky.cli.history.get_history")
@@ -219,6 +233,14 @@ def test_load_context_mixed(mock_get_context, mock_get_history):
     # verify call args contains 123 and 10. Order might vary due to sorted(set(...))
     call_args = mock_get_context.call_args[0][0]
     assert set(call_args) == {10, 123}
+
+
+@patch("asky.cli.chat.get_interaction_context")
+def test_load_context_history_selector_token(mock_get_context):
+    mock_get_context.return_value = "Token Context"
+    result = load_context("project_brief__hid_123", False)
+    assert result == "Token Context"
+    mock_get_context.assert_called_with([123], full=True)
 
 
 @patch("asky.cli.chat.get_history")
@@ -362,6 +384,15 @@ def test_print_answers(mock_get_context, capsys):
     mock_get_context.assert_called_with([1, 2], full=True)
 
 
+@patch("asky.cli.history.get_interaction_context")
+def test_print_answers_selector_tokens(mock_get_context, capsys):
+    mock_get_context.return_value = "Answer Content"
+    print_answers("plan_update__id_318,quick_note__id_316", False, open_browser=False)
+    captured = capsys.readouterr()
+    assert "Answer Content" in captured.out
+    mock_get_context.assert_called_with([318, 316], full=True)
+
+
 @patch("asky.cli.history.delete_messages")
 def test_handle_delete_messages(mock_delete):
     args = MagicMock()
@@ -423,6 +454,48 @@ def test_handle_print_answer_implicit_fail():
 
 
 @patch("asky.cli.main.parse_args")
+@patch("asky.cli.main.setup_logging")
+@patch("asky.cli.main.init_db")
+@patch("asky.cli.main.chat.run_chat")
+def test_main_completion_script_early_exit(
+    mock_run_chat, mock_init_db, mock_setup_logging, mock_parse, capsys
+):
+    mock_parse.return_value = argparse.Namespace(
+        model="gf",
+        history=None,
+        continue_ids=None,
+        summarize=False,
+        delete_messages=None,
+        delete_sessions=None,
+        all=False,
+        print_session=None,
+        print_ids=None,
+        prompts=False,
+        query=[],
+        verbose=False,
+        open=False,
+        mail_recipients=None,
+        subject=None,
+        sticky_session=None,
+        resume_session=None,
+        session_end=False,
+        session_history=None,
+        terminal_lines=None,
+        add_model=False,
+        edit_model=None,
+        reply=False,
+        session_from_message=None,
+        completion_script="bash",
+    )
+
+    main()
+    captured = capsys.readouterr()
+    assert "#compdef asky ask" in captured.out
+    mock_init_db.assert_not_called()
+    mock_run_chat.assert_not_called()
+
+
+@patch("asky.cli.main.parse_args")
 @patch("asky.cli.main.init_db")
 @patch("asky.cli.main.get_db_record_count")
 @patch("asky.cli.chat.ConversationEngine.run")
@@ -470,7 +543,8 @@ def test_main_flow(
         add_model=False,
         edit_model=None,
         reply=False,
-        from_message=None,
+        session_from_message=None,
+        completion_script=None,
     )
     mock_run.return_value = "Final Answer"
     mock_gen_sum.return_value = ("q_sum", "a_sum")
@@ -557,7 +631,8 @@ def test_main_flow_verbose(
         add_model=False,
         edit_model=None,
         reply=False,
-        from_message=None,
+        session_from_message=None,
+        completion_script=None,
     )
     mock_run.return_value = "Final Answer"
     mock_gen_sum.return_value = ("q_sum", "a_sum")
@@ -644,7 +719,8 @@ def test_main_flow_default_no_context(
         add_model=False,
         edit_model=None,
         reply=False,
-        from_message=None,
+        session_from_message=None,
+        completion_script=None,
     )
     mock_run.return_value = "Final Answer"
     mock_gen_sum.return_value = ("q_sum", "a_sum")
@@ -735,7 +811,8 @@ def test_main_terminal_lines_callback(
         add_model=False,
         edit_model=None,
         reply=False,
-        from_message=None,
+        session_from_message=None,
+        completion_script=None,
     )
     mock_run.return_value = "Ans"
     mock_gen_sum.return_value = ("q", "a")
@@ -802,7 +879,8 @@ def test_slash_only_lists_all_prompts(
         session_history=None,
         terminal_lines=None,
         reply=False,
-        from_message=None,
+        session_from_message=None,
+        completion_script=None,
         add_model=False,
         edit_model=None,
     )
@@ -849,7 +927,8 @@ def test_slash_partial_filters_prompts(
         session_history=None,
         terminal_lines=None,
         reply=False,
-        from_message=None,
+        session_from_message=None,
+        completion_script=None,
         add_model=False,
         edit_model=None,
     )
@@ -918,7 +997,8 @@ def test_main_terminal_lines_logic(
             edit_model=None,
             query=["query"],
             reply=False,
-            from_message=None,
+            session_from_message=None,
+            completion_script=None,
         )
         main()
         args, _ = mock_run_chat.call_args
@@ -950,7 +1030,8 @@ def test_main_terminal_lines_logic(
             edit_model=None,
             query=["query"],
             reply=False,
-            from_message=None,
+            session_from_message=None,
+            completion_script=None,
         )
         main()
         args, _ = mock_run_chat.call_args
@@ -984,7 +1065,8 @@ def test_main_terminal_lines_logic(
             edit_model=None,
             query=["is", "this"],
             reply=False,
-            from_message=None,
+            session_from_message=None,
+            completion_script=None,
         )
         main()
         args, _ = mock_run_chat.call_args
@@ -1024,7 +1106,8 @@ def test_slash_nonexistent_shows_filtered_list(
         session_history=None,
         terminal_lines=None,
         reply=False,
-        from_message=None,
+        session_from_message=None,
+        completion_script=None,
         add_model=False,
         edit_model=None,
     )

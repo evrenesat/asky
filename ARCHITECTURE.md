@@ -79,6 +79,7 @@ src/asky/
 ├── cli/                # Command-line interface layer
 │   ├── __init__.py     # Lazy CLI exports for lightweight imports
 │   ├── main.py         # Argument parsing, command routing, lazy startup path
+│   ├── completion.py   # Argcomplete wiring + dynamic value completers
 │   ├── chat.py         # Chat conversation flow
 │   ├── history.py      # History viewing/deletion commands
 │   ├── sessions.py     # Session management commands
@@ -137,6 +138,7 @@ The CLI is modularized for maintainability:
 | `sessions.py` | `-sH`, `-ps`, `--delete-sessions`, `--session-end` commands |
 | `prompts.py` | `-p` command to list user prompts |
 | `models.py` | `--add-model`, `--edit-model` interactive commands |
+| `completion.py` | Shell completion providers + script generation for bash/zsh (with preview labels and selector-token parsing for history/answers/sessions) |
 | `openrouter.py` | OpenRouter API client and caching logic |
 | `utils.py` | Query expansion (`/cp`, `/prompt_key`), verbose config printing |
 
@@ -145,6 +147,7 @@ The CLI is modularized for maintainability:
 - `asky/__init__.py`, `asky/cli/__init__.py`, `asky/core/__init__.py`, and `asky/research/__init__.py` now expose symbols lazily via wrapper functions / `__getattr__`.
 - `cli/main.py` avoids eager imports of `chat`, `history`, `sessions`, `prompts`, and `utils` using lazy module proxies.
 - `main()` now short-circuits quick commands (`--add-model`, `--edit-model`, prompt listing) before DB/cache startup work.
+- Argcomplete activation is lazy-gated by `_ARGCOMPLETE` environment variable so normal CLI runs avoid completion library overhead.
 - Database initialization is conditional per command path instead of unconditional at process start.
 - Research cache expiry cleanup is launched on chat path via a background daemon thread with a short non-blocking join head-start.
 - File-based custom prompts are loaded only when needed (prompt listing or slash-command expansion).
@@ -160,7 +163,9 @@ The CLI is modularized for maintainability:
 | `-H, --history [N]` | Show last N history entries |
 | `-pa, --print-answer` | Print specific answer(s) by ID |
 | `-ps, --print-session` | Print session content |
-| `-ss, --sticky-session` | Start/resume persistent session |
+| `-ss, --sticky-session` | Create and activate a new named session |
+| `-rs, --resume-session` | Resume an existing session by ID/name |
+| `-sfm, --session-from-message` | Convert history message to session and resume it |
 | `--delete-messages` | Delete history records |
 | `--delete-sessions` | Delete session records |
 | `-o, --open` | Open result in browser |
@@ -169,7 +174,7 @@ The CLI is modularized for maintainability:
 | `--push-param KEY VALUE` | Dynamic parameter for push-data (repeatable) |
 | `--add-model` | Interactively add a new model |
 | `--edit-model` | Interactively edit a model |
-| `--from-message` | Convert history message to new session |
+| `--completion-script {bash,zsh}` | Print shell setup snippet for argcomplete |
 | `--reply` | Quick reply to last message (history or session) |
 
 ---

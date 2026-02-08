@@ -4,6 +4,7 @@ from rich.console import Console
 from rich.table import Table
 from rich.markdown import Markdown
 
+from asky.cli.completion import parse_answer_selector_token
 from asky.core.prompts import is_markdown
 from asky.rendering import render_to_browser
 from asky.storage import (
@@ -68,20 +69,24 @@ def print_answers_command(
     subject: str = None,
 ) -> None:
     """Print answers for specific history IDs."""
-    try:
-        ids = [int(x.strip()) for x in ids_str.split(",")]
-    except ValueError:
-        print(
-            f"Error: Invalid history ID format: '{ids_str}'. Use integers or comma-separated list."
-        )
-        return
+    ids = []
+    for raw_token in ids_str.split(","):
+        token = raw_token.strip()
+        parsed_id = parse_answer_selector_token(token)
+        if parsed_id is None:
+            print(
+                f"Error: Invalid history ID format: '{ids_str}'. "
+                "Use integer IDs, comma-separated IDs, or completion selector tokens."
+            )
+            return
+        ids.append(parsed_id)
 
     context = get_interaction_context(ids, full=not summarize)
     if not context:
         print("No records found for the given IDs.")
         return
 
-    print(f"\n[Retrieving answers for IDs: {ids_str}]\n")
+    print(f"\n[Retrieving answers for IDs: {', '.join(str(i) for i in ids)}]\n")
     print("-" * 60)
     if is_markdown(context):
         console = Console()

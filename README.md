@@ -158,12 +158,16 @@ options:
                         Create and activate a new named session (then exits).
   -rs, --resume-session RESUME_SESSION [RESUME_SESSION ...]
                         Resume an existing session by ID or name.
+  -sfm, --session-from-message SESSION_FROM_MESSAGE
+                        Convert a specific history message ID into a session and resume it.
   -se, --session-end    End the current active session
   -sh, --session-history [SESSION_HISTORY]
                         Show last N sessions (default 10).
   -r, --research        Enable deep research mode with link extraction and RAG-based content retrieval.
   -tl, --terminal-lines [TERMINAL_LINES]
                         Include the last N lines of terminal context in the query.
+  --completion-script {bash,zsh}
+                        Print shell setup snippet for argcomplete and exit.
 ```
 
 ## Features in Depth
@@ -190,7 +194,29 @@ asky -ss "Project Alpha"
 
 # Later, resume it
 asky -rs "Project Alpha" what were we discussing?
+
+# Convert a history item into a session and continue
+asky -sfm 42 continue this thread
 ```
+
+### Shell Auto-Completion
+Enable tab completion for flags and dynamic values (models, history IDs, session IDs/names):
+
+```bash
+# Bash
+asky --completion-script bash >> ~/.bashrc
+source ~/.bashrc
+
+# Zsh
+asky --completion-script zsh >> ~/.zshrc
+source ~/.zshrc
+```
+
+The generated snippet is self-contained and does not require `register-python-argcomplete` on your PATH.
+History and session value suggestions include short previews (query/session name + timestamp) so numeric IDs are easier to pick.
+For `-pa/--print-answer` and `-sfm/--session-from-message`, completion also includes word-based selector tokens that decode back to the original answer ID automatically.
+Session completion (`-ps`, `-rs`) now returns one selector per session (name-derived token + hidden session ID), avoiding duplicate ID/name rows.
+Continue-chat completion (`-c`) uses the same selector style for history items, and selector tokens resolve back to numeric IDs automatically.
 
 ### Output Actions
 Automate your workflow by pushing results to other services:

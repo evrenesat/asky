@@ -19,6 +19,11 @@ SHORTLIST_MODE_ON = "on"
 SHORTLIST_MODE_OFF = "off"
 
 
+def list_model_aliases() -> List[str]:
+    """Return available model aliases in a stable order."""
+    return sorted(MODELS.keys())
+
+
 def update_general_config(key: str, value: str):
     """Update general.toml configuration using tomlkit."""
     config_path = Path.home() / ".config" / "asky" / "general.toml"
@@ -257,7 +262,7 @@ def edit_model_command(model_alias: Optional[str] = None):
         table.add_column("Alias")
         table.add_column("ID")
 
-        aliases = list(MODELS.keys())
+        aliases = list_model_aliases()
         for i, alias in enumerate(aliases, 1):
             model = MODELS[alias]
 

@@ -1,3 +1,141 @@
+## 2026-02-08 - Continue-Chat Selector Tokens
+
+**Summary**: Applied the same word-based selector approach to `-c/--continue-chat` so users can recall context entries by words instead of typing numeric IDs.
+
+**Changes**:
+- `src/asky/cli/completion.py`:
+  - Added history selector marker parsing via `parse_history_selector_token(...)`.
+  - History completion entries now emit one selector token per interaction (`...__hid_<id>`) with labels that include message ID + preview text.
+- `src/asky/cli/chat.py`:
+  - `load_context(...)` now accepts history selector tokens in addition to raw numeric IDs and `~N` relative references.
+  - Error text updated to mention selector-token support.
+- `tests/test_cli.py`:
+  - Added `test_load_context_history_selector_token`.
+- `tests/test_completion.py`:
+  - Added parsing coverage for history selector tokens.
+
+**Verification**:
+- Full suite:
+  - `uv run pytest`
+  - Result: `392 passed`
+
+## 2026-02-08 - Session Completion De-duplication + Selector Parsing
+
+**Summary**: Removed duplicate session completion rows (ID + name pairs) by emitting one unique selector per session, while preserving easy lookup by human-readable words.
+
+**Changes**:
+- `src/asky/cli/completion.py`:
+  - Added session selector format support via `parse_session_selector_token(...)`.
+  - Session completion now emits one token per session (name-derived slug + `__sid_<id>` suffix), with description containing session ID, name preview, and created timestamp.
+  - Added `_build_session_selector_token(...)` helper.
+- `src/asky/cli/main.py`:
+  - Normalizes `--print-session` and `--resume-session` selector tokens to raw session IDs before command dispatch.
+- `tests/test_completion.py`:
+  - Added parsing coverage for session selector tokens.
+  - Updated session completion expectations to one token per session (no duplicate ID/name rows).
+
+**Verification**:
+- Full suite:
+  - `uv run pytest`
+  - Result: `391 passed`
+
+## 2026-02-08 - Word-Based Answer Selectors for Print/Session-From-Message
+
+**Summary**: Improved completion UX for `-pa` and `-sfm` by adding searchable word-based selector tokens that still resolve to real assistant message IDs.
+
+**Changes**:
+- `src/asky/cli/completion.py`:
+  - Added `parse_answer_selector_token(...)` to decode either:
+    - raw numeric ID (`318`)
+    - selector tokens (`some_words__id_318`)
+  - Assistant-answer completions now emit both numeric IDs and searchable selector aliases derived from answer preview text.
+  - CSV completion now deduplicates by underlying assistant message ID so selecting an ID does not offer alias duplicates for the same record.
+- `src/asky/cli/history.py`:
+  - `print_answers_command(...)` now accepts selector tokens and resolves them to numeric assistant IDs before retrieval.
+- `src/asky/cli/main.py`:
+  - `--session-from-message` accepts selector tokens (string input) and resolves to numeric ID via completion parser.
+
+**Verification**:
+- Full suite:
+  - `uv run pytest`
+  - Result: `390 passed`
+
+## 2026-02-08 - Session-From-Message Completion Aligned with Print-Answer
+
+**Summary**: Updated `-sfm/--session-from-message` completion so it uses the exact assistant-only candidate list as `-pa/--print-answer`.
+
+**Changes**:
+- `src/asky/cli/main.py`:
+  - `--session-from-message` completer now uses `complete_single_answer_id`.
+- `src/asky/cli/completion.py`:
+  - Added `complete_single_answer_id(...)` backed by `_get_recent_answer_hints(...)`.
+  - This keeps `-sfm` and `-pa` completion sources identical (assistant message IDs + answer previews).
+- `tests/test_completion.py`:
+  - Added `test_complete_single_answer_id`.
+
+**Verification**:
+- Full suite:
+  - `uv run pytest`
+  - Result: `388 passed`
+
+## 2026-02-08 - Print-Answer Completion Scoped to Assistant Messages
+
+**Summary**: Refined `--print-answer` auto-completion so it now suggests only assistant response IDs and answer previews, excluding user prompt entries from hint text.
+
+**Changes**:
+- Added dedicated completion path in `src/asky/cli/completion.py`:
+  - `complete_answer_ids(...)`
+  - `_get_recent_answer_hints(...)` (assistant-only query: `role='assistant'`, `session_id IS NULL`)
+- Updated parser wiring in `src/asky/cli/main.py`:
+  - `--print-answer` now uses `complete_answer_ids` instead of generic history completer.
+- Added coverage in `tests/test_completion.py` for assistant-only CSV completion behavior.
+
+**Verification**:
+- Full suite:
+  - `uv run pytest`
+  - Result: `387 passed`
+
+## 2026-02-08 - Argcomplete Shell Completion + Session-From-Message Flag Rename
+
+**Summary**: Added argcomplete-backed shell auto-completion with dynamic value hints, renamed `--from-message` to `--session-from-message` with short alias `-sfm`, and added a built-in shell setup snippet flag.
+
+**Changes**:
+- **CLI completion module**:
+  - Added `src/asky/cli/completion.py`.
+  - Added value completers for:
+    - `--model` (model aliases via reusable model listing helper)
+    - `--continue-chat` / `--print-answer` (history ID hints, including comma-separated completion)
+    - `--print-session` / `--resume-session` (session ID + session-name hints)
+    - `--session-from-message` (history ID hints)
+  - Added `build_completion_script(shell)` for `bash`/`zsh`.
+  - Completion script output is now self-contained shellcode generated via `argcomplete.shellcode(...)` (no runtime dependency on `register-python-argcomplete` being on PATH).
+  - History/session value completers now return descriptive labels (query preview/session name + timestamp metadata) while still inserting only the selected token (ID/name).
+  - Argcomplete initialization is gated by `_ARGCOMPLETE` so regular runs keep startup overhead low.
+- **CLI argument changes** (`src/asky/cli/main.py`):
+  - Renamed session-conversion flag to:
+    - `-sfm`, `--session-from-message`
+  - Kept hidden legacy alias `--from-message` mapped to the same destination for compatibility.
+  - Added `--completion-script {bash,zsh}` to print shell setup snippet and exit.
+  - Wired completers to parser actions.
+- **Model listing reuse** (`src/asky/cli/models.py`):
+  - Added `list_model_aliases()` and reused it in edit-model flow and completion source.
+- **Tests**:
+  - Added `tests/test_completion.py` for completion helpers + script generation.
+  - Updated `tests/test_cli.py` to cover:
+    - `-sfm` parsing
+    - `--completion-script` parsing
+    - completion-script early-exit behavior in `main()`
+  - Updated `tests/test_startup_cleanup.py` and other CLI test args for renamed/added parser fields.
+
+**Verification**:
+- Full suite:
+  - `uv run pytest`
+  - Result: `386 passed`
+
+**Gotchas / Follow-up**:
+- Completion value hints are intentionally capped to recent history/session records for responsiveness.
+- Dynamic completion requires shell registration (`register-python-argcomplete`) and package availability of `argcomplete`.
+
 ## 2026-02-08 - Message to Session & Quick Reply
 
 **Summary**: Implemented user requested features to easily transition from a single history message to a full session, and a shortcut to reply to the last message.

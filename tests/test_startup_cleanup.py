@@ -51,7 +51,8 @@ class TestStartupCleanup:
                 args.edit_model = None
                 args.query = ["test", "query"]
                 args.reply = False
-                args.from_message = None
+                args.session_from_message = None
+                args.completion_script = None
 
                 mock_parse.return_value = args
                 yield mock_parse

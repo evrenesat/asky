@@ -55,18 +55,29 @@ CACHE_CLEANUP_JOIN_TIMEOUT_SECONDS = 0.05
 
 def parse_args() -> argparse.Namespace:
     """Parse command-line arguments."""
+    from asky.cli.completion import (
+        complete_answer_ids,
+        complete_history_ids,
+        complete_model_aliases,
+        complete_session_tokens,
+        complete_single_answer_id,
+        parse_answer_selector_token,
+        parse_session_selector_token,
+        enable_argcomplete,
+    )
+
     parser = argparse.ArgumentParser(
         description="Tool-calling CLI with model selection.",
         formatter_class=argparse.RawTextHelpFormatter,
     )
-    parser.add_argument(
+    model_action = parser.add_argument(
         "-m",
         "--model",
         default=DEFAULT_MODEL,
         choices=MODELS.keys(),
         help="Select the model alias",
     )
-    parser.add_argument(
+    continue_chat_action = parser.add_argument(
         "-c",
         "--continue-chat",
         dest="continue_ids",
@@ -104,13 +115,13 @@ def parse_args() -> argparse.Namespace:
         help="Show last N queries and answer summaries (default 10).\n"
         "Use with --print-answer to print the full answer(s).",
     )
-    parser.add_argument(
+    print_answer_action = parser.add_argument(
         "-pa",
         "--print-answer",
         dest="print_ids",
         help="Print the answer(s) for specific history IDs (comma-separated).",
     )
-    parser.add_argument(
+    print_session_action = parser.add_argument(
         "-ps",
         "--print-session",
         dest="print_session",
@@ -177,7 +188,7 @@ def parse_args() -> argparse.Namespace:
         help="Interactively edit an existing model definition.",
     )
 
-    parser.add_argument(
+    resume_session_action = parser.add_argument(
         "-rs",
         "--resume-session",
         nargs="+",
@@ -208,10 +219,16 @@ def parse_args() -> argparse.Namespace:
         "  - get_relevant_content: RAG-based retrieval of relevant sections\n"
         "  - get_full_content: Get complete cached content",
     )
+    session_from_message_action = parser.add_argument(
+        "-sfm",
+        "--session-from-message",
+        dest="session_from_message",
+        help="Convert a specific history message ID into a session and resume it.",
+    )
     parser.add_argument(
         "--from-message",
-        type=int,
-        help="Convert a specific history message ID into a session and resume it.",
+        dest="session_from_message",
+        help=argparse.SUPPRESS,
     )
     parser.add_argument(
         "--reply",
@@ -231,7 +248,21 @@ def parse_args() -> argparse.Namespace:
         const="__default__",
         help="Include the last N lines of terminal context in the query (default 10 if flag used without value).",
     )
+    parser.add_argument(
+        "--completion-script",
+        choices=["bash", "zsh"],
+        help="Print shell setup snippet for argcomplete and exit.",
+    )
     parser.add_argument("query", nargs="*", help="The query string")
+
+    model_action.completer = complete_model_aliases
+    continue_chat_action.completer = complete_history_ids
+    print_answer_action.completer = complete_answer_ids
+    print_session_action.completer = complete_session_tokens
+    resume_session_action.completer = complete_session_tokens
+    session_from_message_action.completer = complete_single_answer_id
+
+    enable_argcomplete(parser)
     return parser.parse_args()
 
 
@@ -317,6 +348,27 @@ def _start_research_cache_cleanup_thread() -> threading.Thread:
 def main() -> None:
     """Main entry point."""
     args = parse_args()
+    legacy_from_message = getattr(args, "from_message", None)
+    if (
+        getattr(args, "session_from_message", None) is None
+        and isinstance(legacy_from_message, int)
+    ):
+        args.session_from_message = legacy_from_message
+
+    if getattr(args, "print_session", None):
+        parsed_session_id = parse_session_selector_token(str(args.print_session))
+        if parsed_session_id is not None:
+            args.print_session = str(parsed_session_id)
+
+    if getattr(args, "resume_session", None):
+        normalized_resume_tokens = []
+        for token in args.resume_session:
+            parsed_session_id = parse_session_selector_token(str(token))
+            if parsed_session_id is None:
+                normalized_resume_tokens.append(token)
+            else:
+                normalized_resume_tokens.append(str(parsed_session_id))
+        args.resume_session = normalized_resume_tokens
 
     # Configure logging based on verbose flag
     if args.verbose:
@@ -329,6 +381,12 @@ def main() -> None:
     else:
         # Default: Standard file, Configured level
         setup_logging(LOG_LEVEL, LOG_FILE)
+
+    if args.completion_script:
+        from asky.cli.completion import build_completion_script
+
+        print(build_completion_script(args.completion_script))
+        return
 
     if args.add_model:
         from asky.cli.models import add_model_command
@@ -358,16 +416,25 @@ def main() -> None:
             args.session_end,
             bool(args.query),
             args.reply,  # Added for new logic
-            args.from_message,  # Added for new logic
+            getattr(args, "session_from_message", None),  # Added for new logic
         ]
     )
     if needs_db:
         init_db()
 
     # Handle Reply / From-Message shortcuts
-    if args.reply or args.from_message:
+    if args.reply or getattr(args, "session_from_message", None):
         repo = SQLiteHistoryRepository()
-        target_id = args.from_message
+        target_id = None
+        selector = getattr(args, "session_from_message", None)
+        if selector is not None:
+            target_id = parse_answer_selector_token(str(selector))
+            if target_id is None:
+                print(
+                    "Error: Invalid value for --session-from-message. "
+                    "Use an answer ID or a completion token ending with '__id_<ID>'."
+                )
+                return
 
         if args.reply:
             last = repo.get_last_interaction()

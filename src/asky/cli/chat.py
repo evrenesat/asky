@@ -57,6 +57,8 @@ def format_shortlist_context(shortlist_payload: Dict[str, Any]) -> str:
 def load_context(continue_ids: str, summarize: bool) -> Optional[str]:
     """Load context from previous interactions."""
     console = Console()
+    from asky.cli.completion import parse_history_selector_token
+
     try:
         raw_ids = [x.strip() for x in continue_ids.split(",")]
         resolved_ids = []
@@ -78,7 +80,10 @@ def load_context(continue_ids: str, summarize: bool) -> Optional[str]:
                     )
                     return None
             else:
-                resolved_ids.append(int(raw_id))
+                parsed_id = parse_history_selector_token(raw_id)
+                if parsed_id is None:
+                    raise ValueError(raw_id)
+                resolved_ids.append(parsed_id)
 
         if relative_indices:
             max_depth = max(relative_indices)
@@ -108,7 +113,7 @@ def load_context(continue_ids: str, summarize: bool) -> Optional[str]:
     except ValueError:
         console.print(
             "[bold red]Error:[/] Invalid format for -c/--continue-chat. "
-            "Use comma-separated integers or ~N for relative."
+            "Use comma-separated IDs, completion selector tokens, or ~N for relative."
         )
         return None
 
