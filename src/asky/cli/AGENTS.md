@@ -50,13 +50,18 @@ Main conversation entry point via `run_chat()`:
 2. **Local Source Preload**: Research mode can ingest local targets from prompt via `local_ingestion_flow.py`
 3. **Source Shortlisting**: Optional pre-LLM source ranking via `shortlist_flow.py` (lazy-loaded)
 4. **Message Building**: `build_messages()` constructs the base prompt
-5. **Registry Build**: Create mode-aware tool registry, applying any `--tool-off` exclusions
+5. **API Client Orchestration**: `AskyClient` creates mode-aware registry and runs engine
    - In research mode, chat ensures an active session (auto-creates one when missing).
    - In research mode, active chat `session_id` is forwarded into the research registry
      so memory tools can be session-scoped.
-6. **Prompt Augmentation**: Append enabled-tool guideline lines into the system prompt
-7. **Engine Invocation**: Passes to `ConversationEngine.run()`
+6. **Prompt Augmentation**: Enabled-tool guideline lines are appended before model calls
+7. **Engine Invocation**: Executed via `AskyClient.run_messages()`
 8. **Output Handling**: Saves interaction, optional browser/email/push
+
+### Error Handling
+
+- Context overflow errors are surfaced as `ContextOverflowError` from core engine.
+- CLI is responsible for user-facing retry guidance and terminal messaging.
 
 ### Live Banner Integration
 

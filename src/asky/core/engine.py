@@ -6,11 +6,6 @@ import requests
 import time
 from typing import Any, Callable, Dict, List, Optional, Set
 
-from rich.console import Console
-from rich.markdown import Markdown
-from rich.panel import Panel
-from rich.pretty import Pretty
-
 from asky.config import (
     DEFAULT_CONTEXT_SIZE,
     MAX_TURNS,
@@ -25,7 +20,8 @@ from asky.html import strip_think_tags
 from asky.lazy_imports import call_attr
 from asky.rendering import render_to_browser
 from asky.core.api_client import get_llm_msg, count_tokens, UsageTracker
-from asky.core.prompts import extract_calls, is_markdown
+from asky.core.exceptions import ContextOverflowError
+from asky.core.prompts import extract_calls
 from asky.core.registry import ToolRegistry
 from asky import summarization
 
@@ -71,6 +67,7 @@ class ConversationEngine:
         open_browser: bool = False,
         session_manager: Optional[Any] = None,
         verbose_output_callback: Optional[Callable[[Any], None]] = None,
+        event_callback: Optional[Callable[[str, Dict[str, Any]], None]] = None,
     ):
         self.model_config = model_config
         self.tool_registry = tool_registry
@@ -80,6 +77,7 @@ class ConversationEngine:
         self.open_browser = open_browser
         self.session_manager = session_manager
         self.verbose_output_callback = verbose_output_callback
+        self.event_callback = event_callback
         self._research_cache = None
         self.start_time: float = 0
         self.final_answer: str = ""
@@ -89,6 +87,12 @@ class ConversationEngine:
         if self._research_cache is None:
             self._research_cache = _get_research_cache()
         return self._research_cache
+
+    def _emit_event(self, name: str, **payload: Any) -> None:
+        """Emit a structured runtime event when a callback is configured."""
+        if self.event_callback is None:
+            return
+        self.event_callback(name, payload)
 
     def run(self, messages: List[Dict[str, Any]], display_callback=None) -> str:
         """Run the multi-turn conversation loop."""
@@ -104,6 +108,7 @@ class ConversationEngine:
             while turn < MAX_TURNS:
                 turn += 1
                 logger.info(f"Starting turn {turn}/{MAX_TURNS}")
+                self._emit_event("turn_start", turn=turn, max_turns=MAX_TURNS)
 
                 # Token & Turn Tracking
                 total_tokens = count_tokens(messages)
@@ -125,11 +130,22 @@ class ConversationEngine:
                 def status_reporter(msg: Optional[str]):
                     if display_callback:
                         display_callback(turn, status_message=msg)
+                    self._emit_event(
+                        "llm_status",
+                        turn=turn,
+                        status_message=msg,
+                    )
 
                 # Compaction Check
                 messages = self.check_and_compact(messages)
                 tool_schemas = self.tool_registry.get_schemas()
                 use_tools = bool(tool_schemas)
+                self._emit_event(
+                    "llm_start",
+                    turn=turn,
+                    use_tools=use_tools,
+                    message_count=len(messages),
+                )
 
                 msg = get_llm_msg(
                     self.model_config["id"],
@@ -142,6 +158,11 @@ class ConversationEngine:
                     tool_schemas=tool_schemas,
                     status_callback=status_reporter,
                     parameters=self.model_config.get("parameters"),
+                )
+                self._emit_event(
+                    "llm_end",
+                    turn=turn,
+                    has_tool_calls=bool(msg.get("tool_calls")),
                 )
 
                 calls = extract_calls(msg, turn)
@@ -158,13 +179,11 @@ class ConversationEngine:
                         display_callback(
                             turn, is_final=True, final_answer=self.final_answer
                         )
-                    else:
-                        # No callback, print the answer directly
-                        console = Console()
-                        if is_markdown(self.final_answer):
-                            console.print(Markdown(self.final_answer))
-                        else:
-                            console.print(self.final_answer)
+                    self._emit_event(
+                        "final_answer",
+                        turn=turn,
+                        final_answer=self.final_answer,
+                    )
 
                     if self.open_browser:
                         render_to_browser(
@@ -182,6 +201,13 @@ class ConversationEngine:
                     )
 
                     tool_name = call.get("function", {}).get("name", "unknown_tool")
+                    self._emit_event(
+                        "tool_start",
+                        turn=turn,
+                        call_index=call_index,
+                        total_calls=len(calls),
+                        tool_name=tool_name,
+                    )
                     if display_callback:
                         display_callback(
                             turn,
@@ -196,6 +222,14 @@ class ConversationEngine:
                     )
                     logger.debug(
                         f"Tool result [{len(str(result))} chrs]: {str(result)}"
+                    )
+                    self._emit_event(
+                        "tool_end",
+                        turn=turn,
+                        call_index=call_index,
+                        total_calls=len(calls),
+                        tool_name=tool_name,
+                        result=result,
                     )
 
                     # Track tool usage in tracker if available
@@ -230,12 +264,12 @@ class ConversationEngine:
                     display_callback(
                         turn + 1, is_final=True, final_answer=self.final_answer
                     )
-                else:
-                    console = Console()
-                    if is_markdown(self.final_answer):
-                        console.print(Markdown(self.final_answer))
-                    else:
-                        console.print(self.final_answer)
+                self._emit_event(
+                    "final_answer",
+                    turn=turn + 1,
+                    final_answer=self.final_answer,
+                    graceful_exit=True,
+                )
 
                 if self.open_browser:
                     render_to_browser(
@@ -245,7 +279,7 @@ class ConversationEngine:
         except requests.exceptions.HTTPError as e:
             if e.response is not None and e.response.status_code == 400:
                 logger.error(f"API Error 400: {e}")
-                self._handle_400_error(e, messages, status_reporter)
+                self._handle_400_error(e, messages)
             else:
                 self._handle_general_error(e)
 
@@ -261,7 +295,7 @@ class ConversationEngine:
     def _print_verbose_tool_call(
         self, call: Dict[str, Any], turn: int, call_index: int, total_calls: int
     ) -> None:
-        """Print detailed tool call info to terminal when verbose mode is enabled."""
+        """Emit detailed tool call info when verbose mode is enabled."""
         if not self.verbose:
             return
 
@@ -274,13 +308,24 @@ class ConversationEngine:
         except json.JSONDecodeError:
             parsed_args = {"_raw_arguments": args_str}
 
-        title = f"Tool {call_index}/{total_calls} | Turn {turn} | {tool_name}"
-        body = Pretty(parsed_args, indent_guides=True, expand_all=False)
-        panel = Panel(body, title=title, border_style="cyan", expand=False)
+        payload = {
+            "turn": turn,
+            "call_index": call_index,
+            "total_calls": total_calls,
+            "tool_name": tool_name,
+            "arguments": parsed_args,
+        }
         if self.verbose_output_callback:
-            self.verbose_output_callback(panel)
+            self.verbose_output_callback(payload)
             return
-        Console().print(panel)
+        logger.info(
+            "Tool %s/%s | Turn %s | %s | args=%s",
+            call_index,
+            total_calls,
+            turn,
+            tool_name,
+            parsed_args,
+        )
 
     def _compact_tool_message(self, msg: Dict[str, Any]) -> Dict[str, Any]:
         """Replace full URL content with summaries in a tool message.
@@ -392,7 +437,11 @@ class ConversationEngine:
         logger.info(
             f"Context threshold reached ({current_tokens}/{threshold_tokens}). Compacting..."
         )
-        Console().print("\n[Context limit reached. Compacting conversation history...]")
+        self._emit_event(
+            "context_compaction_start",
+            current_tokens=current_tokens,
+            threshold_tokens=threshold_tokens,
+        )
 
         # Phase 1: Smart Compaction (Non-destructive to message count)
         # Scan for tool messages and try to replace content with summaries
@@ -409,7 +458,12 @@ class ConversationEngine:
             logger.info(
                 f"Smart compaction successful. Reduced from {current_tokens} to {new_tokens}"
             )
-            Console().print("[Compaction successful using summaries]")
+            self._emit_event(
+                "context_compaction_success",
+                strategy="smart",
+                previous_tokens=current_tokens,
+                new_tokens=new_tokens,
+            )
             return smart_compacted_messages
 
         # Phase 2: Destructive Compaction (Drop messages)
@@ -432,9 +486,21 @@ class ConversationEngine:
             candidate = system_msgs + history + [last_msg]
             if count_tokens(candidate) < threshold_tokens:
                 logger.info(f"Compacted to {count_tokens(candidate)} tokens.")
+                self._emit_event(
+                    "context_compaction_success",
+                    strategy="drop_history",
+                    previous_tokens=current_tokens,
+                    new_tokens=count_tokens(candidate),
+                )
                 return candidate
 
         final_attempt = system_msgs + [last_msg]
+        self._emit_event(
+            "context_compaction_success",
+            strategy="minimal_context",
+            previous_tokens=current_tokens,
+            new_tokens=count_tokens(final_attempt),
+        )
         logger.info(
             f"Compaction failed to preserve history. Returning minimal context: {count_tokens(final_attempt)} tokens."
         )
@@ -488,74 +554,20 @@ class ConversationEngine:
 
         return final_answer
 
-    def _handle_400_error(self, e, messages, status_reporter):
-        """Handle 400 Bad Request errors interactively."""
-        console = Console()
-        console.print("\n\n[bold red][!] API Error:[/] 400 Bad Request (likely context overflow).")
-        console.print(f"    Message: {str(e)}")
-
-        while True:
-            console.print("\nOptions:")
-            console.print("  [r]etry        : Compact context more aggressively and retry")
-            console.print(
-                "  [s]witch model : Switch to a different model (e.g. larger context)"
-            )
-            console.print("  [e]xit         : Exit application")
-
-            choice = input("\nSelect action [r/s/e]: ").lower().strip()
-
-            if choice == "r":
-                console.print("Compacting and retrying...")
-                # Aggressive compaction: Force re-run of check_and_compact
-                # effectively, the loop in run() should handle it if we break/continue,
-                # but we are in exception handler.
-                # Simpler: Trigger compaction here and recursive call or re-raise special exception?
-                # Actually, since we are outside the loop (or inside it?), wait.
-                # The exception caught was INSIDE the loop? No, run() implementation shows it catches outside loop??
-                # Let's check where the try/except block is.
-                # Ah, the try/except in my replacement above covers the WHOLE loop.
-                # If exception happens, the loop is broken.
-                # So we can't easily "resume" the loop unless we restart it.
-
-                # To retry properly, we might need to recursively call run() with compacted messages?
-                # Or refactor run() to be robust.
-
-                # For now, let's try compacting and calling run() again with the SAME state.
-                # But we need to stay decrement MAX_TURNS?
-                # Actually, simply calling self.run(messages) might loop infinitely if we don't fix the issue.
-
-                messages = self.check_and_compact(messages)
-                # If check_and_compact didn't reduce enough (user selected retry implying "try again maybe it works now" or "force compaction"),
-                # we might need to be more aggressive.
-                # But check_and_compact checks threshold. If we are 400-ing, we ARE above actual limit (even if below threshold?).
-                # Or maybe the model doesn't support what we think.
-
-                # Let's just recursively call run().
-                # But we need to validte escape condition.
-                self.final_answer = self.run(
-                    messages, display_callback=None
-                )  # We lost the callback ref?
-                # We can reuse the one passed to _handle_400... wait, run takes display_callback.
-                # I need to store display_callback in self or pass it around.
-                # For this PR, let's just use self.run(messages) and assume standard output.
-                return
-
-            elif choice == "s":
-                from asky.config import MODELS
-
-                console.print(f"Available models: {', '.join(MODELS.keys())}")
-                new_alias = input("Enter model alias: ").strip()
-                if new_alias in MODELS:
-                    self.model_config = MODELS[new_alias]
-                    console.print(f"Switched to {new_alias}. Retrying...")
-                    self.final_answer = self.run(messages)
-                    return
-                else:
-                    console.print("Invalid model alias.")
-
-            elif choice == "e":
-                console.print("Exiting...")
-                return
+    def _handle_400_error(self, error: requests.exceptions.HTTPError, messages: List[Dict[str, Any]]) -> None:
+        """Raise a non-interactive overflow error for callers to handle."""
+        compacted_messages = self.check_and_compact(messages)
+        self._emit_event(
+            "context_overflow",
+            message=str(error),
+            compacted_message_count=len(compacted_messages),
+        )
+        raise ContextOverflowError(
+            str(error),
+            model_alias=self.model_config.get("alias"),
+            model_id=self.model_config.get("id"),
+            compacted_messages=compacted_messages,
+        ) from error
 
     def _handle_general_error(self, e):
         logger.info(f"Error: {str(e)}")

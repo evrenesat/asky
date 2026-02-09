@@ -16,10 +16,9 @@ from asky.config import (
     SOURCE_SHORTLIST_ENABLE_RESEARCH_MODE,
     SOURCE_SHORTLIST_ENABLE_STANDARD_MODE,
 )
+from asky.api import AskyClient, AskyConfig, ContextOverflowError
 from asky.core import (
     ConversationEngine,
-    create_default_tool_registry,
-    create_research_tool_registry,
     UsageTracker,
     construct_system_prompt,
     construct_research_system_prompt,
@@ -576,6 +575,18 @@ def run_chat(args: argparse.Namespace, query_text: str) -> None:
 
     def verbose_output_callback(renderable: Any) -> None:
         """Route verbose output through the active live console when present."""
+        if isinstance(renderable, dict):
+            tool_name = str(renderable.get("tool_name", "unknown_tool"))
+            call_index = int(renderable.get("call_index", 0) or 0)
+            total_calls = int(renderable.get("total_calls", 0) or 0)
+            turn = int(renderable.get("turn", 0) or 0)
+            args_value = renderable.get("arguments", {})
+            renderable = Panel(
+                str(args_value),
+                title=f"Tool {call_index}/{total_calls} | Turn {turn} | {tool_name}",
+                border_style="cyan",
+                expand=False,
+            )
         if LIVE_BANNER and renderer.live:
             renderer.live.console.print(renderable)
             return
@@ -622,42 +633,29 @@ def run_chat(args: argparse.Namespace, query_text: str) -> None:
             if LIVE_BANNER:
                 renderer.update_banner(0, status_message=None)
 
-        # Use research registry if in research mode, otherwise default
-        if research_mode:
-            registry = create_research_tool_registry(
-                usage_tracker=usage_tracker,
+        asky_client = AskyClient(
+            AskyConfig(
+                model_alias=args.model,
+                summarize=args.summarize,
+                verbose=args.verbose,
+                open_browser=args.open,
+                research_mode=research_mode,
                 disabled_tools=disabled_tools,
-                session_id=research_session_id,
-            )
-        else:
-            registry = create_default_tool_registry(
-                usage_tracker=usage_tracker,
-                summarization_tracker=summarization_tracker,
-                summarization_status_callback=summarization_status_callback,
-                summarization_verbose_callback=(
-                    verbose_output_callback if args.verbose else None
-                ),
-                disabled_tools=disabled_tools,
-            )
-        _append_enabled_tool_guidelines(
-            messages,
-            registry.get_system_prompt_guidelines(),
-        )
-
-        engine = ConversationEngine(
-            model_config=model_config,
-            tool_registry=registry,
-            summarize=args.summarize,
-            verbose=args.verbose,
+            ),
             usage_tracker=usage_tracker,
-            open_browser=args.open,
-            session_manager=session_manager,
-            verbose_output_callback=verbose_output_callback,
+            summarization_tracker=summarization_tracker,
         )
 
         # Run loop
         display_cb = display_callback if LIVE_BANNER else None
-        final_answer = engine.run(messages, display_callback=display_cb)
+        final_answer = asky_client.run_messages(
+            messages,
+            session_manager=session_manager,
+            research_session_id=research_session_id,
+            display_callback=display_cb,
+            verbose_output_callback=verbose_output_callback,
+            summarization_status_callback=summarization_status_callback,
+        )
 
         # Save Interaction
         if final_answer:
@@ -741,6 +739,11 @@ def run_chat(args: argparse.Namespace, query_text: str) -> None:
 
     except KeyboardInterrupt:
         console.print("\nAborted by user.")
+    except ContextOverflowError as e:
+        console.print(
+            "\n[bold red]Context overflow:[/] "
+            f"{e}. Try a larger-context model or narrower query."
+        )
     except Exception as e:
         console.print(f"\n[bold red]An error occurred:[/] {e}")
         if args.verbose:

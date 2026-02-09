@@ -8,6 +8,12 @@ asky is an AI-powered CLI tool that combines LLM capabilities with web search an
 
 ```mermaid
 graph TB
+    subgraph API["Library API Layer (api/)"]
+        api_types["types.py<br/>AskyConfig/AskyChatResult"]
+        api_client["client.py<br/>AskyClient Orchestration"]
+        api_ex["exceptions.py<br/>Public Errors"]
+    end
+
     subgraph CLI["CLI Layer (cli/)"]
         main["main.py<br/>Entry Point"]
         chat["chat.py<br/>Chat Flow"]
@@ -23,7 +29,7 @@ graph TB
         engine["engine.py<br/>ConversationEngine"]
         tool_factory["tool_registry_factory.py<br/>Registry Construction"]
         registry["registry.py<br/>ToolRegistry"]
-        api_client["api_client.py<br/>LLM API Client"]
+        llm_client["api_client.py<br/>LLM API Client"]
         session_mgr["session_manager.py<br/>SessionManager"]
         prompts_core["prompts.py<br/>Prompt Construction"]
     end
@@ -51,7 +57,10 @@ graph TB
         tools["tools.py<br/>Web Search, URL Fetch"]
     end
 
+    api_client --> engine
+    api_client --> session_mgr
     main --> chat
+    chat --> api_client
     chat --> local_ingest
     chat --> shortlist_flow
     main --> history
@@ -61,7 +70,7 @@ graph TB
     chat --> tool_factory
     tool_factory --> registry
     engine --> registry
-    engine --> api_client
+    engine --> llm_client
     chat --> session_mgr
     session_mgr --> sqlite
     history --> sqlite
@@ -81,6 +90,7 @@ graph TB
 
 ```
 src/asky/
+├── api/                # Programmatic library API surface
 ├── cli/                # Command-line interface → see cli/AGENTS.md
 ├── core/               # Conversation engine → see core/AGENTS.md
 ├── storage/            # Data persistence → see storage/AGENTS.md
@@ -108,6 +118,7 @@ For test organization, see `tests/AGENTS.md`.
 | Package | Documentation | Key Components |
 |---------|---------------|----------------|
 | `cli/` | [cli/AGENTS.md](src/asky/cli/AGENTS.md) | Entry point, chat flow, commands |
+| `api/` | [api package](src/asky/api) | `AskyClient`, typed config/result, public exceptions |
 | `core/` | [core/AGENTS.md](src/asky/core/AGENTS.md) | ConversationEngine, ToolRegistry, API client |
 | `storage/` | [storage/AGENTS.md](src/asky/storage/AGENTS.md) | SQLite repository, data model |
 | `research/` | [research/AGENTS.md](src/asky/research/AGENTS.md) | Cache, vector store, embeddings |
@@ -133,7 +144,9 @@ optional shortlist_flow.py → source_shortlist.py (pre-LLM URL/search retrieval
     ↓
 build_messages()
     ↓
-create ToolRegistry (mode-aware + CLI tool exclusions)
+AskyClient.run_messages()
+    ↓
+create ToolRegistry (mode-aware + runtime tool exclusions)
     ↓
 append enabled tool guidelines to system prompt
     ↓
@@ -152,6 +165,9 @@ generate_summaries() → save_interaction()
     ↓
 (Optional) render_to_browser() / send_email()
 ```
+
+Programmatic consumers can bypass CLI by instantiating `AskyClient` directly and
+calling `chat(...)` / `run_messages(...)`.
 
 ### Session Flow
 
@@ -197,6 +213,12 @@ Local-file targets can enter the same flow through research adapters:
 ### Research Memory Flow (Session-Scoped)
 
 ```
+
+### Context Overflow Handling
+
+`ConversationEngine` no longer performs interactive retries (`input()`) on HTTP 400
+errors. It now raises `ContextOverflowError` (with compacted-message fallback data),
+so callers (CLI/API/web) can choose retry/switch/fail behavior externally.
 save_finding(...)
     ↓
 chat research registry injects active session_id (when a session is active)

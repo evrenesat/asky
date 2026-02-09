@@ -10,6 +10,7 @@ Central orchestration layer for multi-turn LLM conversations with tool execution
 | `tool_registry_factory.py` | Default/research tool registry construction |
 | `registry.py` | `ToolRegistry` for dynamic tool management |
 | `api_client.py` | LLM API calls, retry logic, `UsageTracker` |
+| `exceptions.py` | Core runtime exceptions (`AskyError`, `ContextOverflowError`) |
 | `session_manager.py` | Session lifecycle, compaction |
 | `prompts.py` | System prompt construction, tool call parsing |
 | `utils.py` | Shared utilities |
@@ -34,13 +35,20 @@ class ConversationEngine:
 - **Tool Dispatch**: Via `ToolRegistry.dispatch()`
 - **Context Compaction**: Via `check_and_compact()` when threshold exceeded
 - **Graceful Exit**: `_execute_graceful_exit()` handles max-turns without answer
-- **Error Handling**: Interactive 400 error recovery, general error display
+- **Error Handling**: Raises `ContextOverflowError` for HTTP 400 context overflow
+- **Event Hooks**: Optional structured `event_callback(name, payload)` emissions
 
 ### Lazy Loading
 
 - Research cache instantiated only when compaction needs cached summaries
 - Tool executors imported on first use via factory/wrapper helpers
 - Research tool schemas/executors imported only for research mode
+
+### Runtime I/O Boundary
+
+`ConversationEngine` no longer prompts users (`input()`) and no longer performs
+terminal rendering on its own. Final rendering/retry UX belongs to callers
+(CLI or programmatic consumers) via callbacks and exception handling.
 
 ## Registry Factory (`tool_registry_factory.py`)
 

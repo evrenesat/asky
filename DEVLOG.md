@@ -2,6 +2,51 @@ For older logs, see [DEVLOG_ARCHIVE.md](DEVLOG_ARCHIVE.md)
 
 ## 2026-02-09
 
+### Library API Slice + Non-Interactive Context Overflow Handling
+**Summary**: Added a first-class programmatic API (`asky.api`) and removed interactive `input()` recovery from the core engine so library/web callers can control error handling safely.
+
+- **Changed**:
+  - Added new API package:
+    - `src/asky/api/__init__.py`
+    - `src/asky/api/types.py` (`AskyConfig`, `AskyChatResult`)
+    - `src/asky/api/client.py` (`AskyClient` with message build + registry/engine orchestration)
+    - `src/asky/api/exceptions.py` (public exception exports)
+  - Added core exceptions module:
+    - `src/asky/core/exceptions.py` (`AskyError`, `ContextOverflowError`)
+  - Refactored core engine:
+    - `src/asky/core/engine.py`
+      - removed interactive 400 recovery (`input()` loop),
+      - raises `ContextOverflowError` on HTTP 400 with compacted-message payload,
+      - removed direct terminal rendering in engine fallback paths,
+      - added optional structured `event_callback(name, payload)` hooks,
+      - changed verbose tool callback payload to structured dicts.
+  - Updated CLI orchestration:
+    - `src/asky/cli/chat.py`
+      - uses `AskyClient.run_messages(...)` for registry+engine execution,
+      - adapts verbose dict payloads back into Rich panels for terminal UX,
+      - handles `ContextOverflowError` with user-facing guidance.
+  - Updated exports/docs:
+    - `src/asky/core/__init__.py`
+    - `ARCHITECTURE.md`
+    - `src/asky/core/AGENTS.md`
+    - `src/asky/cli/AGENTS.md`
+
+- **Tests**:
+  - Added `tests/test_api_library.py` for `AskyClient` behavior.
+  - Updated `tests/test_context_overflow.py` to assert raised `ContextOverflowError` instead of interactive prompt flow.
+  - Validation runs:
+    - Pre-change baseline: `uv run pytest` → 416 passed
+    - Post-change full suite: `uv run pytest` → 420 passed
+
+- **Why**:
+  - Separates core/business orchestration from terminal interaction.
+  - Enables safe server/web embedding (no hidden stdin prompt paths).
+  - Establishes a stable typed API surface for incremental CLI-to-library migration.
+
+- **Gotchas / Follow-ups**:
+  - CLI still owns session command UX (`-ss`, `-rs`) and post-answer delivery actions (mail/push/report).
+  - Full migration of shortlist/context/session orchestration into `asky.api` is still pending.
+
 ### Pre-LLM Local Corpus Preload Stage + PyMuPDF Dependency
 **Summary**: Added a deterministic local ingestion stage before first model call in research chat and added `pymupdf` as a project dependency.
 

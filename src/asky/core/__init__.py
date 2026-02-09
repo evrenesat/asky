@@ -26,6 +26,8 @@ _EXPORTS: Dict[str, Tuple[str, str]] = {
     "extract_calls": ("asky.core.prompts", "extract_calls"),
     "is_markdown": ("asky.core.prompts", "is_markdown"),
     "parse_textual_tool_call": ("asky.core.prompts", "parse_textual_tool_call"),
+    "AskyError": ("asky.core.exceptions", "AskyError"),
+    "ContextOverflowError": ("asky.core.exceptions", "ContextOverflowError"),
 }
 
 
