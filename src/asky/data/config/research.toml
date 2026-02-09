@@ -80,11 +80,11 @@ seed_link_max_pages = 3
 seed_links_per_page = 50
 
 # Number of search results to pull as initial candidates
-search_result_count = 25
+search_result_count = 40
 
 # Candidate caps to control pre-LLM fetch cost
-max_candidates = 30
-max_fetch_urls = 15
+max_candidates = 40
+max_fetch_urls = 20
 
 # Number of ranked candidates to pass forward
 top_k = 8

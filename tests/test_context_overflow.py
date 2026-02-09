@@ -2,6 +2,7 @@ import unittest
 from unittest.mock import MagicMock, patch
 import requests
 from asky.core.engine import ConversationEngine
+from asky.core.exceptions import ContextOverflowError
 from asky.core.registry import ToolRegistry
 
 
@@ -29,16 +30,10 @@ class TestContextOverflow(unittest.TestCase):
         )
         mock_post.return_value = mock_response
 
-        # We will mock the input to choose 'Exit' for this initial test to ensure it catches and prompts
-        # In the actual implementation, we'll implement the interactive loop
-        with patch("builtins.input", return_value="e"):  # 'e' for Exit
-            messages = [{"role": "user", "content": "test"}]
-            # expected to run without crashing, but returning empty or handling gracefully
-            # effectively catching the error and exiting loop
-            result = self.engine.run(messages)
-
-            # Since we chose exit, result might be empty string (default)
-            self.assertEqual(result, "")
+        messages = [{"role": "user", "content": "test"}]
+        with self.assertRaises(ContextOverflowError) as exc_info:
+            self.engine.run(messages)
+        self.assertEqual(exc_info.exception.status_code, 400)
 
     def test_check_and_compact_logic(self):
         # Setup logic

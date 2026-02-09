@@ -307,7 +307,7 @@ def test_build_messages_with_source_shortlist_context(mock_args):
         source_shortlist_context=shortlist_context,
     )
     assert len(messages) == 2
-    assert "Pre-ranked sources gathered before tool calls" in messages[1]["content"]
+    assert "Preloaded sources gathered before tool calls" in messages[1]["content"]
     assert "https://example.com" in messages[1]["content"]
 
 
@@ -359,6 +359,19 @@ def test_parse_disabled_tools_supports_repeats_and_commas():
     assert disabled == {"web_search", "get_url_content", "custom_tool"}
 
 
+def test_combine_preloaded_source_context_merges_non_empty_blocks():
+    from asky.cli.chat import _combine_preloaded_source_context
+
+    merged = _combine_preloaded_source_context(
+        "Local block",
+        None,
+        "Shortlist block",
+        "",
+    )
+
+    assert merged == "Local block\n\nShortlist block"
+
+
 def test_append_enabled_tool_guidelines_updates_system_prompt():
     from asky.cli.chat import _append_enabled_tool_guidelines
 
@@ -372,6 +385,73 @@ def test_append_enabled_tool_guidelines_updates_system_prompt():
     )
     assert "Enabled Tool Guidelines:" in messages[0]["content"]
     assert "`web_search`: Discover initial sources first." in messages[0]["content"]
+
+
+def test_ensure_research_session_creates_session_when_missing():
+    from asky.cli.chat import _ensure_research_session
+
+    usage_tracker = MagicMock()
+    summarization_tracker = MagicMock()
+    console = MagicMock()
+    created_session = MagicMock(id=42, name="research_topic")
+    manager = MagicMock()
+    manager.current_session = None
+    manager.create_session.return_value = created_session
+
+    with (
+        patch("asky.cli.chat.SessionManager", return_value=manager) as mock_manager_cls,
+        patch("asky.cli.chat.generate_session_name", return_value="research_topic") as mock_name,
+        patch("asky.cli.chat.set_shell_session_id") as mock_set_session_id,
+    ):
+        ensured = _ensure_research_session(
+            session_manager=None,
+            model_config={"alias": "gf"},
+            usage_tracker=usage_tracker,
+            summarization_tracker=summarization_tracker,
+            query_text="research topic prompt",
+            console=console,
+        )
+
+    assert ensured is manager
+    mock_manager_cls.assert_called_once_with(
+        {"alias": "gf"},
+        usage_tracker,
+        summarization_tracker=summarization_tracker,
+    )
+    mock_name.assert_called_once_with("research topic prompt")
+    manager.create_session.assert_called_once_with("research_topic")
+    mock_set_session_id.assert_called_once_with(42)
+    console.print.assert_called_once()
+
+
+def test_ensure_research_session_keeps_existing_session():
+    from asky.cli.chat import _ensure_research_session
+
+    usage_tracker = MagicMock()
+    summarization_tracker = MagicMock()
+    console = MagicMock()
+    session_manager = MagicMock()
+    session_manager.current_session = MagicMock(id=9, name="existing")
+
+    with (
+        patch("asky.cli.chat.SessionManager") as mock_manager_cls,
+        patch("asky.cli.chat.generate_session_name") as mock_name,
+        patch("asky.cli.chat.set_shell_session_id") as mock_set_session_id,
+    ):
+        ensured = _ensure_research_session(
+            session_manager=session_manager,
+            model_config={"alias": "gf"},
+            usage_tracker=usage_tracker,
+            summarization_tracker=summarization_tracker,
+            query_text="ignored",
+            console=console,
+        )
+
+    assert ensured is session_manager
+    mock_manager_cls.assert_not_called()
+    mock_name.assert_not_called()
+    mock_set_session_id.assert_not_called()
+    console.print.assert_not_called()
 
 
 def test_shortlist_enabled_resolution_prefers_model_override():
@@ -616,8 +696,9 @@ def test_main_flow(
         ],
         display_callback=ANY,
     )
-    mock_gen_sum.assert_called_once_with("test", "Final Answer", usage_tracker=ANY)
-    mock_save.assert_called_once()
+    # Summarization/persistence now run inside asky.api client orchestration.
+    mock_gen_sum.assert_not_called()
+    mock_save.assert_not_called()
 
 
 @patch("asky.cli.main.parse_args")

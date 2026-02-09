@@ -282,6 +282,7 @@ def create_research_tool_registry(
     load_research_tool_bindings_fn: Optional[ResearchBindingsLoader] = None,
     custom_tools: Optional[Dict[str, Any]] = None,
     disabled_tools: Optional[Set[str]] = None,
+    session_id: Optional[str] = None,
 ) -> ToolRegistry:
     """Create a ToolRegistry with research mode tools."""
     registry = ToolRegistry()
@@ -319,6 +320,21 @@ def create_research_tool_registry(
     research_bindings = load_research_tool_bindings()
     schemas = research_bindings["schemas"]
 
+    def _execute_with_session_context(
+        executor: ToolExecutor,
+    ) -> ToolExecutor:
+        if session_id is None:
+            return executor
+
+        def _wrapped(args: Dict[str, Any]) -> Dict[str, Any]:
+            if "session_id" in args:
+                return executor(args)
+            enriched_args = dict(args)
+            enriched_args["session_id"] = session_id
+            return executor(enriched_args)
+
+        return _wrapped
+
     for schema in schemas:
         tool_name = schema["name"]
         if not _is_tool_enabled(tool_name, excluded_tools):
@@ -340,12 +356,18 @@ def create_research_tool_registry(
         elif tool_name == "get_full_content":
             registry.register(tool_name, schema, research_bindings["get_full_content"])
         elif tool_name == "save_finding":
-            registry.register(tool_name, schema, research_bindings["save_finding"])
+            registry.register(
+                tool_name,
+                schema,
+                _execute_with_session_context(research_bindings["save_finding"]),
+            )
         elif tool_name == "query_research_memory":
             registry.register(
                 tool_name,
                 schema,
-                research_bindings["query_research_memory"],
+                _execute_with_session_context(
+                    research_bindings["query_research_memory"]
+                ),
             )
 
     for tool_name, tool_data in active_custom_tools.items():

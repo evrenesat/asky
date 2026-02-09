@@ -151,9 +151,9 @@ SOURCE_SHORTLIST_SEED_LINK_MAX_PAGES = _source_shortlist.get("seed_link_max_page
 SOURCE_SHORTLIST_SEED_LINKS_PER_PAGE = _source_shortlist.get(
     "seed_links_per_page", 50
 )
-SOURCE_SHORTLIST_SEARCH_RESULT_COUNT = _source_shortlist.get("search_result_count", 25)
-SOURCE_SHORTLIST_MAX_CANDIDATES = _source_shortlist.get("max_candidates", 30)
-SOURCE_SHORTLIST_MAX_FETCH_URLS = _source_shortlist.get("max_fetch_urls", 15)
+SOURCE_SHORTLIST_SEARCH_RESULT_COUNT = _source_shortlist.get("search_result_count", 40)
+SOURCE_SHORTLIST_MAX_CANDIDATES = _source_shortlist.get("max_candidates", 40)
+SOURCE_SHORTLIST_MAX_FETCH_URLS = _source_shortlist.get("max_fetch_urls", 20)
 SOURCE_SHORTLIST_TOP_K = _source_shortlist.get("top_k", 8)
 SOURCE_SHORTLIST_MIN_CONTENT_CHARS = _source_shortlist.get("min_content_chars", 300)
 SOURCE_SHORTLIST_MAX_SCORING_CHARS = _source_shortlist.get("max_scoring_chars", 5000)

@@ -2,6 +2,7 @@
 
 import argparse
 import logging
+import time
 from typing import Any, List, Dict, Optional, Set
 
 from rich.console import Console
@@ -11,14 +12,16 @@ from rich.table import Table
 from asky.config import (
     MODELS,
     LIVE_BANNER,
-    SOURCE_SHORTLIST_ENABLED,
-    SOURCE_SHORTLIST_ENABLE_RESEARCH_MODE,
-    SOURCE_SHORTLIST_ENABLE_STANDARD_MODE,
+)
+from asky.api import AskyClient, AskyConfig, AskyTurnRequest, ContextOverflowError
+from asky.api.context import load_context_from_history
+from asky.api.preload import (
+    build_shortlist_stats as api_build_shortlist_stats,
+    combine_preloaded_source_context as api_combine_preloaded_source_context,
+    shortlist_enabled_for_request as api_shortlist_enabled_for_request,
 )
 from asky.core import (
     ConversationEngine,
-    create_default_tool_registry,
-    create_research_tool_registry,
     UsageTracker,
     construct_system_prompt,
     construct_research_system_prompt,
@@ -33,8 +36,8 @@ from asky.storage import (
     save_interaction,
 )
 from asky.cli.display import InterfaceRenderer
-from asky.cli.shortlist_flow import run_pre_llm_shortlist
 from asky.lazy_imports import call_attr
+from asky.core.session_manager import generate_session_name
 
 logger = logging.getLogger(__name__)
 
@@ -42,6 +45,16 @@ logger = logging.getLogger(__name__)
 def shortlist_prompt_sources(*args: Any, **kwargs: Any) -> Dict[str, Any]:
     """Lazy-import shortlist pipeline so startup cost is paid only when enabled."""
     return call_attr("asky.research.source_shortlist", "shortlist_prompt_sources", *args, **kwargs)
+
+
+def preload_local_research_sources(*args: Any, **kwargs: Any) -> Dict[str, Any]:
+    """Lazy-import local ingestion flow to keep startup fast for non-research chats."""
+    return call_attr(
+        "asky.cli.local_ingestion_flow",
+        "preload_local_research_sources",
+        *args,
+        **kwargs,
+    )
 
 
 def format_shortlist_context(shortlist_payload: Dict[str, Any]) -> str:
@@ -53,67 +66,40 @@ def format_shortlist_context(shortlist_payload: Dict[str, Any]) -> str:
     )
 
 
+def format_local_ingestion_context(local_payload: Dict[str, Any]) -> Optional[str]:
+    """Lazy-import local-ingestion context formatter."""
+    return call_attr(
+        "asky.cli.local_ingestion_flow",
+        "format_local_ingestion_context",
+        local_payload,
+    )
+
+
 def load_context(continue_ids: str, summarize: bool) -> Optional[str]:
     """Load context from previous interactions."""
     console = Console()
-    from asky.cli.completion import parse_history_selector_token
 
     try:
-        raw_ids = [x.strip() for x in continue_ids.split(",")]
-        resolved_ids = []
-        relative_indices = []
-
-        for raw_id in raw_ids:
-            if raw_id.startswith("~"):
-                try:
-                    rel_val = int(raw_id[1:])
-                    if rel_val < 1:
-                        console.print(
-                            f"[bold red]Error:[/] Relative ID must be >= 1 (got {raw_id})"
-                        )
-                        return None
-                    relative_indices.append(rel_val)
-                except ValueError:
-                    console.print(
-                        f"[bold red]Error:[/] Invalid relative ID format: {raw_id}"
-                    )
-                    return None
-            else:
-                parsed_id = parse_history_selector_token(raw_id)
-                if parsed_id is None:
-                    raise ValueError(raw_id)
-                resolved_ids.append(parsed_id)
-
-        if relative_indices:
-            max_depth = max(relative_indices)
-            history_rows = get_history(limit=max_depth)
-
-            for rel_val in relative_indices:
-                list_index = rel_val - 1
-                if list_index < len(history_rows):
-                    real_id = history_rows[list_index][0]
-                    resolved_ids.append(real_id)
-                else:
-                    console.print(
-                        "[bold red]Error:[/] "
-                        f"Relative ID {rel_val} is out of range "
-                        f"(only {len(history_rows)} records available)."
-                    )
-                    return None
-
-        resolved_ids = sorted(list(set(resolved_ids)))
-        full_content = not summarize
-        context_str = get_interaction_context(resolved_ids, full=full_content)
-        if context_str:
-            console.print(
-                f"\n[Loaded context from IDs: {', '.join(map(str, resolved_ids))}]"
-            )
-        return context_str
-    except ValueError:
-        console.print(
-            "[bold red]Error:[/] Invalid format for -c/--continue-chat. "
-            "Use comma-separated IDs, completion selector tokens, or ~N for relative."
+        resolution = load_context_from_history(
+            continue_ids,
+            summarize,
+            get_history_fn=get_history,
+            get_interaction_context_fn=get_interaction_context,
         )
+        if resolution.context_str:
+            console.print(
+                f"\n[Loaded context from IDs: {', '.join(map(str, resolution.resolved_ids))}]"
+            )
+        return resolution.context_str
+    except ValueError as exc:
+        message = str(exc)
+        if message.startswith("Invalid continue IDs format"):
+            console.print(
+                "[bold red]Error:[/] Invalid format for -c/--continue-chat. "
+                "Use comma-separated IDs, completion selector tokens, or ~N for relative."
+            )
+        else:
+            console.print(f"[bold red]Error:[/] {message}")
         return None
 
 
@@ -153,9 +139,9 @@ def build_messages(
     if source_shortlist_context:
         user_content = (
             f"{query_text}\n\n"
-            f"Pre-ranked sources gathered before tool calls:\n"
+            f"Preloaded sources gathered before tool calls:\n"
             f"{source_shortlist_context}\n\n"
-            "Use this shortlist as a starting point, then verify with tools before citing."
+            "Use this preloaded corpus as a starting point, then verify with tools before citing."
         )
 
     messages.append({"role": "user", "content": user_content})
@@ -166,17 +152,7 @@ def _build_shortlist_banner_stats(
     shortlist_payload: Dict[str, Any], shortlist_elapsed_ms: float
 ) -> Dict[str, Any]:
     """Extract compact shortlist stats for banner rendering."""
-    stats = shortlist_payload.get("stats", {})
-    metrics = stats.get("metrics", {}) if isinstance(stats, dict) else {}
-
-    return {
-        "enabled": bool(shortlist_payload.get("enabled")),
-        "collected": int(metrics.get("candidate_deduped", 0) or 0),
-        "processed": int(metrics.get("fetch_calls", 0) or 0),
-        "selected": len(shortlist_payload.get("candidates", []) or []),
-        "warnings": len(shortlist_payload.get("warnings", []) or []),
-        "elapsed_ms": float(shortlist_elapsed_ms),
-    }
+    return api_build_shortlist_stats(shortlist_payload, shortlist_elapsed_ms)
 
 
 def _shortlist_enabled_for_request(
@@ -185,19 +161,11 @@ def _shortlist_enabled_for_request(
     research_mode: bool,
 ) -> tuple[bool, str]:
     """Resolve shortlist enablement with precedence: lean > model > global flags."""
-    if bool(getattr(args, "lean", False)):
-        return False, "lean_flag"
-
-    model_override = model_config.get("source_shortlist_enabled")
-    if isinstance(model_override, bool):
-        return model_override, "model_override"
-
-    if not SOURCE_SHORTLIST_ENABLED:
-        return False, "global_disabled"
-
-    if research_mode:
-        return bool(SOURCE_SHORTLIST_ENABLE_RESEARCH_MODE), "global_research_mode"
-    return bool(SOURCE_SHORTLIST_ENABLE_STANDARD_MODE), "global_standard_mode"
+    return api_shortlist_enabled_for_request(
+        lean=bool(getattr(args, "lean", False)),
+        model_config=model_config,
+        research_mode=research_mode,
+    )
 
 
 def _parse_disabled_tools(raw_values: Optional[List[str]]) -> Set[str]:
@@ -228,6 +196,32 @@ def _append_enabled_tool_guidelines(
     messages[0]["content"] = (
         f"{messages[0].get('content', '')}\n" + "\n".join(guideline_lines)
     )
+
+
+def _ensure_research_session(
+    session_manager: Optional[SessionManager],
+    model_config: Dict[str, Any],
+    usage_tracker: UsageTracker,
+    summarization_tracker: UsageTracker,
+    query_text: str,
+    console: Console,
+) -> SessionManager:
+    """Ensure research mode always has an active session for memory isolation."""
+    if session_manager and session_manager.current_session:
+        return session_manager
+
+    active_manager = session_manager or SessionManager(
+        model_config,
+        usage_tracker,
+        summarization_tracker=summarization_tracker,
+    )
+    session_name = generate_session_name(query_text or "research")
+    session = active_manager.create_session(session_name)
+    set_shell_session_id(session.id)
+    console.print(
+        f"\n[Research mode: started session {session.id} ('{session.name or 'auto'}')]"
+    )
+    return active_manager
 
 
 def _print_shortlist_verbose(console: Console, shortlist_payload: Dict[str, Any]) -> None:
@@ -301,87 +295,25 @@ def _print_shortlist_verbose(console: Console, shortlist_payload: Dict[str, Any]
         )
 
 
+def _combine_preloaded_source_context(
+    *context_blocks: Optional[str],
+) -> Optional[str]:
+    """Merge multiple preloaded-source context blocks into one message section."""
+    return api_combine_preloaded_source_context(*context_blocks)
+
+
 def run_chat(args: argparse.Namespace, query_text: str) -> None:
     """Run the chat conversation flow."""
     from asky.core import clear_shell_session
+    from asky.storage.sqlite import SQLiteHistoryRepository
+
     console = Console()
 
-    # Handle Context
-    context_str = ""
-    if args.continue_ids:
-        context_str = load_context(args.continue_ids, args.summarize)
-        if context_str is None:
-            return
-
-    # Initialize Components
     usage_tracker = UsageTracker()
     summarization_tracker = UsageTracker()
     model_config = MODELS[args.model]
+    research_mode = bool(getattr(args, "research", False))
     disabled_tools = _parse_disabled_tools(getattr(args, "tool_off", []))
-
-    # Handle Sessions
-    session_manager = None
-    shell_session_id = get_shell_session_id()
-
-    # Explicit session create (-ss)
-    if getattr(args, "sticky_session", None):
-        session_name = " ".join(args.sticky_session)
-        session_manager = SessionManager(
-            model_config, usage_tracker, summarization_tracker=summarization_tracker
-        )
-        s = session_manager.create_session(session_name)
-        set_shell_session_id(s.id)
-        console.print(f"\n[Session {s.id} ('{s.name}') created and active]")
-        return
-
-    # Explicit session resume (-rs)
-    elif getattr(args, "resume_session", None):
-        search_term = " ".join(args.resume_session)
-        session_manager = SessionManager(
-            model_config, usage_tracker, summarization_tracker=summarization_tracker
-        )
-        matches = session_manager.find_sessions(search_term)
-
-        if not matches:
-            console.print(f"[bold red]Error:[/] No sessions found matching '{search_term}'")
-            return
-        elif len(matches) > 1:
-            console.print(f"Multiple sessions found for '{search_term}':")
-            for s in matches:
-                console.print(f"  {s.id}: {s.name or '(no name)'} ({s.created_at})")
-            return
-        else:
-            s = matches[0]
-            session_manager.current_session = s
-            set_shell_session_id(s.id)
-            console.print(f"\n[Resumed session {s.id} ('{s.name or 'auto'}')]")
-            if not query_text:
-                return
-
-    # Auto-resume from shell lock file
-    elif shell_session_id:
-        session_manager = SessionManager(
-            model_config, usage_tracker, summarization_tracker=summarization_tracker
-        )
-        session = session_manager.repo.get_session_by_id(shell_session_id)
-        if session:
-            session_manager.current_session = session
-            console.print(f"\n[Resuming session {session.id} ({session.name or 'auto'})]")
-        else:
-            # Lock file points to deleted session, clear it
-            clear_shell_session()
-            session_manager = None
-
-    # Check for research mode
-    research_mode = getattr(args, "research", False)
-    if research_mode:
-        console.print("\n[Research mode enabled - using link extraction and RAG tools]")
-
-    shortlist_enabled, shortlist_reason = _shortlist_enabled_for_request(
-        args=args,
-        model_config=model_config,
-        research_mode=research_mode,
-    )
 
     # Setup display renderer early so pre-LLM shortlist work is visible in banner
     renderer = InterfaceRenderer(
@@ -389,65 +321,10 @@ def run_chat(args: argparse.Namespace, query_text: str) -> None:
         model_alias=args.model,
         usage_tracker=usage_tracker,
         summarization_tracker=summarization_tracker,
-        session_manager=session_manager,
+        session_manager=None,
         messages=[],
         research_mode=research_mode,
     )
-    if not shortlist_enabled:
-        logger.debug(
-            "chat shortlist skipped mode=%s reason=%s model_override=%s lean=%s",
-            "research" if research_mode else "standard",
-            shortlist_reason,
-            model_config.get("source_shortlist_enabled"),
-            bool(getattr(args, "lean", False)),
-        )
-
-    (
-        shortlist_context,
-        shortlist_payload,
-        _shortlist_banner_stats,
-        shortlist_elapsed,
-    ) = run_pre_llm_shortlist(
-        query_text=query_text,
-        research_mode=research_mode,
-        shortlist_enabled=shortlist_enabled,
-        shortlist_reason=shortlist_reason,
-        live_banner=LIVE_BANNER,
-        verbose=args.verbose,
-        renderer=renderer,
-        shortlist_executor=shortlist_prompt_sources,
-        shortlist_formatter=format_shortlist_context,
-        shortlist_stats_builder=_build_shortlist_banner_stats,
-        shortlist_verbose_printer=_print_shortlist_verbose,
-    )
-
-    if shortlist_payload.get("enabled"):
-        logger.debug(
-            "chat shortlist mode=%s enabled=%s candidates=%d warnings=%d context_len=%d elapsed=%.2fms",
-            "research" if research_mode else "standard",
-            shortlist_payload.get("enabled"),
-            len(shortlist_payload.get("candidates", [])),
-            len(shortlist_payload.get("warnings", [])),
-            len(shortlist_context or ""),
-            shortlist_elapsed,
-        )
-    else:
-        logger.debug(
-            "chat shortlist mode=%s enabled=%s elapsed=%.2fms",
-            "research" if research_mode else "standard",
-            shortlist_payload.get("enabled"),
-            shortlist_elapsed,
-        )
-
-    messages = build_messages(
-        args,
-        context_str,
-        query_text,
-        session_manager=session_manager,
-        research_mode=research_mode,
-        source_shortlist_context=shortlist_context,
-    )
-    renderer.messages = messages
 
     # Create display callback for live banner mode
     def display_callback(
@@ -467,6 +344,18 @@ def run_chat(args: argparse.Namespace, query_text: str) -> None:
 
     def verbose_output_callback(renderable: Any) -> None:
         """Route verbose output through the active live console when present."""
+        if isinstance(renderable, dict):
+            tool_name = str(renderable.get("tool_name", "unknown_tool"))
+            call_index = int(renderable.get("call_index", 0) or 0)
+            total_calls = int(renderable.get("total_calls", 0) or 0)
+            turn = int(renderable.get("turn", 0) or 0)
+            args_value = renderable.get("arguments", {})
+            renderable = Panel(
+                str(args_value),
+                title=f"Tool {call_index}/{total_calls} | Turn {turn} | {tool_name}",
+                border_style="cyan",
+                expand=False,
+            )
         if LIVE_BANNER and renderer.live:
             renderer.live.console.print(renderable)
             return
@@ -478,110 +367,132 @@ def run_chat(args: argparse.Namespace, query_text: str) -> None:
             return
         renderer.update_banner(renderer.current_turn, status_message=message)
 
-    # Wrap in try/finally to ensure renderer.stop_live() is called
+    # Wrap in try/finally to ensure renderer.stop_live() is called.
     try:
-        # Handle Terminal Context
-        # Check if requested via flag OR configured default
-        # from asky.config import TERMINAL_CONTEXT_LINES
+        effective_query_text = query_text
+        if LIVE_BANNER:
+            renderer.start_live()
 
-        # Determine effective lines count
-        if args.terminal_lines is not None:
-            lines_count = args.terminal_lines
-        else:
-            lines_count = 0
+        # Handle Terminal Context
+        lines_count = args.terminal_lines if args.terminal_lines is not None else 0
 
         if lines_count > 0:
             from asky.cli.terminal import inject_terminal_context
 
-            # Warn if the flag was explicitly provided but failed.
+            working_messages = [{"role": "user", "content": effective_query_text}]
             warn_on_error = args.terminal_lines is not None
 
-            # Use banner callback if live mode is active
             status_cb = lambda msg: (
                 renderer.update_banner(0, status_message=msg) if LIVE_BANNER else None
             )
 
             inject_terminal_context(
-                messages,
+                working_messages,
                 lines_count,
                 verbose=args.verbose,
                 warn_on_error=warn_on_error,
                 status_callback=status_cb,
             )
+            if working_messages and working_messages[-1]["role"] == "user":
+                effective_query_text = working_messages[-1]["content"]
 
-            # Clear status after context fetch
             if LIVE_BANNER:
                 renderer.update_banner(0, status_message=None)
 
-        # Use research registry if in research mode, otherwise default
-        if research_mode:
-            registry = create_research_tool_registry(
-                usage_tracker=usage_tracker,
+        asky_client = AskyClient(
+            AskyConfig(
+                model_alias=args.model,
+                summarize=args.summarize,
+                verbose=args.verbose,
+                open_browser=args.open,
+                research_mode=research_mode,
                 disabled_tools=disabled_tools,
-            )
-        else:
-            registry = create_default_tool_registry(
-                usage_tracker=usage_tracker,
-                summarization_tracker=summarization_tracker,
-                summarization_status_callback=summarization_status_callback,
-                summarization_verbose_callback=(
-                    verbose_output_callback if args.verbose else None
-                ),
-                disabled_tools=disabled_tools,
-            )
-        _append_enabled_tool_guidelines(
-            messages,
-            registry.get_system_prompt_guidelines(),
-        )
-
-        engine = ConversationEngine(
-            model_config=model_config,
-            tool_registry=registry,
-            summarize=args.summarize,
-            verbose=args.verbose,
+            ),
             usage_tracker=usage_tracker,
-            open_browser=args.open,
-            session_manager=session_manager,
-            verbose_output_callback=verbose_output_callback,
+            summarization_tracker=summarization_tracker,
         )
 
-        # Run loop
+        turn_request = AskyTurnRequest(
+            query_text=effective_query_text,
+            continue_ids=args.continue_ids,
+            summarize_context=args.summarize,
+            sticky_session_name=(
+                " ".join(args.sticky_session)
+                if getattr(args, "sticky_session", None)
+                else None
+            ),
+            resume_session_term=(
+                " ".join(args.resume_session)
+                if getattr(args, "resume_session", None)
+                else None
+            ),
+            shell_session_id=get_shell_session_id(),
+            lean=bool(getattr(args, "lean", False)),
+            preload_local_sources=True,
+            preload_shortlist=True,
+            additional_source_context=None,
+            save_history=True,
+        )
+
         display_cb = display_callback if LIVE_BANNER else None
-        final_answer = engine.run(messages, display_callback=display_cb)
+        turn_result = asky_client.run_turn(
+            turn_request,
+            display_callback=display_cb,
+            verbose_output_callback=verbose_output_callback,
+            summarization_status_callback=summarization_status_callback,
+            preload_status_callback=(
+                (lambda message: renderer.update_banner(0, status_message=message))
+                if LIVE_BANNER
+                else None
+            ),
+            messages_prepared_callback=lambda msgs: setattr(renderer, "messages", msgs),
+            set_shell_session_id_fn=set_shell_session_id,
+            clear_shell_session_fn=clear_shell_session,
+            shortlist_executor=shortlist_prompt_sources,
+            shortlist_formatter=format_shortlist_context,
+            shortlist_stats_builder=_build_shortlist_banner_stats,
+            local_ingestion_executor=preload_local_research_sources,
+            local_ingestion_formatter=format_local_ingestion_context,
+        )
+        final_answer = turn_result.final_answer
 
-        # Save Interaction
-        if final_answer:
-            console.print("\n[Saving interaction...]")
-            query_summary, answer_summary = generate_summaries(
-                query_text,
-                final_answer,
-                usage_tracker=summarization_tracker,
+        renderer.set_shortlist_stats(turn_result.preload.shortlist_stats)
+
+        if args.verbose and turn_result.preload.shortlist_payload:
+            verbose_console = (
+                renderer.live.console if LIVE_BANNER and renderer.live else renderer.console
             )
+            _print_shortlist_verbose(verbose_console, turn_result.preload.shortlist_payload)
 
-            # Save to session if active (session mode handles its own storage)
-            if session_manager:
-                session_manager.save_turn(
-                    query_text, final_answer, query_summary, answer_summary
-                )
-                if session_manager.check_and_compact():
-                    console.print("[Session context compacted]")
-            else:
-                # Save to global history (non-session mode only)
-                save_interaction(
-                    query_text, final_answer, args.model, query_summary, answer_summary
-                )
+        for notice in turn_result.notices:
+            if notice.startswith("No sessions found matching"):
+                console.print(f"[bold red]Error:[/] {notice}")
+                continue
+            if notice.startswith("Multiple sessions found for"):
+                console.print(notice + ":")
+                for session in turn_result.session.matched_sessions:
+                    console.print(
+                        f"  {session['id']}: {session['name'] or '(no name)'} ({session['created_at']})"
+                    )
+                continue
+            console.print(f"\n[{notice}]")
+
+        if turn_result.halted:
+            return
+
+        if final_answer and turn_request.save_history:
+            console.print("\n[Saving interaction...]")
 
         # Auto-generate HTML Report
         if final_answer:
             from asky.rendering import save_html_report
 
             html_source = ""
-            if session_manager and session_manager.current_session:
+            if turn_result.session_id:
                 # Generate full session transcript
                 try:
-                    msgs = session_manager.repo.get_session_messages(
-                        session_manager.current_session.id
-                    )
+                    repo = SQLiteHistoryRepository()
+                    msgs = repo.get_session_messages(int(turn_result.session_id))
                     transcript_parts = []
                     for m in msgs:
                         role_title = "User" if m.role == "user" else "Assistant"
@@ -591,10 +502,14 @@ def run_chat(args: argparse.Namespace, query_text: str) -> None:
                     console.print(
                         f"[bold red]Error:[/] fetching session messages for HTML report: {e}"
                     )
-                    html_source = f"## Query\n{query_text}\n\n## Answer\n{final_answer}"
+                    html_source = (
+                        f"## Query\n{effective_query_text}\n\n## Answer\n{final_answer}"
+                    )
             else:
                 # Single turn report
-                html_source = f"## Query\n{query_text}\n\n## Answer\n{final_answer}"
+                html_source = (
+                    f"## Query\n{effective_query_text}\n\n## Answer\n{final_answer}"
+                )
 
             report_path = save_html_report(html_source)
             if report_path:
@@ -605,7 +520,7 @@ def run_chat(args: argparse.Namespace, query_text: str) -> None:
             from asky.email_sender import send_email
 
             recipients = [x.strip() for x in args.mail_recipients.split(",")]
-            email_subject = args.subject or f"asky Result: {query_text[:50]}"
+            email_subject = args.subject or f"asky Result: {effective_query_text[:50]}"
             send_email(recipients, email_subject, final_answer)
 
         # Push data to configured endpoint if requested
@@ -616,7 +531,7 @@ def run_chat(args: argparse.Namespace, query_text: str) -> None:
             result = execute_push_data(
                 args.push_data_endpoint,
                 dynamic_args=dynamic_args,
-                query=query_text,
+                query=effective_query_text,
                 answer=final_answer,
                 model=args.model,
             )
@@ -631,6 +546,11 @@ def run_chat(args: argparse.Namespace, query_text: str) -> None:
 
     except KeyboardInterrupt:
         console.print("\nAborted by user.")
+    except ContextOverflowError as e:
+        console.print(
+            "\n[bold red]Context overflow:[/] "
+            f"{e}. Try a larger-context model or narrower query."
+        )
     except Exception as e:
         console.print(f"\n[bold red]An error occurred:[/] {e}")
         if args.verbose:

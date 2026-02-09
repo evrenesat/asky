@@ -2,6 +2,268 @@ For older logs, see [DEVLOG_ARCHIVE.md](DEVLOG_ARCHIVE.md)
 
 ## 2026-02-09
 
+### Library Usage Documentation (API Config + Turn Request Options)
+**Summary**: Added dedicated docs for programmatic `asky.api` usage, with explicit configuration/request field mapping and runnable examples.
+
+- **Changed**:
+  - Added:
+    - `docs/library_usage.md`
+      - `AskyConfig` option table (`model_alias`, `research_mode`, `disabled_tools`, etc.)
+      - `AskyTurnRequest` option table (`continue_ids`, session fields, preload flags, persistence flag)
+      - callback integration docs
+      - `AskyTurnResult`/halt semantics
+      - error handling (`ContextOverflowError`)
+      - end-to-end examples (standard, research/lean, context continuation, sessions)
+  - Updated:
+    - `README.md` with a clear pointer to the library usage guide.
+
+- **Why**:
+  - Makes the new API-first orchestration discoverable and usable without reading source code.
+  - Clarifies exactly how configuration and per-turn options should be passed.
+
+- **Tests**:
+  - Validation run:
+    - `uv run pytest` (full suite)
+
+### Full API Orchestration Migration (Context + Session + Shortlist)
+**Summary**: Completed the migration of chat orchestration into `asky.api` so `AskyClient.run_turn()` now provides CLI-equivalent context/session/preload/model/persist flow.
+
+- **Changed**:
+  - Added API orchestration services:
+    - `src/asky/api/context.py` (history selector parsing + context resolution)
+    - `src/asky/api/session.py` (session create/resume/auto/research resolution)
+    - `src/asky/api/preload.py` (local ingestion + shortlist preload pipeline)
+  - Expanded API contract:
+    - `src/asky/api/types.py`
+      - added `AskyTurnRequest`, `AskyTurnResult`, and structured resolution payload types.
+    - `src/asky/api/client.py`
+      - added `run_turn(...)` as the full orchestration entrypoint,
+      - integrated context/session/preload orchestration + persistence,
+      - preserved callback hooks for CLI/web renderers.
+  - Added API package docs:
+    - `src/asky/api/AGENTS.md`
+  - Refactored CLI into interface adapter:
+    - `src/asky/cli/chat.py`
+      - now maps argparse/UI callbacks to `AskyClient.run_turn(...)`,
+      - keeps terminal rendering, html/email/push behaviors in CLI layer,
+      - retains compatibility helper functions for existing tests/import paths.
+  - Updated architecture/docs:
+    - `ARCHITECTURE.md`
+    - `src/asky/cli/AGENTS.md`
+
+- **Tests**:
+  - Extended API tests:
+    - `tests/test_api_library.py` (new `run_turn` coverage)
+  - Updated CLI integration expectation:
+    - `tests/test_cli.py` (persistence assertions aligned with API-owned orchestration)
+  - Validation runs:
+    - `uv run pytest tests/test_cli.py tests/test_api_library.py`
+    - `uv run pytest` → 422 passed
+
+- **Why**:
+  - Makes full chat orchestration callable as a stable programmatic API.
+  - Keeps CLI as presentation/interaction layer over the same API workflow.
+
+- **Gotchas / Follow-ups**:
+  - `shortlist_flow.py` remains in `cli/` for now but orchestration path is API-owned.
+  - Optional future cleanup: retire legacy helper wrappers in `cli/chat.py` once external imports no longer rely on them.
+
+### Library API Slice + Non-Interactive Context Overflow Handling
+**Summary**: Added a first-class programmatic API (`asky.api`) and removed interactive `input()` recovery from the core engine so library/web callers can control error handling safely.
+
+- **Changed**:
+  - Added new API package:
+    - `src/asky/api/__init__.py`
+    - `src/asky/api/types.py` (`AskyConfig`, `AskyChatResult`)
+    - `src/asky/api/client.py` (`AskyClient` with message build + registry/engine orchestration)
+    - `src/asky/api/exceptions.py` (public exception exports)
+  - Added core exceptions module:
+    - `src/asky/core/exceptions.py` (`AskyError`, `ContextOverflowError`)
+  - Refactored core engine:
+    - `src/asky/core/engine.py`
+      - removed interactive 400 recovery (`input()` loop),
+      - raises `ContextOverflowError` on HTTP 400 with compacted-message payload,
+      - removed direct terminal rendering in engine fallback paths,
+      - added optional structured `event_callback(name, payload)` hooks,
+      - changed verbose tool callback payload to structured dicts.
+  - Updated CLI orchestration:
+    - `src/asky/cli/chat.py`
+      - uses `AskyClient.run_messages(...)` for registry+engine execution,
+      - adapts verbose dict payloads back into Rich panels for terminal UX,
+      - handles `ContextOverflowError` with user-facing guidance.
+  - Updated exports/docs:
+    - `src/asky/core/__init__.py`
+    - `ARCHITECTURE.md`
+    - `src/asky/core/AGENTS.md`
+    - `src/asky/cli/AGENTS.md`
+
+- **Tests**:
+  - Added `tests/test_api_library.py` for `AskyClient` behavior.
+  - Updated `tests/test_context_overflow.py` to assert raised `ContextOverflowError` instead of interactive prompt flow.
+  - Validation runs:
+    - Pre-change baseline: `uv run pytest` → 416 passed
+    - Post-change full suite: `uv run pytest` → 420 passed
+
+- **Why**:
+  - Separates core/business orchestration from terminal interaction.
+  - Enables safe server/web embedding (no hidden stdin prompt paths).
+  - Establishes a stable typed API surface for incremental CLI-to-library migration.
+
+- **Gotchas / Follow-ups**:
+  - CLI still owns post-answer delivery UI actions (mail/push/report) and shell-specific terminal context fetch.
+
+### Pre-LLM Local Corpus Preload Stage + PyMuPDF Dependency
+**Summary**: Added a deterministic local ingestion stage before first model call in research chat and added `pymupdf` as a project dependency.
+
+- **Changed**:
+  - Added new module:
+    - `src/asky/cli/local_ingestion_flow.py`
+      - extracts local targets from prompt text,
+      - ingests/caches local sources via research adapter path,
+      - indexes chunk embeddings before model/tool turns,
+      - formats a compact preloaded-corpus context block.
+  - Updated chat flow:
+    - `src/asky/cli/chat.py`
+      - runs local preload stage in research mode before shortlist stage,
+      - merges local + shortlist contexts into one preloaded-source block.
+  - Extended adapter helpers:
+    - `src/asky/research/adapters.py`
+      - added `extract_local_source_targets(...)` for deterministic prompt token extraction.
+  - Added dependency:
+    - `pyproject.toml` / `uv.lock`
+      - `pymupdf==1.26.7` added via `uv add pymupdf`.
+
+- **Tests**:
+  - Added new tests:
+    - `tests/test_local_ingestion_flow.py`
+  - Extended existing tests:
+    - `tests/test_cli.py`
+    - `tests/test_research_adapters.py`
+  - Validation run:
+    - `uv run pytest` → 416 passed.
+
+- **Why**:
+  - Shifts more research orchestration into deterministic program flow (small-model-first goal).
+  - Ensures local corpus material is indexed and available before model reasoning starts.
+
+### Built-in Local Source Ingestion Fallback (Phase 3 Slice)
+**Summary**: Added deterministic local-file ingestion fallback in research adapters so local corpus reads can flow through the existing cache/vector retrieval path without custom adapter tooling.
+
+- **Changed**:
+  - `src/asky/research/adapters.py`
+    - Added built-in local target handling when no configured custom adapter matches.
+    - Supported target forms: `local://...`, `file://...`, absolute/relative local paths.
+    - Directory discover mode returns `local://` links for supported files (non-recursive in v1).
+    - File read normalization added for text-like formats (`.txt`, `.md`, `.markdown`, `.html`, `.htm`, `.json`, `.csv`).
+    - PDF/EPUB read path added via optional PyMuPDF import with explicit dependency error when unavailable.
+  - No changes required in research tool orchestration: existing adapter/cache/vector flow consumes this fallback directly.
+
+- **Tests**:
+  - `tests/test_research_adapters.py`
+    - Added coverage for builtin local text-file reads.
+    - Added coverage for builtin directory discovery link generation.
+    - Added coverage for PDF dependency-missing error behavior.
+  - Validation runs:
+    - `uv run pytest tests/test_research_adapters.py tests/test_research_tools.py`
+    - `uv run pytest` (full suite)
+
+- **Why**:
+  - Moves local research toward deterministic ingestion and away from model-driven browsing behavior.
+  - Reuses the same downstream caching/chunking/indexing retrieval pipeline already used for web content.
+
+### Research Mode Now Auto-Starts a Session
+**Summary**: Enforced session-backed execution for research mode so session-scoped memory isolation is always effective.
+
+- **Changed**:
+  - Added research-session guard in chat flow:
+    - `src/asky/cli/chat.py`
+      - New `_ensure_research_session(...)` helper.
+      - `run_chat()` now auto-creates a session in research mode when no active/resumed session exists.
+  - Added tests:
+    - `tests/test_cli.py`
+      - session creation path when research starts without session
+      - no-op path when session already exists
+  - Updated docs:
+    - `ARCHITECTURE.md`
+    - `src/asky/cli/AGENTS.md`
+    - `src/asky/research/AGENTS.md`
+
+- **Why**:
+  - Session-scoped research memory (`save_finding` / `query_research_memory`) depends on an active `session_id`.
+  - Auto-starting research sessions removes a footgun where isolation could silently degrade.
+
+### Session-Scoped Research Memory + Shortlist Budget Defaults
+**Summary**: Implemented first research-pipeline slice to scope findings memory by active chat session and increased default pre-LLM shortlist budgets.
+
+- **Changed**:
+  - Threaded active session context from chat into research registry construction:
+    - `src/asky/cli/chat.py`
+    - `src/asky/core/engine.py`
+    - `src/asky/core/tool_registry_factory.py`
+  - Added session-aware handling in research memory tool executors:
+    - `src/asky/research/tools.py`
+      - `save_finding` now persists `session_id` when provided.
+      - `query_research_memory` now queries semantic/fallback memory in optional session scope.
+  - Extended vector-store finding operations for session-filtered retrieval paths:
+    - `src/asky/research/vector_store.py`
+    - `src/asky/research/vector_store_finding_ops.py`
+  - Raised shortlist defaults for larger bounded corpus construction:
+    - `src/asky/data/config/research.toml` (`search_result_count=40`, `max_candidates=40`, `max_fetch_urls=20`)
+    - `src/asky/config/__init__.py` fallback defaults aligned to `40/40/20`.
+
+- **Tests**:
+  - Added/updated coverage:
+    - `tests/test_tools.py` (research registry session-id injection behavior)
+    - `tests/test_research_tools.py` (session propagation for save/query memory tools)
+    - `tests/test_research_vector_store.py` (session-scoped finding search)
+  - Validation runs:
+    - Pre-change baseline: `uv run pytest` → 402 passed
+    - Post-change full suite: `uv run pytest` → 406 passed
+
+- **Why**:
+  - Keeps research-memory writes/reads isolated by active session without relying on the model to manage scope.
+  - Increases shortlist breadth while keeping fetch/index work bounded for deterministic pipeline stages.
+
+### Documentation Sync for Session-Scoped Memory + Shortlist Budgets
+**Summary**: Updated architecture/package docs to reflect new research-memory scoping behavior and shortlist defaults.
+
+- **Updated**:
+  - `ARCHITECTURE.md`
+  - `src/asky/cli/AGENTS.md`
+  - `src/asky/core/AGENTS.md`
+  - `src/asky/research/AGENTS.md`
+  - `src/asky/config/AGENTS.md`
+
+### Research Pipeline Plan Revisions (Decisions Applied)
+**Summary**: Updated the research pipeline planning artifact with concrete defaults and decisions from review discussion.
+
+- **Updated**:
+  - `TODO_research_pipeline.md` now locks `session_id` as run isolation key.
+  - Local ingestion milestone scope now explicitly includes EPUB support through the PyMuPDF path.
+  - Model-role plan now supports a single shared optional `analysis_model` for both planning and audit stages.
+  - Web corpus defaults now set to `40` candidates and `20` fetched/indexed sources (configurable).
+
+- **Why**:
+  - Converts ambiguous planning choices into implementable defaults so the first build phase can proceed without re-litigating core assumptions.
+
+- **Gotchas / Follow-ups**:
+  - Two clarifications remain in TODO: `analysis_model` default enablement and initial local ingestion UX scope (explicit files only vs directory recursion in v1).
+
+### Research Pipeline Revamp Planning Artifact
+**Summary**: Added a dedicated multi-session TODO plan for a pipeline-driven, small-model-first research workflow redesign.
+
+- **Added**:
+  - New planning document: `TODO_research_pipeline.md`
+  - Phased roadmap covering orchestration stages, local/web corpus unification, retrieval-first targeted summarization, model-role split (worker/planner/auditor), and rollout gates.
+
+- **Why**:
+  - Current research behavior depends too much on model initiative for tool use.
+  - Goal is to move orchestration and data flow into deterministic program logic so smaller/local models produce more consistent results.
+
+- **Gotchas / Follow-ups**:
+  - Implementation intentionally not started yet; this entry tracks planning output only.
+  - Open architecture decisions are listed in `TODO_research_pipeline.md` and need confirmation before coding starts.
+
 ### Tool Metadata Prompt Guidance + Runtime Tool Exclusion Flags
 **Summary**: Added per-tool prompt-guideline metadata and runtime tool exclusion flags so enabled tools can shape system prompt behavior and selected tools can be disabled from CLI invocation.
 

@@ -483,14 +483,14 @@ class TestVectorStoreFindingsMethods:
         # Insert some test findings
         c.execute(
             """
-            INSERT INTO research_findings (id, finding_text, source_url, source_title, tags, created_at)
-            VALUES (1, 'Machine learning is transforming healthcare', 'http://health.com', 'Health News', '["ml", "health"]', '2024-01-01')
+            INSERT INTO research_findings (id, finding_text, source_url, source_title, tags, created_at, session_id)
+            VALUES (1, 'Machine learning is transforming healthcare', 'http://health.com', 'Health News', '["ml", "health"]', '2024-01-01', 'session_a')
         """
         )
         c.execute(
             """
-            INSERT INTO research_findings (id, finding_text, source_url, source_title, tags, created_at)
-            VALUES (2, 'Climate change affects agriculture', 'http://env.com', 'Environment', '["climate", "agriculture"]', '2024-01-02')
+            INSERT INTO research_findings (id, finding_text, source_url, source_title, tags, created_at, session_id)
+            VALUES (2, 'Climate change affects agriculture', 'http://env.com', 'Environment', '["climate", "agriculture"]', '2024-01-02', 'session_b')
         """
         )
 
@@ -579,6 +579,27 @@ class TestVectorStoreFindingsMethods:
         results = vector_store_with_findings.search_findings(query="test", top_k=1)
 
         assert len(results) == 1
+
+    def test_search_findings_filters_by_session_id(
+        self, vector_store_with_findings, mock_embedding_client
+    ):
+        """Test that finding retrieval can be scoped to a specific session."""
+        vector_store_with_findings.store_finding_embedding(
+            finding_id=1,
+            finding_text="Machine learning is transforming healthcare",
+        )
+        vector_store_with_findings.store_finding_embedding(
+            finding_id=2,
+            finding_text="Climate change affects agriculture",
+        )
+
+        scoped_results = vector_store_with_findings.search_findings(
+            query="test",
+            session_id="session_a",
+        )
+
+        assert len(scoped_results) == 1
+        assert scoped_results[0][0]["session_id"] == "session_a"
 
     def test_search_findings_returns_sorted(self, vector_store_with_findings, mock_embedding_client):
         """Test that results are sorted by similarity descending."""

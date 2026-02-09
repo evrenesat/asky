@@ -35,6 +35,10 @@ RAG-powered research mode with caching, semantic search, and persistent memory.
 
 Tool schemas also support optional `system_prompt_guideline` metadata used by
 chat/system-prompt assembly when the tool is enabled for a run.
+When a chat session is active, registry plumbing can inject `session_id` into
+memory tool calls so findings are written/read in session scope.
+Research chat flow now guarantees that a session exists (auto-created when needed),
+so session-scoped memory isolation is available by default in research mode.
 
 ### Execution Flow
 
@@ -158,6 +162,8 @@ Pre-LLM source ranking to improve prompt relevance.
 - Global flags per mode (research/standard)
 - Per-model override in `models.toml`
 - `--lean` flag disables for single run
+- Default shortlist budgets are bounded (`max_candidates=40`, `max_fetch_urls=20`)
+  and remain configurable in `research.toml`.
 
 ## Adapters (`adapters.py`)
 
@@ -177,6 +183,17 @@ tool = "read_local"  # or discover_tool + read_tool
 - Execute configured custom tool
 - Parse JSON response (title, content, links)
 - Cache result for reuse
+
+### Built-in Local Fallback
+
+When no configured adapter matches, `adapters.py` can handle local sources directly:
+- Accepted targets: `local://...`, `file://...`, absolute/relative local paths.
+- `extract_local_source_targets(...)` provides deterministic token extraction from prompts for pre-LLM local preload.
+- Directory targets (discover): produce file links as `local://...` (non-recursive in v1).
+- File targets (read/discover): normalize to plain text for cache/indexing.
+  - Text-like: `.txt`, `.md`, `.markdown`, `.html`, `.htm`, `.json`, `.csv`
+  - Document-like: `.pdf`, `.epub` via PyMuPDF
+- Directory targets are discovery-only in v1; select returned file links for content reads.
 
 ## Dependencies
 

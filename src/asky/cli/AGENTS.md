@@ -8,6 +8,7 @@ Command-line interface layer handling argument parsing, command routing, and use
 |--------|---------|
 | `main.py` | Entry point, argument parsing, command routing |
 | `chat.py` | Chat conversation orchestration |
+| `local_ingestion_flow.py` | Pre-LLM local source preload for research mode |
 | `shortlist_flow.py` | Pre-LLM shortlist execution + banner updates |
 | `completion.py` | Shell completion with argcomplete |
 | `display.py` | Banner rendering, live status updates |
@@ -45,13 +46,15 @@ Command-line interface layer handling argument parsing, command routing, and use
 
 Main conversation entry point via `run_chat()`:
 
-1. **Context Loading**: `load_context()` fetches previous interactions
-2. **Source Shortlisting**: Optional pre-LLM source ranking via `shortlist_flow.py` (lazy-loaded)
-3. **Message Building**: `build_messages()` constructs the base prompt
-4. **Registry Build**: Create mode-aware tool registry, applying any `--tool-off` exclusions
-5. **Prompt Augmentation**: Append enabled-tool guideline lines into the system prompt
-6. **Engine Invocation**: Passes to `ConversationEngine.run()`
-7. **Output Handling**: Saves interaction, optional browser/email/push
+1. **CLI Adaptation**: Parse args into `AskyTurnRequest` + UI callbacks.
+2. **API Orchestration**: `AskyClient.run_turn()` performs context/session/preload/model/persist flow.
+3. **UI Rendering**: `chat.py` maps API notices/events into Rich output + banner updates.
+4. **Interface Side Effects**: optional browser/email/push/report handling.
+
+### Error Handling
+
+- Context overflow errors are surfaced as `ContextOverflowError` from core engine.
+- CLI is responsible for user-facing retry guidance and terminal messaging.
 
 ### Live Banner Integration
 
@@ -77,7 +80,8 @@ Main conversation entry point via `run_chat()`:
 
 ```
 main.py
-├── chat.py → core/engine.py, core/session_manager.py
+├── chat.py → api/client.py
+├── local_ingestion_flow.py → research/adapters.py, research/cache.py, research/vector_store.py
 ├── history.py → storage/sqlite.py
 ├── sessions.py → storage/sqlite.py
 ├── prompts.py → config/
