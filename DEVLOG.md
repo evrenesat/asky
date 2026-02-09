@@ -24,6 +24,21 @@ For older logs, see [DEVLOG_ARCHIVE.md](DEVLOG_ARCHIVE.md)
   - `source_shortlist.py`, `vector_store.py`, and `sqlite.py` remain large; deeper module splits are still pending.
   - Config constants are still flat in `config/__init__.py`; grouping into structured settings is a later phase.
 
+### Maintainability Refactor (Phase 3)
+**Summary**: Extracted tool registry construction out of `core/engine.py` into `core/tool_registry_factory.py`, while preserving backwards compatibility for test patch points and public APIs.
+
+- **New Module**:
+  - Added `src/asky/core/tool_registry_factory.py` to own `create_default_tool_registry()` and `create_research_tool_registry()`.
+
+- **Refactors**:
+  - Replaced large in-module registry builders in `core/engine.py` with thin delegating wrappers.
+  - Kept `engine.py` compatibility symbols (`execute_get_url_content`, `execute_web_search`, etc.) so existing tests and patch targets continue to work.
+  - Updated core architecture docs (`ARCHITECTURE.md`, `src/asky/core/AGENTS.md`) to reflect the new module boundary.
+
+- **Why**:
+  - Reduces `engine.py` scope to conversation orchestration and summary logic.
+  - Isolates registry/tool assembly for easier future extraction (e.g., custom/push-data/research registration).
+
 ## 2026-02-08
 
 ### Codebase Documentation Restructuring

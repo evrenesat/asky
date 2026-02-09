@@ -6,7 +6,8 @@ Central orchestration layer for multi-turn LLM conversations with tool execution
 
 | Module | Purpose |
 |--------|---------|
-| `engine.py` | `ConversationEngine`, tool registry creation |
+| `engine.py` | `ConversationEngine`, compaction, summary generation |
+| `tool_registry_factory.py` | Default/research tool registry construction |
 | `registry.py` | `ToolRegistry` for dynamic tool management |
 | `api_client.py` | LLM API calls, retry logic, `UsageTracker` |
 | `session_manager.py` | Session lifecycle, compaction |
@@ -38,8 +39,17 @@ class ConversationEngine:
 ### Lazy Loading
 
 - Research cache instantiated only when compaction needs cached summaries
-- Tool executors imported on first use
+- Tool executors imported on first use via factory/wrapper helpers
 - Research tool schemas/executors imported only for research mode
+
+## Registry Factory (`tool_registry_factory.py`)
+
+Builds `ToolRegistry` instances used by chat flow:
+- `create_default_tool_registry()`: standard web/content/detail/custom/push-data tools
+- `create_research_tool_registry()`: research-mode schemas/executors + custom tools
+
+The module accepts optional executor callables so `engine.py` can preserve test patch
+compatibility while keeping factory logic out of the conversation loop module.
 
 ## ToolRegistry (`registry.py`)
 
@@ -109,5 +119,6 @@ engine.py
 ├── registry.py → tool dispatch
 ├── prompts.py → prompt construction
 ├── session_manager.py → session persistence
+├── tool_registry_factory.py → registry assembly
 └── (lazy) research/ → research tools
 ```

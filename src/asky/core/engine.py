@@ -22,7 +22,7 @@ from asky.config import (
     SESSION_COMPACTION_THRESHOLD,
 )
 from asky.html import strip_think_tags
-from asky.lazy_imports import call_attr, load_module
+from asky.lazy_imports import call_attr
 from asky.rendering import render_to_browser
 from asky.core.api_client import get_llm_msg, count_tokens, UsageTracker
 from asky.core.prompts import extract_calls, is_markdown
@@ -56,37 +56,6 @@ def _execute_custom_tool(name: str, args: Dict[str, Any]) -> Dict[str, Any]:
 def _get_research_cache():
     """Lazy-load research cache to avoid startup import overhead."""
     return ResearchCache()
-
-
-def _execute_web_search_lazy(args: Dict[str, Any]) -> Dict[str, Any]:
-    return execute_web_search(args)
-
-
-def _execute_get_url_content_lazy(args: Dict[str, Any]) -> Dict[str, Any]:
-    return execute_get_url_content(args)
-
-
-def _execute_get_url_details_lazy(args: Dict[str, Any]) -> Dict[str, Any]:
-    return execute_get_url_details(args)
-
-
-def _execute_custom_tool_lazy(name: str, args: Dict[str, Any]) -> Dict[str, Any]:
-    return _execute_custom_tool(name, args)
-
-
-def _load_research_tool_bindings():
-    """Lazy-load research tool schemas and executors."""
-    tools_module = load_module("asky.research.tools")
-
-    return {
-        "schemas": getattr(tools_module, "RESEARCH_TOOL_SCHEMAS"),
-        "extract_links": getattr(tools_module, "execute_extract_links"),
-        "get_link_summaries": getattr(tools_module, "execute_get_link_summaries"),
-        "get_relevant_content": getattr(tools_module, "execute_get_relevant_content"),
-        "get_full_content": getattr(tools_module, "execute_get_full_content"),
-        "save_finding": getattr(tools_module, "execute_save_finding"),
-        "query_research_memory": getattr(tools_module, "execute_query_research_memory"),
-    }
 
 
 class ConversationEngine:
@@ -598,295 +567,33 @@ def create_default_tool_registry(
     summarization_verbose_callback: Optional[Callable[[Any], None]] = None,
 ) -> ToolRegistry:
     """Create a ToolRegistry with all default and custom tools."""
-    registry = ToolRegistry()
-
-    registry.register(
-        "web_search",
-        {
-            "name": "web_search",
-            "description": "Search the web and return top results.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "q": {"type": "string"},
-                    "count": {"type": "integer", "default": 5},
-                },
-                "required": ["q"],
-            },
-        },
-        _execute_web_search_lazy,
+    return call_attr(
+        "asky.core.tool_registry_factory",
+        "create_default_tool_registry",
+        usage_tracker=usage_tracker,
+        summarization_tracker=summarization_tracker,
+        summarization_status_callback=summarization_status_callback,
+        summarization_verbose_callback=summarization_verbose_callback,
+        execute_web_search_fn=execute_web_search,
+        execute_get_url_content_fn=execute_get_url_content,
+        execute_get_url_details_fn=execute_get_url_details,
+        execute_custom_tool_fn=_execute_custom_tool,
+        custom_tools=CUSTOM_TOOLS,
     )
-
-    def url_content_executor(
-        args: Dict[str, Any],
-        summarize: bool = False,
-    ) -> Dict[str, Any]:
-        result = _execute_get_url_content_lazy(args)
-        # LLM can override the global summarize flag in its tool call
-        effective_summarize = args.get("summarize", summarize)
-        if effective_summarize:
-            content_items = list(result.items())
-            total_urls = len(content_items)
-            for url_index, (url, content) in enumerate(content_items, start=1):
-                if not content.startswith("Error:"):
-                    def summary_progress(payload: Dict[str, Any]) -> None:
-                        stage = str(payload.get("stage", "single"))
-                        call_index = int(payload.get("call_index", 0) or 0)
-                        call_total = int(payload.get("call_total", 0) or 0)
-                        input_chars = int(payload.get("input_chars", 0) or 0)
-                        output_chars = int(payload.get("output_chars", 0) or 0)
-                        elapsed_ms = float(payload.get("elapsed_ms", 0.0) or 0.0)
-                        status_msg = (
-                            f"Summarizer: URL {url_index}/{total_urls} "
-                            f"{stage} {call_index}/{call_total} "
-                            f"(in {input_chars:,}, out {output_chars:,}, {elapsed_ms:.0f}ms)"
-                        )
-                        if summarization_status_callback:
-                            summarization_status_callback(status_msg)
-
-                    summary_text = summarization._summarize_content(
-                        content=content,
-                        prompt_template=SUMMARIZE_ANSWER_PROMPT_TEMPLATE,
-                        max_output_chars=ANSWER_SUMMARY_MAX_CHARS,
-                        get_llm_msg_func=get_llm_msg,
-                        usage_tracker=summarization_tracker,
-                        progress_callback=summary_progress,
-                    )
-                    result[url] = (
-                        f"Summary of {url}:\n"
-                        + summary_text
-                    )
-                    if summarization_verbose_callback:
-                        input_chars = len(content)
-                        output_chars = len(summary_text)
-                        ratio = (
-                            (output_chars / input_chars) if input_chars > 0 else 0.0
-                        )
-                        summarization_verbose_callback(
-                            Panel(
-                                "\n".join(
-                                    [
-                                        f"URL: {url}",
-                                        f"Input chars: {input_chars:,}",
-                                        f"Summary chars: {output_chars:,}",
-                                        f"Compression ratio: {ratio:.3f}",
-                                    ]
-                                ),
-                                title=(
-                                    f"Summarization Stats {url_index}/{total_urls}"
-                                ),
-                                border_style="magenta",
-                                expand=False,
-                            )
-                        )
-            if summarization_status_callback:
-                summarization_status_callback(None)
-        return result
-
-    registry.register(
-        "get_url_content",
-        {
-            "name": "get_url_content",
-            "description": "Fetch one or more URLs and return extracted main content in lightweight markdown.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "urls": {
-                        "type": "array",
-                        "items": {"type": "string"},
-                        "description": "List of URLs to fetch content from.",
-                    },
-                    "url": {
-                        "type": "string",
-                        "description": "Single URL (deprecated, use 'urls' instead).",
-                    },
-                    "summarize": {
-                        "type": "boolean",
-                        "description": "If true, summarize the content of the page using an LLM.",
-                    },
-                },
-                "required": [],
-            },
-        },
-        url_content_executor,
-    )
-
-    registry.register(
-        "get_url_details",
-        {
-            "name": "get_url_details",
-            "description": "Fetch extracted main content plus discovered links from a URL.",
-            "parameters": {
-                "type": "object",
-                "properties": {"url": {"type": "string"}},
-                "required": ["url"],
-            },
-        },
-        _execute_get_url_details_lazy,
-    )
-
-    # Register custom tools from config
-    for tool_name, tool_data in CUSTOM_TOOLS.items():
-        if not tool_data.get("enabled", True):
-            continue
-        registry.register(
-            tool_name,
-            {
-                "name": tool_name,
-                "description": tool_data.get(
-                    "description", f"Custom tool: {tool_name}"
-                ),
-                "parameters": tool_data.get(
-                    "parameters", {"type": "object", "properties": {}}
-                ),
-            },
-            lambda args, name=tool_name: _execute_custom_tool_lazy(name, args),
-        )
-
-    # Register enabled push_data endpoints as LLM tools
-    from asky.push_data import execute_push_data, get_enabled_endpoints
-
-    for endpoint_name, endpoint_config in get_enabled_endpoints().items():
-        # Extract dynamic parameters from fields configuration
-        fields_config = endpoint_config.get("fields", {})
-        properties = {}
-        required = []
-
-        for key, value in fields_config.items():
-            # Skip static values, environment variables, and special variables
-            if (
-                isinstance(value, str)
-                and value.startswith("${")
-                and value.endswith("}")
-            ):
-                param_name = value[2:-1]
-                # Only add if it's not a special variable
-                if param_name not in {"query", "answer", "timestamp", "model"}:
-                    properties[param_name] = {
-                        "type": "string",
-                        "description": f"Value for {param_name}",
-                    }
-                    required.append(param_name)
-
-        # Create tool executor that captures endpoint_name
-        def make_push_executor(ep_name: str):
-            def push_executor(args: Dict[str, Any]) -> Dict[str, Any]:
-                # Special variables are not provided via args - they're auto-filled
-                # So we only pass the dynamic args here
-                return execute_push_data(ep_name, dynamic_args=args)
-
-            return push_executor
-
-        tool_name = f"push_data_{endpoint_name}"
-        description = endpoint_config.get(
-            "description", f"Push data to {endpoint_name}"
-        )
-
-        registry.register(
-            tool_name,
-            {
-                "name": tool_name,
-                "description": description,
-                "parameters": {
-                    "type": "object",
-                    "properties": properties,
-                    "required": required,
-                },
-            },
-            make_push_executor(endpoint_name),
-        )
-
-    return registry
 
 
 def create_research_tool_registry(
     usage_tracker: Optional[UsageTracker] = None,
 ) -> ToolRegistry:
-    """Create a ToolRegistry with research mode tools.
-
-    Research mode provides:
-    - web_search: Standard web search
-    - extract_links: Extract and cache links from URLs (content cached, links returned)
-    - get_link_summaries: Get AI-generated summaries of cached pages
-    - get_relevant_content: RAG-based retrieval of relevant content chunks
-    - get_full_content: Get full cached content
-
-    Plus any custom tools from config.
-    """
-    registry = ToolRegistry()
-
-    # Web search (same as default)
-    registry.register(
-        "web_search",
-        {
-            "name": "web_search",
-            "description": "Search the web and return top results. Use this to find relevant sources for your research.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "q": {"type": "string", "description": "Search query"},
-                    "count": {
-                        "type": "integer",
-                        "default": 5,
-                        "description": "Number of results",
-                    },
-                },
-                "required": ["q"],
-            },
-        },
-        _execute_web_search_lazy,
+    """Create a ToolRegistry with research mode tools."""
+    return call_attr(
+        "asky.core.tool_registry_factory",
+        "create_research_tool_registry",
+        usage_tracker=usage_tracker,
+        execute_web_search_fn=execute_web_search,
+        execute_custom_tool_fn=_execute_custom_tool,
+        custom_tools=CUSTOM_TOOLS,
     )
-
-    research_bindings = _load_research_tool_bindings()
-    schemas = research_bindings["schemas"]
-
-    # Research mode tools
-    for schema in schemas:
-        tool_name = schema["name"]
-        if tool_name == "extract_links":
-            registry.register(tool_name, schema, research_bindings["extract_links"])
-        elif tool_name == "get_link_summaries":
-            registry.register(
-                tool_name,
-                schema,
-                research_bindings["get_link_summaries"],
-            )
-        elif tool_name == "get_relevant_content":
-            registry.register(
-                tool_name,
-                schema,
-                research_bindings["get_relevant_content"],
-            )
-        elif tool_name == "get_full_content":
-            registry.register(tool_name, schema, research_bindings["get_full_content"])
-        elif tool_name == "save_finding":
-            registry.register(tool_name, schema, research_bindings["save_finding"])
-        elif tool_name == "query_research_memory":
-            registry.register(
-                tool_name,
-                schema,
-                research_bindings["query_research_memory"],
-            )
-
-    # Register custom tools from config
-    for tool_name, tool_data in CUSTOM_TOOLS.items():
-        if not tool_data.get("enabled", True):
-            continue
-        registry.register(
-            tool_name,
-            {
-                "name": tool_name,
-                "description": tool_data.get(
-                    "description", f"Custom tool: {tool_name}"
-                ),
-                "parameters": tool_data.get(
-                    "parameters", {"type": "object", "properties": {}}
-                ),
-            },
-            lambda args, name=tool_name: _execute_custom_tool_lazy(name, args),
-        )
-
-    return registry
 
 
 def generate_summaries(

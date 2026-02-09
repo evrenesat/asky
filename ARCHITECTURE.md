@@ -20,6 +20,7 @@ graph TB
 
     subgraph Core["Core Layer (core/)"]
         engine["engine.py<br/>ConversationEngine"]
+        tool_factory["tool_registry_factory.py<br/>Registry Construction"]
         registry["registry.py<br/>ToolRegistry"]
         api_client["api_client.py<br/>LLM API Client"]
         session_mgr["session_manager.py<br/>SessionManager"]
@@ -52,6 +53,8 @@ graph TB
     main --> sessions_cli
     main --> prompts_cli
     chat --> engine
+    chat --> tool_factory
+    tool_factory --> registry
     engine --> registry
     engine --> api_client
     chat --> session_mgr
@@ -205,6 +208,10 @@ Imports deferred until needed:
 ### 8. Shared URL Normalization
 - URL sanitization and canonical normalization are centralized in `url_utils.py`
 - Retrieval, standard tools, research tools, and shortlist reuse the same helper logic
+
+### 9. Registry Factory Separation
+- `core/tool_registry_factory.py` owns default/research registry assembly
+- `core/engine.py` now focuses on the conversation loop and context management
 
 ---
 
