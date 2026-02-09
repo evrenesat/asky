@@ -50,3 +50,29 @@ def test_single_pass_summarization_for_short_content(monkeypatch):
 
     assert output == "short-summary"
     assert call_counter["count"] == 1
+
+
+def test_hierarchical_summarization_uses_single_reduce_call(monkeypatch):
+    """Hierarchical mode should run map calls plus one final reduce call."""
+    monkeypatch.setattr(summarization, "HIERARCHICAL_TRIGGER_CHARS", 10)
+    monkeypatch.setattr(
+        summarization,
+        "_semantic_chunk_text",
+        lambda *_args, **_kwargs: ["c1", "c2", "c3", "c4"],
+    )
+
+    call_counter = {"count": 0}
+
+    def fake_get_llm_msg(*_args, **_kwargs):
+        call_counter["count"] += 1
+        return {"content": f"summary-{call_counter['count']}"}
+
+    output = summarization._summarize_content(
+        content="long text for hierarchical mode",
+        prompt_template="Summarize with key facts.",
+        max_output_chars=300,
+        get_llm_msg_func=fake_get_llm_msg,
+    )
+
+    assert output.startswith("summary-")
+    assert call_counter["count"] == 5

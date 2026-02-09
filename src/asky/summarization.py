@@ -22,7 +22,6 @@ from asky.html import strip_think_tags
 logger = logging.getLogger(__name__)
 
 # Long inputs are summarized hierarchically to improve small-model quality.
-# Long inputs are summarized hierarchically to improve small-model quality.
 HIERARCHICAL_TRIGGER_CHARS = (
     3200  # Minimum content length to trigger hierarchical strategy
 )
@@ -41,8 +40,8 @@ HIERARCHICAL_MAX_CHUNKS = (
 HIERARCHICAL_MAP_MAX_OUTPUT_CHARS = (
     750  # Max chars for initial chunk summaries (bullets focus)
 )
-HIERARCHICAL_MERGE_MAX_OUTPUT_CHARS = 950  # Max chars for intermediate merge outputs
-HIERARCHICAL_MAX_REDUCTION_ROUNDS = 8  # Safety limit for recursive reduction depth
+HIERARCHICAL_MIN_MAP_OUTPUT_CHARS = 160  # Keep each map summary informative.
+REDUCE_SECTION_OVERHEAD_CHARS = 20  # "Section N:\n" + separators in reduce input.
 
 PARAGRAPH_SPLIT_PATTERN = re.compile(r"\n\s*\n+")
 SummarizationProgressCallback = Callable[[Dict[str, Any]], None]
@@ -59,20 +58,6 @@ Extract concise bullet points and preserve:
 - Causal or comparative statements
 
 Output only bullet points."""
-
-MERGE_STAGE_PROMPT_TEMPLATE = """Merge the partial summaries below into one coherent draft summary.
-
-Focus requirement:
-{focus_requirement}
-
-Rules:
-- Keep concrete facts (numbers, dates, names)
-- Remove duplicates and contradictions
-- Keep important caveats
-- Prefer precise wording over broad generalization
-
-Output only the merged summary."""
-
 
 def _summarize_single_pass(
     content: str,
@@ -196,7 +181,8 @@ def _summarize_content(
         )
 
         map_summaries: List[str] = []
-        total_calls = len(chunks) + _estimate_merge_calls(len(chunks)) + 1
+        total_calls = len(chunks) + 1
+        map_max_output_chars = _compute_map_output_limit(len(chunks))
         call_index = 0
         for index, chunk in enumerate(chunks, start=1):
             map_prompt = MAP_STAGE_PROMPT_TEMPLATE.format(
@@ -208,7 +194,7 @@ def _summarize_content(
             map_summary = _summarize_single_pass(
                 content=chunk,
                 prompt_template=map_prompt,
-                max_output_chars=HIERARCHICAL_MAP_MAX_OUTPUT_CHARS,
+                max_output_chars=map_max_output_chars,
                 llm_func=llm_func,
                 usage_tracker=usage_tracker,
                 stage=f"map[{index}/{len(chunks)}]",
@@ -220,47 +206,7 @@ def _summarize_content(
             )
             map_summaries.append(map_summary)
 
-        merged_summaries = map_summaries
-        reduction_round = 0
-        while (
-            len(merged_summaries) > 1
-            and reduction_round < HIERARCHICAL_MAX_REDUCTION_ROUNDS
-        ):
-            reduction_round += 1
-            next_round: List[str] = []
-            for pair_start in range(0, len(merged_summaries), 2):
-                pair = merged_summaries[pair_start : pair_start + 2]
-                if len(pair) == 1:
-                    next_round.append(pair[0])
-                    continue
-
-                merge_prompt = MERGE_STAGE_PROMPT_TEMPLATE.format(
-                    focus_requirement=prompt_template,
-                )
-                pair_input = (
-                    "Partial summary A:\n"
-                    + pair[0]
-                    + "\n\nPartial summary B:\n"
-                    + pair[1]
-                )
-                call_index += 1
-                merged = _summarize_single_pass(
-                    content=pair_input,
-                    prompt_template=merge_prompt,
-                    max_output_chars=HIERARCHICAL_MERGE_MAX_OUTPUT_CHARS,
-                    llm_func=llm_func,
-                    usage_tracker=usage_tracker,
-                    stage=f"merge[r{reduction_round}]",
-                    call_index=call_index,
-                    call_total=total_calls,
-                    hierarchical=True,
-                    status_callback=status_callback,
-                    progress_callback=progress_callback,
-                )
-                next_round.append(merged)
-            merged_summaries = next_round
-
-        final_input = merged_summaries[0] if merged_summaries else ""
+        final_input = _build_reduce_input(map_summaries)
         call_index += 1
         final_summary = _summarize_single_pass(
             content=final_input,
@@ -277,9 +223,9 @@ def _summarize_content(
         )
 
         logger.debug(
-            "summarization hierarchical complete chunks=%d rounds=%d elapsed=%.2fms",
+            "summarization hierarchical complete chunks=%d map_limit=%d elapsed=%.2fms",
             len(chunks),
-            reduction_round,
+            map_max_output_chars,
             (time.perf_counter() - started) * 1000,
         )
         return final_summary
@@ -357,14 +303,41 @@ def _truncate_text(text: str, max_output_chars: int) -> str:
     return text[: max_output_chars - 3] + "..."
 
 
-def _estimate_merge_calls(chunk_count: int) -> int:
-    """Estimate number of pairwise merge calls needed for map-reduce reduction."""
-    merges = 0
-    current = chunk_count
-    while current > 1:
-        merges += current // 2
-        current = (current + 1) // 2
-    return merges
+def _compute_map_output_limit(chunk_count: int) -> int:
+    """Compute per-chunk output cap so all map summaries fit one final reduce call."""
+    if chunk_count <= 0:
+        return HIERARCHICAL_MAP_MAX_OUTPUT_CHARS
+    available_chars = SUMMARIZATION_INPUT_LIMIT - (
+        chunk_count * REDUCE_SECTION_OVERHEAD_CHARS
+    )
+    per_chunk_budget = max(HIERARCHICAL_MIN_MAP_OUTPUT_CHARS, available_chars // chunk_count)
+    return min(HIERARCHICAL_MAP_MAX_OUTPUT_CHARS, per_chunk_budget)
+
+
+def _build_reduce_input(map_summaries: List[str]) -> str:
+    """Build and size-bound final reduce input from map summaries."""
+    sections = [
+        f"Section {index}:\n{summary.strip()}"
+        for index, summary in enumerate(map_summaries, start=1)
+        if summary and summary.strip()
+    ]
+    reduce_input = "\n\n".join(sections)
+    if len(reduce_input) <= SUMMARIZATION_INPUT_LIMIT:
+        return reduce_input
+
+    if not sections:
+        return ""
+
+    per_section_limit = max(
+        HIERARCHICAL_MIN_MAP_OUTPUT_CHARS,
+        (SUMMARIZATION_INPUT_LIMIT // len(sections)) - REDUCE_SECTION_OVERHEAD_CHARS,
+    )
+    compacted_sections = [
+        f"Section {index}:\n{_truncate_text(summary.strip(), per_section_limit)}"
+        for index, summary in enumerate(map_summaries, start=1)
+        if summary and summary.strip()
+    ]
+    return "\n\n".join(compacted_sections)[:SUMMARIZATION_INPUT_LIMIT]
 
 
 def _emit_progress(

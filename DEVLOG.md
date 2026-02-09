@@ -2,6 +2,25 @@ For older logs, see [DEVLOG_ARCHIVE.md](DEVLOG_ARCHIVE.md)
 
 ## 2026-02-09
 
+### Summarization Latency + Non-Streaming LLM Requests
+**Summary**: Reduced hierarchical summarization call count and forced non-streaming mode for all LLM requests.
+
+- **Refactors**:
+  - Updated `src/asky/summarization.py` to use bounded `map + single final reduce` for long content instead of recursive pairwise merge rounds.
+  - Added reduce-input sizing helpers so final reduce input stays within `SUMMARIZATION_INPUT_LIMIT`.
+  - Updated `src/asky/core/api_client.py` so every LLM payload explicitly sets `stream = false`, even if model parameters include `stream`.
+
+- **Tests**:
+  - Extended `tests/test_summarization.py` with a regression test that verifies hierarchical mode now performs `N map calls + 1 final reduce call`.
+  - Extended `tests/test_model_params.py` to verify streaming is always disabled in outbound LLM payloads.
+
+- **Why**:
+  - Hierarchical summarization was creating too many round trips on long inputs.
+  - Streaming responses are not consumed in current CLI/chat flow, so enabling them adds overhead without product value.
+
+### Gotchas / Follow-ups
+- If a future UI path consumes token streams incrementally, `get_llm_msg()` will need an explicit opt-in streaming mode rather than global `stream=false`.
+
 ### Maintainability Refactor (Phase 1-2)
 **Summary**: Reduced duplication around URL handling and lazy imports, and extracted pre-LLM shortlist orchestration from `chat.py` to a dedicated helper module.
 

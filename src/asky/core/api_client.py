@@ -109,6 +109,9 @@ def get_llm_msg(
             if value is not None:
                 payload[key] = value
 
+    # Streaming responses are not consumed by the CLI path; keep requests non-streaming.
+    payload["stream"] = False
+
     if use_tools:
         payload["tools"] = tool_schemas
         payload["tool_choice"] = "auto"

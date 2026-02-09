@@ -78,6 +78,11 @@ class ToolRegistry:
 - `get_llm_msg()`: Send messages with retry logic
 - `count_tokens()`: Naive approximation (chars / 4)
 
+### Request Behavior
+
+- LLM requests are explicitly sent with `stream=false` in `api_client.py` because
+  CLI/chat flows consume non-streamed JSON responses.
+
 ### UsageTracker
 
 Tracks token usage per model alias for banner display.

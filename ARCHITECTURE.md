@@ -223,13 +223,17 @@ Imports deferred until needed:
 - `research/source_shortlist.py` keeps public API/orchestration while collection/scoring live in focused modules.
 - `research/vector_store.py` keeps lifecycle and compatibility methods while heavy chunk/link/finding operations live in dedicated ops modules.
 
+### 11. Bounded Hierarchical Summarization
+- `summarization.py` uses a bounded map + single final reduce strategy for long content.
+- This keeps hierarchical quality improvements while capping LLM round-trips to `chunk_count + 1`.
+
 ---
 
 ## Supporting Modules
 
 | Module | Purpose |
 |--------|---------|
-| `summarization.py` | Hierarchical map-reduce summarization |
+| `summarization.py` | Bounded hierarchical summarization (map + single reduce) |
 | `retrieval.py` | Shared URL retrieval via Trafilatura |
 | `html.py` | HTML stripping, link extraction |
 | `push_data.py` | HTTP data push to endpoints |

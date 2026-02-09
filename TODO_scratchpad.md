@@ -51,5 +51,6 @@ CRITICAL - Security
 Extending tool definitions with system prompt updates.
  -------
  Right now we have hardcoded guidelines in the system prompt about how and when to use tools. This is not flexible because I want to easily disable enable
- certain tools from even command line. So we need to do a few things in order. First we should introduce another field to tool definitions also for user-defined tools of course. That the guideline we added to system prompt when the tool is
- enabled for the session or the current invocation. And the other part of that. I want easy. We exclude some tools from command line.
+ certain tools from even command line. So we need to do a few things in order. First we should introduce another field to tool definitions (also for user-defined tools of course), that the guideline we're going to add to system prompt when the tool is enabled. And the other part of that. I want easily exclude some tools from command line. 
+
+ -tool-off -off web_search

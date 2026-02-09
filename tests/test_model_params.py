@@ -89,3 +89,28 @@ def test_get_llm_msg_ignores_none_parameters(mock_post):
         payload = mock_post.call_args[1]["json"]
         assert payload["temperature"] == 0.7
         assert "seed" not in payload
+
+
+@patch("asky.core.api_client.requests.post")
+def test_get_llm_msg_forces_non_streaming_requests(mock_post):
+    """LLM requests should always disable streaming."""
+    mock_response = MagicMock()
+    mock_response.json.return_value = {
+        "choices": [{"message": {"role": "assistant", "content": "Hello"}}]
+    }
+    mock_post.return_value = mock_response
+
+    mock_models = {
+        "test_model": {"id": "test-v1", "base_url": "http://test", "api_key": "k"}
+    }
+
+    with patch("asky.config.MODELS", mock_models):
+        get_llm_msg(
+            model_id="test-v1",
+            messages=[],
+            parameters={"stream": True, "temperature": 0.3},
+        )
+
+        payload = mock_post.call_args[1]["json"]
+        assert payload["temperature"] == 0.3
+        assert payload["stream"] is False
