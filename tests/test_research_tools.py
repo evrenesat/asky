@@ -142,6 +142,15 @@ class TestExtractLinks:
 
         assert len(result["http://example.com"]["links"]) == 10
 
+    def test_extract_links_rejects_local_targets(self):
+        """Local filesystem URLs should be rejected."""
+        from asky.research.tools import execute_extract_links
+
+        result = execute_extract_links({"urls": ["local:///tmp/corpus/doc.txt"]})
+
+        assert "local:///tmp/corpus/doc.txt" in result
+        assert "Local filesystem targets are not supported" in result["local:///tmp/corpus/doc.txt"]["error"]
+
     def test_extract_links_with_query_ranking(self, mock_cache):
         """Test that query triggers relevance ranking."""
         from asky.research.tools import execute_extract_links
@@ -245,6 +254,15 @@ class TestGetLinkSummaries:
         result = execute_get_link_summaries({"urls": ["http://example.com"]})
 
         assert result["http://example.com"]["status"] == "failed"
+
+    def test_get_summaries_rejects_local_targets(self):
+        """Local filesystem URLs should be rejected."""
+        from asky.research.tools import execute_get_link_summaries
+
+        result = execute_get_link_summaries({"urls": ["local:///tmp/corpus/doc.txt"]})
+
+        assert "local:///tmp/corpus/doc.txt" in result
+        assert "Local filesystem targets are not supported" in result["local:///tmp/corpus/doc.txt"]["error"]
 
 
 class TestGetRelevantContent:
@@ -359,6 +377,17 @@ class TestGetRelevantContent:
         assert result["http://example.com"]["fallback"] is True
         assert "content_preview" in result["http://example.com"]
 
+    def test_get_relevant_rejects_local_targets(self):
+        """Local filesystem URLs should be rejected."""
+        from asky.research.tools import execute_get_relevant_content
+
+        result = execute_get_relevant_content(
+            {"urls": ["local:///tmp/corpus/doc.txt"], "query": "policy"}
+        )
+
+        assert "local:///tmp/corpus/doc.txt" in result
+        assert "Local filesystem targets are not supported" in result["local:///tmp/corpus/doc.txt"]["error"]
+
 
 class TestGetFullContent:
     """Tests for get_full_content tool."""
@@ -417,6 +446,15 @@ class TestGetFullContent:
         result = execute_get_full_content({"urls": ["http://example.com"]})
 
         assert "error" in result["http://example.com"]
+
+    def test_get_full_rejects_local_targets(self):
+        """Local filesystem URLs should be rejected."""
+        from asky.research.tools import execute_get_full_content
+
+        result = execute_get_full_content({"urls": ["local:///tmp/corpus/doc.txt"]})
+
+        assert "local:///tmp/corpus/doc.txt" in result
+        assert "Local filesystem targets are not supported" in result["local:///tmp/corpus/doc.txt"]["error"]
 
 
 class TestToolSchemas:

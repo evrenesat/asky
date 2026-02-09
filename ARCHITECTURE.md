@@ -212,10 +212,12 @@ Hybrid ranking: Chroma dense + SQLite BM25
 Top chunks returned with relevance scores
 ```
 
-Local-file targets can enter the same flow through research adapters:
-- built-in fallback accepts `local://...`, `file://...`, and direct local paths,
+Local-file targets can still be preloaded/indexed through research adapters:
+- built-in adapter fallback accepts `local://...`, `file://...`, and direct local paths,
 - directory discovery returns local file links,
-- file reads (txt/html/md/json/csv and PDF/EPUB via PyMuPDF) are cached/indexed and retrieved via the same RAG path.
+- file reads (txt/html/md/json/csv and PDF/EPUB via PyMuPDF) are cached/indexed.
+
+Guardrail: generic LLM-facing URL/content tools reject local filesystem targets; local-source access should happen via explicit local-source tooling workflows.
 
 ### Evaluation Harness Flow (Manual, Programmatic API)
 

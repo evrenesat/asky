@@ -186,6 +186,7 @@ Provider behavior:
   - research mode -> `local_snapshot`
   - standard mode -> `live_web`
 - `mock_web` is a placeholder for future stubbed-network mode (not yet implemented).
+- Guardrail: generic URL/content tools reject local filesystem targets (`local://`, `file://`, direct paths). If you need local-source reads, use explicit local-source tooling/adapters.
 
 ## Path Resolution Rules
 
@@ -221,6 +222,15 @@ expected:
 
 Guidelines:
 - Use `(?i)` for case-insensitive matches.
+- Use `(?s)` (or `(?is)`) when answers can span multiple lines.
+- Prefer lookahead patterns for keyword/number presence checks when order is not important:
+
+```yaml
+expected:
+  type: regex
+  pattern: "(?is)(?=.*\\bAAL1\\b)(?=.*\\b30\\s*days\\b).*"
+```
+
 - Prefer robust patterns over exact long sentence matching.
 - Keep pattern focused on required facts.
 

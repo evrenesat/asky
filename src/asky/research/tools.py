@@ -15,7 +15,7 @@ from asky.research.chunker import chunk_text
 from asky.research.embeddings import get_embedding_client
 from asky.research.vector_store import get_vector_store
 from asky.research.adapters import fetch_source_via_adapter, has_source_adapter
-from asky.url_utils import sanitize_url
+from asky.url_utils import is_local_filesystem_target, sanitize_url
 
 logger = logging.getLogger(__name__)
 DEFAULT_HYBRID_DENSE_WEIGHT = 0.75
@@ -24,6 +24,10 @@ MAX_RAG_CANDIDATE_MULTIPLIER = 3
 CHUNK_DIVERSITY_SIMILARITY_THRESHOLD = 0.92
 CONTENT_PREVIEW_SHORT_CHARS = 2000
 CONTENT_PREVIEW_LONG_CHARS = 3000
+LOCAL_TARGET_UNSUPPORTED_ERROR = (
+    "Local filesystem targets are not supported by this tool. "
+    "Use an explicit local-source tool instead."
+)
 
 
 # Tool Schemas for LLM
@@ -197,6 +201,18 @@ Useful for recalling facts, statistics, or insights you've discovered before."""
 def _sanitize_url(url: str) -> str:
     """Remove artifacts from URLs."""
     return sanitize_url(url)
+
+
+def _split_local_targets(urls: List[str]) -> tuple[List[str], Dict[str, Dict[str, str]]]:
+    """Separate local filesystem targets from eligible URLs."""
+    eligible: List[str] = []
+    rejected: Dict[str, Dict[str, str]] = {}
+    for url in urls:
+        if is_local_filesystem_target(url):
+            rejected[url] = {"error": LOCAL_TARGET_UNSUPPORTED_ERROR}
+            continue
+        eligible.append(url)
+    return eligible, rejected
 
 
 def _dedupe_preserve_order(values: List[str]) -> List[str]:
@@ -409,11 +425,15 @@ def execute_extract_links(args: Dict[str, Any]) -> Dict[str, Any]:
     if not urls:
         return {"error": "No URLs provided. Please specify 'urls' or 'url' parameter."}
 
+    urls, rejected_results = _split_local_targets(urls)
+    if not urls:
+        return rejected_results
+
     query = args.get("query")
     max_links = args.get("max_links", RESEARCH_MAX_LINKS_PER_URL)
 
     cache = _get_cache()
-    results = {}
+    results = dict(rejected_results)
 
     for url in urls:
         # Check cache first
@@ -498,8 +518,12 @@ def execute_get_link_summaries(args: Dict[str, Any]) -> Dict[str, Any]:
     if not urls:
         return {"error": "No URLs provided."}
 
+    urls, rejected_results = _split_local_targets(urls)
+    if not urls:
+        return rejected_results
+
     cache = _get_cache()
-    results = {}
+    results = dict(rejected_results)
 
     for url in urls:
         summary_info = cache.get_summary(url)
@@ -565,8 +589,12 @@ def execute_get_relevant_content(args: Dict[str, Any]) -> Dict[str, Any]:
     if not query:
         return {"error": "Query is required for relevant content retrieval."}
 
+    urls, rejected_results = _split_local_targets(urls)
+    if not urls:
+        return rejected_results
+
     cache = _get_cache()
-    results = {}
+    results = dict(rejected_results)
 
     for url in urls:
         cached, adapter_error = _ensure_adapter_cached(
@@ -674,8 +702,12 @@ def execute_get_full_content(args: Dict[str, Any]) -> Dict[str, Any]:
     if not urls:
         return {"error": "No URLs provided."}
 
+    urls, rejected_results = _split_local_targets(urls)
+    if not urls:
+        return rejected_results
+
     cache = _get_cache()
-    results = {}
+    results = dict(rejected_results)
 
     for url in urls:
         cached, adapter_error = _ensure_adapter_cached(

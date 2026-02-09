@@ -240,11 +240,17 @@ class ConversationEngine:
                         if tool_name:
                             self.usage_tracker.record_tool_usage(tool_name)
 
+                    raw_tool_message = {
+                        "role": "tool",
+                        "tool_call_id": call["id"],
+                        "content": json.dumps(result),
+                    }
+                    compacted_tool_message = self._compact_tool_message(raw_tool_message)
                     messages.append(
                         {
                             "role": "tool",
                             "tool_call_id": call["id"],
-                            "content": json.dumps(result),
+                            "content": compacted_tool_message.get("content", ""),
                         }
                     )
 

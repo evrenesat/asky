@@ -198,6 +198,12 @@ When no configured adapter matches, `adapters.py` can handle local sources direc
   - Document-like: `.pdf`, `.epub` via PyMuPDF
 - Directory targets are discovery-only in v1; select returned file links for content reads.
 
+### Local Target Guardrails in Research Tools
+
+- Generic research LLM tools (`extract_links`, `get_link_summaries`, `get_relevant_content`, `get_full_content`) reject local filesystem targets.
+- This prevents implicit local-file access via broad URL-oriented tools.
+- Local-file access should be handled through explicit local-source tooling/adapters in dedicated workflows.
+
 ## Dependencies
 
 ```

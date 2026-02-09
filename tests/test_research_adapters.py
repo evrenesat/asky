@@ -129,64 +129,26 @@ def test_fetch_source_via_adapter_uses_read_tool_for_read_operation():
     )
 
 
-def test_get_full_content_hydrates_from_adapter_when_missing_cache():
-    """get_full_content should fetch/cache adapter targets lazily."""
+def test_get_full_content_rejects_local_targets():
+    """get_full_content should reject local filesystem targets."""
     from asky.research.tools import execute_get_full_content
 
-    with patch("asky.research.tools._get_cache") as mock_get_cache:
-        cache = MagicMock()
-        cache.get_cached.side_effect = [
-            None,
-            {"id": 1, "title": "Doc", "content": "Document text", "links": []},
-        ]
-        mock_get_cache.return_value = cache
+    result = execute_get_full_content({"urls": ["local://doc-1"]})
 
-        with patch("asky.research.tools.has_source_adapter", return_value=True):
-            with patch("asky.research.tools._fetch_and_parse") as mock_fetch:
-                mock_fetch.return_value = {
-                    "title": "Doc",
-                    "content": "Document text",
-                    "links": [],
-                    "error": None,
-                }
-                result = execute_get_full_content({"urls": ["local://doc-1"]})
-
-    assert result["local://doc-1"]["content"] == "Document text"
-    cache.cache_url.assert_called_once()
+    assert "error" in result["local://doc-1"]
+    assert "Local filesystem targets are not supported" in result["local://doc-1"]["error"]
 
 
-def test_get_relevant_content_hydrates_from_adapter_when_missing_cache():
-    """get_relevant_content should hydrate adapter sources before RAG search."""
+def test_get_relevant_content_rejects_local_targets():
+    """get_relevant_content should reject local filesystem targets."""
     from asky.research.tools import execute_get_relevant_content
 
-    with patch("asky.research.tools._get_cache") as mock_get_cache:
-        cache = MagicMock()
-        cache.get_cached.side_effect = [
-            None,
-            {"id": 7, "title": "Doc", "content": "Document text", "links": []},
-        ]
-        mock_get_cache.return_value = cache
+    result = execute_get_relevant_content(
+        {"urls": ["local://doc-1"], "query": "matched"}
+    )
 
-        with patch("asky.research.tools.has_source_adapter", return_value=True):
-            with patch("asky.research.tools._fetch_and_parse") as mock_fetch:
-                mock_fetch.return_value = {
-                    "title": "Doc",
-                    "content": "Document text",
-                    "links": [],
-                    "error": None,
-                }
-                with patch("asky.research.tools.get_vector_store") as mock_vs:
-                    store = MagicMock()
-                    store.has_chunk_embeddings.return_value = True
-                    store.search_chunks.return_value = [("Matched section", 0.93)]
-                    mock_vs.return_value = store
-
-                    result = execute_get_relevant_content(
-                        {"urls": ["local://doc-1"], "query": "matched"}
-                    )
-
-    assert "chunks" in result["local://doc-1"]
-    assert result["local://doc-1"]["chunks"][0]["relevance"] == 0.93
+    assert "error" in result["local://doc-1"]
+    assert "Local filesystem targets are not supported" in result["local://doc-1"]["error"]
 
 
 def test_builtin_local_adapter_reads_text_file(tmp_path):

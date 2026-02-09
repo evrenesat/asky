@@ -2,6 +2,61 @@ For older logs, see [DEVLOG_ARCHIVE.md](DEVLOG_ARCHIVE.md)
 
 ## 2026-02-09
 
+### Local Filesystem Target Guardrails for Generic Tools
+**Summary**: Blocked implicit local-file access in generic URL/content tools so `local://`, `file://`, and path-like targets are no longer accepted there.
+
+- **Changed**:
+  - Updated:
+    - `/Users/evren/code/asky/src/asky/url_utils.py`
+      - added shared target classifiers:
+        - `is_http_url(...)`
+        - `is_local_filesystem_target(...)`
+    - `/Users/evren/code/asky/src/asky/tools.py`
+      - `get_url_content`/`fetch_single_url` now reject local targets and non-HTTP(S) schemes with explicit per-URL errors.
+      - `get_url_details` now rejects local targets and non-HTTP(S) schemes with explicit errors.
+    - `/Users/evren/code/asky/src/asky/research/tools.py`
+      - `extract_links`, `get_link_summaries`, `get_relevant_content`, and `get_full_content` now reject local filesystem targets with explicit errors.
+  - Added/updated tests:
+    - `/Users/evren/code/asky/tests/test_tools.py`
+      - coverage for local-target and non-HTTP target rejection in standard URL tools.
+    - `/Users/evren/code/asky/tests/test_research_tools.py`
+      - coverage for local-target rejection across research content tools.
+    - `/Users/evren/code/asky/tests/test_research_adapters.py`
+      - updated expectations so research content tools reject `local://...` targets directly.
+  - Updated docs:
+    - `/Users/evren/code/asky/src/asky/research/AGENTS.md`
+    - `/Users/evren/code/asky/docs/research_eval.md`
+    - `/Users/evren/code/asky/ARCHITECTURE.md`
+
+- **Why**:
+  - Prevents broad URL-oriented tools from becoming implicit local-file readers.
+  - Keeps local-source access explicit and intentional through dedicated local-source workflows.
+
+- **Gotchas / Follow-up**:
+  - Local-snapshot eval prompts can still include local paths; these tools now return guardrail errors for those targets.
+  - If local-source evaluation is still desired through tool calls, introduce dedicated explicit local-source tools and point matrix profiles to those tools.
+
+### RFC/NIST Dataset Expectation Tuning (Wording-Robust Pass Conditions)
+**Summary**: Relaxed brittle sentence-exact assertions in `rfc_http_nist_v1` to keyword/number-focused regex checks so semantically-correct paraphrases pass.
+
+- **Changed**:
+  - Updated:
+    - `/Users/evren/code/asky/evals/research_pipeline/datasets/rfc_http_nist_v1.yaml`
+      - converted multiple `contains` checks to robust `regex` patterns with lookaheads:
+        - `tls13-legacy-renegotiation-serverhello`
+        - `http-obsoletes`
+        - `http-safe-idempotent`
+        - `nist-aal1-factors`
+        - `nist-aal1-30-days`
+        - `nist-password-salt-32-bits`
+      - patterns now focus on required facts (keywords/numbers), not exact sentence formatting.
+    - `/Users/evren/code/asky/docs/research_eval.md`
+      - added guidance for `(?is)` and lookahead-based regex expectation tuning.
+
+- **Why**:
+  - Failures were dominated by strict string matching against otherwise-correct answers (markdown emphasis, casing, reordered phrasing).
+  - Pass criteria now better reflect fact correctness instead of exact wording.
+
 ### Report Rendering Fixes + Single-File Failure Triage
 **Summary**: Fixed markdown report table rendering, added per-tool total call counts, and embedded per-run failure details directly into `report.md`.
 

@@ -21,9 +21,14 @@ from asky.config import (
 )
 from asky.html import strip_tags
 from asky.retrieval import fetch_url_document
-from asky.url_utils import sanitize_url
+from asky.url_utils import is_http_url, is_local_filesystem_target, sanitize_url
 
 logger = logging.getLogger(__name__)
+LOCAL_TARGET_UNSUPPORTED_ERROR = (
+    "Local filesystem targets are not supported by this tool. "
+    "Use an explicit local-source tool instead."
+)
+HTTP_URL_REQUIRED_ERROR = "Only HTTP(S) URLs are supported by this tool."
 
 
 def _execute_searxng_search(q: str, count: int) -> Dict[str, Any]:
@@ -121,6 +126,10 @@ def _sanitize_url(url: str) -> str:
 def fetch_single_url(url: str) -> Dict[str, str]:
     """Fetch content from a single URL."""
     sanitized_url = _sanitize_url(url)
+    if is_local_filesystem_target(sanitized_url):
+        return {sanitized_url: f"Error: {LOCAL_TARGET_UNSUPPORTED_ERROR}"}
+    if not is_http_url(sanitized_url):
+        return {sanitized_url: f"Error: {HTTP_URL_REQUIRED_ERROR}"}
     payload = fetch_url_document(sanitized_url, output_format="markdown")
     if payload.get("error"):
         return {sanitized_url: f"Error: {payload['error']}"}
@@ -163,6 +172,10 @@ def execute_get_url_details(args: Dict[str, Any]) -> Dict[str, Any]:
     url = _sanitize_url(args.get("url", ""))
     if not url:
         return {"error": "Failed to fetch details: URL is empty."}
+    if is_local_filesystem_target(url):
+        return {"error": f"Failed to fetch details: {LOCAL_TARGET_UNSUPPORTED_ERROR}"}
+    if not is_http_url(url):
+        return {"error": f"Failed to fetch details: {HTTP_URL_REQUIRED_ERROR}"}
 
     payload = fetch_url_document(
         url=url,

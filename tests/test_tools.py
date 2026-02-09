@@ -78,6 +78,22 @@ def test_execute_get_url_content_batch(mock_requests_get):
     assert len(result) == 2
 
 
+def test_execute_get_url_content_rejects_local_targets(mock_requests_get):
+    result = execute_get_url_content({"urls": ["local:///tmp/file.txt", "/tmp/file.txt"]})
+
+    assert "local:///tmp/file.txt" in result
+    assert "Local filesystem targets are not supported" in result["local:///tmp/file.txt"]
+    assert "/tmp/file.txt" in result
+    assert "Local filesystem targets are not supported" in result["/tmp/file.txt"]
+
+
+def test_execute_get_url_content_rejects_non_http_targets(mock_requests_get):
+    result = execute_get_url_content({"urls": ["ftp://example.com/resource"]})
+
+    assert "ftp://example.com/resource" in result
+    assert "Only HTTP(S) URLs are supported" in result["ftp://example.com/resource"]
+
+
 def test_execute_get_url_details(mock_requests_get):
     with patch("asky.tools.fetch_url_document") as mock_fetch:
         mock_fetch.return_value = {
@@ -94,6 +110,18 @@ def test_execute_get_url_details(mock_requests_get):
     assert "links" in result
     assert result["content"] == "Text Link"
     assert result["links"][0]["href"] == "http://link.com"
+
+
+def test_execute_get_url_details_rejects_local_target(mock_requests_get):
+    result = execute_get_url_details({"url": "local:///tmp/file.txt"})
+    assert "error" in result
+    assert "Local filesystem targets are not supported" in result["error"]
+
+
+def test_execute_get_url_details_rejects_non_http_target(mock_requests_get):
+    result = execute_get_url_details({"url": "ftp://example.com/resource"})
+    assert "error" in result
+    assert "Only HTTP(S) URLs are supported" in result["error"]
 
 
 @patch("asky.tools.SEARCH_PROVIDER", "searxng")

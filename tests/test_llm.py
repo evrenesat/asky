@@ -177,6 +177,53 @@ def test_conversation_engine_run_basic(mock_dispatch, mock_get_msg):
     assert messages[3]["content"] == "Final Answer"
 
 
+@patch("asky.core.engine.ResearchCache")
+@patch("asky.core.engine.get_llm_msg")
+def test_conversation_engine_compacts_large_tool_payloads_before_append(
+    mock_get_msg, mock_cache_cls
+):
+    msg_tool_call = {
+        "content": None,
+        "tool_calls": [
+            {
+                "id": "call_1",
+                "function": {"name": "get_full_content", "arguments": "{}"},
+            }
+        ],
+    }
+    msg_final = {"content": "Final Answer"}
+    mock_get_msg.side_effect = [msg_tool_call, msg_final]
+
+    cache_instance = MagicMock()
+    cache_instance.get_summary.return_value = None
+    mock_cache_cls.return_value = cache_instance
+
+    very_large_content = "x" * 5000
+    registry = MagicMock()
+    registry.get_schemas.return_value = []
+    registry.dispatch.return_value = {
+        "https://example.com/huge": {
+            "content": very_large_content,
+            "title": "Huge Content",
+        }
+    }
+
+    messages = [{"role": "system", "content": "System Prompt"}]
+    engine = ConversationEngine(
+        model_config={"id": "test_model", "context_size": 200000},
+        tool_registry=registry,
+        summarize=False,
+    )
+
+    final_answer = engine.run(messages)
+    assert final_answer == "Final Answer"
+
+    tool_payload = json.loads(messages[2]["content"])
+    compacted = tool_payload["https://example.com/huge"]["content"]
+    assert "[TRUNCATED]" in compacted
+    assert very_large_content not in compacted
+
+
 @patch("asky.core.engine.get_llm_msg")
 def test_conversation_engine_verbose_tool_trace_and_status(mock_get_msg):
     msg_tool_call = {

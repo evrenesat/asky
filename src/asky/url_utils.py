@@ -7,6 +7,9 @@ from typing import FrozenSet, Optional
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 REPEATED_SLASHES_PATTERN = re.compile(r"/{2,}")
+WINDOWS_DRIVE_INDICATOR_INDEX = 1
+LOCAL_URL_SCHEMES: FrozenSet[str] = frozenset({"local", "file"})
+HTTP_URL_SCHEMES: FrozenSet[str] = frozenset({"http", "https"})
 DEFAULT_TRACKING_QUERY_KEYS: FrozenSet[str] = frozenset(
     {
         "gclid",
@@ -31,6 +34,34 @@ def sanitize_url(url: str) -> str:
     if not url:
         return ""
     return str(url).replace("\\", "").strip()
+
+
+def is_http_url(url: str) -> bool:
+    """Return True when a target is a valid HTTP(S) URL."""
+    sanitized = sanitize_url(url)
+    if not sanitized:
+        return False
+    parsed = urlsplit(sanitized)
+    return parsed.scheme.lower() in HTTP_URL_SCHEMES and bool(parsed.netloc)
+
+
+def is_local_filesystem_target(target: str) -> bool:
+    """Return True when input appears to reference local filesystem content."""
+    sanitized = sanitize_url(target)
+    if not sanitized:
+        return False
+
+    parsed = urlsplit(sanitized)
+    if parsed.scheme.lower() in LOCAL_URL_SCHEMES:
+        return True
+
+    if sanitized.startswith(("/", "~/", "./", "../")):
+        return True
+
+    return (
+        len(sanitized) > WINDOWS_DRIVE_INDICATOR_INDEX
+        and sanitized[WINDOWS_DRIVE_INDICATOR_INDEX] == ":"
+    )
 
 
 def normalize_url(
