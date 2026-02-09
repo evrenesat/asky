@@ -82,6 +82,23 @@ def test_parse_args_lean_flag():
         assert args.query == ["query"]
 
 
+def test_parse_args_tool_off_aliases():
+    with patch(
+        "sys.argv",
+        [
+            "asky",
+            "-tool-off",
+            "web_search",
+            "-off",
+            "get_url_content,get_url_details",
+            "query",
+        ],
+    ):
+        args = parse_args()
+        assert args.tool_off == ["web_search", "get_url_content,get_url_details"]
+        assert args.query == ["query"]
+
+
 def test_parse_args_terminal_lines_explicit():
     """Test -tl with explicit integer."""
     with patch("sys.argv", ["asky", "-tl", "20", "query"]):
@@ -331,6 +348,30 @@ def test_shortlist_enabled_resolution_prefers_lean():
     )
     assert enabled is False
     assert reason == "lean_flag"
+
+
+def test_parse_disabled_tools_supports_repeats_and_commas():
+    from asky.cli.chat import _parse_disabled_tools
+
+    disabled = _parse_disabled_tools(
+        ["web_search,get_url_content", "web_search", " custom_tool "]
+    )
+    assert disabled == {"web_search", "get_url_content", "custom_tool"}
+
+
+def test_append_enabled_tool_guidelines_updates_system_prompt():
+    from asky.cli.chat import _append_enabled_tool_guidelines
+
+    messages = [{"role": "system", "content": "System base"}]
+    _append_enabled_tool_guidelines(
+        messages,
+        [
+            "`web_search`: Discover initial sources first.",
+            "`get_url_content`: Read selected pages for details.",
+        ],
+    )
+    assert "Enabled Tool Guidelines:" in messages[0]["content"]
+    assert "`web_search`: Discover initial sources first." in messages[0]["content"]
 
 
 def test_shortlist_enabled_resolution_prefers_model_override():

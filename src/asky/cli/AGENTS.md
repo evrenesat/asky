@@ -37,6 +37,7 @@ Command-line interface layer handling argument parsing, command routing, and use
 | `-pa, --print-answer` | `history.py` |
 | `-ss, --sticky-session` | `sessions.py` |
 | `-rs, --resume-session` | `sessions.py` |
+| `-off, -tool-off, --tool-off` | `chat.py` (runtime tool exclusion) |
 | `-p, --prompts` | `prompts.py` |
 | `--add-model`, `--edit-model` | `models.py` |
 
@@ -46,9 +47,11 @@ Main conversation entry point via `run_chat()`:
 
 1. **Context Loading**: `load_context()` fetches previous interactions
 2. **Source Shortlisting**: Optional pre-LLM source ranking via `shortlist_flow.py` (lazy-loaded)
-3. **Message Building**: `build_messages()` constructs the prompt
-4. **Engine Invocation**: Passes to `ConversationEngine.run()`
-5. **Output Handling**: Saves interaction, optional browser/email/push
+3. **Message Building**: `build_messages()` constructs the base prompt
+4. **Registry Build**: Create mode-aware tool registry, applying any `--tool-off` exclusions
+5. **Prompt Augmentation**: Append enabled-tool guideline lines into the system prompt
+6. **Engine Invocation**: Passes to `ConversationEngine.run()`
+7. **Output Handling**: Saves interaction, optional browser/email/push
 
 ### Live Banner Integration
 

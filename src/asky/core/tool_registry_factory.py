@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any, Callable, Dict, Optional
+from typing import Any, Callable, Dict, Optional, Set
 
 from rich.panel import Panel
 
@@ -50,6 +50,11 @@ def _default_research_bindings_loader() -> Dict[str, Any]:
     }
 
 
+def _is_tool_enabled(tool_name: str, disabled_tools: Set[str]) -> bool:
+    """Return True when a tool is not excluded by runtime CLI options."""
+    return tool_name not in disabled_tools
+
+
 def create_default_tool_registry(
     usage_tracker: Optional[UsageTracker] = None,
     summarization_tracker: Optional[UsageTracker] = None,
@@ -60,6 +65,7 @@ def create_default_tool_registry(
     execute_get_url_details_fn: Optional[ToolExecutor] = None,
     execute_custom_tool_fn: Optional[CustomToolExecutor] = None,
     custom_tools: Optional[Dict[str, Any]] = None,
+    disabled_tools: Optional[Set[str]] = None,
 ) -> ToolRegistry:
     """Create a ToolRegistry with all default and custom tools."""
     registry = ToolRegistry()
@@ -68,23 +74,26 @@ def create_default_tool_registry(
     get_url_details_executor = execute_get_url_details_fn or _execute_get_url_details
     custom_tool_executor = execute_custom_tool_fn or _execute_custom_tool
     active_custom_tools = custom_tools if custom_tools is not None else CUSTOM_TOOLS
+    excluded_tools = disabled_tools or set()
 
-    registry.register(
-        "web_search",
-        {
-            "name": "web_search",
-            "description": "Search the web and return top results.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "q": {"type": "string"},
-                    "count": {"type": "integer", "default": 5},
+    if _is_tool_enabled("web_search", excluded_tools):
+        registry.register(
+            "web_search",
+            {
+                "name": "web_search",
+                "description": "Search the web and return top results.",
+                "system_prompt_guideline": "Use for discovery of relevant sources before deep content fetches.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "q": {"type": "string"},
+                        "count": {"type": "integer", "default": 5},
+                    },
+                    "required": ["q"],
                 },
-                "required": ["q"],
             },
-        },
-        web_search_executor,
-    )
+            web_search_executor,
+        )
 
     def url_content_executor(
         args: Dict[str, Any],
@@ -146,50 +155,56 @@ def create_default_tool_registry(
                 summarization_status_callback(None)
         return result
 
-    registry.register(
-        "get_url_content",
-        {
-            "name": "get_url_content",
-            "description": "Fetch one or more URLs and return extracted main content in lightweight markdown.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "urls": {
-                        "type": "array",
-                        "items": {"type": "string"},
-                        "description": "List of URLs to fetch content from.",
+    if _is_tool_enabled("get_url_content", excluded_tools):
+        registry.register(
+            "get_url_content",
+            {
+                "name": "get_url_content",
+                "description": "Fetch one or more URLs and return extracted main content in lightweight markdown.",
+                "system_prompt_guideline": "Use after discovery to read the primary content of selected pages.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "urls": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                            "description": "List of URLs to fetch content from.",
+                        },
+                        "url": {
+                            "type": "string",
+                            "description": "Single URL (deprecated, use 'urls' instead).",
+                        },
+                        "summarize": {
+                            "type": "boolean",
+                            "description": "If true, summarize the content of the page using an LLM.",
+                        },
                     },
-                    "url": {
-                        "type": "string",
-                        "description": "Single URL (deprecated, use 'urls' instead).",
-                    },
-                    "summarize": {
-                        "type": "boolean",
-                        "description": "If true, summarize the content of the page using an LLM.",
-                    },
+                    "required": [],
                 },
-                "required": [],
             },
-        },
-        url_content_executor,
-    )
+            url_content_executor,
+        )
 
-    registry.register(
-        "get_url_details",
-        {
-            "name": "get_url_details",
-            "description": "Fetch extracted main content plus discovered links from a URL.",
-            "parameters": {
-                "type": "object",
-                "properties": {"url": {"type": "string"}},
-                "required": ["url"],
+    if _is_tool_enabled("get_url_details", excluded_tools):
+        registry.register(
+            "get_url_details",
+            {
+                "name": "get_url_details",
+                "description": "Fetch extracted main content plus discovered links from a URL.",
+                "system_prompt_guideline": "Use when you need both page body and outgoing links from a single URL.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {"url": {"type": "string"}},
+                    "required": ["url"],
+                },
             },
-        },
-        get_url_details_executor,
-    )
+            get_url_details_executor,
+        )
 
     for tool_name, tool_data in active_custom_tools.items():
         if not tool_data.get("enabled", True):
+            continue
+        if not _is_tool_enabled(tool_name, excluded_tools):
             continue
         registry.register(
             tool_name,
@@ -198,6 +213,7 @@ def create_default_tool_registry(
                 "description": tool_data.get(
                     "description", f"Custom tool: {tool_name}"
                 ),
+                "system_prompt_guideline": tool_data.get("system_prompt_guideline", ""),
                 "parameters": tool_data.get(
                     "parameters", {"type": "object", "properties": {}}
                 ),
@@ -236,11 +252,17 @@ def create_default_tool_registry(
         description = endpoint_config.get(
             "description", f"Push data to {endpoint_name}"
         )
+        if not _is_tool_enabled(tool_name, excluded_tools):
+            continue
         registry.register(
             tool_name,
             {
                 "name": tool_name,
                 "description": description,
+                "system_prompt_guideline": endpoint_config.get(
+                    "system_prompt_guideline",
+                    "Use only after the final answer is complete and data is ready to publish.",
+                ),
                 "parameters": {
                     "type": "object",
                     "properties": properties,
@@ -259,42 +281,48 @@ def create_research_tool_registry(
     execute_custom_tool_fn: Optional[CustomToolExecutor] = None,
     load_research_tool_bindings_fn: Optional[ResearchBindingsLoader] = None,
     custom_tools: Optional[Dict[str, Any]] = None,
+    disabled_tools: Optional[Set[str]] = None,
 ) -> ToolRegistry:
     """Create a ToolRegistry with research mode tools."""
     registry = ToolRegistry()
     web_search_executor = execute_web_search_fn or _execute_web_search
     custom_tool_executor = execute_custom_tool_fn or _execute_custom_tool
     active_custom_tools = custom_tools if custom_tools is not None else CUSTOM_TOOLS
+    excluded_tools = disabled_tools or set()
     load_research_tool_bindings = (
         load_research_tool_bindings_fn or _default_research_bindings_loader
     )
 
-    registry.register(
-        "web_search",
-        {
-            "name": "web_search",
-            "description": "Search the web and return top results. Use this to find relevant sources for your research.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "q": {"type": "string", "description": "Search query"},
-                    "count": {
-                        "type": "integer",
-                        "default": 5,
-                        "description": "Number of results",
+    if _is_tool_enabled("web_search", excluded_tools):
+        registry.register(
+            "web_search",
+            {
+                "name": "web_search",
+                "description": "Search the web and return top results. Use this to find relevant sources for your research.",
+                "system_prompt_guideline": "Use for broad discovery and to refresh candidate sources as research evolves.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "q": {"type": "string", "description": "Search query"},
+                        "count": {
+                            "type": "integer",
+                            "default": 5,
+                            "description": "Number of results",
+                        },
                     },
+                    "required": ["q"],
                 },
-                "required": ["q"],
             },
-        },
-        web_search_executor,
-    )
+            web_search_executor,
+        )
 
     research_bindings = load_research_tool_bindings()
     schemas = research_bindings["schemas"]
 
     for schema in schemas:
         tool_name = schema["name"]
+        if not _is_tool_enabled(tool_name, excluded_tools):
+            continue
         if tool_name == "extract_links":
             registry.register(tool_name, schema, research_bindings["extract_links"])
         elif tool_name == "get_link_summaries":
@@ -323,6 +351,8 @@ def create_research_tool_registry(
     for tool_name, tool_data in active_custom_tools.items():
         if not tool_data.get("enabled", True):
             continue
+        if not _is_tool_enabled(tool_name, excluded_tools):
+            continue
         registry.register(
             tool_name,
             {
@@ -330,6 +360,7 @@ def create_research_tool_registry(
                 "description": tool_data.get(
                     "description", f"Custom tool: {tool_name}"
                 ),
+                "system_prompt_guideline": tool_data.get("system_prompt_guideline", ""),
                 "parameters": tool_data.get(
                     "parameters", {"type": "object", "properties": {}}
                 ),

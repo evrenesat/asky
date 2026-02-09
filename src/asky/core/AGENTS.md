@@ -47,6 +47,7 @@ class ConversationEngine:
 Builds `ToolRegistry` instances used by chat flow:
 - `create_default_tool_registry()`: standard web/content/detail/custom/push-data tools
 - `create_research_tool_registry()`: research-mode schemas/executors + custom tools
+- Both factories accept runtime `disabled_tools` to skip tool registration per request.
 
 The module accepts optional executor callables so `engine.py` can preserve test patch
 compatibility while keeping factory logic out of the conversation loop module.
@@ -59,8 +60,15 @@ Dynamic tool management for LLM function calling:
 class ToolRegistry:
     def register(name, schema, executor): ...
     def get_schemas() -> List[Dict]: ...  # For LLM payload
+    def get_system_prompt_guidelines() -> List[str]: ...  # Enabled-tool guidance lines
     def dispatch(call, summarize, usage_tracker, ...): ...
 ```
+
+### Schema Metadata
+
+- Internal tool schemas may include optional `system_prompt_guideline`.
+- `get_schemas()` emits API-safe function schemas with only `name`, `description`, `parameters`.
+- Guideline metadata is consumed separately for system prompt augmentation in chat flow.
 
 ### Tool Types
 

@@ -156,3 +156,60 @@ def test_execute_web_search_dispatch_searxng(mock_searxng):
 
     execute_web_search({"q": "test"})
     mock_searxng.assert_called_once()
+
+
+def test_registry_guidelines_are_not_sent_in_api_schema():
+    from asky.core.registry import ToolRegistry
+
+    registry = ToolRegistry()
+    registry.register(
+        "sample_tool",
+        {
+            "name": "sample_tool",
+            "description": "Sample tool",
+            "system_prompt_guideline": "Use only for focused checks.",
+            "parameters": {"type": "object", "properties": {}},
+        },
+        lambda _args: {"ok": True},
+    )
+
+    schemas = registry.get_schemas()
+    assert schemas[0]["function"]["name"] == "sample_tool"
+    assert "system_prompt_guideline" not in schemas[0]["function"]
+    assert registry.get_system_prompt_guidelines() == [
+        "`sample_tool`: Use only for focused checks."
+    ]
+
+
+def test_default_registry_respects_disabled_tools_and_custom_guidelines():
+    from asky.core.tool_registry_factory import create_default_tool_registry
+
+    custom_tools = {
+        "custom_echo": {
+            "command": "echo",
+            "enabled": True,
+            "description": "Echo input",
+            "system_prompt_guideline": "Use for shell echo checks.",
+            "parameters": {
+                "type": "object",
+                "properties": {"msg": {"type": "string"}},
+            },
+        }
+    }
+
+    registry = create_default_tool_registry(
+        execute_web_search_fn=lambda _args: {},
+        execute_get_url_content_fn=lambda _args: {},
+        execute_get_url_details_fn=lambda _args: {},
+        execute_custom_tool_fn=lambda _name, _args: {},
+        custom_tools=custom_tools,
+        disabled_tools={"web_search"},
+    )
+
+    tool_names = registry.get_tool_names()
+    assert "web_search" not in tool_names
+    assert "custom_echo" in tool_names
+    assert any(
+        guideline.startswith("`custom_echo`:")
+        for guideline in registry.get_system_prompt_guidelines()
+    )

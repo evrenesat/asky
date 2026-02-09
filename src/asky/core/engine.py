@@ -4,7 +4,7 @@ import json
 import logging
 import requests
 import time
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional, Set
 
 from rich.console import Console
 from rich.markdown import Markdown
@@ -128,16 +128,18 @@ class ConversationEngine:
 
                 # Compaction Check
                 messages = self.check_and_compact(messages)
+                tool_schemas = self.tool_registry.get_schemas()
+                use_tools = bool(tool_schemas)
 
                 msg = get_llm_msg(
                     self.model_config["id"],
                     messages,
-                    use_tools=True,
+                    use_tools=use_tools,
                     verbose=self.verbose,
                     model_alias=self.model_config.get("alias"),
                     usage_tracker=self.usage_tracker,
                     # Pass schemas from registry
-                    tool_schemas=self.tool_registry.get_schemas(),
+                    tool_schemas=tool_schemas,
                     status_callback=status_reporter,
                     parameters=self.model_config.get("parameters"),
                 )
@@ -565,6 +567,7 @@ def create_default_tool_registry(
     summarization_tracker: Optional[UsageTracker] = None,
     summarization_status_callback: Optional[Callable[[Optional[str]], None]] = None,
     summarization_verbose_callback: Optional[Callable[[Any], None]] = None,
+    disabled_tools: Optional[Set[str]] = None,
 ) -> ToolRegistry:
     """Create a ToolRegistry with all default and custom tools."""
     return call_attr(
@@ -579,11 +582,13 @@ def create_default_tool_registry(
         execute_get_url_details_fn=execute_get_url_details,
         execute_custom_tool_fn=_execute_custom_tool,
         custom_tools=CUSTOM_TOOLS,
+        disabled_tools=disabled_tools,
     )
 
 
 def create_research_tool_registry(
     usage_tracker: Optional[UsageTracker] = None,
+    disabled_tools: Optional[Set[str]] = None,
 ) -> ToolRegistry:
     """Create a ToolRegistry with research mode tools."""
     return call_attr(
@@ -593,6 +598,7 @@ def create_research_tool_registry(
         execute_web_search_fn=execute_web_search,
         execute_custom_tool_fn=_execute_custom_tool,
         custom_tools=CUSTOM_TOOLS,
+        disabled_tools=disabled_tools,
     )
 
 

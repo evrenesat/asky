@@ -33,6 +33,9 @@ RAG-powered research mode with caching, semantic search, and persistent memory.
 | `save_finding` | Persist insights to research memory |
 | `query_research_memory` | Semantic search over saved findings |
 
+Tool schemas also support optional `system_prompt_guideline` metadata used by
+chat/system-prompt assembly when the tool is enabled for a run.
+
 ### Execution Flow
 
 ```

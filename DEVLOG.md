@@ -2,6 +2,30 @@ For older logs, see [DEVLOG_ARCHIVE.md](DEVLOG_ARCHIVE.md)
 
 ## 2026-02-09
 
+### Tool Metadata Prompt Guidance + Runtime Tool Exclusion Flags
+**Summary**: Added per-tool prompt-guideline metadata and runtime tool exclusion flags so enabled tools can shape system prompt behavior and selected tools can be disabled from CLI invocation.
+
+- **Refactors / Features**:
+  - Extended `ToolRegistry` to store optional `system_prompt_guideline` metadata and expose enabled-tool guideline lines in registration order.
+  - Updated `ToolRegistry.get_schemas()` to emit API-safe function schemas (`name`, `description`, `parameters`) while keeping internal metadata out of tool payloads.
+  - Added `disabled_tools` support to `create_default_tool_registry()` and `create_research_tool_registry()` (including built-in, research, custom, and push-data tools).
+  - Added CLI flags `-off`, `-tool-off`, and `--tool-off` (repeatable and comma-separated values supported).
+  - Updated chat flow to parse runtime tool exclusions, build the filtered registry, and append enabled-tool guideline bullets into the system prompt before LLM execution.
+  - Added `system_prompt_guideline` fields to research tool schemas and built-in registry schemas; custom tools now support the same optional field from config.
+  - Updated `ConversationEngine.run()` to disable tool-calling automatically when the registry has no enabled tools.
+
+- **Tests**:
+  - Extended `tests/test_cli.py` with parser and helper coverage for tool-off alias parsing, disabled-tool normalization, and system-prompt guideline block injection.
+  - Extended `tests/test_tools.py` with coverage for API schema sanitization and registry filtering/guideline behavior.
+
+- **Why**:
+  - Makes tool behavior instructions composable and tied to enabled toolset rather than hardcoded prompt text.
+  - Supports quick per-run tool toggling from command line without editing config.
+
+- **Gotchas / Follow-ups**:
+  - Tool names in `--tool-off` are exact string matches against registered names.
+  - If all tools are disabled, the LLM call now runs tool-free automatically.
+
 ### Summarization Latency + Non-Streaming LLM Requests
 **Summary**: Reduced hierarchical summarization call count and forced non-streaming mode for all LLM requests.
 

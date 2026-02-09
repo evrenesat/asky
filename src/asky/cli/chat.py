@@ -2,7 +2,7 @@
 
 import argparse
 import logging
-from typing import Any, List, Dict, Optional
+from typing import Any, List, Dict, Optional, Set
 
 from rich.console import Console
 from rich.panel import Panel
@@ -200,6 +200,36 @@ def _shortlist_enabled_for_request(
     return bool(SOURCE_SHORTLIST_ENABLE_STANDARD_MODE), "global_standard_mode"
 
 
+def _parse_disabled_tools(raw_values: Optional[List[str]]) -> Set[str]:
+    """Parse repeated/comma-separated --tool-off values into unique tool names."""
+    disabled_tools: Set[str] = set()
+    for raw_value in raw_values or []:
+        for token in str(raw_value).split(","):
+            tool_name = token.strip()
+            if tool_name:
+                disabled_tools.add(tool_name)
+    return disabled_tools
+
+
+def _append_enabled_tool_guidelines(
+    messages: List[Dict[str, str]], tool_guidelines: List[str]
+) -> None:
+    """Append enabled-tool guidance block to the system prompt."""
+    if not tool_guidelines:
+        return
+    if not messages or messages[0].get("role") != "system":
+        return
+
+    guideline_lines = [
+        "",
+        "Enabled Tool Guidelines:",
+        *[f"- {guideline}" for guideline in tool_guidelines],
+    ]
+    messages[0]["content"] = (
+        f"{messages[0].get('content', '')}\n" + "\n".join(guideline_lines)
+    )
+
+
 def _print_shortlist_verbose(console: Console, shortlist_payload: Dict[str, Any]) -> None:
     """Render shortlist processing/selection trace for verbose terminal output."""
     if not shortlist_payload.get("enabled"):
@@ -287,6 +317,7 @@ def run_chat(args: argparse.Namespace, query_text: str) -> None:
     usage_tracker = UsageTracker()
     summarization_tracker = UsageTracker()
     model_config = MODELS[args.model]
+    disabled_tools = _parse_disabled_tools(getattr(args, "tool_off", []))
 
     # Handle Sessions
     session_manager = None
@@ -484,7 +515,10 @@ def run_chat(args: argparse.Namespace, query_text: str) -> None:
 
         # Use research registry if in research mode, otherwise default
         if research_mode:
-            registry = create_research_tool_registry(usage_tracker=usage_tracker)
+            registry = create_research_tool_registry(
+                usage_tracker=usage_tracker,
+                disabled_tools=disabled_tools,
+            )
         else:
             registry = create_default_tool_registry(
                 usage_tracker=usage_tracker,
@@ -493,7 +527,12 @@ def run_chat(args: argparse.Namespace, query_text: str) -> None:
                 summarization_verbose_callback=(
                     verbose_output_callback if args.verbose else None
                 ),
+                disabled_tools=disabled_tools,
             )
+        _append_enabled_tool_guidelines(
+            messages,
+            registry.get_system_prompt_guidelines(),
+        )
 
         engine = ConversationEngine(
             model_config=model_config,

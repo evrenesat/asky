@@ -36,6 +36,7 @@ Use this to explore what information is available before deciding what to read i
 Optionally provide a research query to rank links by semantic relevance (requires embedding model).
 
 Example: extract_links(urls=["https://example.com"], query="machine learning applications")""",
+        "system_prompt_guideline": "Run early to discover candidate links and cache page data before deeper reads.",
         "parameters": {
             "type": "object",
             "properties": {
@@ -67,6 +68,7 @@ Example: extract_links(urls=["https://example.com"], query="machine learning app
 Use after extract_links to preview page contents before requesting full content.
 Summaries are generated in the background - status may show 'processing' if not ready yet.
 This is efficient for deciding which pages are worth reading in full.""",
+        "system_prompt_guideline": "Use to quickly triage cached pages before spending tokens on long content.",
         "parameters": {
             "type": "object",
             "properties": {
@@ -85,6 +87,7 @@ This is efficient for deciding which pages are worth reading in full.""",
 Uses semantic search to find sections matching your specific query - much more efficient than full content.
 Best for extracting specific information without loading entire pages.
 Requires embedding model to be available.""",
+        "system_prompt_guideline": "Prefer this over full-page reads when you need targeted facts for a specific question.",
         "parameters": {
             "type": "object",
             "properties": {
@@ -122,6 +125,7 @@ Requires embedding model to be available.""",
 Use when you need comprehensive understanding of a page, not just specific sections.
 More token-intensive than get_relevant_content - use sparingly.
 Content must have been cached previously via extract_links.""",
+        "system_prompt_guideline": "Reserve for cases where targeted retrieval is insufficient and full context is required.",
         "parameters": {
             "type": "object",
             "properties": {
@@ -140,6 +144,7 @@ Content must have been cached previously via extract_links.""",
 Use this to persist important findings that may be useful in future research sessions.
 Findings are stored with embeddings for semantic retrieval.
 Include source URL and tags for better organization and retrieval.""",
+        "system_prompt_guideline": "Persist high-value findings with source metadata as you validate them.",
         "parameters": {
             "type": "object",
             "properties": {
@@ -169,6 +174,7 @@ Include source URL and tags for better organization and retrieval.""",
         "description": """Search your research memory for previously saved findings.
 Uses semantic search to find relevant information from past research sessions.
 Useful for recalling facts, statistics, or insights you've discovered before.""",
+        "system_prompt_guideline": "Use at the start of research to reuse prior findings before collecting new sources.",
         "parameters": {
             "type": "object",
             "properties": {

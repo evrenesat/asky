@@ -242,6 +242,16 @@ def parse_args() -> argparse.Namespace:
         help="Disable pre-LLM source shortlisting for this run (lean mode).",
     )
     parser.add_argument(
+        "-off",
+        "-tool-off",
+        "--tool-off",
+        dest="tool_off",
+        action="append",
+        default=[],
+        metavar="TOOL",
+        help="Disable an LLM tool for this run. Repeat or use comma-separated names (e.g. -off web_search -off get_url_content).",
+    )
+    parser.add_argument(
         "-tl",
         "--terminal-lines",
         nargs="?",

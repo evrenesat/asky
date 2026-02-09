@@ -129,6 +129,10 @@ optional shortlist_flow.py → source_shortlist.py (pre-LLM URL/search retrieval
     ↓
 build_messages()
     ↓
+create ToolRegistry (mode-aware + CLI tool exclusions)
+    ↓
+append enabled tool guidelines to system prompt
+    ↓
 ConversationEngine.run()
     ↓
 ┌─────────────────────────────────────┐
@@ -226,6 +230,13 @@ Imports deferred until needed:
 ### 11. Bounded Hierarchical Summarization
 - `summarization.py` uses a bounded map + single final reduce strategy for long content.
 - This keeps hierarchical quality improvements while capping LLM round-trips to `chunk_count + 1`.
+
+### 12. Tool Metadata-Driven Prompt Guidance
+- Tool definitions can include `system_prompt_guideline` metadata (built-in, research, custom, push-data).
+- `ToolRegistry` stores this metadata and emits:
+  - API-safe tool schemas (`name`, `description`, `parameters`) for LLM tool-calling
+  - Enabled-tool guideline lines for system prompt augmentation in chat flow.
+- Runtime tool exclusions (`-off` / `-tool-off` / `--tool-off`) are applied during registry construction.
 
 ---
 
