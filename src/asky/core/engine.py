@@ -22,6 +22,7 @@ from asky.config import (
     SESSION_COMPACTION_THRESHOLD,
 )
 from asky.html import strip_think_tags
+from asky.lazy_imports import call_attr, load_module
 from asky.rendering import render_to_browser
 from asky.core.api_client import get_llm_msg, count_tokens, UsageTracker
 from asky.core.prompts import extract_calls, is_markdown
@@ -33,33 +34,23 @@ logger = logging.getLogger(__name__)
 
 def ResearchCache(*args, **kwargs):
     """Lazy constructor proxy retained for test patch compatibility."""
-    from asky.research.cache import ResearchCache as research_cache_cls
-
-    return research_cache_cls(*args, **kwargs)
+    return call_attr("asky.research.cache", "ResearchCache", *args, **kwargs)
 
 
 def execute_web_search(args: Dict[str, Any]) -> Dict[str, Any]:
-    from asky.tools import execute_web_search as execute_web_search_impl
-
-    return execute_web_search_impl(args)
+    return call_attr("asky.tools", "execute_web_search", args)
 
 
 def execute_get_url_content(args: Dict[str, Any]) -> Dict[str, Any]:
-    from asky.tools import execute_get_url_content as execute_get_url_content_impl
-
-    return execute_get_url_content_impl(args)
+    return call_attr("asky.tools", "execute_get_url_content", args)
 
 
 def execute_get_url_details(args: Dict[str, Any]) -> Dict[str, Any]:
-    from asky.tools import execute_get_url_details as execute_get_url_details_impl
-
-    return execute_get_url_details_impl(args)
+    return call_attr("asky.tools", "execute_get_url_details", args)
 
 
 def _execute_custom_tool(name: str, args: Dict[str, Any]) -> Dict[str, Any]:
-    from asky.tools import _execute_custom_tool as execute_custom_tool_impl
-
-    return execute_custom_tool_impl(name, args)
+    return call_attr("asky.tools", "_execute_custom_tool", name, args)
 
 
 def _get_research_cache():
@@ -85,24 +76,16 @@ def _execute_custom_tool_lazy(name: str, args: Dict[str, Any]) -> Dict[str, Any]
 
 def _load_research_tool_bindings():
     """Lazy-load research tool schemas and executors."""
-    from asky.research.tools import (
-        RESEARCH_TOOL_SCHEMAS,
-        execute_extract_links,
-        execute_get_full_content,
-        execute_get_link_summaries,
-        execute_get_relevant_content,
-        execute_query_research_memory,
-        execute_save_finding,
-    )
+    tools_module = load_module("asky.research.tools")
 
     return {
-        "schemas": RESEARCH_TOOL_SCHEMAS,
-        "extract_links": execute_extract_links,
-        "get_link_summaries": execute_get_link_summaries,
-        "get_relevant_content": execute_get_relevant_content,
-        "get_full_content": execute_get_full_content,
-        "save_finding": execute_save_finding,
-        "query_research_memory": execute_query_research_memory,
+        "schemas": getattr(tools_module, "RESEARCH_TOOL_SCHEMAS"),
+        "extract_links": getattr(tools_module, "execute_extract_links"),
+        "get_link_summaries": getattr(tools_module, "execute_get_link_summaries"),
+        "get_relevant_content": getattr(tools_module, "execute_get_relevant_content"),
+        "get_full_content": getattr(tools_module, "execute_get_full_content"),
+        "save_finding": getattr(tools_module, "execute_save_finding"),
+        "query_research_memory": getattr(tools_module, "execute_query_research_memory"),
     }
 
 

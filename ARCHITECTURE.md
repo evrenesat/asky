@@ -11,6 +11,7 @@ graph TB
     subgraph CLI["CLI Layer (cli/)"]
         main["main.py<br/>Entry Point"]
         chat["chat.py<br/>Chat Flow"]
+        shortlist_flow["shortlist_flow.py<br/>Pre-LLM Shortlist Orchestration"]
         history["history.py<br/>History Commands"]
         sessions_cli["sessions.py<br/>Session Commands"]
         prompts_cli["prompts.py<br/>Prompt Commands"]
@@ -46,6 +47,7 @@ graph TB
     end
 
     main --> chat
+    chat --> shortlist_flow
     main --> history
     main --> sessions_cli
     main --> prompts_cli
@@ -58,7 +60,7 @@ graph TB
     sessions_cli --> sqlite
     registry --> tools
     config_init --> loader
-    chat -.-> shortlist
+    shortlist_flow -.-> shortlist
     chat -.-> cache
 ```
 
@@ -75,6 +77,8 @@ src/asky/
 ├── config/             # Configuration → see config/AGENTS.md
 ├── tools.py            # Tool execution (web search, URL fetch, custom)
 ├── retrieval.py        # Shared URL fetch + Trafilatura extraction
+├── url_utils.py        # Shared URL sanitization/normalization helpers
+├── lazy_imports.py     # Shared lazy import/call helper utilities
 ├── summarization.py    # Query/answer summarization
 ├── push_data.py        # HTTP data push to endpoints
 ├── html.py             # HTML stripping and link extraction
@@ -112,7 +116,7 @@ CLI (main.py) → parse_args()
     ↓
 chat.py → load_context()
     ↓
-optional source_shortlist.py (pre-LLM URL/search retrieval + ranking)
+optional shortlist_flow.py → source_shortlist.py (pre-LLM URL/search retrieval + ranking)
     ↓
 build_messages()
     ↓
@@ -196,6 +200,11 @@ Imports deferred until needed:
 - Research cache only on compaction
 - Tool executors on first use
 - Argcomplete only when completing
+- Shared helper utilities (`lazy_imports.py`) keep lazy bindings consistent across modules
+
+### 8. Shared URL Normalization
+- URL sanitization and canonical normalization are centralized in `url_utils.py`
+- Retrieval, standard tools, research tools, and shortlist reuse the same helper logic
 
 ---
 

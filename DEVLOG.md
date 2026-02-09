@@ -1,5 +1,29 @@
 For older logs, see [DEVLOG_ARCHIVE.md](DEVLOG_ARCHIVE.md)
 
+## 2026-02-09
+
+### Maintainability Refactor (Phase 1-2)
+**Summary**: Reduced duplication around URL handling and lazy imports, and extracted pre-LLM shortlist orchestration from `chat.py` to a dedicated helper module.
+
+- **New Modules**:
+  - Added `src/asky/url_utils.py` for shared URL sanitization and normalization.
+  - Added `src/asky/lazy_imports.py` for shared lazy import/call helpers.
+  - Added `src/asky/cli/shortlist_flow.py` to run shortlist stage and banner updates outside `run_chat()`.
+
+- **Refactors**:
+  - Updated `retrieval.py`, `tools.py`, `research/tools.py`, and `research/source_shortlist.py` to reuse shared URL helpers.
+  - Updated `core/engine.py` lazy tool and research binding imports to use shared lazy-import utilities.
+  - Slimmed `cli/chat.py` by extracting shortlist execution orchestration while preserving existing public helper functions and test patch points.
+
+- **Why**:
+  - Removes repeated URL sanitization/normalization implementations.
+  - Makes lazy-loading patterns consistent and easier to maintain.
+  - Reduces `run_chat()` complexity and isolates shortlist-side effects (banner/status/verbose output) in one place.
+
+- **Gotchas / Follow-ups**:
+  - `source_shortlist.py`, `vector_store.py`, and `sqlite.py` remain large; deeper module splits are still pending.
+  - Config constants are still flat in `config/__init__.py`; grouping into structured settings is a later phase.
+
 ## 2026-02-08
 
 ### Codebase Documentation Restructuring

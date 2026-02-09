@@ -20,7 +20,8 @@ from asky.config import (
     SEARCH_TIMEOUT,
 )
 from asky.html import strip_tags
-from asky.retrieval import fetch_url_document, sanitize_url
+from asky.retrieval import fetch_url_document
+from asky.url_utils import sanitize_url
 
 logger = logging.getLogger(__name__)
 

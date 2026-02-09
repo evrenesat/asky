@@ -10,6 +10,7 @@ import requests
 
 from asky.config import FETCH_TIMEOUT, MAX_URL_DETAIL_LINKS, USER_AGENT
 from asky.html import HTMLStripper, strip_tags
+from asky.url_utils import sanitize_url
 
 logger = logging.getLogger(__name__)
 
@@ -20,13 +21,6 @@ except ImportError:
 
 SUPPORTED_OUTPUT_FORMATS = {"markdown", "txt"}
 MAX_TITLE_CHARS = 220
-
-
-def sanitize_url(url: str) -> str:
-    """Remove shell-escaping artifacts and surrounding whitespace."""
-    if not url:
-        return ""
-    return str(url).replace("\\", "").strip()
 
 
 def fetch_url_document(

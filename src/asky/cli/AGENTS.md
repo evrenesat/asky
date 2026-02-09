@@ -8,6 +8,7 @@ Command-line interface layer handling argument parsing, command routing, and use
 |--------|---------|
 | `main.py` | Entry point, argument parsing, command routing |
 | `chat.py` | Chat conversation orchestration |
+| `shortlist_flow.py` | Pre-LLM shortlist execution + banner updates |
 | `completion.py` | Shell completion with argcomplete |
 | `display.py` | Banner rendering, live status updates |
 | `history.py` | History viewing/deletion commands |
@@ -44,7 +45,7 @@ Command-line interface layer handling argument parsing, command routing, and use
 Main conversation entry point via `run_chat()`:
 
 1. **Context Loading**: `load_context()` fetches previous interactions
-2. **Source Shortlisting**: Optional pre-LLM source ranking (lazy-loaded)
+2. **Source Shortlisting**: Optional pre-LLM source ranking via `shortlist_flow.py` (lazy-loaded)
 3. **Message Building**: `build_messages()` constructs the prompt
 4. **Engine Invocation**: Passes to `ConversationEngine.run()`
 5. **Output Handling**: Saves interaction, optional browser/email/push

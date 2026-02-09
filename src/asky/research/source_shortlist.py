@@ -17,7 +17,7 @@ from typing import (
     Sequence,
     Tuple,
 )
-from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
+from urllib.parse import urlsplit
 
 import requests
 
@@ -51,6 +51,7 @@ from asky.config import (
 )
 from asky.html import HTMLStripper
 from asky.retrieval import fetch_url_document
+from asky.url_utils import normalize_url
 
 logger = logging.getLogger(__name__)
 
@@ -62,7 +63,6 @@ _YAKE_MODULE_LOADED = False
 
 URL_PATTERN = re.compile(r"https?://[^\s<>\"']+")
 TRAILING_URL_PUNCTUATION = ".,;:!?)]}>\"'"
-REPEATED_SLASHES_PATTERN = re.compile(r"/{2,}")
 WHITESPACE_PATTERN = re.compile(r"\s+")
 TOKEN_PATTERN = re.compile(r"[A-Za-z0-9_]{2,}")
 PATH_TOKEN_SPLIT_PATTERN = re.compile(r"[/._\-]+")
@@ -187,41 +187,7 @@ def extract_prompt_urls_and_query_text(user_prompt: str) -> Tuple[List[str], str
 
 def normalize_source_url(url: str) -> str:
     """Normalize URL to collapse duplicate variants and strip tracking params."""
-    if not url:
-        return ""
-
-    parsed = urlsplit(url.strip())
-    if not parsed.scheme or not parsed.netloc:
-        return ""
-
-    scheme = parsed.scheme.lower()
-    hostname = (parsed.hostname or "").lower()
-    if not hostname:
-        return ""
-
-    port = parsed.port
-    include_port = port is not None and not (
-        (scheme == "http" and port == 80) or (scheme == "https" and port == 443)
-    )
-    netloc = f"{hostname}:{port}" if include_port else hostname
-
-    normalized_path = REPEATED_SLASHES_PATTERN.sub("/", parsed.path or "/")
-    if normalized_path != "/" and normalized_path.endswith("/"):
-        normalized_path = normalized_path.rstrip("/")
-
-    query_pairs = parse_qsl(parsed.query, keep_blank_values=True)
-    filtered_pairs = []
-    for key, value in query_pairs:
-        lowered = key.lower()
-        if lowered.startswith("utm_"):
-            continue
-        if lowered in TRACKING_QUERY_KEYS:
-            continue
-        filtered_pairs.append((key, value))
-    filtered_pairs.sort(key=lambda pair: pair[0])
-    normalized_query = urlencode(filtered_pairs, doseq=True)
-
-    return urlunsplit((scheme, netloc, normalized_path, normalized_query, ""))
+    return normalize_url(url, tracking_query_keys=TRACKING_QUERY_KEYS)
 
 
 def extract_keyphrases(query_text: str) -> List[str]:

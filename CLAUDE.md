@@ -2,9 +2,11 @@
 
 Note: I always use speech-to-text dictation, so beware the mistakes, misunderstandings. When in doubt, ask for clarification, do not assume!
 
+
 ## Before Starting Work/Planning
 - Always read `ARCHITECTURE.md` at the start of a new session.
 - Update `ARCHITECTURE.md` whenever code structure, data flow, or key components change.
+- In subdirectories of the project, if exists, read the AGENTS.md files. 
 - Read DEVLOG.md - Understand recent changes and current issues
 - Review related code - Understand how components interact
 - Run run whole test suite. - So you'd be sure if your changes creates a regression or not.
@@ -16,11 +18,17 @@ Note: I always use speech-to-text dictation, so beware the mistakes, misundersta
    - Date and summary
    - What was changed and why
    - Any gotchas or follow-up work needed
-- **Update documentation** if architecture/behavior changed
+- **Update documentation** If there is an AGENTS.md file in the subdirectory you have worked in, update the file according to architecture/behavior changes you have made.
 - Run run whole test suite.
 - **Add/Update unit tests** Add new tests or extend existing test cases to cover the new features you've added.
 - Whenever possible handle "manual testing" yourself. Only if it is not possible for you to observe or test the results yourself, if it's really outside of your capabilities then ask user.
 
+
+## Basic Rules:
+- For Python package management, always use `uv`, `uv pip`, never directly use `pip`.
+- Crete temporary, reproduction or testing files under "temp" directory or prefix them with "temp_", so they would be automatically gitignored.
+- To delete temporary files you've created, you are allowed to use `~/bin/delete-temp-files` command without any argument, if the file name(s) starts with "temp_", they all will be deleted.
+- No magic numbers. Define them as global constants. Add a comment when it's clearer.
 
 ## Basic Rules:
 - For Python package management, always use `uv`, `uv pip`, never directly use `pip`.

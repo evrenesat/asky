@@ -15,6 +15,7 @@ from asky.research.chunker import chunk_text
 from asky.research.embeddings import get_embedding_client
 from asky.research.vector_store import get_vector_store
 from asky.research.adapters import fetch_source_via_adapter, has_source_adapter
+from asky.url_utils import sanitize_url
 
 logger = logging.getLogger(__name__)
 DEFAULT_HYBRID_DENSE_WEIGHT = 0.75
@@ -189,9 +190,7 @@ Useful for recalling facts, statistics, or insights you've discovered before."""
 
 def _sanitize_url(url: str) -> str:
     """Remove artifacts from URLs."""
-    if not url:
-        return ""
-    return url.replace("\\", "")
+    return sanitize_url(url)
 
 
 def _dedupe_preserve_order(values: List[str]) -> List[str]:
