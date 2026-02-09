@@ -184,6 +184,16 @@ tool = "read_local"  # or discover_tool + read_tool
 - Parse JSON response (title, content, links)
 - Cache result for reuse
 
+### Built-in Local Fallback
+
+When no configured adapter matches, `adapters.py` can handle local sources directly:
+- Accepted targets: `local://...`, `file://...`, absolute/relative local paths.
+- Directory targets (discover): produce file links as `local://...` (non-recursive in v1).
+- File targets (read/discover): normalize to plain text for cache/indexing.
+  - Text-like: `.txt`, `.md`, `.markdown`, `.html`, `.htm`, `.json`, `.csv`
+  - Document-like: `.pdf`, `.epub` via PyMuPDF
+- Directory targets are discovery-only in v1; select returned file links for content reads.
+
 ## Dependencies
 
 ```

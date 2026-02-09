@@ -53,6 +53,16 @@ Replace model-driven research flow with a programmatic pipeline that:
 - [ ] Use PyMuPDF-based reader path for PDF + EPUB in first milestone (plus HTML/text).
 - [ ] Dependency note: confirm approval before adding/updating parser libs.
 
+#### Phase 3 Progress (2026-02-09)
+- [x] Added built-in local-source adapter fallback (no custom tool required).
+  - accepted targets: `local://...`, `file://...`, direct local paths
+  - directory discover mode emits `local://` file links for supported file types
+  - file read path normalizes local content into existing cache/index flow
+- [x] Added deterministic readers for:
+  - text/html-like files (`.txt`, `.md`, `.markdown`, `.html`, `.htm`, `.json`, `.csv`)
+  - PDF/EPUB via PyMuPDF path (explicit error when dependency unavailable)
+- [ ] Pending: dedicated CLI local-corpus selection UX and orchestration-stage integration.
+
 ### Phase 4 - Web Corpus Builder (Bounded Internet -> Same RAG path)
 - [ ] Expand pre-LLM source shortlisting:
   - `40` search candidates (default, configurable),

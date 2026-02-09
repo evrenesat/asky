@@ -2,6 +2,31 @@ For older logs, see [DEVLOG_ARCHIVE.md](DEVLOG_ARCHIVE.md)
 
 ## 2026-02-09
 
+### Built-in Local Source Ingestion Fallback (Phase 3 Slice)
+**Summary**: Added deterministic local-file ingestion fallback in research adapters so local corpus reads can flow through the existing cache/vector retrieval path without custom adapter tooling.
+
+- **Changed**:
+  - `src/asky/research/adapters.py`
+    - Added built-in local target handling when no configured custom adapter matches.
+    - Supported target forms: `local://...`, `file://...`, absolute/relative local paths.
+    - Directory discover mode returns `local://` links for supported files (non-recursive in v1).
+    - File read normalization added for text-like formats (`.txt`, `.md`, `.markdown`, `.html`, `.htm`, `.json`, `.csv`).
+    - PDF/EPUB read path added via optional PyMuPDF import with explicit dependency error when unavailable.
+  - No changes required in research tool orchestration: existing adapter/cache/vector flow consumes this fallback directly.
+
+- **Tests**:
+  - `tests/test_research_adapters.py`
+    - Added coverage for builtin local text-file reads.
+    - Added coverage for builtin directory discovery link generation.
+    - Added coverage for PDF dependency-missing error behavior.
+  - Validation runs:
+    - `uv run pytest tests/test_research_adapters.py tests/test_research_tools.py`
+    - `uv run pytest` (full suite)
+
+- **Why**:
+  - Moves local research toward deterministic ingestion and away from model-driven browsing behavior.
+  - Reuses the same downstream caching/chunking/indexing retrieval pipeline already used for web content.
+
 ### Research Mode Now Auto-Starts a Session
 **Summary**: Enforced session-backed execution for research mode so session-scoped memory isolation is always effective.
 
