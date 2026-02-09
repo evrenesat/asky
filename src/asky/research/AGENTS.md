@@ -35,6 +35,8 @@ RAG-powered research mode with caching, semantic search, and persistent memory.
 
 Tool schemas also support optional `system_prompt_guideline` metadata used by
 chat/system-prompt assembly when the tool is enabled for a run.
+When a chat session is active, registry plumbing can inject `session_id` into
+memory tool calls so findings are written/read in session scope.
 
 ### Execution Flow
 
@@ -158,6 +160,8 @@ Pre-LLM source ranking to improve prompt relevance.
 - Global flags per mode (research/standard)
 - Per-model override in `models.toml`
 - `--lean` flag disables for single run
+- Default shortlist budgets are bounded (`max_candidates=40`, `max_fetch_urls=20`)
+  and remain configurable in `research.toml`.
 
 ## Adapters (`adapters.py`)
 

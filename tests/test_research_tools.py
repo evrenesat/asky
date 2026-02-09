@@ -511,6 +511,33 @@ class TestSaveFinding:
             source_url="http://example.com",
             source_title="Example",
             tags=["test", "example"],
+            session_id=None,
+        )
+
+    def test_save_finding_with_session_scope(self, mock_cache):
+        """Test saving a finding with a provided session scope."""
+        from asky.research.tools import execute_save_finding
+
+        mock_cache.save_finding.return_value = 1
+
+        with patch("asky.research.tools.get_vector_store") as mock_vs:
+            mock_store = MagicMock()
+            mock_store.store_finding_embedding.return_value = True
+            mock_vs.return_value = mock_store
+
+            execute_save_finding(
+                {
+                    "finding": "Scoped finding",
+                    "session_id": "session-42",
+                }
+            )
+
+        mock_cache.save_finding.assert_called_once_with(
+            finding_text="Scoped finding",
+            source_url=None,
+            source_title=None,
+            tags=[],
+            session_id="session-42",
         )
 
     def test_save_finding_embedding_fails(self, mock_cache):
@@ -617,11 +644,17 @@ class TestQueryResearchMemory:
                 }
             ]
 
-            result = execute_query_research_memory({"query": "test"})
+            result = execute_query_research_memory(
+                {"query": "test", "session_id": "session-x"}
+            )
 
         assert result["search_type"] == "recent"
         assert "No semantically relevant" in result["note"]
         assert result["findings"][0]["finding"] == "Recent finding"
+        mock_cache.get_all_findings.assert_called_once_with(
+            limit=10,
+            session_id="session-x",
+        )
 
     def test_query_memory_fallback_on_error(self, mock_cache):
         """Test fallback when embedding API fails."""
@@ -672,7 +705,30 @@ class TestQueryResearchMemory:
 
             execute_query_research_memory({"query": "test", "limit": 5})
 
-            mock_store.search_findings.assert_called_with("test", top_k=5)
+            mock_store.search_findings.assert_called_with(
+                "test",
+                top_k=5,
+                session_id=None,
+            )
+
+    def test_query_memory_passes_session_id_to_semantic_search(self):
+        """Test that session_id is propagated to semantic memory search."""
+        from asky.research.tools import execute_query_research_memory
+
+        with patch("asky.research.tools.get_vector_store") as mock_vs:
+            mock_store = MagicMock()
+            mock_store.search_findings.return_value = []
+            mock_vs.return_value = mock_store
+
+            execute_query_research_memory(
+                {"query": "test", "limit": 3, "session_id": "session-abc"}
+            )
+
+            mock_store.search_findings.assert_called_once_with(
+                "test",
+                top_k=3,
+                session_id="session-abc",
+            )
 
 
 class TestSanitizeUrl:

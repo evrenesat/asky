@@ -213,3 +213,67 @@ def test_default_registry_respects_disabled_tools_and_custom_guidelines():
         guideline.startswith("`custom_echo`:")
         for guideline in registry.get_system_prompt_guidelines()
     )
+
+
+def test_research_registry_injects_session_id_for_memory_tools():
+    from asky.core.tool_registry_factory import create_research_tool_registry
+
+    save_calls = []
+    query_calls = []
+
+    def save_executor(args):
+        save_calls.append(args)
+        return {"ok": True}
+
+    def query_executor(args):
+        query_calls.append(args)
+        return {"ok": True}
+
+    bindings = {
+        "schemas": [
+            {
+                "name": "save_finding",
+                "description": "Save finding",
+                "parameters": {"type": "object", "properties": {}},
+            },
+            {
+                "name": "query_research_memory",
+                "description": "Query finding memory",
+                "parameters": {"type": "object", "properties": {}},
+            },
+        ],
+        "extract_links": lambda _args: {},
+        "get_link_summaries": lambda _args: {},
+        "get_relevant_content": lambda _args: {},
+        "get_full_content": lambda _args: {},
+        "save_finding": save_executor,
+        "query_research_memory": query_executor,
+    }
+
+    registry = create_research_tool_registry(
+        load_research_tool_bindings_fn=lambda: bindings,
+        disabled_tools={"web_search"},
+        session_id="session-123",
+    )
+
+    registry.dispatch(
+        {
+            "function": {
+                "name": "save_finding",
+                "arguments": '{"finding":"foo"}',
+            }
+        },
+        summarize=False,
+    )
+    registry.dispatch(
+        {
+            "function": {
+                "name": "query_research_memory",
+                "arguments": '{"query":"foo","session_id":"explicit"}',
+            }
+        },
+        summarize=False,
+    )
+
+    assert save_calls[-1]["session_id"] == "session-123"
+    assert query_calls[-1]["session_id"] == "explicit"

@@ -49,6 +49,8 @@ Main conversation entry point via `run_chat()`:
 2. **Source Shortlisting**: Optional pre-LLM source ranking via `shortlist_flow.py` (lazy-loaded)
 3. **Message Building**: `build_messages()` constructs the base prompt
 4. **Registry Build**: Create mode-aware tool registry, applying any `--tool-off` exclusions
+   - In research mode, active chat `session_id` is forwarded into the research registry
+     so memory tools can be session-scoped.
 5. **Prompt Augmentation**: Append enabled-tool guideline lines into the system prompt
 6. **Engine Invocation**: Passes to `ConversationEngine.run()`
 7. **Output Handling**: Saves interaction, optional browser/email/push

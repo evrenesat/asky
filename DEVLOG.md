@@ -2,6 +2,78 @@ For older logs, see [DEVLOG_ARCHIVE.md](DEVLOG_ARCHIVE.md)
 
 ## 2026-02-09
 
+### Session-Scoped Research Memory + Shortlist Budget Defaults
+**Summary**: Implemented first research-pipeline slice to scope findings memory by active chat session and increased default pre-LLM shortlist budgets.
+
+- **Changed**:
+  - Threaded active session context from chat into research registry construction:
+    - `src/asky/cli/chat.py`
+    - `src/asky/core/engine.py`
+    - `src/asky/core/tool_registry_factory.py`
+  - Added session-aware handling in research memory tool executors:
+    - `src/asky/research/tools.py`
+      - `save_finding` now persists `session_id` when provided.
+      - `query_research_memory` now queries semantic/fallback memory in optional session scope.
+  - Extended vector-store finding operations for session-filtered retrieval paths:
+    - `src/asky/research/vector_store.py`
+    - `src/asky/research/vector_store_finding_ops.py`
+  - Raised shortlist defaults for larger bounded corpus construction:
+    - `src/asky/data/config/research.toml` (`search_result_count=40`, `max_candidates=40`, `max_fetch_urls=20`)
+    - `src/asky/config/__init__.py` fallback defaults aligned to `40/40/20`.
+
+- **Tests**:
+  - Added/updated coverage:
+    - `tests/test_tools.py` (research registry session-id injection behavior)
+    - `tests/test_research_tools.py` (session propagation for save/query memory tools)
+    - `tests/test_research_vector_store.py` (session-scoped finding search)
+  - Validation runs:
+    - Pre-change baseline: `uv run pytest` → 402 passed
+    - Post-change full suite: `uv run pytest` → 406 passed
+
+- **Why**:
+  - Keeps research-memory writes/reads isolated by active session without relying on the model to manage scope.
+  - Increases shortlist breadth while keeping fetch/index work bounded for deterministic pipeline stages.
+
+### Documentation Sync for Session-Scoped Memory + Shortlist Budgets
+**Summary**: Updated architecture/package docs to reflect new research-memory scoping behavior and shortlist defaults.
+
+- **Updated**:
+  - `ARCHITECTURE.md`
+  - `src/asky/cli/AGENTS.md`
+  - `src/asky/core/AGENTS.md`
+  - `src/asky/research/AGENTS.md`
+  - `src/asky/config/AGENTS.md`
+
+### Research Pipeline Plan Revisions (Decisions Applied)
+**Summary**: Updated the research pipeline planning artifact with concrete defaults and decisions from review discussion.
+
+- **Updated**:
+  - `TODO_research_pipeline.md` now locks `session_id` as run isolation key.
+  - Local ingestion milestone scope now explicitly includes EPUB support through the PyMuPDF path.
+  - Model-role plan now supports a single shared optional `analysis_model` for both planning and audit stages.
+  - Web corpus defaults now set to `40` candidates and `20` fetched/indexed sources (configurable).
+
+- **Why**:
+  - Converts ambiguous planning choices into implementable defaults so the first build phase can proceed without re-litigating core assumptions.
+
+- **Gotchas / Follow-ups**:
+  - Two clarifications remain in TODO: `analysis_model` default enablement and initial local ingestion UX scope (explicit files only vs directory recursion in v1).
+
+### Research Pipeline Revamp Planning Artifact
+**Summary**: Added a dedicated multi-session TODO plan for a pipeline-driven, small-model-first research workflow redesign.
+
+- **Added**:
+  - New planning document: `TODO_research_pipeline.md`
+  - Phased roadmap covering orchestration stages, local/web corpus unification, retrieval-first targeted summarization, model-role split (worker/planner/auditor), and rollout gates.
+
+- **Why**:
+  - Current research behavior depends too much on model initiative for tool use.
+  - Goal is to move orchestration and data flow into deterministic program logic so smaller/local models produce more consistent results.
+
+- **Gotchas / Follow-ups**:
+  - Implementation intentionally not started yet; this entry tracks planning output only.
+  - Open architecture decisions are listed in `TODO_research_pipeline.md` and need confirmation before coding starts.
+
 ### Tool Metadata Prompt Guidance + Runtime Tool Exclusion Flags
 **Summary**: Added per-tool prompt-guideline metadata and runtime tool exclusion flags so enabled tools can shape system prompt behavior and selected tools can be disabled from CLI invocation.
 

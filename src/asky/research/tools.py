@@ -211,6 +211,14 @@ def _dedupe_preserve_order(values: List[str]) -> List[str]:
     return deduped
 
 
+def _normalize_session_id(raw_session_id: Any) -> Optional[str]:
+    """Normalize optional session identifiers from tool arguments."""
+    if raw_session_id is None:
+        return None
+    session_id = str(raw_session_id).strip()
+    return session_id or None
+
+
 def _select_diverse_chunks(
     ranked_chunks: List[Dict[str, Any]], max_chunks: int
 ) -> List[Dict[str, Any]]:
@@ -709,6 +717,7 @@ def execute_save_finding(args: Dict[str, Any]) -> Dict[str, Any]:
     source_url = args.get("source_url")
     source_title = args.get("source_title")
     tags = args.get("tags", [])
+    session_id = _normalize_session_id(args.get("session_id"))
 
     # Ensure tags is a list
     if isinstance(tags, str):
@@ -720,6 +729,7 @@ def execute_save_finding(args: Dict[str, Any]) -> Dict[str, Any]:
         source_url=source_url,
         source_title=source_title,
         tags=tags,
+        session_id=session_id,
     )
 
     # Try to embed for semantic search
@@ -746,11 +756,16 @@ def execute_query_research_memory(args: Dict[str, Any]) -> Dict[str, Any]:
         return {"error": "Query is required."}
 
     limit = args.get("limit", RESEARCH_MEMORY_MAX_RESULTS)
+    session_id = _normalize_session_id(args.get("session_id"))
 
     # Try semantic search first
     try:
         vector_store = get_vector_store()
-        results = vector_store.search_findings(query, top_k=limit)
+        results = vector_store.search_findings(
+            query,
+            top_k=limit,
+            session_id=session_id,
+        )
 
         if results:
             return {
@@ -771,7 +786,7 @@ def execute_query_research_memory(args: Dict[str, Any]) -> Dict[str, Any]:
         else:
             # No results from semantic search, try returning recent findings
             cache = _get_cache()
-            findings = cache.get_all_findings(limit=limit)
+            findings = cache.get_all_findings(limit=limit, session_id=session_id)
 
             if findings:
                 return {
@@ -790,16 +805,22 @@ def execute_query_research_memory(args: Dict[str, Any]) -> Dict[str, Any]:
                     "search_type": "recent",
                 }
             else:
+                no_results_note = (
+                    "No findings in this session's research memory yet. "
+                    "Use save_finding to store discoveries."
+                    if session_id
+                    else "No findings in research memory yet. Use save_finding to store discoveries."
+                )
                 return {
                     "findings": [],
-                    "note": "No findings in research memory yet. Use save_finding to store discoveries.",
+                    "note": no_results_note,
                 }
 
     except Exception as e:
         logger.warning(f"Semantic search unavailable: {e}")
         # Fallback to returning recent findings
         cache = _get_cache()
-        findings = cache.get_all_findings(limit=limit)
+        findings = cache.get_all_findings(limit=limit, session_id=session_id)
 
         return {
             "findings": [

@@ -426,29 +426,54 @@ class VectorStore:
     def _fetch_findings_by_ids(
         self,
         finding_ids: List[int],
+        session_id: Optional[str] = None,
     ) -> Dict[int, Dict[str, Any]]:
         """Fetch finding rows from SQLite and map by finding ID."""
-        return finding_ops.fetch_findings_by_ids(self, finding_ids)
+        return finding_ops.fetch_findings_by_ids(
+            self,
+            finding_ids,
+            session_id=session_id,
+        )
 
     def _search_findings_with_sqlite(
         self,
         query_embedding: List[float],
         top_k: int,
+        session_id: Optional[str] = None,
     ) -> List[Tuple[Dict[str, Any], float]]:
         """Search findings by scanning SQLite embeddings."""
-        return finding_ops.search_findings_with_sqlite(self, query_embedding, top_k)
+        return finding_ops.search_findings_with_sqlite(
+            self,
+            query_embedding,
+            top_k,
+            session_id=session_id,
+        )
 
-    def _has_finding_embeddings_for_model(self, model: str) -> bool:
+    def _has_finding_embeddings_for_model(
+        self,
+        model: str,
+        session_id: Optional[str] = None,
+    ) -> bool:
         """Check whether SQLite has any stored finding embeddings for the model."""
-        return finding_ops.has_finding_embeddings_for_model(self, model)
+        return finding_ops.has_finding_embeddings_for_model(
+            self,
+            model,
+            session_id=session_id,
+        )
 
     def search_findings(
         self,
         query: str,
         top_k: int = 10,
+        session_id: Optional[str] = None,
     ) -> List[Tuple[Dict[str, Any], float]]:
         """Search for relevant findings given a query."""
-        return finding_ops.search_findings(self, query, top_k)
+        return finding_ops.search_findings(
+            self,
+            query,
+            top_k,
+            session_id=session_id,
+        )
 
     def has_finding_embedding(self, finding_id: int) -> bool:
         """Check if a finding has an embedding."""

@@ -48,6 +48,9 @@ Builds `ToolRegistry` instances used by chat flow:
 - `create_default_tool_registry()`: standard web/content/detail/custom/push-data tools
 - `create_research_tool_registry()`: research-mode schemas/executors + custom tools
 - Both factories accept runtime `disabled_tools` to skip tool registration per request.
+- Research factory also accepts optional `session_id`; when set, it auto-injects that ID
+  into research memory tool calls (`save_finding`, `query_research_memory`) for
+  session-scoped persistence/retrieval.
 
 The module accepts optional executor callables so `engine.py` can preserve test patch
 compatibility while keeping factory logic out of the conversation loop module.

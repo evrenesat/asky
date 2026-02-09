@@ -74,6 +74,10 @@ Persist model changes using `tomlkit` to preserve formatting.
 | `RESEARCH_EMBEDDING_MODEL` | Embedding model name |
 | `SOURCE_SHORTLIST_*` | Shortlist pipeline settings |
 
+Current bundled shortlist defaults in `research.toml` set a wider pre-LLM budget
+(`search_result_count=40`, `max_candidates=40`, `max_fetch_urls=20`) for richer
+candidate pools while keeping fetch cost bounded.
+
 ### Custom Extensions
 
 | Constant | Description |

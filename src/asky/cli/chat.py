@@ -377,6 +377,10 @@ def run_chat(args: argparse.Namespace, query_text: str) -> None:
     if research_mode:
         console.print("\n[Research mode enabled - using link extraction and RAG tools]")
 
+    research_session_id: Optional[str] = None
+    if session_manager and session_manager.current_session:
+        research_session_id = str(session_manager.current_session.id)
+
     shortlist_enabled, shortlist_reason = _shortlist_enabled_for_request(
         args=args,
         model_config=model_config,
@@ -518,6 +522,7 @@ def run_chat(args: argparse.Namespace, query_text: str) -> None:
             registry = create_research_tool_registry(
                 usage_tracker=usage_tracker,
                 disabled_tools=disabled_tools,
+                session_id=research_session_id,
             )
         else:
             registry = create_default_tool_registry(

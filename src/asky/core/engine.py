@@ -589,6 +589,7 @@ def create_default_tool_registry(
 def create_research_tool_registry(
     usage_tracker: Optional[UsageTracker] = None,
     disabled_tools: Optional[Set[str]] = None,
+    session_id: Optional[str] = None,
 ) -> ToolRegistry:
     """Create a ToolRegistry with research mode tools."""
     return call_attr(
@@ -599,6 +600,7 @@ def create_research_tool_registry(
         execute_custom_tool_fn=_execute_custom_tool,
         custom_tools=CUSTOM_TOOLS,
         disabled_tools=disabled_tools,
+        session_id=session_id,
     )
 
 

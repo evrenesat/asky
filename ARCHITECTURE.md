@@ -181,6 +181,24 @@ Hybrid ranking: Chroma dense + SQLite BM25
 Top chunks returned with relevance scores
 ```
 
+### Research Memory Flow (Session-Scoped)
+
+```
+save_finding(...)
+    ↓
+chat research registry injects active session_id (when a session is active)
+    ↓
+ResearchCache.save_finding(..., session_id)
+    ↓
+VectorStore.store_finding_embedding()
+    ↓
+query_research_memory(query)
+    ↓
+VectorStore.search_findings(..., session_id=active_session)
+    ↓
+Semantic/fallback results filtered to current session scope
+```
+
 ---
 
 ## Design Decisions
@@ -237,6 +255,10 @@ Imports deferred until needed:
   - API-safe tool schemas (`name`, `description`, `parameters`) for LLM tool-calling
   - Enabled-tool guideline lines for system prompt augmentation in chat flow.
 - Runtime tool exclusions (`-off` / `-tool-off` / `--tool-off`) are applied during registry construction.
+
+### 13. Session-Scoped Research Memory
+- Research registry creation can inject active `session_id` into memory tools (`save_finding`, `query_research_memory`).
+- Memory writes and reads can be isolated to the current chat session without adding extra user-facing tool parameters.
 
 ---
 
