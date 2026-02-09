@@ -2,6 +2,7 @@
 
 import argparse
 import logging
+import time
 from typing import Any, List, Dict, Optional, Set
 
 from rich.console import Console
@@ -45,12 +46,31 @@ def shortlist_prompt_sources(*args: Any, **kwargs: Any) -> Dict[str, Any]:
     return call_attr("asky.research.source_shortlist", "shortlist_prompt_sources", *args, **kwargs)
 
 
+def preload_local_research_sources(*args: Any, **kwargs: Any) -> Dict[str, Any]:
+    """Lazy-import local ingestion flow to keep startup fast for non-research chats."""
+    return call_attr(
+        "asky.cli.local_ingestion_flow",
+        "preload_local_research_sources",
+        *args,
+        **kwargs,
+    )
+
+
 def format_shortlist_context(shortlist_payload: Dict[str, Any]) -> str:
     """Lazy-import shortlist formatter for same startup behavior as shortlist collection."""
     return call_attr(
         "asky.research.source_shortlist",
         "format_shortlist_context",
         shortlist_payload,
+    )
+
+
+def format_local_ingestion_context(local_payload: Dict[str, Any]) -> Optional[str]:
+    """Lazy-import local-ingestion context formatter."""
+    return call_attr(
+        "asky.cli.local_ingestion_flow",
+        "format_local_ingestion_context",
+        local_payload,
     )
 
 
@@ -154,9 +174,9 @@ def build_messages(
     if source_shortlist_context:
         user_content = (
             f"{query_text}\n\n"
-            f"Pre-ranked sources gathered before tool calls:\n"
+            f"Preloaded sources gathered before tool calls:\n"
             f"{source_shortlist_context}\n\n"
-            "Use this shortlist as a starting point, then verify with tools before citing."
+            "Use this preloaded corpus as a starting point, then verify with tools before citing."
         )
 
     messages.append({"role": "user", "content": user_content})
@@ -328,6 +348,16 @@ def _print_shortlist_verbose(console: Console, shortlist_payload: Dict[str, Any]
         )
 
 
+def _combine_preloaded_source_context(
+    *context_blocks: Optional[str],
+) -> Optional[str]:
+    """Merge multiple preloaded-source context blocks into one message section."""
+    merged = [block.strip() for block in context_blocks if block and block.strip()]
+    if not merged:
+        return None
+    return "\n\n".join(merged)
+
+
 def run_chat(args: argparse.Namespace, query_text: str) -> None:
     """Run the chat conversation flow."""
     from asky.core import clear_shell_session
@@ -441,6 +471,41 @@ def run_chat(args: argparse.Namespace, query_text: str) -> None:
             bool(getattr(args, "lean", False)),
         )
 
+    local_ingestion_context: Optional[str] = None
+    local_ingestion_payload: Dict[str, Any] = {"enabled": False, "ingested": []}
+    local_ingestion_elapsed = 0.0
+    if research_mode:
+        try:
+            local_ingestion_start = time.perf_counter()
+            local_ingestion_payload = preload_local_research_sources(
+                user_prompt=query_text,
+            )
+            local_ingestion_elapsed = (
+                time.perf_counter() - local_ingestion_start
+            ) * 1000
+            local_ingestion_context = format_local_ingestion_context(
+                local_ingestion_payload
+            )
+            logger.debug(
+                "chat local ingestion enabled=%s targets=%d documents=%d chunks=%d elapsed=%.2fms warnings=%d",
+                local_ingestion_payload.get("enabled"),
+                int(local_ingestion_payload.get("stats", {}).get("targets", 0) or 0),
+                int(
+                    local_ingestion_payload.get("stats", {}).get(
+                        "processed_documents", 0
+                    )
+                    or 0
+                ),
+                int(
+                    local_ingestion_payload.get("stats", {}).get("indexed_chunks", 0)
+                    or 0
+                ),
+                local_ingestion_elapsed,
+                len(local_ingestion_payload.get("warnings", []) or []),
+            )
+        except Exception as exc:
+            logger.warning("local pre-LLM ingestion failed: %s", exc)
+
     (
         shortlist_context,
         shortlist_payload,
@@ -478,13 +543,18 @@ def run_chat(args: argparse.Namespace, query_text: str) -> None:
             shortlist_elapsed,
         )
 
+    preloaded_source_context = _combine_preloaded_source_context(
+        local_ingestion_context,
+        shortlist_context,
+    )
+
     messages = build_messages(
         args,
         context_str,
         query_text,
         session_manager=session_manager,
         research_mode=research_mode,
-        source_shortlist_context=shortlist_context,
+        source_shortlist_context=preloaded_source_context,
     )
     renderer.messages = messages
 

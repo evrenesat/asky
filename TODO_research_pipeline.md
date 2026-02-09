@@ -44,6 +44,13 @@ Replace model-driven research flow with a programmatic pipeline that:
   6. optional quality audit.
 - [ ] Add per-stage tool exposure controls (reuse existing registry exclusion mechanics).
 
+#### Phase 2 Progress (2026-02-09)
+- [x] Added deterministic pre-LLM local-corpus preload stage in chat flow.
+  - New module: `src/asky/cli/local_ingestion_flow.py`
+  - Research chat now preloads local prompt targets before shortlist/model call.
+  - Preloaded local corpus context is merged into the same preloaded-source prompt block.
+- [ ] Pending: move stage sequencing into dedicated orchestrator module with explicit stage objects.
+
 ### Phase 3 - Local Research Ingestion (Classical RAG path)
 - [ ] Implement file ingestion pipeline for local sources:
   - PDF/EPUB/text/HTML -> normalized markdown/text,

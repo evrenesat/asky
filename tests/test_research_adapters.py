@@ -240,3 +240,15 @@ def test_builtin_local_adapter_pdf_requires_pymupdf(tmp_path):
 
     assert result is not None
     assert result["error"] == "PyMuPDF is required to read PDF/EPUB local sources."
+
+
+def test_extract_local_source_targets_parses_path_tokens():
+    """Local target extraction should find scheme and filesystem tokens."""
+    from asky.research.adapters import extract_local_source_targets
+
+    text = 'review "local:///tmp/a.pdf" and ./notes.md plus /tmp/report.txt.'
+    targets = extract_local_source_targets(text)
+
+    assert "local:///tmp/a.pdf" in targets
+    assert "./notes.md" in targets
+    assert "/tmp/report.txt" in targets

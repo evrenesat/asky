@@ -2,6 +2,40 @@ For older logs, see [DEVLOG_ARCHIVE.md](DEVLOG_ARCHIVE.md)
 
 ## 2026-02-09
 
+### Pre-LLM Local Corpus Preload Stage + PyMuPDF Dependency
+**Summary**: Added a deterministic local ingestion stage before first model call in research chat and added `pymupdf` as a project dependency.
+
+- **Changed**:
+  - Added new module:
+    - `src/asky/cli/local_ingestion_flow.py`
+      - extracts local targets from prompt text,
+      - ingests/caches local sources via research adapter path,
+      - indexes chunk embeddings before model/tool turns,
+      - formats a compact preloaded-corpus context block.
+  - Updated chat flow:
+    - `src/asky/cli/chat.py`
+      - runs local preload stage in research mode before shortlist stage,
+      - merges local + shortlist contexts into one preloaded-source block.
+  - Extended adapter helpers:
+    - `src/asky/research/adapters.py`
+      - added `extract_local_source_targets(...)` for deterministic prompt token extraction.
+  - Added dependency:
+    - `pyproject.toml` / `uv.lock`
+      - `pymupdf==1.26.7` added via `uv add pymupdf`.
+
+- **Tests**:
+  - Added new tests:
+    - `tests/test_local_ingestion_flow.py`
+  - Extended existing tests:
+    - `tests/test_cli.py`
+    - `tests/test_research_adapters.py`
+  - Validation run:
+    - `uv run pytest` → 416 passed.
+
+- **Why**:
+  - Shifts more research orchestration into deterministic program flow (small-model-first goal).
+  - Ensures local corpus material is indexed and available before model reasoning starts.
+
 ### Built-in Local Source Ingestion Fallback (Phase 3 Slice)
 **Summary**: Added deterministic local-file ingestion fallback in research adapters so local corpus reads can flow through the existing cache/vector retrieval path without custom adapter tooling.
 

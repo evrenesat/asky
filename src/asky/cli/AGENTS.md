@@ -8,6 +8,7 @@ Command-line interface layer handling argument parsing, command routing, and use
 |--------|---------|
 | `main.py` | Entry point, argument parsing, command routing |
 | `chat.py` | Chat conversation orchestration |
+| `local_ingestion_flow.py` | Pre-LLM local source preload for research mode |
 | `shortlist_flow.py` | Pre-LLM shortlist execution + banner updates |
 | `completion.py` | Shell completion with argcomplete |
 | `display.py` | Banner rendering, live status updates |
@@ -46,15 +47,16 @@ Command-line interface layer handling argument parsing, command routing, and use
 Main conversation entry point via `run_chat()`:
 
 1. **Context Loading**: `load_context()` fetches previous interactions
-2. **Source Shortlisting**: Optional pre-LLM source ranking via `shortlist_flow.py` (lazy-loaded)
-3. **Message Building**: `build_messages()` constructs the base prompt
-4. **Registry Build**: Create mode-aware tool registry, applying any `--tool-off` exclusions
+2. **Local Source Preload**: Research mode can ingest local targets from prompt via `local_ingestion_flow.py`
+3. **Source Shortlisting**: Optional pre-LLM source ranking via `shortlist_flow.py` (lazy-loaded)
+4. **Message Building**: `build_messages()` constructs the base prompt
+5. **Registry Build**: Create mode-aware tool registry, applying any `--tool-off` exclusions
    - In research mode, chat ensures an active session (auto-creates one when missing).
    - In research mode, active chat `session_id` is forwarded into the research registry
      so memory tools can be session-scoped.
-5. **Prompt Augmentation**: Append enabled-tool guideline lines into the system prompt
-6. **Engine Invocation**: Passes to `ConversationEngine.run()`
-7. **Output Handling**: Saves interaction, optional browser/email/push
+6. **Prompt Augmentation**: Append enabled-tool guideline lines into the system prompt
+7. **Engine Invocation**: Passes to `ConversationEngine.run()`
+8. **Output Handling**: Saves interaction, optional browser/email/push
 
 ### Live Banner Integration
 
@@ -81,6 +83,7 @@ Main conversation entry point via `run_chat()`:
 ```
 main.py
 ├── chat.py → core/engine.py, core/session_manager.py
+├── local_ingestion_flow.py → research/adapters.py, research/cache.py, research/vector_store.py
 ├── history.py → storage/sqlite.py
 ├── sessions.py → storage/sqlite.py
 ├── prompts.py → config/

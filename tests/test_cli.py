@@ -307,7 +307,7 @@ def test_build_messages_with_source_shortlist_context(mock_args):
         source_shortlist_context=shortlist_context,
     )
     assert len(messages) == 2
-    assert "Pre-ranked sources gathered before tool calls" in messages[1]["content"]
+    assert "Preloaded sources gathered before tool calls" in messages[1]["content"]
     assert "https://example.com" in messages[1]["content"]
 
 
@@ -357,6 +357,19 @@ def test_parse_disabled_tools_supports_repeats_and_commas():
         ["web_search,get_url_content", "web_search", " custom_tool "]
     )
     assert disabled == {"web_search", "get_url_content", "custom_tool"}
+
+
+def test_combine_preloaded_source_context_merges_non_empty_blocks():
+    from asky.cli.chat import _combine_preloaded_source_context
+
+    merged = _combine_preloaded_source_context(
+        "Local block",
+        None,
+        "Shortlist block",
+        "",
+    )
+
+    assert merged == "Local block\n\nShortlist block"
 
 
 def test_append_enabled_tool_guidelines_updates_system_prompt():

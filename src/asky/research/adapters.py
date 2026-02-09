@@ -3,6 +3,7 @@
 import json
 import logging
 from pathlib import Path
+import shlex
 from urllib.parse import unquote, urlsplit
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
@@ -36,6 +37,7 @@ LOCAL_SUPPORTED_EXTENSIONS = (
     LOCAL_SUPPORTED_TEXT_EXTENSIONS | LOCAL_SUPPORTED_DOCUMENT_EXTENSIONS
 )
 WINDOWS_DRIVE_INDICATOR_INDEX = 1
+LOCAL_TARGET_TRAILING_PUNCTUATION = ".,;:!?)]}>\"'"
 
 LINK_HREF_FIELDS = ("href", "url", "target", "id", "path")
 LINK_TEXT_FIELDS = ("text", "title", "name", "label")
@@ -122,6 +124,31 @@ def _is_builtin_local_target(target: str) -> bool:
     return len(target) > WINDOWS_DRIVE_INDICATOR_INDEX and target[
         WINDOWS_DRIVE_INDICATOR_INDEX
     ] == ":"
+
+
+def extract_local_source_targets(text: str) -> List[str]:
+    """Extract potential local source targets from free-form user text."""
+    if not text:
+        return []
+
+    try:
+        raw_tokens = shlex.split(text)
+    except ValueError:
+        raw_tokens = text.split()
+
+    targets: List[str] = []
+    seen = set()
+    for token in raw_tokens:
+        candidate = token.strip().rstrip(LOCAL_TARGET_TRAILING_PUNCTUATION)
+        if not candidate:
+            continue
+        if not _is_builtin_local_target(candidate):
+            continue
+        if candidate in seen:
+            continue
+        seen.add(candidate)
+        targets.append(candidate)
+    return targets
 
 
 def _coerce_text(value: Any, fallback: str = "") -> str:

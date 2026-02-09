@@ -188,6 +188,7 @@ tool = "read_local"  # or discover_tool + read_tool
 
 When no configured adapter matches, `adapters.py` can handle local sources directly:
 - Accepted targets: `local://...`, `file://...`, absolute/relative local paths.
+- `extract_local_source_targets(...)` provides deterministic token extraction from prompts for pre-LLM local preload.
 - Directory targets (discover): produce file links as `local://...` (non-recursive in v1).
 - File targets (read/discover): normalize to plain text for cache/indexing.
   - Text-like: `.txt`, `.md`, `.markdown`, `.html`, `.htm`, `.json`, `.csv`

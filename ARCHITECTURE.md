@@ -11,6 +11,7 @@ graph TB
     subgraph CLI["CLI Layer (cli/)"]
         main["main.py<br/>Entry Point"]
         chat["chat.py<br/>Chat Flow"]
+        local_ingest["local_ingestion_flow.py<br/>Pre-LLM Local Corpus Ingestion"]
         shortlist_flow["shortlist_flow.py<br/>Pre-LLM Shortlist Orchestration"]
         history["history.py<br/>History Commands"]
         sessions_cli["sessions.py<br/>Session Commands"]
@@ -51,6 +52,7 @@ graph TB
     end
 
     main --> chat
+    chat --> local_ingest
     chat --> shortlist_flow
     main --> history
     main --> sessions_cli
@@ -124,6 +126,8 @@ User Query
 CLI (main.py) → parse_args()
     ↓
 chat.py → load_context()
+    ↓
+optional local_ingestion_flow.py (research mode local source preload)
     ↓
 optional shortlist_flow.py → source_shortlist.py (pre-LLM URL/search retrieval + ranking)
     ↓

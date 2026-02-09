@@ -42,6 +42,7 @@ dependencies = [
     "trafilatura>=1.12.2",
     "tomlkit>=0.14.0",
     "yake>=0.6.0",
+    "pymupdf>=1.26.7",
 ]
 
 [project.urls]
