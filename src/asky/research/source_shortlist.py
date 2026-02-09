@@ -5,11 +5,9 @@ from __future__ import annotations
 import logging
 import re
 import time
-from dataclasses import dataclass, field
 from typing import (
     TYPE_CHECKING,
     Any,
-    Callable,
     Dict,
     Iterable,
     List,
@@ -51,6 +49,16 @@ from asky.config import (
 )
 from asky.html import HTMLStripper
 from asky.retrieval import fetch_url_document
+from asky.research.shortlist_collect import collect_candidates
+from asky.research.shortlist_score import resolve_scoring_query, score_candidates
+from asky.research.shortlist_types import (
+    CandidateRecord,
+    FetchExecutor,
+    SearchExecutor,
+    SeedLinkExtractor,
+    ShortlistMetrics,
+    StatusCallback,
+)
 from asky.url_utils import normalize_url
 
 logger = logging.getLogger(__name__)
@@ -139,35 +147,6 @@ MAX_REASON_COUNT = 4
 MAX_SHORTLIST_CONTEXT_ITEMS = 5
 MAX_SHORTLIST_CONTEXT_SNIPPET_CHARS = 420
 MAX_TITLE_CHARS = 180
-
-SearchExecutor = Callable[[Dict[str, Any]], Dict[str, Any]]
-FetchExecutor = Callable[[str], Dict[str, Any]]
-SeedLinkExtractor = Callable[[str], Dict[str, Any]]
-StatusCallback = Callable[[str], None]
-ShortlistMetrics = Dict[str, Any]
-
-
-@dataclass
-class CandidateRecord:
-    """Candidate source record used throughout the shortlist pipeline."""
-
-    url: str
-    source_type: str
-    normalized_url: str = ""
-    hostname: str = ""
-    title: str = ""
-    text: str = ""
-    snippet: str = ""
-    date: Optional[str] = None
-    search_snippet: str = ""
-    path_tokens: str = ""
-    semantic_score: float = 0.0
-    overlap_ratio: float = 0.0
-    bonus_score: float = 0.0
-    penalty_score: float = 0.0
-    final_score: float = 0.0
-    why_selected: List[str] = field(default_factory=list)
-
 
 def extract_prompt_urls_and_query_text(user_prompt: str) -> Tuple[List[str], str]:
     """Extract URLs from prompt and return the remaining query text."""
@@ -309,13 +288,27 @@ def shortlist_prompt_sources(
     warnings: List[str] = []
     _notify_status(status_callback, "Shortlist: collecting candidates")
     collect_start = time.perf_counter()
-    candidates = _collect_candidates(
+    candidates = collect_candidates(
         seed_urls=seed_urls,
         search_query=search_query,
         search_executor=active_search_executor,
         seed_link_extractor=active_seed_link_extractor,
         warnings=warnings,
         metrics=metrics,
+        seed_link_expansion_enabled=SOURCE_SHORTLIST_SEED_LINK_EXPANSION_ENABLED,
+        seed_link_max_pages=SOURCE_SHORTLIST_SEED_LINK_MAX_PAGES,
+        seed_links_per_page=SOURCE_SHORTLIST_SEED_LINKS_PER_PAGE,
+        search_with_seed_urls=SOURCE_SHORTLIST_SEARCH_WITH_SEED_URLS,
+        search_result_count=SOURCE_SHORTLIST_SEARCH_RESULT_COUNT,
+        max_candidates=SOURCE_SHORTLIST_MAX_CANDIDATES,
+        max_title_chars=MAX_TITLE_CHARS,
+        normalize_source_url=normalize_source_url,
+        extract_path_tokens=_extract_path_tokens,
+        normalize_whitespace=_normalize_whitespace,
+        is_http_url=_is_http_url,
+        is_blocked_seed_link=_is_blocked_seed_link,
+        elapsed_ms=_elapsed_ms,
+        logger=logger,
     )
     collect_ms = _elapsed_ms(collect_start)
     processed_candidates = [
@@ -409,10 +402,17 @@ def shortlist_prompt_sources(
             },
         }
 
-    scoring_query = _resolve_scoring_query(query_text, keyphrases, fetched_candidates)
+    scoring_query = resolve_scoring_query(
+        query_text=query_text,
+        keyphrases=keyphrases,
+        candidates=fetched_candidates,
+        search_phrase_count=SOURCE_SHORTLIST_SEARCH_PHRASE_COUNT,
+        query_fallback_chars=SOURCE_SHORTLIST_QUERY_FALLBACK_CHARS,
+        normalize_whitespace=_normalize_whitespace,
+    )
     _notify_status(status_callback, "Shortlist: ranking candidates")
     score_start = time.perf_counter()
-    scored_candidates = _score_candidates(
+    scored_candidates = score_candidates(
         candidates=fetched_candidates,
         scoring_query=scoring_query,
         keyphrases=keyphrases,
@@ -420,6 +420,19 @@ def shortlist_prompt_sources(
         embedding_client=embedding_client,
         warnings=warnings,
         metrics=metrics,
+        normalize_source_url=normalize_source_url,
+        is_noise_path=_is_noise_path,
+        cosine_similarity=_cosine_similarity,
+        get_embedding_client=_get_embedding_client,
+        overlap_bonus_weight=SOURCE_SHORTLIST_OVERLAP_BONUS_WEIGHT,
+        same_domain_bonus=SOURCE_SHORTLIST_SAME_DOMAIN_BONUS,
+        same_domain_bonus_min_signal=SAME_DOMAIN_BONUS_MIN_SIGNAL,
+        short_text_threshold=SOURCE_SHORTLIST_SHORT_TEXT_THRESHOLD,
+        short_text_penalty=SOURCE_SHORTLIST_SHORT_TEXT_PENALTY,
+        noise_path_penalty=SOURCE_SHORTLIST_NOISE_PATH_PENALTY,
+        doc_lead_chars=SOURCE_SHORTLIST_DOC_LEAD_CHARS,
+        max_reason_count=MAX_REASON_COUNT,
+        logger=logger,
     )
     score_ms = _elapsed_ms(score_start)
 
@@ -535,205 +548,6 @@ def _shortlist_enabled_for_mode(research_mode: bool) -> bool:
     return bool(SOURCE_SHORTLIST_ENABLE_STANDARD_MODE)
 
 
-def _collect_candidates(
-    seed_urls: Sequence[str],
-    search_query: str,
-    search_executor: SearchExecutor,
-    seed_link_extractor: SeedLinkExtractor,
-    warnings: List[str],
-    metrics: Optional[ShortlistMetrics] = None,
-) -> List[CandidateRecord]:
-    """Collect candidates from prompt seed URLs and optional web search."""
-    collected: List[CandidateRecord] = [
-        CandidateRecord(url=url, source_type="seed") for url in seed_urls if url
-    ]
-
-    if seed_urls and SOURCE_SHORTLIST_SEED_LINK_EXPANSION_ENABLED:
-        seed_link_start = time.perf_counter()
-        seed_link_candidates = _collect_seed_link_candidates(
-            seed_urls=seed_urls,
-            seed_link_extractor=seed_link_extractor,
-            warnings=warnings,
-            metrics=metrics,
-        )
-        collected.extend(seed_link_candidates)
-        logger.debug(
-            "source_shortlist seed link expansion done seeds=%d expanded=%d elapsed=%.2fms max_pages=%d per_page=%d",
-            len(seed_urls),
-            len(seed_link_candidates),
-            _elapsed_ms(seed_link_start),
-            SOURCE_SHORTLIST_SEED_LINK_MAX_PAGES,
-            SOURCE_SHORTLIST_SEED_LINKS_PER_PAGE,
-        )
-    else:
-        logger.debug(
-            "source_shortlist seed link expansion skipped seed_urls=%d enabled=%s",
-            len(seed_urls),
-            SOURCE_SHORTLIST_SEED_LINK_EXPANSION_ENABLED,
-        )
-
-    if metrics is not None:
-        metrics["candidate_inputs"] = len(collected)
-
-    should_search = bool(search_query) and (
-        not seed_urls or SOURCE_SHORTLIST_SEARCH_WITH_SEED_URLS
-    )
-
-    if should_search:
-        search_start = time.perf_counter()
-        try:
-            if metrics is not None:
-                metrics["search_calls"] += 1
-            search_payload = search_executor(
-                {"q": search_query, "count": SOURCE_SHORTLIST_SEARCH_RESULT_COUNT}
-            )
-        except Exception as exc:
-            warnings.append(f"search_error:{exc}")
-            logger.debug(
-                "source_shortlist search failed query_len=%d elapsed=%.2fms error=%s",
-                len(search_query),
-                _elapsed_ms(search_start),
-                exc,
-            )
-            search_payload = {"results": []}
-
-        if isinstance(search_payload, dict):
-            if search_payload.get("error"):
-                warnings.append(f"search_error:{search_payload['error']}")
-                logger.debug(
-                    "source_shortlist search error payload query_len=%d elapsed=%.2fms error=%s",
-                    len(search_query),
-                    _elapsed_ms(search_start),
-                    search_payload.get("error"),
-                )
-            results_count = len(search_payload.get("results", []))
-            if metrics is not None:
-                metrics["search_results"] += results_count
-            logger.debug(
-                "source_shortlist search completed query_len=%d results=%d elapsed=%.2fms",
-                len(search_query),
-                results_count,
-                _elapsed_ms(search_start),
-            )
-            for result in search_payload.get("results", []):
-                url = _normalize_whitespace(str(result.get("url", "")))
-                if not url:
-                    continue
-                title = _normalize_whitespace(str(result.get("title", "")))
-                snippet = _normalize_whitespace(str(result.get("snippet", "")))
-                collected.append(
-                    CandidateRecord(
-                        url=url,
-                        source_type="search",
-                        title=title[:MAX_TITLE_CHARS],
-                        search_snippet=snippet,
-                    )
-                )
-    else:
-        logger.debug(
-            "source_shortlist skipping search seed_urls=%d search_query_present=%s config_search_with_seed=%s",
-            len(seed_urls),
-            bool(search_query),
-            SOURCE_SHORTLIST_SEARCH_WITH_SEED_URLS,
-        )
-
-    deduped: List[CandidateRecord] = []
-    seen = set()
-    for candidate in collected:
-        normalized_url = normalize_source_url(candidate.url)
-        if not normalized_url or normalized_url in seen:
-            continue
-        seen.add(normalized_url)
-        candidate.normalized_url = normalized_url
-        parsed = urlsplit(normalized_url)
-        candidate.hostname = (parsed.hostname or "").lower()
-        candidate.path_tokens = _extract_path_tokens(parsed.path)
-        deduped.append(candidate)
-        if len(deduped) >= SOURCE_SHORTLIST_MAX_CANDIDATES:
-            break
-
-    if metrics is not None:
-        metrics["candidate_inputs"] = len(collected)
-        metrics["candidate_deduped"] = len(deduped)
-    logger.debug(
-        "source_shortlist candidate collection done seeds=%d collected=%d deduped=%d max_candidates=%d",
-        len(seed_urls),
-        len(collected),
-        len(deduped),
-        SOURCE_SHORTLIST_MAX_CANDIDATES,
-    )
-    return deduped
-
-
-def _collect_seed_link_candidates(
-    seed_urls: Sequence[str],
-    seed_link_extractor: SeedLinkExtractor,
-    warnings: List[str],
-    metrics: Optional[ShortlistMetrics] = None,
-) -> List[CandidateRecord]:
-    """Collect candidate URLs by extracting links from seed pages."""
-    output: List[CandidateRecord] = []
-
-    for seed_url in seed_urls[:SOURCE_SHORTLIST_SEED_LINK_MAX_PAGES]:
-        page_start = time.perf_counter()
-        if metrics is not None:
-            metrics["seed_link_pages_attempted"] += 1
-            metrics["seed_link_extractor_calls"] += 1
-
-        payload = seed_link_extractor(seed_url)
-        warning = payload.get("warning")
-        if warning:
-            warnings.append(str(warning))
-            if metrics is not None:
-                metrics["seed_link_failures"] += 1
-
-        raw_links = payload.get("links", [])
-        if not isinstance(raw_links, list):
-            raw_links = []
-
-        discovered = len(raw_links)
-        selected_links = raw_links[:SOURCE_SHORTLIST_SEED_LINKS_PER_PAGE]
-        added = 0
-
-        for item in selected_links:
-            if not isinstance(item, dict):
-                continue
-            href = _normalize_whitespace(str(item.get("href", "")))
-            if not href or not _is_http_url(href):
-                continue
-            if _is_blocked_seed_link(href):
-                continue
-
-            anchor_text = _normalize_whitespace(str(item.get("text", "")))
-            output.append(
-                CandidateRecord(
-                    url=href,
-                    source_type="seed_link",
-                    title=anchor_text[:MAX_TITLE_CHARS],
-                    search_snippet=anchor_text,
-                )
-            )
-            added += 1
-
-        if metrics is not None:
-            metrics["seed_link_discovered"] += discovered
-            metrics["seed_link_added"] += added
-            if not warning:
-                metrics["seed_link_pages_success"] += 1
-
-        logger.debug(
-            "source_shortlist seed link extract url=%s discovered=%d selected=%d added=%d elapsed=%.2fms warning=%s",
-            seed_url,
-            discovered,
-            len(selected_links),
-            added,
-            _elapsed_ms(page_start),
-            warning,
-        )
-
-    return output
-
-
 def _fetch_candidate_content(
     candidates: Sequence[CandidateRecord],
     fetch_executor: FetchExecutor,
@@ -811,213 +625,6 @@ def _fetch_candidate_content(
         SOURCE_SHORTLIST_MAX_FETCH_URLS,
     )
     return extracted
-
-
-def _score_candidates(
-    candidates: Sequence[CandidateRecord],
-    scoring_query: str,
-    keyphrases: Sequence[str],
-    seed_urls: Sequence[str],
-    embedding_client: Optional["EmbeddingClient"],
-    warnings: List[str],
-    metrics: Optional[ShortlistMetrics] = None,
-) -> List[CandidateRecord]:
-    """Score candidates with semantic relevance and lightweight heuristics."""
-    if not candidates:
-        return []
-
-    query_embedding: Optional[List[float]] = None
-    doc_embeddings: List[List[float]] = []
-    doc_strings: List[str] = [
-        _build_document_string(candidate) for candidate in candidates
-    ]
-
-    if scoring_query:
-        client = embedding_client or _get_embedding_client()
-        has_cached_failure = getattr(client, "has_model_load_failure", None)
-        if callable(has_cached_failure) and has_cached_failure():
-            warnings.append("embedding_skipped:cached_model_load_failure")
-            logger.debug(
-                "source_shortlist embedding skipped due to cached model load failure query_len=%d docs=%d",
-                len(scoring_query),
-                len(doc_strings),
-            )
-        else:
-            try:
-                embed_query_start = time.perf_counter()
-                query_embedding = client.embed_single(scoring_query)
-                query_elapsed = _elapsed_ms(embed_query_start)
-                if metrics is not None:
-                    metrics["embedding_query_calls"] += 1
-
-                embed_docs_start = time.perf_counter()
-                doc_embeddings = client.embed(doc_strings)
-                docs_elapsed = _elapsed_ms(embed_docs_start)
-                if metrics is not None:
-                    metrics["embedding_doc_calls"] += 1
-                    metrics["embedding_doc_count"] += len(doc_strings)
-
-                logger.debug(
-                    "source_shortlist embeddings complete query_len=%d docs=%d query_embed_ms=%.2f docs_embed_ms=%.2f",
-                    len(scoring_query),
-                    len(doc_strings),
-                    query_elapsed,
-                    docs_elapsed,
-                )
-            except Exception as exc:
-                warnings.append(f"embedding_error:{exc}")
-                query_embedding = None
-                doc_embeddings = []
-                logger.debug(
-                    "source_shortlist embedding failed query_len=%d docs=%d error=%s",
-                    len(scoring_query),
-                    len(doc_strings),
-                    exc,
-                )
-
-    if query_embedding and len(doc_embeddings) != len(candidates):
-        warnings.append("embedding_warning:mismatched_doc_embeddings")
-        doc_embeddings = []
-        logger.debug(
-            "source_shortlist embedding mismatch query_embedding=%s doc_embeddings=%d candidates=%d",
-            bool(query_embedding),
-            len(doc_embeddings),
-            len(candidates),
-        )
-
-    seed_domains = {
-        (urlsplit(normalize_source_url(url)).hostname or "").lower()
-        for url in seed_urls
-        if normalize_source_url(url)
-    }
-    lowered_keyphrases = [phrase.lower() for phrase in keyphrases if phrase]
-
-    for idx, candidate in enumerate(candidates):
-        document = doc_strings[idx].lower()
-        semantic_score = 0.0
-        if query_embedding and doc_embeddings:
-            semantic_score = max(
-                0.0,
-                _cosine_similarity(query_embedding, doc_embeddings[idx]),
-            )
-
-        overlap_ratio = _keyphrase_overlap_ratio(lowered_keyphrases, document)
-        bonus = SOURCE_SHORTLIST_OVERLAP_BONUS_WEIGHT * overlap_ratio
-        if _same_domain_bonus_applies(
-            candidate=candidate,
-            seed_domains=seed_domains,
-            semantic_score=semantic_score,
-            overlap_ratio=overlap_ratio,
-        ):
-            bonus += SOURCE_SHORTLIST_SAME_DOMAIN_BONUS
-
-        penalty = 0.0
-        if len(candidate.text) < SOURCE_SHORTLIST_SHORT_TEXT_THRESHOLD:
-            penalty += SOURCE_SHORTLIST_SHORT_TEXT_PENALTY
-        if _is_noise_path(candidate.normalized_url):
-            penalty += SOURCE_SHORTLIST_NOISE_PATH_PENALTY
-
-        candidate.semantic_score = semantic_score
-        candidate.overlap_ratio = overlap_ratio
-        candidate.bonus_score = bonus
-        candidate.penalty_score = penalty
-        candidate.final_score = semantic_score + bonus - penalty
-
-        candidate.why_selected = _build_selection_reasons(
-            candidate=candidate,
-            seed_domains=seed_domains,
-            has_keyphrases=bool(lowered_keyphrases),
-        )
-        logger.debug(
-            "source_shortlist score url=%s semantic=%.4f overlap=%.4f bonus=%.4f penalty=%.4f final=%.4f",
-            candidate.url,
-            candidate.semantic_score,
-            candidate.overlap_ratio,
-            candidate.bonus_score,
-            candidate.penalty_score,
-            candidate.final_score,
-        )
-
-    return list(candidates)
-
-
-def _build_selection_reasons(
-    candidate: CandidateRecord,
-    seed_domains: set[str],
-    has_keyphrases: bool,
-) -> List[str]:
-    """Build concise reasons attached to a ranked result."""
-    reasons = [f"semantic_similarity={candidate.semantic_score:.2f}"]
-    if has_keyphrases and candidate.overlap_ratio > 0:
-        reasons.append(f"keyphrase_overlap={candidate.overlap_ratio:.2f}")
-    if _same_domain_bonus_applies(
-        candidate=candidate,
-        seed_domains=seed_domains,
-        semantic_score=candidate.semantic_score,
-        overlap_ratio=candidate.overlap_ratio,
-    ):
-        reasons.append("same_domain_as_seed")
-    if candidate.penalty_score > 0 and _is_noise_path(candidate.normalized_url):
-        reasons.append("noise_path_penalty")
-    return reasons[:MAX_REASON_COUNT]
-
-
-def _same_domain_bonus_applies(
-    candidate: CandidateRecord,
-    seed_domains: set[str],
-    semantic_score: float,
-    overlap_ratio: float,
-) -> bool:
-    """Apply same-domain bonus only when candidate shows relevance signal."""
-    if not seed_domains or not candidate.hostname:
-        return False
-    if candidate.hostname not in seed_domains:
-        return False
-    if _is_noise_path(candidate.normalized_url):
-        return False
-    return semantic_score >= SAME_DOMAIN_BONUS_MIN_SIGNAL or overlap_ratio > 0
-
-
-def _resolve_scoring_query(
-    query_text: str,
-    keyphrases: Sequence[str],
-    candidates: Sequence[CandidateRecord],
-) -> str:
-    """Resolve best-effort scoring query when the prompt has mostly URLs."""
-    normalized_query = _normalize_whitespace(query_text)
-    if normalized_query:
-        return normalized_query
-
-    if keyphrases:
-        return " ".join(keyphrases[:SOURCE_SHORTLIST_SEARCH_PHRASE_COUNT])
-
-    fallback_parts: List[str] = []
-    for candidate in candidates[:2]:
-        if candidate.title:
-            fallback_parts.append(candidate.title)
-        if candidate.text:
-            fallback_parts.append(candidate.text[:SOURCE_SHORTLIST_QUERY_FALLBACK_CHARS])
-    return _normalize_whitespace(" ".join(fallback_parts))
-
-
-def _keyphrase_overlap_ratio(keyphrases: Sequence[str], lowered_document: str) -> float:
-    """Compute normalized keyphrase overlap ratio."""
-    if not keyphrases:
-        return 0.0
-    matches = sum(1 for phrase in keyphrases if phrase in lowered_document)
-    return matches / len(keyphrases)
-
-
-def _build_document_string(candidate: CandidateRecord) -> str:
-    """Build candidate document string used for embedding similarity."""
-    lead_text = candidate.text[:SOURCE_SHORTLIST_DOC_LEAD_CHARS]
-    return "\n".join(
-        [
-            candidate.title,
-            lead_text,
-            candidate.path_tokens,
-        ]
-    )
 
 
 def _default_fetch_executor(url: str) -> Dict[str, Any]:

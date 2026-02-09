@@ -40,7 +40,10 @@ graph TB
     subgraph Research["Research Mode (research/)"]
         cache["cache.py<br/>ResearchCache"]
         vector["vector_store.py<br/>VectorStore"]
+        vector_ops["vector_store_*_ops.py<br/>Chunk/Link/Finding Ops"]
+        vector_common["vector_store_common.py<br/>Shared Math/Constants"]
         shortlist["source_shortlist.py<br/>Pre-LLM Ranking"]
+        shortlist_ops["shortlist_collect.py<br/>shortlist_score.py"]
     end
 
     subgraph Tools["Tool Execution"]
@@ -64,6 +67,9 @@ graph TB
     registry --> tools
     config_init --> loader
     shortlist_flow -.-> shortlist
+    shortlist -.-> shortlist_ops
+    vector -.-> vector_ops
+    vector_ops -.-> vector_common
     chat -.-> cache
 ```
 
@@ -212,6 +218,10 @@ Imports deferred until needed:
 ### 9. Registry Factory Separation
 - `core/tool_registry_factory.py` owns default/research registry assembly
 - `core/engine.py` now focuses on the conversation loop and context management
+
+### 10. Research Module Decomposition
+- `research/source_shortlist.py` keeps public API/orchestration while collection/scoring live in focused modules.
+- `research/vector_store.py` keeps lifecycle and compatibility methods while heavy chunk/link/finding operations live in dedicated ops modules.
 
 ---
 

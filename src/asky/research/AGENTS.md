@@ -9,9 +9,15 @@ RAG-powered research mode with caching, semantic search, and persistent memory.
 | `tools.py` | Research tool schemas and executors |
 | `cache.py` | `ResearchCache` for URL content/links |
 | `vector_store.py` | `VectorStore` for hybrid semantic search |
+| `vector_store_chunk_link_ops.py` | Chunk/link embedding and retrieval operations |
+| `vector_store_finding_ops.py` | Research findings embedding/search operations |
+| `vector_store_common.py` | Shared vector math and constants |
 | `embeddings.py` | `EmbeddingClient` for local embeddings |
 | `chunker.py` | Token-aware text chunking |
 | `source_shortlist.py` | Pre-LLM source ranking pipeline |
+| `shortlist_collect.py` | Candidate/seed-link collection stage |
+| `shortlist_score.py` | Semantic + heuristic scoring stage |
+| `shortlist_types.py` | Shared shortlist datatypes and callback aliases |
 | `adapters.py` | Non-HTTP source adapters |
 
 ## Research Tools (`tools.py`)
@@ -88,6 +94,14 @@ final_score = (dense_weight * semantic_score) + ((1 - dense_weight) * lexical_sc
 - `search_relevant_links()`: Filter links by semantic relevance
 - `clear_cache_embeddings()`: Remove stale vectors on invalidation
 
+### Internal Module Split
+
+- `vector_store.py` now focuses on `VectorStore` lifecycle, DB/Chroma capability checks, and compatibility wrappers.
+- Heavy operations were extracted:
+  - `vector_store_chunk_link_ops.py` for content chunks and links
+  - `vector_store_finding_ops.py` for research memory findings
+  - `vector_store_common.py` for shared math/constants
+
 ## EmbeddingClient (`embeddings.py`)
 
 Local sentence-transformer embeddings.
@@ -128,6 +142,13 @@ Pre-LLM source ranking to improve prompt relevance.
 4. Fetch and extract main content
 5. Score with embeddings + heuristics
 6. Select top-k diverse sources
+
+### Internal Module Split
+
+- `source_shortlist.py` keeps public API and orchestration.
+- `shortlist_collect.py` handles candidate gathering and seed-link expansion.
+- `shortlist_score.py` handles embedding-based scoring and ranking reasons.
+- `shortlist_types.py` holds shared shortlist datatypes and callback aliases.
 
 ### Enablement
 

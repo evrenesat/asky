@@ -39,6 +39,38 @@ For older logs, see [DEVLOG_ARCHIVE.md](DEVLOG_ARCHIVE.md)
   - Reduces `engine.py` scope to conversation orchestration and summary logic.
   - Isolates registry/tool assembly for easier future extraction (e.g., custom/push-data/research registration).
 
+### Maintainability Refactor (Phase 4)
+**Summary**: Split shortlist internals into focused modules while keeping `source_shortlist.py` as the stable public API surface.
+
+- **New Modules**:
+  - Added `src/asky/research/shortlist_types.py` for shared shortlist datatypes and callback aliases.
+  - Added `src/asky/research/shortlist_collect.py` for candidate collection + seed-link expansion.
+  - Added `src/asky/research/shortlist_score.py` for scoring, ranking heuristics, and query fallback resolution.
+
+- **Refactors**:
+  - `source_shortlist.py` now delegates collection and scoring to dedicated modules.
+  - Kept existing imports/functions in `source_shortlist.py` so tests and callers remain unchanged.
+
+- **Why**:
+  - Reduces single-module cognitive load and makes pipeline stages independently maintainable.
+  - Creates clearer boundaries for future changes (collection vs scoring).
+
+### Maintainability Refactor (Phase 5)
+**Summary**: Split heavy `VectorStore` internals into dedicated operation modules and kept `vector_store.py` focused on lifecycle + compatibility wrappers.
+
+- **New Modules**:
+  - Added `src/asky/research/vector_store_common.py` for shared vector math/constants.
+  - Added `src/asky/research/vector_store_chunk_link_ops.py` for chunk/link embedding and retrieval operations.
+  - Added `src/asky/research/vector_store_finding_ops.py` for findings-memory embedding/search operations.
+
+- **Refactors**:
+  - Rewrote `vector_store.py` to delegate heavy method bodies to ops modules.
+  - Preserved existing `VectorStore` method names and behavior for compatibility with current tests/callers.
+
+- **Why**:
+  - Shrinks the core class file and isolates distinct operational concerns.
+  - Makes future work on chunk/link retrieval independent from findings-memory logic.
+
 ## 2026-02-08
 
 ### Codebase Documentation Restructuring
