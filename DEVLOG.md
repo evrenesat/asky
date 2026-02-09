@@ -2,6 +2,27 @@ For older logs, see [DEVLOG_ARCHIVE.md](DEVLOG_ARCHIVE.md)
 
 ## 2026-02-09
 
+### Research Mode Now Auto-Starts a Session
+**Summary**: Enforced session-backed execution for research mode so session-scoped memory isolation is always effective.
+
+- **Changed**:
+  - Added research-session guard in chat flow:
+    - `src/asky/cli/chat.py`
+      - New `_ensure_research_session(...)` helper.
+      - `run_chat()` now auto-creates a session in research mode when no active/resumed session exists.
+  - Added tests:
+    - `tests/test_cli.py`
+      - session creation path when research starts without session
+      - no-op path when session already exists
+  - Updated docs:
+    - `ARCHITECTURE.md`
+    - `src/asky/cli/AGENTS.md`
+    - `src/asky/research/AGENTS.md`
+
+- **Why**:
+  - Session-scoped research memory (`save_finding` / `query_research_memory`) depends on an active `session_id`.
+  - Auto-starting research sessions removes a footgun where isolation could silently degrade.
+
 ### Session-Scoped Research Memory + Shortlist Budget Defaults
 **Summary**: Implemented first research-pipeline slice to scope findings memory by active chat session and increased default pre-LLM shortlist budgets.
 

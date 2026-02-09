@@ -37,6 +37,8 @@ Tool schemas also support optional `system_prompt_guideline` metadata used by
 chat/system-prompt assembly when the tool is enabled for a run.
 When a chat session is active, registry plumbing can inject `session_id` into
 memory tool calls so findings are written/read in session scope.
+Research chat flow now guarantees that a session exists (auto-created when needed),
+so session-scoped memory isolation is available by default in research mode.
 
 ### Execution Flow
 

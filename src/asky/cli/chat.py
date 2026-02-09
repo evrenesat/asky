@@ -35,6 +35,7 @@ from asky.storage import (
 from asky.cli.display import InterfaceRenderer
 from asky.cli.shortlist_flow import run_pre_llm_shortlist
 from asky.lazy_imports import call_attr
+from asky.core.session_manager import generate_session_name
 
 logger = logging.getLogger(__name__)
 
@@ -230,6 +231,32 @@ def _append_enabled_tool_guidelines(
     )
 
 
+def _ensure_research_session(
+    session_manager: Optional[SessionManager],
+    model_config: Dict[str, Any],
+    usage_tracker: UsageTracker,
+    summarization_tracker: UsageTracker,
+    query_text: str,
+    console: Console,
+) -> SessionManager:
+    """Ensure research mode always has an active session for memory isolation."""
+    if session_manager and session_manager.current_session:
+        return session_manager
+
+    active_manager = session_manager or SessionManager(
+        model_config,
+        usage_tracker,
+        summarization_tracker=summarization_tracker,
+    )
+    session_name = generate_session_name(query_text or "research")
+    session = active_manager.create_session(session_name)
+    set_shell_session_id(session.id)
+    console.print(
+        f"\n[Research mode: started session {session.id} ('{session.name or 'auto'}')]"
+    )
+    return active_manager
+
+
 def _print_shortlist_verbose(console: Console, shortlist_payload: Dict[str, Any]) -> None:
     """Render shortlist processing/selection trace for verbose terminal output."""
     if not shortlist_payload.get("enabled"):
@@ -376,6 +403,14 @@ def run_chat(args: argparse.Namespace, query_text: str) -> None:
     research_mode = getattr(args, "research", False)
     if research_mode:
         console.print("\n[Research mode enabled - using link extraction and RAG tools]")
+        session_manager = _ensure_research_session(
+            session_manager=session_manager,
+            model_config=model_config,
+            usage_tracker=usage_tracker,
+            summarization_tracker=summarization_tracker,
+            query_text=query_text,
+            console=console,
+        )
 
     research_session_id: Optional[str] = None
     if session_manager and session_manager.current_session:

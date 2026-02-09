@@ -165,6 +165,10 @@ SessionManager.save_turn()
 check_and_compact() → compact if > threshold
 ```
 
+In research mode, the chat flow ensures a session is always active. If no explicit
+or shell-resumed session exists, it auto-creates one before tool execution so
+research-memory operations can be session-scoped.
+
 ### Research Retrieval Flow
 
 ```
