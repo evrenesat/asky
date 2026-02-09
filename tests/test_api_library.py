@@ -1,6 +1,7 @@
 from unittest.mock import MagicMock, patch
 
-from asky.api import AskyClient, AskyConfig
+from asky.api import AskyClient, AskyConfig, AskyTurnRequest
+from asky.api.types import ContextResolution, PreloadResolution, SessionResolution
 
 
 def test_asky_client_build_messages_with_context_and_preloaded_sources():
@@ -100,3 +101,85 @@ def test_asky_client_chat_returns_structured_result(
         "Answer",
         usage_tracker=client.summarization_tracker,
     )
+
+
+@patch("asky.api.client.save_interaction")
+@patch("asky.api.client.generate_summaries", return_value=("qsum", "asum"))
+@patch.object(AskyClient, "run_messages", return_value="Final")
+@patch(
+    "asky.api.client.run_preload_pipeline",
+    return_value=PreloadResolution(
+        combined_context="Preloaded context",
+        shortlist_stats={"enabled": True},
+    ),
+)
+@patch(
+    "asky.api.client.resolve_session_for_turn",
+    return_value=(None, SessionResolution()),
+)
+@patch(
+    "asky.api.client.load_context_from_history",
+    return_value=ContextResolution(context_str="Context text", resolved_ids=[1, 2]),
+)
+def test_asky_client_run_turn_full_flow_non_session(
+    mock_load_context,
+    mock_resolve_session,
+    mock_preload,
+    mock_run_messages,
+    mock_generate_summaries,
+    mock_save_interaction,
+):
+    client = AskyClient(AskyConfig(model_alias="gf"))
+    result = client.run_turn(
+        AskyTurnRequest(
+            query_text="Question",
+            continue_ids="1,2",
+            summarize_context=True,
+        )
+    )
+
+    assert result.halted is False
+    assert result.final_answer == "Final"
+    assert result.query_summary == "qsum"
+    assert result.answer_summary == "asum"
+    assert result.context.resolved_ids == [1, 2]
+    assert result.preload.combined_context == "Preloaded context"
+    mock_load_context.assert_called_once_with("1,2", True)
+    mock_resolve_session.assert_called_once()
+    mock_preload.assert_called_once()
+    mock_run_messages.assert_called_once()
+    mock_save_interaction.assert_called_once_with(
+        "Question", "Final", "gf", "qsum", "asum"
+    )
+
+
+@patch.object(AskyClient, "run_messages")
+@patch(
+    "asky.api.client.resolve_session_for_turn",
+    return_value=(
+        None,
+        SessionResolution(
+            event="session_resume_ambiguous",
+            halt_reason="session_ambiguous",
+            notices=["Multiple sessions found for 'foo'"],
+            matched_sessions=[{"id": 1, "name": "a", "created_at": "ts"}],
+        ),
+    ),
+)
+def test_asky_client_run_turn_halts_on_ambiguous_session(
+    mock_resolve_session,
+    mock_run_messages,
+):
+    client = AskyClient(AskyConfig(model_alias="gf"))
+    result = client.run_turn(
+        AskyTurnRequest(
+            query_text="",
+            resume_session_term="foo",
+        )
+    )
+
+    assert result.halted is True
+    assert result.halt_reason == "session_ambiguous"
+    assert result.final_answer == ""
+    mock_resolve_session.assert_called_once()
+    mock_run_messages.assert_not_called()

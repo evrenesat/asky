@@ -15,8 +15,27 @@ from asky.core import (
     generate_summaries,
 )
 from asky.core.session_manager import SessionManager
+from asky.storage import save_interaction
 
-from .types import AskyChatResult, AskyConfig
+from .context import load_context_from_history
+from .preload import (
+    build_shortlist_stats,
+    format_local_ingestion_context,
+    format_shortlist_context,
+    preload_local_research_sources,
+    run_preload_pipeline,
+    shortlist_prompt_sources,
+)
+from .session import resolve_session_for_turn
+from .types import (
+    AskyChatResult,
+    AskyConfig,
+    AskyTurnRequest,
+    AskyTurnResult,
+    ContextResolution,
+    PreloadResolution,
+    SessionResolution,
+)
 
 
 class AskyClient:
@@ -189,4 +208,163 @@ class AskyClient:
                 if session_manager and session_manager.current_session
                 else None
             ),
+        )
+
+    def run_turn(
+        self,
+        request: AskyTurnRequest,
+        *,
+        display_callback: Optional[Callable[..., None]] = None,
+        verbose_output_callback: Optional[Callable[[Any], None]] = None,
+        summarization_status_callback: Optional[Callable[[Optional[str]], None]] = None,
+        event_callback: Optional[Callable[[str, Dict[str, Any]], None]] = None,
+        preload_status_callback: Optional[Callable[[str], None]] = None,
+        messages_prepared_callback: Optional[Callable[[List[Dict[str, Any]]], None]] = None,
+        set_shell_session_id_fn: Optional[Callable[[int], None]] = None,
+        clear_shell_session_fn: Optional[Callable[[], None]] = None,
+        shortlist_executor: Optional[Callable[..., Dict[str, Any]]] = None,
+        shortlist_formatter: Optional[Callable[[Dict[str, Any]], str]] = None,
+        shortlist_stats_builder: Optional[Callable[[Dict[str, Any], float], Dict[str, Any]]] = None,
+        local_ingestion_executor: Optional[Callable[..., Dict[str, Any]]] = None,
+        local_ingestion_formatter: Optional[Callable[[Dict[str, Any]], Optional[str]]] = None,
+    ) -> AskyTurnResult:
+        """Run a full API-orchestrated turn including context/session/preload."""
+        notices: List[str] = []
+        context = ContextResolution()
+
+        if request.continue_ids:
+            context = load_context_from_history(
+                request.continue_ids,
+                request.summarize_context,
+            )
+            if context.resolved_ids:
+                notices.append(
+                    "Loaded context from IDs: "
+                    + ", ".join(str(item) for item in context.resolved_ids)
+                )
+
+        session_manager, session_resolution = resolve_session_for_turn(
+            model_config=self.model_config,
+            usage_tracker=self.usage_tracker,
+            summarization_tracker=self.summarization_tracker,
+            query_text=request.query_text,
+            sticky_session_name=request.sticky_session_name,
+            resume_session_term=request.resume_session_term,
+            shell_session_id=request.shell_session_id,
+            research_mode=self.config.research_mode,
+            set_shell_session_id_fn=set_shell_session_id_fn,
+            clear_shell_session_fn=clear_shell_session_fn,
+        )
+        notices.extend(session_resolution.notices)
+
+        if self.config.research_mode:
+            notices.insert(0, "Research mode enabled - using link extraction and RAG tools")
+
+        halted = bool(session_resolution.halt_reason)
+        if halted:
+            return AskyTurnResult(
+                final_answer="",
+                query_summary="",
+                answer_summary="",
+                messages=[],
+                model_alias=self.config.model_alias,
+                session_id=(
+                    str(session_resolution.session_id)
+                    if session_resolution.session_id is not None
+                    else None
+                ),
+                halted=True,
+                halt_reason=session_resolution.halt_reason,
+                notices=notices,
+                context=context,
+                session=session_resolution,
+                preload=PreloadResolution(),
+            )
+
+        preload = run_preload_pipeline(
+            query_text=request.query_text,
+            research_mode=self.config.research_mode,
+            model_config=self.model_config,
+            lean=request.lean,
+            preload_local_sources=request.preload_local_sources,
+            preload_shortlist=request.preload_shortlist,
+            additional_source_context=request.additional_source_context,
+            status_callback=preload_status_callback,
+            shortlist_executor=shortlist_executor or shortlist_prompt_sources,
+            shortlist_formatter=shortlist_formatter or format_shortlist_context,
+            shortlist_stats_builder=shortlist_stats_builder or build_shortlist_stats,
+            local_ingestion_executor=(
+                local_ingestion_executor or preload_local_research_sources
+            ),
+            local_ingestion_formatter=(
+                local_ingestion_formatter or format_local_ingestion_context
+            ),
+        )
+
+        messages = self.build_messages(
+            query_text=request.query_text,
+            context_str=context.context_str,
+            session_manager=session_manager,
+            source_shortlist_context=preload.combined_context,
+        )
+        if messages_prepared_callback:
+            messages_prepared_callback(messages)
+
+        final_answer = self.run_messages(
+            messages,
+            session_manager=session_manager,
+            research_session_id=(
+                str(session_manager.current_session.id)
+                if session_manager and session_manager.current_session
+                else None
+            ),
+            display_callback=display_callback,
+            verbose_output_callback=verbose_output_callback,
+            summarization_status_callback=summarization_status_callback,
+            event_callback=event_callback,
+        )
+
+        query_summary, answer_summary = ("", "")
+        if final_answer:
+            query_summary, answer_summary = generate_summaries(
+                request.query_text,
+                final_answer,
+                usage_tracker=self.summarization_tracker,
+            )
+            if request.save_history:
+                if session_manager:
+                    session_manager.save_turn(
+                        request.query_text,
+                        final_answer,
+                        query_summary,
+                        answer_summary,
+                    )
+                    if session_manager.check_and_compact():
+                        notices.append("Session context compacted")
+                else:
+                    save_interaction(
+                        request.query_text,
+                        final_answer,
+                        self.config.model_alias,
+                        query_summary,
+                        answer_summary,
+                    )
+
+        return AskyTurnResult(
+            final_answer=final_answer,
+            query_summary=query_summary,
+            answer_summary=answer_summary,
+            messages=messages,
+            model_alias=self.config.model_alias,
+            session_id=(
+                str(session_manager.current_session.id)
+                if session_manager and session_manager.current_session
+                else None
+            ),
+            halted=False,
+            halt_reason=None,
+            notices=notices,
+            context=context,
+            session=session_resolution,
+            preload=preload,
         )

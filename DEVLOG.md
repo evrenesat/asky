@@ -2,6 +2,72 @@ For older logs, see [DEVLOG_ARCHIVE.md](DEVLOG_ARCHIVE.md)
 
 ## 2026-02-09
 
+### Library Usage Documentation (API Config + Turn Request Options)
+**Summary**: Added dedicated docs for programmatic `asky.api` usage, with explicit configuration/request field mapping and runnable examples.
+
+- **Changed**:
+  - Added:
+    - `docs/library_usage.md`
+      - `AskyConfig` option table (`model_alias`, `research_mode`, `disabled_tools`, etc.)
+      - `AskyTurnRequest` option table (`continue_ids`, session fields, preload flags, persistence flag)
+      - callback integration docs
+      - `AskyTurnResult`/halt semantics
+      - error handling (`ContextOverflowError`)
+      - end-to-end examples (standard, research/lean, context continuation, sessions)
+  - Updated:
+    - `README.md` with a clear pointer to the library usage guide.
+
+- **Why**:
+  - Makes the new API-first orchestration discoverable and usable without reading source code.
+  - Clarifies exactly how configuration and per-turn options should be passed.
+
+- **Tests**:
+  - Validation run:
+    - `uv run pytest` (full suite)
+
+### Full API Orchestration Migration (Context + Session + Shortlist)
+**Summary**: Completed the migration of chat orchestration into `asky.api` so `AskyClient.run_turn()` now provides CLI-equivalent context/session/preload/model/persist flow.
+
+- **Changed**:
+  - Added API orchestration services:
+    - `src/asky/api/context.py` (history selector parsing + context resolution)
+    - `src/asky/api/session.py` (session create/resume/auto/research resolution)
+    - `src/asky/api/preload.py` (local ingestion + shortlist preload pipeline)
+  - Expanded API contract:
+    - `src/asky/api/types.py`
+      - added `AskyTurnRequest`, `AskyTurnResult`, and structured resolution payload types.
+    - `src/asky/api/client.py`
+      - added `run_turn(...)` as the full orchestration entrypoint,
+      - integrated context/session/preload orchestration + persistence,
+      - preserved callback hooks for CLI/web renderers.
+  - Added API package docs:
+    - `src/asky/api/AGENTS.md`
+  - Refactored CLI into interface adapter:
+    - `src/asky/cli/chat.py`
+      - now maps argparse/UI callbacks to `AskyClient.run_turn(...)`,
+      - keeps terminal rendering, html/email/push behaviors in CLI layer,
+      - retains compatibility helper functions for existing tests/import paths.
+  - Updated architecture/docs:
+    - `ARCHITECTURE.md`
+    - `src/asky/cli/AGENTS.md`
+
+- **Tests**:
+  - Extended API tests:
+    - `tests/test_api_library.py` (new `run_turn` coverage)
+  - Updated CLI integration expectation:
+    - `tests/test_cli.py` (persistence assertions aligned with API-owned orchestration)
+  - Validation runs:
+    - `uv run pytest tests/test_cli.py tests/test_api_library.py`
+    - `uv run pytest` → 422 passed
+
+- **Why**:
+  - Makes full chat orchestration callable as a stable programmatic API.
+  - Keeps CLI as presentation/interaction layer over the same API workflow.
+
+- **Gotchas / Follow-ups**:
+  - `shortlist_flow.py` remains in `cli/` for now but orchestration path is API-owned.
+  - Optional future cleanup: retire legacy helper wrappers in `cli/chat.py` once external imports no longer rely on them.
+
 ### Library API Slice + Non-Interactive Context Overflow Handling
 **Summary**: Added a first-class programmatic API (`asky.api`) and removed interactive `input()` recovery from the core engine so library/web callers can control error handling safely.
 
@@ -44,8 +110,7 @@ For older logs, see [DEVLOG_ARCHIVE.md](DEVLOG_ARCHIVE.md)
   - Establishes a stable typed API surface for incremental CLI-to-library migration.
 
 - **Gotchas / Follow-ups**:
-  - CLI still owns session command UX (`-ss`, `-rs`) and post-answer delivery actions (mail/push/report).
-  - Full migration of shortlist/context/session orchestration into `asky.api` is still pending.
+  - CLI still owns post-answer delivery UI actions (mail/push/report) and shell-specific terminal context fetch.
 
 ### Pre-LLM Local Corpus Preload Stage + PyMuPDF Dependency
 **Summary**: Added a deterministic local ingestion stage before first model call in research chat and added `pymupdf` as a project dependency.

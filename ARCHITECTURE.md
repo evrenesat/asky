@@ -9,8 +9,11 @@ asky is an AI-powered CLI tool that combines LLM capabilities with web search an
 ```mermaid
 graph TB
     subgraph API["Library API Layer (api/)"]
-        api_types["types.py<br/>AskyConfig/AskyChatResult"]
+        api_types["types.py<br/>AskyConfig/TurnRequest/TurnResult"]
         api_client["client.py<br/>AskyClient Orchestration"]
+        api_ctx["context.py<br/>History Context Resolution"]
+        api_session["session.py<br/>Session Lifecycle Resolution"]
+        api_preload["preload.py<br/>Local + Shortlist Preload Pipeline"]
         api_ex["exceptions.py<br/>Public Errors"]
     end
 
@@ -57,12 +60,17 @@ graph TB
         tools["tools.py<br/>Web Search, URL Fetch"]
     end
 
+    api_client --> api_ctx
+    api_client --> api_session
+    api_client --> api_preload
     api_client --> engine
     api_client --> session_mgr
+    api_ctx --> sqlite
+    api_session --> sqlite
+    api_preload -.-> local_ingest
+    api_preload -.-> shortlist
     main --> chat
     chat --> api_client
-    chat --> local_ingest
-    chat --> shortlist_flow
     main --> history
     main --> sessions_cli
     main --> prompts_cli
@@ -90,7 +98,7 @@ graph TB
 
 ```
 src/asky/
-├── api/                # Programmatic library API surface
+├── api/                # Programmatic library API surface (run_turn orchestration)
 ├── cli/                # Command-line interface → see cli/AGENTS.md
 ├── core/               # Conversation engine → see core/AGENTS.md
 ├── storage/            # Data persistence → see storage/AGENTS.md
@@ -118,7 +126,7 @@ For test organization, see `tests/AGENTS.md`.
 | Package | Documentation | Key Components |
 |---------|---------------|----------------|
 | `cli/` | [cli/AGENTS.md](src/asky/cli/AGENTS.md) | Entry point, chat flow, commands |
-| `api/` | [api package](src/asky/api) | `AskyClient`, typed config/result, public exceptions |
+| `api/` | [api/AGENTS.md](src/asky/api/AGENTS.md) | `AskyClient`, turn orchestration services |
 | `core/` | [core/AGENTS.md](src/asky/core/AGENTS.md) | ConversationEngine, ToolRegistry, API client |
 | `storage/` | [storage/AGENTS.md](src/asky/storage/AGENTS.md) | SQLite repository, data model |
 | `research/` | [research/AGENTS.md](src/asky/research/AGENTS.md) | Cache, vector store, embeddings |
@@ -136,15 +144,17 @@ User Query
     ↓
 CLI (main.py) → parse_args()
     ↓
-chat.py → load_context()
+chat.py → build AskyTurnRequest + UI callbacks
     ↓
-optional local_ingestion_flow.py (research mode local source preload)
+AskyClient.run_turn()
     ↓
-optional shortlist_flow.py → source_shortlist.py (pre-LLM URL/search retrieval + ranking)
+context.py → resolve history selectors + context payload
     ↓
-build_messages()
+session.py → resolve create/resume/auto/research session state
     ↓
-AskyClient.run_messages()
+preload.py → optional local_ingestion + shortlist pipeline
+    ↓
+build_messages() (inside AskyClient)
     ↓
 create ToolRegistry (mode-aware + runtime tool exclusions)
     ↓
@@ -161,33 +171,28 @@ ConversationEngine.run()
 │   5. Repeat until no more calls     │
 └─────────────────────────────────────┘
     ↓
-generate_summaries() → save_interaction()
+generate_summaries() → persist (session/history)
     ↓
 (Optional) render_to_browser() / send_email()
 ```
 
 Programmatic consumers can bypass CLI by instantiating `AskyClient` directly and
-calling `chat(...)` / `run_messages(...)`.
+calling `run_turn(...)` for full CLI-equivalent orchestration.
 
 ### Session Flow
 
 ```
 asky -ss "my_session" <query>
     ↓
-SessionManager.start_or_resume()
+AskyClient.run_turn() → session.py
     ↓
-build_context_messages() ← includes compacted_summary + recent messages
+resolve_session_for_turn()
     ↓
-ConversationEngine.run()
-    ↓
-SessionManager.save_turn()
-    ↓
-check_and_compact() → compact if > threshold
+SessionManager.build_context_messages() / save_turn() / check_and_compact()
 ```
 
-In research mode, the chat flow ensures a session is always active. If no explicit
-or shell-resumed session exists, it auto-creates one before tool execution so
-research-memory operations can be session-scoped.
+In research mode, session resolution auto-creates a session if none is active so
+research-memory operations remain session-scoped for both CLI and API callers.
 
 ### Research Retrieval Flow
 
@@ -213,12 +218,6 @@ Local-file targets can enter the same flow through research adapters:
 ### Research Memory Flow (Session-Scoped)
 
 ```
-
-### Context Overflow Handling
-
-`ConversationEngine` no longer performs interactive retries (`input()`) on HTTP 400
-errors. It now raises `ContextOverflowError` (with compacted-message fallback data),
-so callers (CLI/API/web) can choose retry/switch/fail behavior externally.
 save_finding(...)
     ↓
 chat research registry injects active session_id (when a session is active)
@@ -233,6 +232,12 @@ VectorStore.search_findings(..., session_id=active_session)
     ↓
 Semantic/fallback results filtered to current session scope
 ```
+
+### Context Overflow Handling
+
+`ConversationEngine` no longer performs interactive retries (`input()`) on HTTP 400
+errors. It now raises `ContextOverflowError` (with compacted-message fallback data),
+so callers (CLI/API/web) can choose retry/switch/fail behavior externally.
 
 ---
 

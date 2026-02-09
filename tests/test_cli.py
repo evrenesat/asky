@@ -696,8 +696,9 @@ def test_main_flow(
         ],
         display_callback=ANY,
     )
-    mock_gen_sum.assert_called_once_with("test", "Final Answer", usage_tracker=ANY)
-    mock_save.assert_called_once()
+    # Summarization/persistence now run inside asky.api client orchestration.
+    mock_gen_sum.assert_not_called()
+    mock_save.assert_not_called()
 
 
 @patch("asky.cli.main.parse_args")

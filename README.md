@@ -9,6 +9,12 @@ asky is an AI-powered web search CLI with LLM tool-calling capabilities.
 
 It (can be invoked as `asky` or `ask`) provides a powerful command-line interface that brings AI-powered search and research capabilities directly to your terminal. It uses LLMs and tools to synthesize answers from the web (or from files and cli commands you expose as tools).
 
+## Library Usage
+
+For programmatic usage (`asky.api`), including full configuration and request options, see:
+
+- [Library Usage Guide](./docs/library_usage.md)
+
 ## Key Features
 
 - **Multi-Model Support**: Easily define and switch between various LLMs and providers that supports OpenAI compatible API.

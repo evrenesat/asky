@@ -48,7 +48,7 @@ class ConversationEngine:
 
 `ConversationEngine` no longer prompts users (`input()`) and no longer performs
 terminal rendering on its own. Final rendering/retry UX belongs to callers
-(CLI or programmatic consumers) via callbacks and exception handling.
+(CLI adapter or `asky.api` programmatic consumers) via callbacks and exception handling.
 
 ## Registry Factory (`tool_registry_factory.py`)
 

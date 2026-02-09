@@ -46,17 +46,10 @@ Command-line interface layer handling argument parsing, command routing, and use
 
 Main conversation entry point via `run_chat()`:
 
-1. **Context Loading**: `load_context()` fetches previous interactions
-2. **Local Source Preload**: Research mode can ingest local targets from prompt via `local_ingestion_flow.py`
-3. **Source Shortlisting**: Optional pre-LLM source ranking via `shortlist_flow.py` (lazy-loaded)
-4. **Message Building**: `build_messages()` constructs the base prompt
-5. **API Client Orchestration**: `AskyClient` creates mode-aware registry and runs engine
-   - In research mode, chat ensures an active session (auto-creates one when missing).
-   - In research mode, active chat `session_id` is forwarded into the research registry
-     so memory tools can be session-scoped.
-6. **Prompt Augmentation**: Enabled-tool guideline lines are appended before model calls
-7. **Engine Invocation**: Executed via `AskyClient.run_messages()`
-8. **Output Handling**: Saves interaction, optional browser/email/push
+1. **CLI Adaptation**: Parse args into `AskyTurnRequest` + UI callbacks.
+2. **API Orchestration**: `AskyClient.run_turn()` performs context/session/preload/model/persist flow.
+3. **UI Rendering**: `chat.py` maps API notices/events into Rich output + banner updates.
+4. **Interface Side Effects**: optional browser/email/push/report handling.
 
 ### Error Handling
 
@@ -87,7 +80,7 @@ Main conversation entry point via `run_chat()`:
 
 ```
 main.py
-├── chat.py → core/engine.py, core/session_manager.py
+├── chat.py → api/client.py
 ├── local_ingestion_flow.py → research/adapters.py, research/cache.py, research/vector_store.py
 ├── history.py → storage/sqlite.py
 ├── sessions.py → storage/sqlite.py
