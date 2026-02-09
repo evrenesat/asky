@@ -201,12 +201,14 @@ class ConversationEngine:
                     )
 
                     tool_name = call.get("function", {}).get("name", "unknown_tool")
+                    tool_arguments = call.get("function", {}).get("arguments")
                     self._emit_event(
                         "tool_start",
                         turn=turn,
                         call_index=call_index,
                         total_calls=len(calls),
                         tool_name=tool_name,
+                        tool_arguments=tool_arguments,
                     )
                     if display_callback:
                         display_callback(

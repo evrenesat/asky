@@ -37,6 +37,7 @@ class ConversationEngine:
 - **Graceful Exit**: `_execute_graceful_exit()` handles max-turns without answer
 - **Error Handling**: Raises `ContextOverflowError` for HTTP 400 context overflow
 - **Event Hooks**: Optional structured `event_callback(name, payload)` emissions
+  - `tool_start` payload includes `tool_name` and raw `tool_arguments` for downstream instrumentation.
 
 ### Lazy Loading
 

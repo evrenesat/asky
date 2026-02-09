@@ -232,7 +232,13 @@ AskyClient.run_turn() per test case
     ↓
 assertions (contains/regex)
     ↓
-results.jsonl + summary.json + report.md
+results.jsonl + results.md + summary.json + report.md
+  - includes per-role token usage (`main`, `summarizer`, `audit_planner`)
+  - emits run/case/external progress events for live CLI feedback
+  - captures per-phase timing metrics (case, run, session)
+  - captures tool-call breakdowns (tool type + arguments)
+  - auto-generates fail-focused markdown case breakdowns from JSONL artifacts
+  - report includes per-tool totals and per-run failure detail sections for single-file triage
 ```
 
 ### Research Memory Flow (Session-Scoped)

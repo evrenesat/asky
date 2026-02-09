@@ -5,11 +5,12 @@ from __future__ import annotations
 import argparse
 import json
 from pathlib import Path
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 
 from asky.evals.research_pipeline.dataset import load_dataset
 from asky.evals.research_pipeline.evaluator import (
     DEFAULT_DOWNLOAD_TIMEOUT_SECONDS,
+    RUN_RESULTS_MARKDOWN_FILENAME,
     load_snapshot_manifest,
     prepare_dataset_snapshots,
     regenerate_report,
@@ -43,6 +44,133 @@ def _split_run_ids(raw_values: Optional[List[str]]) -> List[str]:
     return run_ids
 
 
+def _format_role_tokens(item: Dict[str, Any], role: str) -> str:
+    token_totals = item.get("token_usage_totals")
+    if not isinstance(token_totals, dict):
+        return "0/0/0"
+    role_totals = token_totals.get(role)
+    if not isinstance(role_totals, dict):
+        return "0/0/0"
+    input_tokens = int(role_totals.get("input_tokens", 0) or 0)
+    output_tokens = int(role_totals.get("output_tokens", 0) or 0)
+    total_tokens = int(role_totals.get("total_tokens", 0) or 0)
+    return f"{input_tokens}/{output_tokens}/{total_tokens}"
+
+
+def _format_timing_total(item: Dict[str, Any], key: str) -> str:
+    timing_totals = item.get("timing_totals_ms")
+    if not isinstance(timing_totals, dict):
+        return "0.0"
+    return f"{float(timing_totals.get(key, 0.0) or 0.0):.1f}"
+
+
+def _format_disabled_tools(item: Dict[str, Any]) -> str:
+    disabled_tools = item.get("disabled_tools")
+    if not isinstance(disabled_tools, list) or not disabled_tools:
+        return "-"
+    return ",".join(str(tool) for tool in disabled_tools)
+
+
+def _print_eval_progress(event: Dict[str, Any]) -> None:
+    event_type = str(event.get("event", ""))
+    if event_type == "run_start":
+        run_index = int(event.get("run_index", 0) or 0)
+        run_total = int(event.get("run_total", 0) or 0)
+        run_id = str(event.get("run_id", "unknown"))
+        case_total = int(event.get("case_total", 0) or 0)
+        print(
+            f"[run {run_index}/{run_total}] {run_id} started ({case_total} cases)",
+            flush=True,
+        )
+        return
+
+    if event_type == "case_start":
+        case_index = int(event.get("case_index", 0) or 0)
+        case_total = int(event.get("case_total", 0) or 0)
+        case_id = str(event.get("case_id", "unknown"))
+        print(
+            f"  [case {case_index}/{case_total}] {case_id} running...",
+            flush=True,
+        )
+        return
+
+    if event_type == "case_end":
+        case_index = int(event.get("case_index", 0) or 0)
+        case_total = int(event.get("case_total", 0) or 0)
+        case_id = str(event.get("case_id", "unknown"))
+        elapsed_ms = float(event.get("elapsed_ms", 0.0) or 0.0)
+        error = event.get("error")
+        halted = bool(event.get("halted"))
+        passed = bool(event.get("pass"))
+        status = "PASS" if passed else "FAIL"
+        if error:
+            status = "ERROR"
+        elif halted:
+            status = "HALTED"
+        print(
+            f"  [case {case_index}/{case_total}] {case_id} {status} ({elapsed_ms:.0f} ms)",
+            flush=True,
+        )
+        return
+
+    if event_type == "run_end":
+        run_index = int(event.get("run_index", 0) or 0)
+        run_total = int(event.get("run_total", 0) or 0)
+        run_id = str(event.get("run_id", "unknown"))
+        passed = int(event.get("passed_cases", 0) or 0)
+        total = int(event.get("total_cases", 0) or 0)
+        failed = int(event.get("failed_cases", 0) or 0)
+        errors = int(event.get("error_cases", 0) or 0)
+        halted = int(event.get("halted_cases", 0) or 0)
+        run_wall_ms = float(event.get("run_wall_ms", 0.0) or 0.0)
+        print(
+            f"[run {run_index}/{run_total}] {run_id} done: "
+            f"passed={passed}/{total} failed={failed} errors={errors} halted={halted} "
+            f"run_wall_ms={run_wall_ms:.1f}",
+            flush=True,
+        )
+        return
+
+    if event_type == "external_transition":
+        external_type = str(event.get("external_type", "external"))
+        phase = str(event.get("phase", "unknown"))
+        case_id = str(event.get("test_id", "unknown"))
+        run_id = str(event.get("run_id", "unknown"))
+        payload = event.get("payload")
+        elapsed_ms = event.get("elapsed_ms")
+        if external_type == "tool" and isinstance(payload, dict):
+            tool_name = str(payload.get("tool_name", "unknown_tool"))
+            payload_elapsed_ms = payload.get("elapsed_ms")
+            elapsed_suffix = ""
+            if isinstance(payload_elapsed_ms, (int, float)):
+                elapsed_suffix = f" ({float(payload_elapsed_ms):.1f} ms)"
+            print(
+                f"    [{run_id}/{case_id}] tool {phase}: {tool_name}{elapsed_suffix}",
+                flush=True,
+            )
+            return
+        elapsed_suffix = ""
+        if isinstance(elapsed_ms, (int, float)):
+            elapsed_suffix = f" ({float(elapsed_ms):.1f} ms)"
+        print(
+            f"    [{run_id}/{case_id}] {external_type} {phase}{elapsed_suffix}",
+            flush=True,
+        )
+        return
+
+    if event_type == "external_status":
+        external_type = str(event.get("external_type", "external"))
+        message = str(event.get("message", "")).strip()
+        if not message:
+            return
+        case_id = str(event.get("test_id", "unknown"))
+        run_id = str(event.get("run_id", "unknown"))
+        print(
+            f"    [{run_id}/{case_id}] {external_type}: {message}",
+            flush=True,
+        )
+
+
 def _resolve_dataset_path(
     dataset_arg: Optional[str],
     matrix_dataset_path: Optional[Path],
@@ -64,7 +192,9 @@ def _build_parser() -> argparse.ArgumentParser:
         "prepare",
         help="Download and pin local dataset snapshots.",
     )
-    prepare_parser.add_argument("--dataset", required=True, help="Path to dataset yaml/json.")
+    prepare_parser.add_argument(
+        "--dataset", required=True, help="Path to dataset yaml/json."
+    )
     prepare_parser.add_argument(
         "--snapshot-root",
         default=None,
@@ -113,8 +243,12 @@ def _build_parser() -> argparse.ArgumentParser:
         "report",
         help="Regenerate markdown report from an existing output directory.",
     )
-    report_parser.add_argument("--dataset", required=True, help="Path to dataset yaml/json.")
-    report_parser.add_argument("--results-dir", required=True, help="Path to run output dir.")
+    report_parser.add_argument(
+        "--dataset", required=True, help="Path to dataset yaml/json."
+    )
+    report_parser.add_argument(
+        "--results-dir", required=True, help="Path to run output dir."
+    )
 
     return parser
 
@@ -131,6 +265,19 @@ def _handle_prepare(args: argparse.Namespace) -> int:
     print(f"Prepared dataset '{dataset.id}' snapshots at: {manifest.dataset_dir}")
     print(f"Manifest: {manifest.manifest_path}")
     print(f"Documents: {len(manifest.doc_paths)}")
+    prepare_total_ms = float(manifest.timings_ms.get("prepare_total_ms", 0.0) or 0.0)
+    downloaded_docs = int(manifest.timings_ms.get("downloaded_docs", 0.0) or 0.0)
+    reused_docs = int(manifest.timings_ms.get("reused_docs", 0.0) or 0.0)
+    print(
+        f"Prepare timing: total={prepare_total_ms:.1f}ms "
+        f"downloaded={downloaded_docs} reused={reused_docs}"
+    )
+    if manifest.doc_prepare_timings_ms:
+        print("Document timings:")
+        for doc_id, doc_timing in sorted(manifest.doc_prepare_timings_ms.items()):
+            action = str(doc_timing.get("action", "unknown"))
+            elapsed_ms = float(doc_timing.get("elapsed_ms", 0.0) or 0.0)
+            print(f"- {doc_id}: {action} ({elapsed_ms:.1f} ms)")
     return 0
 
 
@@ -148,7 +295,9 @@ def _handle_run(args: argparse.Namespace) -> int:
     selected_run_ids = _split_run_ids(args.run)
     selected_run_id_set = set(selected_run_ids)
     selected_runs = [
-        run for run in matrix.runs if not selected_run_id_set or run.id in selected_run_id_set
+        run
+        for run in matrix.runs
+        if not selected_run_id_set or run.id in selected_run_id_set
     ]
 
     needs_snapshots = any(
@@ -165,6 +314,7 @@ def _handle_run(args: argparse.Namespace) -> int:
         snapshot_manifest=snapshot_manifest,
         output_root=output_root,
         selected_run_ids=selected_run_ids,
+        progress_callback=_print_eval_progress,
     )
 
     print(f"Run output: {output_dir}")
@@ -181,6 +331,9 @@ def _handle_run(args: argparse.Namespace) -> int:
             print("Run results:")
             for item in runs:
                 run_id = str(item.get("run_id", "unknown"))
+                results_markdown_path = (
+                    output_dir / run_id / "artifacts" / RUN_RESULTS_MARKDOWN_FILENAME
+                )
                 passed = int(item.get("passed_cases", 0) or 0)
                 total = int(item.get("total_cases", 0) or 0)
                 failed = int(item.get("failed_cases", 0) or 0)
@@ -190,6 +343,39 @@ def _handle_run(args: argparse.Namespace) -> int:
                     f"- {run_id}: passed={passed}/{total} "
                     f"failed={failed} errors={errors} halted={halted}"
                 )
+                print(f"  disabled_tools={_format_disabled_tools(item)}")
+                print(f"  results_markdown= {results_markdown_path}")
+                print(
+                    "  tokens "
+                    f"main={_format_role_tokens(item, 'main')} "
+                    f"summarizer={_format_role_tokens(item, 'summarizer')} "
+                    f"audit_planner={_format_role_tokens(item, 'audit_planner')}"
+                )
+                print(
+                    "  timings_ms "
+                    f"run_wall={_format_timing_total(item, 'run_wall_ms')} "
+                    f"case_total={_format_timing_total(item, 'case_total_ms')} "
+                    f"source_prepare={_format_timing_total(item, 'source_prepare_ms')} "
+                    f"client_init={_format_timing_total(item, 'client_init_ms')} "
+                    f"run_turn={_format_timing_total(item, 'run_turn_ms')} "
+                    f"llm={_format_timing_total(item, 'llm_total_ms')} "
+                    f"tool={_format_timing_total(item, 'tool_total_ms')} "
+                    f"local_ingest={_format_timing_total(item, 'local_ingestion_ms')} "
+                    f"shortlist={_format_timing_total(item, 'shortlist_ms')}"
+                )
+                tool_call_counts = item.get("tool_call_counts")
+                if isinstance(tool_call_counts, dict) and tool_call_counts:
+                    ordered_counts = sorted(
+                        (
+                            (str(name), int(count or 0))
+                            for name, count in tool_call_counts.items()
+                        ),
+                        key=lambda entry: (-entry[1], entry[0]),
+                    )
+                    counts_text = ", ".join(
+                        f"{name}:{count}" for name, count in ordered_counts
+                    )
+                    print(f"  tool_calls_by_type {counts_text}")
 
             total_errors = sum(int(item.get("error_cases", 0) or 0) for item in runs)
             if total_errors > 0:
@@ -198,6 +384,17 @@ def _handle_run(args: argparse.Namespace) -> int:
                     "Note: Some cases had execution errors. "
                     "Inspect per-case details in each run's artifacts/results.jsonl."
                 )
+        timing_totals = (
+            payload.get("timing_totals_ms", {}) if isinstance(payload, dict) else {}
+        )
+        if isinstance(timing_totals, dict):
+            session_wall_ms = float(timing_totals.get("session_wall_ms", 0.0) or 0.0)
+            runs_wall_ms = float(timing_totals.get("runs_wall_ms", 0.0) or 0.0)
+            print("")
+            print(
+                f"Session timing: session_wall_ms={session_wall_ms:.1f} "
+                f"runs_wall_ms={runs_wall_ms:.1f}"
+            )
     return 0
 
 

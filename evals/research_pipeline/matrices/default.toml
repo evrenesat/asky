@@ -4,14 +4,15 @@ snapshot_root = "temp/research_eval/snapshots"
 output_root = "temp/research_eval/runs"
 
 [[runs]]
-id = "research-glmflash-local"
-model_alias = "glmflash"
+id = "research-gf-local"
+model_alias = "gf"
 research_mode = true
 source_provider = "local_snapshot"
 lean = true
 preload_local_sources = true
 preload_shortlist = false
 save_history = false
+disabled_tools = ["web_search", "grep_search"]
 
 [runs.parameters]
 temperature = 0.1

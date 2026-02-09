@@ -166,6 +166,21 @@ Top-level fields:
 - `query_prefix` / `query_suffix` (optional strings)
 - `[runs.parameters]` (optional key/value model parameters)
 
+Disable tools per run:
+- `disabled_tools` accepts CSV string or string list.
+- Example:
+
+```toml
+[[runs]]
+id = "research-gf-no-web-search"
+model_alias = "gf"
+research_mode = true
+source_provider = "local_snapshot"
+disabled_tools = ["web_search", "get_url_content"]
+```
+
+This is useful for A/B comparisons of pass rate, latency, and tool-mix impact.
+
 Provider behavior:
 - `source_provider="auto"`:
   - research mode -> `local_snapshot`
@@ -221,6 +236,7 @@ Guidelines:
 
 Per-run artifacts:
 - `<output>/<run_id>/artifacts/results.jsonl`
+- `<output>/<run_id>/artifacts/results.md`
 - `<output>/<run_id>/artifacts/summary.json`
 
 Session artifacts:
@@ -232,6 +248,35 @@ Meaning of key summary fields:
 - `error_cases`: execution errors (infra/runtime), not answer-quality misses.
 - `halted_cases`: run-turn halted before normal answer completion.
 - `avg_elapsed_ms`: average latency per case.
+- `token_usage_totals`: role-based token totals:
+  - `main`: primary model calls for `run_turn`.
+  - `summarizer`: summarization model calls.
+  - `audit_planner`: reserved for future pipeline stage (currently `0/0/0` unless implemented).
+- `timing_totals_ms`: per-run timing totals including:
+  - `run_wall_ms`, `case_total_ms`, `source_prepare_ms`, `client_init_ms`, `run_turn_ms`
+  - `llm_total_ms`, `tool_total_ms`, `local_ingestion_ms`, `shortlist_ms`
+- `timing_averages_ms`: per-case averages for timing metrics.
+- `timing_counts`: call counts for `llm`, `tool`, `local_ingestion`, `shortlist`.
+- `disabled_tools`: tools disabled for this run profile.
+- `tool_call_counts`: aggregate counts by tool name.
+- `tool_call_breakdown`: aggregate counts by tool name + argument payload.
+
+Per-case `results.jsonl` rows also include `token_usage` with the same roles and
+`input_tokens` / `output_tokens` / `total_tokens`.
+Per-case rows also include `timings_ms` for detailed phase timing breakdown.
+Per-case rows also include `tool_calls` (tool name + parsed arguments).
+
+`results.md` is an automatic markdown conversion of `results.jsonl` with:
+- case summary table (`PASS`/`FAIL`/`ERROR`/`HALTED`)
+- fail-focused detail sections including query, expected assertion payload, answer text,
+  and captured tool calls with arguments.
+
+`report.md` now also includes:
+- per-run tool call totals by tool type
+- per-run case failure details (query/expected/answer/tool calls)
+
+This gives a single top-level markdown file for most analysis, while keeping
+`results.md` as per-run drill-down.
 
 ## Troubleshooting
 
@@ -243,6 +288,53 @@ Cause: `--run` filter did not match any `[[runs]].id` (or run is commented out i
 
 Check `error` field in `results.jsonl`.
 If `error_cases > 0`, failures are runtime/integration errors, not model-quality misses.
+`artifacts/results.md` usually gives the quickest failure triage view.
+
+### Understanding live console progress
+
+`run` now prints live progress for:
+- run lifecycle (`run_start`, `run_end`)
+- case lifecycle (`case_start`, `case_end`)
+- external invocation transitions (`run_turn`, `llm`, `tool` start/end)
+- preload/summarizer status messages when callbacks emit updates
+
+This means long waits should still show heartbeat-style lines while each case executes.
+`run_end` now includes `run_wall_ms`, and per-run summary lines include timing totals.
+
+### Understanding token usage numbers
+
+Each role reports `input/output/total` token counts:
+- `main`: request/response tokens consumed by the selected run model alias.
+- `summarizer`: tokens consumed by the configured summarization model.
+- `audit_planner`: currently a placeholder counter for future planner/audit stages.
+
+You can compare these fields across runs to evaluate quality/cost tradeoffs when
+changing model aliases or `[runs.parameters]`.
+
+### Understanding timing fields
+
+Key timing metrics:
+- `source_prepare_ms`: source-provider query construction and query-affix assembly.
+- `client_init_ms`: `AskyClient` creation overhead.
+- `run_turn_ms`: total orchestration/model/tool duration for one case.
+- `llm_total_ms`: sum of measured LLM request windows (`llm_start` -> `llm_end`).
+- `tool_total_ms`: sum of measured tool dispatch windows (`tool_start` -> `tool_end`).
+- `local_ingestion_ms`: timed local corpus preload execution.
+- `shortlist_ms`: timed shortlist preload execution.
+- `run_wall_ms`: total wall clock per run profile.
+- `session_wall_ms` (session summary): total wall clock for the whole matrix execution.
+
+## Tool Breakdown In Report
+
+`report.md` now includes:
+- Summary table column `Disabled Tools`
+- A dedicated `Tool Call Breakdown` section per run
+  - tool name
+  - number of calls
+  - normalized argument payload
+
+Use this to verify how tool usage patterns changed between run profiles and how that
+affects pass/fail outcomes.
 
 ### Snapshot missing
 

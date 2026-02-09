@@ -2,6 +2,159 @@ For older logs, see [DEVLOG_ARCHIVE.md](DEVLOG_ARCHIVE.md)
 
 ## 2026-02-09
 
+### Report Rendering Fixes + Single-File Failure Triage
+**Summary**: Fixed markdown report table rendering, added per-tool total call counts, and embedded per-run failure details directly into `report.md`.
+
+- **Changed**:
+  - Updated:
+    - `/Users/evren/code/asky/src/asky/evals/research_pipeline/evaluator.py`
+      - fixed summary table separator row column mismatch that broke markdown rendering.
+      - added `## Tool Call Totals` section (aggregated counts by tool type).
+      - added `## Case Failure Details` section in `report.md`, sourced from run `results.jsonl`.
+      - run execution and `report` regeneration now pass case-result payloads into report builder.
+    - `/Users/evren/code/asky/docs/research_eval.md`
+      - documented single-file triage behavior in `report.md`.
+    - `/Users/evren/code/asky/ARCHITECTURE.md`
+      - updated eval artifact/report behavior notes.
+  - Added tests:
+    - `/Users/evren/code/asky/tests/test_research_eval_evaluator.py`
+      - validates tool totals section and case-failure detail rendering.
+
+- **Why**:
+  - `report.md` needed to be directly useful without opening extra files.
+  - malformed table delimiter prevented reliable markdown rendering in editors.
+
+### Results JSONL Markdown Converter (Auto-Generated)
+**Summary**: Added automatic markdown conversion for per-run `results.jsonl` artifacts to make failure triage easy in editors that do not render JSONL well.
+
+- **Changed**:
+  - Updated:
+    - `/Users/evren/code/asky/src/asky/evals/research_pipeline/evaluator.py`
+      - added JSONL reader and markdown converter for case results.
+      - new per-run artifact: `artifacts/results.md`.
+      - `run_evaluation_matrix` now writes `results.md` immediately after `results.jsonl`.
+      - `regenerate_report` now also regenerates each run's `results.md` from stored JSONL.
+    - `/Users/evren/code/asky/src/asky/evals/research_pipeline/run.py`
+      - terminal run summary now prints per-run `results_markdown` path.
+    - `/Users/evren/code/asky/docs/research_eval.md`
+      - documented `results.md` artifact and how to use it for fast failure analysis.
+    - `/Users/evren/code/asky/ARCHITECTURE.md`
+      - updated eval-flow artifact list and markdown-conversion note.
+  - Added tests:
+    - `/Users/evren/code/asky/tests/test_research_eval_evaluator.py`
+      - validates markdown conversion content.
+      - validates automatic write during matrix runs.
+      - validates regeneration from existing JSONL during `report`.
+
+- **Why**:
+  - JSONL is hard to inspect interactively in VS Code.
+  - A fail-focused markdown rendering shortens iteration time when adjusting prompts, tools, or expectations.
+
+### Eval Tool-Call Argument Breakdown + Disabled-Tool Comparisons
+**Summary**: Added per-run tool-call breakdowns (tool + arguments + count) to summaries/reports and surfaced disabled-tool profile settings so pass-rate impact can be compared directly.
+
+- **Changed**:
+  - Updated:
+    - `/Users/evren/code/asky/src/asky/core/engine.py`
+      - `tool_start` runtime event now includes raw `tool_arguments`.
+    - `/Users/evren/code/asky/src/asky/evals/research_pipeline/evaluator.py`
+      - per-case results now record `tool_calls` (tool name + parsed args).
+      - run summaries now include:
+        - `disabled_tools`
+        - `tool_call_counts`
+        - `tool_call_breakdown` (tool+args signature counts).
+      - markdown report now includes:
+        - `Disabled Tools` summary column
+        - `Tool Call Breakdown` section per run with arguments.
+    - `/Users/evren/code/asky/src/asky/evals/research_pipeline/run.py`
+      - run summary printout now includes disabled tools and per-tool call counts.
+    - `/Users/evren/code/asky/docs/research_eval.md`
+      - added explicit `disabled_tools` per-run usage example and breakdown interpretation.
+    - `/Users/evren/code/asky/src/asky/core/AGENTS.md`
+      - documented `tool_start` event payload extension.
+  - Added tests:
+    - `/Users/evren/code/asky/tests/test_research_eval_evaluator.py`
+      - validates tool-call breakdown aggregation and report rendering.
+
+- **Why**:
+  - Needed visibility into exact tool argument patterns and tool-disable experiments to explain pass-rate changes and guide profile tuning.
+
+### Eval Harness End-to-End Timing Instrumentation
+**Summary**: Added detailed timing metrics across prepare/run pipeline stages so eval outputs expose where time is spent (ingestion, llm/tool windows, run/session wall time).
+
+- **Changed**:
+  - Updated:
+    - `/Users/evren/code/asky/src/asky/evals/research_pipeline/evaluator.py`
+      - `prepare_dataset_snapshots` now records:
+        - manifest-level timing totals (`prepare_total_ms`, downloaded/reused counts)
+        - per-document prepare action + elapsed time.
+      - per-case `results.jsonl` rows now include `timings_ms`:
+        - `case_total_ms`, `source_prepare_ms`, `client_init_ms`, `run_turn_ms`
+        - `llm_total_ms`, `tool_total_ms`, `local_ingestion_ms`, `shortlist_ms`
+        - call counters for llm/tool/local_ingestion/shortlist.
+      - run summaries now include:
+        - `timing_totals_ms`
+        - `timing_averages_ms`
+        - `timing_counts`
+        - `run_wall_ms` per run
+      - session summary now includes `session_wall_ms` + `runs_wall_ms`.
+    - `/Users/evren/code/asky/src/asky/evals/research_pipeline/run.py`
+      - `prepare` prints timing totals and per-doc timing lines.
+      - `run` prints per-run timing totals and session timing summary.
+      - live progress now includes elapsed ms for external transition end events.
+    - `/Users/evren/code/asky/docs/research_eval.md`
+      - documented timing fields, semantics, and interpretation guidance.
+  - Added tests:
+    - `/Users/evren/code/asky/tests/test_research_eval_evaluator.py`
+      - validates timing aggregation and report headers.
+
+- **Why**:
+  - Needed visibility into ingestion/preload/orchestration/model/tool time to tune quality-vs-latency tradeoffs and detect bottlenecks.
+
+### Eval Runner Live External-Invocation Progress
+**Summary**: Added real-time progress output during eval execution, including before/after transitions for external invocation phases.
+
+- **Changed**:
+  - Updated:
+    - `/Users/evren/code/asky/src/asky/evals/research_pipeline/evaluator.py`
+      - `_evaluate_case` now emits case-scoped progress events for:
+        - `run_turn` start/end/error
+        - engine external transitions (`llm_start`, `llm_end`, `tool_start`, `tool_end`)
+        - preload and summarizer status callbacks
+      - `run_evaluation_matrix` forwards case progress events through the existing run progress callback.
+    - `/Users/evren/code/asky/src/asky/evals/research_pipeline/run.py`
+      - progress printer now renders external transition/status lines in addition to run/case start/end lines.
+    - `/Users/evren/code/asky/docs/research_eval.md`
+      - documented live console progress behavior and event coverage.
+
+- **Why**:
+  - Long-running real-model eval cases previously looked idle; users needed explicit live feedback while waiting for network/model/tool phases.
+
+### Eval Harness Role-Based Token Usage Metrics
+**Summary**: Added model-role token usage reporting to research eval outputs so each run shows `main`, `summarizer`, and `audit_planner` input/output/total counts.
+
+- **Changed**:
+  - Updated:
+    - `/Users/evren/code/asky/src/asky/evals/research_pipeline/evaluator.py`
+      - records per-case `token_usage` in `results.jsonl` with role-level `input_tokens`, `output_tokens`, `total_tokens`.
+      - aggregates run-level `token_usage_totals` in `summary.json`.
+      - includes token usage columns in `report.md` (`in/out/total` per role).
+    - `/Users/evren/code/asky/src/asky/evals/research_pipeline/run.py`
+      - prints role token totals per run in terminal output after execution.
+  - Added tests:
+    - `/Users/evren/code/asky/tests/test_research_eval_evaluator.py`
+      - validates default zero token totals, aggregation math, and report token columns.
+  - Updated docs:
+    - `/Users/evren/code/asky/docs/research_eval.md`
+    - `/Users/evren/code/asky/ARCHITECTURE.md`
+
+- **Why**:
+  - Makes model-quality vs token-cost comparisons explicit across matrix runs.
+  - Gives visibility into token split between primary answer generation and summarization work.
+
+### Notes
+- `audit_planner` is a forward-compatible placeholder role in v1; counts remain zero until that stage is integrated.
+
 ### Research Eval Documentation Expansion
 **Summary**: Rewrote the eval harness guide into an operator-focused manual covering dataset/matrix authoring, expectation tuning, and output interpretation.
 
