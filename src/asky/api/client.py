@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 from typing import Any, Callable, Dict, List, Optional
 
 from asky.config import MODELS
@@ -51,7 +52,14 @@ class AskyClient:
         if config.model_alias not in MODELS:
             raise ValueError(f"Unknown model alias: {config.model_alias}")
         self.config = config
-        self.model_config = MODELS[config.model_alias]
+        base_model_config = copy.deepcopy(MODELS[config.model_alias])
+        merged_parameters = {
+            **(base_model_config.get("parameters") or {}),
+            **dict(config.model_parameters_override or {}),
+        }
+        if merged_parameters:
+            base_model_config["parameters"] = merged_parameters
+        self.model_config = base_model_config
         self.usage_tracker = usage_tracker or UsageTracker()
         self.summarization_tracker = summarization_tracker or UsageTracker()
 

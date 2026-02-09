@@ -24,6 +24,18 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
+def _build_chroma_cache_model_filter(cache_id: int, embedding_model: str) -> Dict[str, Any]:
+    """Build Chroma metadata filter compatible with strict single-operator parsers."""
+    if embedding_model:
+        return {
+            "$and": [
+                {"cache_id": cache_id},
+                {"embedding_model": embedding_model},
+            ]
+        }
+    return {"cache_id": cache_id}
+
+
 def upsert_chunks_to_chroma(
     store: "VectorStore",
     cache_id: int,
@@ -289,7 +301,10 @@ def search_chunks_with_chroma(
         response = collection.query(
             query_embeddings=[query_embedding],
             n_results=top_k,
-            where={"cache_id": cache_id, "embedding_model": store.embedding_client.model},
+            where=_build_chroma_cache_model_filter(
+                cache_id=cache_id,
+                embedding_model=store.embedding_client.model,
+            ),
             include=["documents", "distances"],
         )
     except Exception as exc:
@@ -379,7 +394,10 @@ def rank_links_with_chroma(
         response = collection.query(
             query_embeddings=[query_embedding],
             n_results=top_k,
-            where={"cache_id": cache_id, "embedding_model": store.embedding_client.model},
+            where=_build_chroma_cache_model_filter(
+                cache_id=cache_id,
+                embedding_model=store.embedding_client.model,
+            ),
             include=["metadatas", "distances"],
         )
     except Exception as exc:
@@ -545,7 +563,10 @@ def dense_scores_for_chunks_with_chroma(
         response = collection.query(
             query_embeddings=[query_embedding],
             n_results=top_k,
-            where={"cache_id": cache_id, "embedding_model": store.embedding_client.model},
+            where=_build_chroma_cache_model_filter(
+                cache_id=cache_id,
+                embedding_model=store.embedding_client.model,
+            ),
             include=["metadatas", "distances"],
         )
     except Exception as exc:

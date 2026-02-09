@@ -309,6 +309,33 @@ class TestVectorStore:
         assert results == [("From Chroma", 0.91)]
         sqlite_mock.assert_not_called()
 
+    def test_search_chunks_with_chroma_uses_and_metadata_filter(self, vector_store):
+        """Chroma query should use single-operator metadata filter for compatibility."""
+        fake_collection = MagicMock()
+        fake_collection.query.return_value = {
+            "documents": [["From Chroma"]],
+            "distances": [[0.1]],
+        }
+
+        with patch.object(
+            vector_store,
+            "_get_chroma_collection",
+            return_value=fake_collection,
+        ):
+            _ = vector_store._search_chunks_with_chroma(
+                cache_id=1,
+                query_embedding=[0.1, 0.2, 0.3],
+                top_k=1,
+            )
+
+        where_filter = fake_collection.query.call_args.kwargs["where"]
+        assert where_filter == {
+            "$and": [
+                {"cache_id": 1},
+                {"embedding_model": "test-model"},
+            ]
+        }
+
     def test_search_chunks_hybrid_returns_ranked_dicts(self, vector_store):
         """Test hybrid chunk search returns score-rich dictionaries."""
         chunks = [

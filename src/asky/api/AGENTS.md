@@ -29,3 +29,5 @@ Use `AskyClient.run_turn(request)` for CLI-equivalent orchestration:
 - Callers pass optional callbacks for status/events/display integration.
 - Shell-sticky session lock behavior is injected via optional callbacks, so API
   callers can opt in/out of CLI lock-file semantics.
+- `AskyConfig.model_parameters_override` can override/extend configured model
+  generation parameters for a specific client instance (for evaluation sweeps).

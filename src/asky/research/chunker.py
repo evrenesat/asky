@@ -89,9 +89,12 @@ def _get_embedding_tokenizer() -> Tuple[Optional[Any], int]:
 def _encode_tokens(tokenizer: Any, text: str) -> List[int]:
     """Encode text to token IDs across tokenizer implementations."""
     try:
-        return tokenizer.encode(text, add_special_tokens=False)
+        return tokenizer.encode(text, add_special_tokens=False, verbose=False)
     except TypeError:
-        return tokenizer.encode(text)
+        try:
+            return tokenizer.encode(text, add_special_tokens=False)
+        except TypeError:
+            return tokenizer.encode(text)
 
 
 def _decode_tokens(tokenizer: Any, token_ids: List[int]) -> str:

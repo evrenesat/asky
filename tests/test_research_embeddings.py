@@ -130,6 +130,9 @@ class _TruncationAwareTokenizer:
             words = words[: kwargs["max_length"]]
         return list(range(len(words)))
 
+    def decode(self, token_ids, skip_special_tokens=True):  # noqa: ARG002
+        return " ".join(f"tok{token_id}" for token_id in token_ids)
+
 
 class _TruncationAwareSentenceTransformer:
     def __init__(self, model_name, device="cpu", **kwargs):
@@ -322,6 +325,24 @@ class TestEmbeddingClient:
             assert tokenizer.last_kwargs.get("truncation") is True
             assert tokenizer.last_kwargs.get("max_length") == 3
             assert client.prompt_tokens == 3
+        EmbeddingClient._instance = None
+
+    def test_embed_truncates_overlength_text_before_model_encode(self):
+        """Embedding inputs should be truncated to model max sequence length."""
+        from asky.research.embeddings import EmbeddingClient
+
+        EmbeddingClient._instance = None
+        with patch(
+            "asky.research.embeddings.SentenceTransformer",
+            _TruncationAwareSentenceTransformer,
+        ):
+            client = EmbeddingClient(
+                model="trunc/model",
+                local_files_only=True,
+            )
+            # 6 tokens in input; truncation-aware model max_seq_length is 3.
+            result = client.embed_single("one two three four five six")
+            assert result == [3.0, 4.0, 5.0]
         EmbeddingClient._instance = None
 
 

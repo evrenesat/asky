@@ -15,6 +15,7 @@ client = AskyClient(
         verbose=False,           # optional
         open_browser=False,      # optional
         disabled_tools=set(),    # optional
+        model_parameters_override={},  # optional per-client generation overrides
     )
 )
 
@@ -54,6 +55,7 @@ from asky.api import (
 | `open_browser` | `bool` | no | `False` | Allows engine/browser rendering path for final answer. |
 | `research_mode` | `bool` | no | `False` | Uses research prompt/tool registry and research session behavior. |
 | `disabled_tools` | `set[str]` | no | `set()` | Runtime tool exclusion by exact tool name. |
+| `model_parameters_override` | `dict[str, Any]` | no | `{}` | Merged over configured model `parameters` for this client instance. |
 
 Example:
 

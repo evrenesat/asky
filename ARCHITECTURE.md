@@ -103,6 +103,7 @@ src/asky/
 ├── core/               # Conversation engine → see core/AGENTS.md
 ├── storage/            # Data persistence → see storage/AGENTS.md
 ├── research/           # Research mode RAG → see research/AGENTS.md
+├── evals/              # Manual integration eval harnesses (research + standard)
 ├── config/             # Configuration → see config/AGENTS.md
 ├── tools.py            # Tool execution (web search, URL fetch, custom)
 ├── retrieval.py        # Shared URL fetch + Trafilatura extraction
@@ -130,6 +131,7 @@ For test organization, see `tests/AGENTS.md`.
 | `core/` | [core/AGENTS.md](src/asky/core/AGENTS.md) | ConversationEngine, ToolRegistry, API client |
 | `storage/` | [storage/AGENTS.md](src/asky/storage/AGENTS.md) | SQLite repository, data model |
 | `research/` | [research/AGENTS.md](src/asky/research/AGENTS.md) | Cache, vector store, embeddings |
+| `evals/` | (manual harness) | Dual-mode research integration evaluation runner |
 | `config/` | [config/AGENTS.md](src/asky/config/AGENTS.md) | TOML loading, constants |
 | `tests/` | [tests/AGENTS.md](tests/AGENTS.md) | Test organization, patterns |
 
@@ -214,6 +216,24 @@ Local-file targets can enter the same flow through research adapters:
 - built-in fallback accepts `local://...`, `file://...`, and direct local paths,
 - directory discovery returns local file links,
 - file reads (txt/html/md/json/csv and PDF/EPUB via PyMuPDF) are cached/indexed and retrieved via the same RAG path.
+
+### Evaluation Harness Flow (Manual, Programmatic API)
+
+```
+Dataset (docs + tests) + Matrix (runs)
+    ↓
+prepare: pin local snapshots
+    ↓
+run: for each run profile
+    ↓
+runtime isolation (DB + Chroma + singleton reset)
+    ↓
+AskyClient.run_turn() per test case
+    ↓
+assertions (contains/regex)
+    ↓
+results.jsonl + summary.json + report.md
+```
 
 ### Research Memory Flow (Session-Scoped)
 

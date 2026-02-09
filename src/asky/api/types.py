@@ -16,6 +16,7 @@ class AskyConfig:
     open_browser: bool = False
     research_mode: bool = False
     disabled_tools: Set[str] = field(default_factory=set)
+    model_parameters_override: Dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass

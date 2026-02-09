@@ -2,6 +2,162 @@ For older logs, see [DEVLOG_ARCHIVE.md](DEVLOG_ARCHIVE.md)
 
 ## 2026-02-09
 
+### Research Eval Documentation Expansion
+**Summary**: Rewrote the eval harness guide into an operator-focused manual covering dataset/matrix authoring, expectation tuning, and output interpretation.
+
+- **Changed**:
+  - Updated:
+    - `/Users/evren/code/asky/docs/research_eval.md`
+      - added end-to-end workflow for creating new datasets and matrices
+      - documented full dataset and matrix schema references
+      - added expectation tuning guidance (`contains` vs `regex`)
+      - added practical troubleshooting and interpretation guidance for summary/report/results
+      - clarified path resolution, provider behavior, and rerun output directory behavior
+
+- **Why**:
+  - Existing documentation was too brief for creating and iterating new evaluations confidently.
+  - Needed concrete examples for extending scenarios and tuning strictness without changing code.
+
+### Research Runtime Warning Fixes (Tokenizer Length + Chroma Filter)
+**Summary**: Eliminated two noisy/compatibility warnings observed in research eval runs by hardening embedding/chunker tokenization and Chroma metadata filter construction.
+
+- **Changed**:
+  - Updated:
+    - `src/asky/research/vector_store_chunk_link_ops.py`
+      - added strict-compatible Chroma metadata filter builder using `$and` for combined `cache_id` + `embedding_model` constraints.
+      - applied it across chunk/link/hybrid Chroma query paths.
+    - `src/asky/research/embeddings.py`
+      - added pre-encode truncation path that caps embedding input texts to `max_seq_length`.
+      - added tokenizer-compat encode/decode helpers and `verbose=False` in tokenizer token-count path.
+    - `src/asky/research/chunker.py`
+      - suppressed tokenizer length warning noise in token counting/encoding path via `verbose=False` compatible call pattern.
+  - Added/updated tests:
+    - `tests/test_research_vector_store.py`
+      - validates Chroma query uses `$and` metadata filter.
+    - `tests/test_research_embeddings.py`
+      - validates over-length embedding input is truncated before model encode.
+  - Updated package docs:
+    - `src/asky/research/AGENTS.md`
+
+- **Why**:
+  - Research eval runs emitted:
+    - tokenizer warning (`sequence length ... > 256`)
+    - Chroma warning (`Expected where to have exactly one operator`)
+  - Both were avoidable runtime noise and the Chroma filter warning forced unnecessary SQLite fallback.
+
+### Eval Runtime DB Schema Initialization Fix
+**Summary**: Fixed immediate per-case failures in eval runs caused by missing `sessions` table in isolated runtime databases.
+
+- **Changed**:
+  - Updated:
+    - `src/asky/evals/research_pipeline/evaluator.py`
+      - added `_initialize_runtime_storage()` and call it at the start of each isolated run (`run_evaluation_matrix`) before processing test cases.
+  - Added regression test:
+    - `tests/test_research_eval_evaluator.py`
+      - verifies isolated runtime initialization creates the `sessions` table.
+
+- **Why**:
+  - Eval runs create isolated DB paths; without explicit schema init, `AskyClient.run_turn()` session resolution hit `OperationalError: no such table: sessions` and every case failed instantly.
+
+### Eval Runner UX + Output Collision Safeguards
+**Summary**: Improved eval-runner feedback for fast-failure runs and prevented same-second output directory reuse.
+
+- **Changed**:
+  - Updated:
+    - `src/asky/evals/research_pipeline/evaluator.py`
+      - output directory allocation now guarantees uniqueness (adds `_001`, `_002`, ...) when a timestamp directory already exists.
+      - run summary now includes `error_cases` and `halted_cases`.
+      - markdown report includes failed/error/halted columns.
+    - `src/asky/evals/research_pipeline/run.py`
+      - `run` command now prints per-run `passed/failed/errors/halted` counts from session summary.
+      - prints a follow-up note when execution errors are present so users know to inspect `results.jsonl`.
+  - Added tests:
+    - `tests/test_research_eval_evaluator.py`
+      - covers output directory collision suffixing and summary error/halt counting.
+  - Updated docs:
+    - `docs/research_eval.md`
+      - documented unique output suffix behavior and terminal summary/error guidance.
+
+- **Why**:
+  - Fast execution failures previously looked like a silent early exit because only artifact paths were printed.
+  - Same-second reruns could reuse one timestamp folder name, making reruns confusing.
+
+### Eval Matrix Path Policy Refinement
+**Summary**: Refined matrix path resolution rules so non-existent bare output paths do not get misinterpreted as matrix-relative.
+
+- **Changed**:
+  - Updated:
+    - `src/asky/evals/research_pipeline/matrix.py`
+      - `./` / `../` prefixes resolve relative to matrix file.
+      - bare relative paths resolve from current working directory.
+      - absolute paths unchanged.
+  - Added test:
+    - `tests/test_research_eval_matrix.py`
+      - verifies `output_root = "temp/..."` resolves from cwd.
+  - Updated docs:
+    - `docs/research_eval.md` path-resolution section.
+
+- **Why**:
+  - Avoids duplicated path segments for output/snapshot roots when those directories do not already exist.
+
+### Eval Matrix Dataset Path Resolution Fix
+**Summary**: Fixed dataset path resolution in eval matrix loading so repo-root relative dataset paths no longer get incorrectly prefixed by the matrix directory.
+
+- **Changed**:
+  - Updated:
+    - `src/asky/evals/research_pipeline/matrix.py`
+      - relative matrix paths now resolve by preferring existing cwd-relative paths, then falling back to matrix-relative paths.
+    - `evals/research_pipeline/matrices/default.toml`
+      - switched dataset reference to matrix-relative form (`../datasets/...`) for portability.
+  - Added regression test:
+    - `tests/test_research_eval_matrix.py`
+      - covers `dataset = "evals/research_pipeline/datasets/..."` with matrix file under `.../matrices`.
+  - Updated docs:
+    - `docs/research_eval.md`
+      - clarified supported matrix path resolution behavior.
+
+- **Why**:
+  - Prevents `FileNotFoundError` caused by combining matrix directory + repo-root relative dataset path.
+
+### Dual-Mode Research Eval Harness (Programmatic API, Manual Integration Runs)
+**Summary**: Added a standalone evaluation harness around `AskyClient.run_turn(...)` to run real-model research/non-research integration checks with pinned datasets and model-parameter sweeps.
+
+- **Changed**:
+  - Added eval harness package:
+    - `src/asky/evals/research_pipeline/run.py` (`prepare` / `run` / `report` commands)
+    - `src/asky/evals/research_pipeline/dataset.py` (dataset parsing + validation, `doc_id`/`doc_ids` normalization)
+    - `src/asky/evals/research_pipeline/matrix.py` (run-matrix parsing, source-provider resolution)
+    - `src/asky/evals/research_pipeline/source_providers.py` (`local_snapshot`, `live_web`, `mock_web` placeholder)
+    - `src/asky/evals/research_pipeline/runtime_isolation.py` (per-run DB/Chroma isolation + singleton reset)
+    - `src/asky/evals/research_pipeline/assertions.py` (`contains` / `regex` assertions)
+    - `src/asky/evals/research_pipeline/evaluator.py` (snapshot prep + run execution + result/report artifact writing)
+  - Added seed evaluation data/config:
+    - `evals/research_pipeline/datasets/rfc_http_nist_v1.yaml`
+    - `evals/research_pipeline/matrices/default.toml`
+  - Expanded API config surface for sweeps:
+    - `src/asky/api/types.py` added `AskyConfig.model_parameters_override`
+    - `src/asky/api/client.py` now deep-copies model config and merges overrides into effective LLM parameters.
+  - Added docs:
+    - `docs/research_eval.md`
+    - updated `docs/library_usage.md`
+    - updated `ARCHITECTURE.md`
+    - updated `src/asky/api/AGENTS.md`
+    - updated `tests/AGENTS.md`
+  - Added tests:
+    - `tests/test_research_eval_dataset.py`
+    - `tests/test_research_eval_assertions.py`
+    - `tests/test_research_eval_matrix.py`
+    - `tests/test_research_eval_source_providers.py`
+    - `tests/test_api_model_parameter_override.py`
+
+- **Why**:
+  - Enables repeatable manual evaluation of retrieval/orchestration quality across models and parameter sets.
+  - Keeps the harness programmatic and future-ready for mocked/stubbed web-source testing without redesign.
+
+- **Gotchas / Follow-ups**:
+  - `mock_web` source provider is intentionally a placeholder in v1; stubbed network mode is deferred.
+  - Live web runs can vary due to network/content drift; pinned local snapshots are recommended for stable baselines.
+
 ### Library Usage Documentation (API Config + Turn Request Options)
 **Summary**: Added dedicated docs for programmatic `asky.api` usage, with explicit configuration/request field mapping and runnable examples.
 

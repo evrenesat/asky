@@ -1,0 +1,27 @@
+# Default dual-mode run matrix for RFC/NIST dataset evaluation.
+dataset = "../datasets/rfc_http_nist_v1.yaml"
+snapshot_root = "temp/research_eval/snapshots"
+output_root = "temp/research_eval/runs"
+
+[[runs]]
+id = "research-glmflash-local"
+model_alias = "glmflash"
+research_mode = true
+source_provider = "local_snapshot"
+lean = true
+preload_local_sources = true
+preload_shortlist = false
+save_history = false
+
+[runs.parameters]
+temperature = 0.1
+
+# [[runs]]
+# id = "standard-gf-live"
+# model_alias = "gf"
+# research_mode = false
+# source_provider = "live_web"
+# lean = false
+# preload_local_sources = false
+# preload_shortlist = true
+# save_history = false

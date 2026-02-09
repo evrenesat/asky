@@ -65,12 +65,14 @@ uv run pytest tests/test_cli.py::test_function_name
 | File | Coverage |
 |------|----------|
 | `test_config.py` | Configuration loading |
+| `test_api_model_parameter_override.py` | API config parameter override merge behavior |
 | `test_email.py` | Email sending |
 | `test_html.py` | HTML stripping |
 | `test_expansion.py` | Query expansion |
 | `test_push_data.py` | Push data endpoints |
 | `test_summarization.py` | Content summarization |
 | `test_integration.py` | End-to-end flows |
+| `test_research_eval_*.py` | Evaluation harness dataset/assertion/matrix/source-provider contracts |
 | `test_banner_*.py` | Banner rendering |
 | `test_logger.py` | Logging setup |
 

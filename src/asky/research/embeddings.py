@@ -5,7 +5,7 @@ import io
 import logging
 import os
 import struct
-from typing import Any, List, Optional
+from typing import Any, Dict, List, Optional
 
 from asky.config import (
     RESEARCH_EMBEDDING_BATCH_SIZE,
@@ -228,6 +228,7 @@ class EmbeddingClient:
                 if max_length > 0:
                     kwargs["truncation"] = True
                     kwargs["max_length"] = max_length
+                kwargs["verbose"] = False
                 token_ids = tokenizer.encode(text, **kwargs)
             except TypeError:
                 token_ids = tokenizer.encode(text)
@@ -236,12 +237,80 @@ class EmbeddingClient:
             total += len(token_ids)
         return total
 
+    def _encode_token_ids(
+        self,
+        tokenizer: Any,
+        text: str,
+        kwargs: Dict[str, Any],
+    ) -> List[int]:
+        """Encode text into token IDs with compatibility fallbacks."""
+        try:
+            return tokenizer.encode(text, **kwargs)
+        except TypeError:
+            compat_kwargs = {}
+            if "add_special_tokens" in kwargs:
+                compat_kwargs["add_special_tokens"] = kwargs["add_special_tokens"]
+            try:
+                return tokenizer.encode(text, **compat_kwargs)
+            except TypeError:
+                return tokenizer.encode(text)
+
+    def _decode_token_ids(self, tokenizer: Any, token_ids: List[int]) -> str:
+        """Decode token IDs back to text when tokenizer supports decode()."""
+        if not hasattr(tokenizer, "decode"):
+            return ""
+        try:
+            return str(tokenizer.decode(token_ids, skip_special_tokens=True)).strip()
+        except TypeError:
+            return str(tokenizer.decode(token_ids)).strip()
+        except Exception:
+            return ""
+
+    def _prepare_texts_for_embedding(self, texts: List[str]) -> List[str]:
+        """Truncate over-length embedding inputs to avoid tokenizer/model warnings."""
+        tokenizer = self.get_tokenizer()
+        max_length = self.max_seq_length
+        if tokenizer is None or max_length <= 0:
+            return texts
+
+        prepared: List[str] = []
+        truncated_count = 0
+        length_check_kwargs: Dict[str, Any] = {
+            "add_special_tokens": False,
+            "verbose": False,
+        }
+        truncation_kwargs: Dict[str, Any] = {
+            "add_special_tokens": False,
+            "truncation": True,
+            "max_length": max_length,
+            "verbose": False,
+        }
+        for text in texts:
+            token_ids = self._encode_token_ids(tokenizer, text, length_check_kwargs)
+            if len(token_ids) <= max_length:
+                prepared.append(text)
+                continue
+
+            truncated_ids = self._encode_token_ids(tokenizer, text, truncation_kwargs)
+            truncated_text = self._decode_token_ids(tokenizer, truncated_ids)
+            prepared.append(truncated_text or text)
+            truncated_count += 1
+
+        if truncated_count:
+            logger.debug(
+                "Embedding input truncated for %s text(s) to max_seq_length=%s",
+                truncated_count,
+                max_length,
+            )
+        return prepared
+
     def _embed_batch(self, texts: List[str]) -> List[List[float]]:
         """Encode one text batch using sentence-transformers."""
         model = self._ensure_model_loaded()
+        prepared_texts = self._prepare_texts_for_embedding(texts)
         encoded = model.encode(
-            texts,
-            batch_size=len(texts),
+            prepared_texts,
+            batch_size=len(prepared_texts),
             convert_to_numpy=True,
             show_progress_bar=False,
             normalize_embeddings=self.normalize_embeddings,
@@ -249,8 +318,8 @@ class EmbeddingClient:
         rows = self._to_embedding_rows(encoded)
 
         self.api_calls += 1
-        self.texts_embedded += len(texts)
-        self.prompt_tokens += self._count_text_tokens(texts)
+        self.texts_embedded += len(prepared_texts)
+        self.prompt_tokens += self._count_text_tokens(prepared_texts)
         return rows
 
     def embed(self, texts: List[str]) -> List[List[float]]:

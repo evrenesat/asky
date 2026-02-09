@@ -108,6 +108,8 @@ final_score = (dense_weight * semantic_score) + ((1 - dense_weight) * lexical_sc
   - `vector_store_chunk_link_ops.py` for content chunks and links
   - `vector_store_finding_ops.py` for research memory findings
   - `vector_store_common.py` for shared math/constants
+- Chroma chunk/link query filters use single-operator metadata conditions
+  (`$and`) for compatibility with stricter Chroma metadata parsing.
 
 ## EmbeddingClient (`embeddings.py`)
 
@@ -123,6 +125,7 @@ Local sentence-transformer embeddings.
 
 - Singleton pattern for efficient reuse
 - Lazy loading with cache-first Hugging Face download
+- Pre-encode truncation to model max sequence length for embedding inputs
 - Token counting for chunk alignment
 - Usage stats exposed for banner display
 
