@@ -19,7 +19,6 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_MAX_LOCAL_TARGETS = 20
 DEFAULT_MAX_DISCOVERED_LINKS_PER_TARGET = 40
-LOCAL_CONTEXT_MAX_ITEMS = 8
 LOCAL_CONTENT_INDEXING_MIN_CHARS = 1
 
 StatusCallback = Callable[[str], None]
@@ -47,6 +46,8 @@ def _notify_status(callback: Optional[StatusCallback], message: str) -> None:
 
 def _cache_key_for_target(target: str) -> str:
     """Normalize direct file paths so cache keys stay stable across sessions."""
+    if not target:
+        return target
     if target.startswith("local://") or target.startswith("file://"):
         return target
 
@@ -156,7 +157,10 @@ def preload_local_research_sources(
             candidate_documents.append((link_target, doc_payload, "discovered"))
 
         for document_target, document_payload, source_type in candidate_documents:
-            cache_key = _cache_key_for_target(document_target)
+            canonical_target = str(
+                document_payload.get("resolved_target") or document_target
+            )
+            cache_key = _cache_key_for_target(canonical_target)
             if cache_key in processed_urls:
                 continue
             processed_urls.add(cache_key)
@@ -196,27 +200,22 @@ def preload_local_research_sources(
 
 
 def format_local_ingestion_context(local_payload: Dict[str, Any]) -> Optional[str]:
-    """Format local-ingestion results into a compact context block."""
+    """Format local-ingestion results into a path-redacted context block."""
     ingested = local_payload.get("ingested") or []
     if not ingested:
         return None
 
-    lines = ["Local corpus preloaded before tool calls:"]
-    for index, item in enumerate(ingested[:LOCAL_CONTEXT_MAX_ITEMS], start=1):
-        lines.append(
-            f"{index}. {item['title']} "
-            f"(source={item['source_type']}, chunks={item['indexed_chunks']}, chars={item['content_chars']})"
-        )
-        lines.append(f"   URL: {item['target']}")
-
-    overflow = len(ingested) - LOCAL_CONTEXT_MAX_ITEMS
-    if overflow > 0:
-        lines.append(f"... plus {overflow} additional local documents")
+    total_chars = sum(int(item.get("content_chars", 0) or 0) for item in ingested)
+    total_chunks = sum(int(item.get("indexed_chunks", 0) or 0) for item in ingested)
+    lines = [
+        "Local knowledge base preloaded before tool calls:",
+        f"- Documents indexed: {len(ingested)}",
+        f"- Chunk embeddings added: {total_chunks}",
+        f"- Total indexed characters: {total_chars}",
+    ]
 
     warnings = local_payload.get("warnings") or []
     if warnings:
-        lines.append(
-            f"Warnings during local ingestion: {len(warnings)} (see logs/verbose output)."
-        )
+        lines.append(f"- Warnings: {len(warnings)} (see logs/verbose output).")
 
     return "\n".join(lines)

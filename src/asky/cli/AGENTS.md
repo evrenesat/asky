@@ -8,7 +8,7 @@ Command-line interface layer handling argument parsing, command routing, and use
 |--------|---------|
 | `main.py` | Entry point, argument parsing, command routing |
 | `chat.py` | Chat conversation orchestration |
-| `local_ingestion_flow.py` | Pre-LLM local source preload for research mode |
+| `local_ingestion_flow.py` | Pre-LLM local source preload for research mode (path-redacted local KB context) |
 | `shortlist_flow.py` | Pre-LLM shortlist execution + banner updates |
 | `completion.py` | Shell completion with argcomplete |
 | `display.py` | Banner rendering, live status updates |

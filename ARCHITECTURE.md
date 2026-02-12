@@ -213,11 +213,17 @@ Top chunks returned with relevance scores
 ```
 
 Local-file targets can still be preloaded/indexed through research adapters:
-- built-in adapter fallback accepts `local://...`, `file://...`, and direct local paths,
-- directory discovery returns local file links,
-- file reads (txt/html/md/json/csv and PDF/EPUB via PyMuPDF) are cached/indexed.
+- built-in adapter fallback is gated by `research.local_document_roots`,
+- user-supplied local targets are normalized as corpus-relative paths under those roots
+  (absolute-looking inputs are still treated as relative),
+- directory discovery returns local file links, and file reads
+  (txt/html/md/json/csv and PDF/EPUB via PyMuPDF) are cached/indexed.
 
 Guardrail: generic LLM-facing URL/content tools reject local filesystem targets; local-source access should happen via explicit local-source tooling workflows.
+
+Prompt guardrail: when local targets are detected for preload, model-visible user
+query text is path-redacted and research system guidance adds an explicit
+`query_research_memory` local-knowledge-base retrieval hint.
 
 ### Evaluation Harness Flow (Manual, Programmatic API)
 

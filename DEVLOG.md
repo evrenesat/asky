@@ -1,5 +1,81 @@
 For older logs, see [DEVLOG_ARCHIVE.md](DEVLOG_ARCHIVE.md)
 
+## 2026-02-11
+
+### README Research Mode Documentation Refresh (Web + Local Corpus)
+**Summary**: Expanded README guidance for research mode usage/configuration across web-only, local-corpus, and mixed workflows.
+
+- **Changed**:
+  - Updated:
+    - `/Users/evren/code/asky/README.md`
+      - added concrete `--research` usage examples for:
+        - web-based research,
+        - local-corpus research,
+        - mixed web + local runs.
+      - documented `research.local_document_roots` configuration with practical `research.toml` examples.
+      - clarified local-target behavior:
+        - corpus-root gating,
+        - root-relative resolution semantics,
+        - supported local target forms,
+        - guardrail that generic URL/content tools reject local filesystem targets.
+
+- **Why**:
+  - Users needed a single, practical entry point for running research mode in both web and local-document scenarios.
+  - New local corpus guardrails required explicit documentation to avoid confusion about path handling and required config.
+
+- **Gotchas / Follow-up**:
+  - README examples intentionally show absolute-like targets (e.g. `/policy/...`) to match root-relative resolution behavior under configured corpus roots.
+
+### Local Corpus Root Guardrails + Model Path Redaction
+**Summary**: Restricted builtin local-source ingestion to configured corpus roots, made local-target resolution root-relative (even for absolute-looking inputs), and removed local path leakage from model-visible prompts.
+
+- **Changed**:
+  - Updated configuration:
+    - `/Users/evren/code/asky/src/asky/data/config/research.toml`
+      - added `research.local_document_roots` (list of allowed corpus roots for builtin local loading).
+    - `/Users/evren/code/asky/src/asky/config/__init__.py`
+      - exported `RESEARCH_LOCAL_DOCUMENT_ROOTS`.
+  - Updated local adapter behavior:
+    - `/Users/evren/code/asky/src/asky/research/adapters.py`
+      - local fallback now requires configured corpus roots.
+      - local targets now resolve as corpus-relative paths under configured roots.
+      - added query redaction helper for stripping local target tokens from model-visible user text.
+      - absolute-looking local targets are normalized and still resolved under roots.
+  - Updated pre-LLM local ingestion context:
+    - `/Users/evren/code/asky/src/asky/cli/local_ingestion_flow.py`
+      - local preload context is now path-redacted aggregate metadata (document/chunk/char totals), no file names/paths.
+      - cache key selection now prefers adapter-provided canonical target when available.
+  - Updated model prompt assembly:
+    - `/Users/evren/code/asky/src/asky/api/client.py`
+      - `run_turn(...)` now redacts local target tokens from model-visible query text when local targets are detected.
+      - adds conditional research system guidance to use `query_research_memory` for local knowledge-base retrieval.
+    - `/Users/evren/code/asky/src/asky/cli/chat.py`
+      - kept CLI `build_messages(...)` parity with optional local knowledge-base guidance block.
+  - Added/updated tests:
+    - `/Users/evren/code/asky/tests/test_research_adapters.py`
+      - coverage for root-required local loading, root-relative absolute target resolution, and query redaction helper.
+    - `/Users/evren/code/asky/tests/test_local_ingestion_flow.py`
+      - updated expectations for path-redacted local preload context.
+    - `/Users/evren/code/asky/tests/test_api_library.py`
+      - coverage for local-KB system guidance and run-turn query redaction behavior.
+    - `/Users/evren/code/asky/tests/test_cli.py`
+      - coverage for CLI message builder local-KB guidance parity.
+  - Updated docs:
+    - `/Users/evren/code/asky/ARCHITECTURE.md`
+    - `/Users/evren/code/asky/src/asky/config/AGENTS.md`
+    - `/Users/evren/code/asky/src/asky/research/AGENTS.md`
+    - `/Users/evren/code/asky/src/asky/api/AGENTS.md`
+    - `/Users/evren/code/asky/src/asky/cli/AGENTS.md`
+
+- **Why**:
+  - Prevents unrestricted local-file traversal from prompt-provided targets.
+  - Keeps model reasoning focused on sanitized user intent and knowledge-base retrieval instead of filesystem path details.
+  - Supports configurable corpus-root policy without adding new dependencies.
+
+- **Gotchas / Follow-up**:
+  - Builtin local-source preload is effectively disabled until `research.local_document_roots` is configured by the user.
+  - Path token detection still follows current local-target heuristics; bare filenames without path markers may not be detected for preload/redaction.
+
 ## 2026-02-09
 
 ### Local Filesystem Target Guardrails for Generic Tools

@@ -81,6 +81,6 @@ def test_format_local_ingestion_context_outputs_compact_summary():
     )
 
     assert context is not None
-    assert "Local corpus preloaded before tool calls" in context
-    assert "doc.txt" in context
-    assert "local:///tmp/doc.txt" in context
+    assert "Local knowledge base preloaded before tool calls" in context
+    assert "Documents indexed: 1" in context
+    assert "Chunk embeddings added: 2" in context

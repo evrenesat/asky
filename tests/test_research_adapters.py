@@ -1,7 +1,7 @@
 """Tests for research source adapter integration."""
 
 import json
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 
 def test_get_source_adapter_matches_configured_prefix():
@@ -158,7 +158,10 @@ def test_builtin_local_adapter_reads_text_file(tmp_path):
     source_file = tmp_path / "notes.txt"
     source_file.write_text("local research text", encoding="utf-8")
 
-    result = fetch_source_via_adapter(str(source_file), operation="read")
+    with patch(
+        "asky.research.adapters.RESEARCH_LOCAL_DOCUMENT_ROOTS", [str(tmp_path)]
+    ):
+        result = fetch_source_via_adapter("/notes.txt", operation="read")
 
     assert result is not None
     assert result["error"] is None
@@ -176,11 +179,14 @@ def test_builtin_local_adapter_discovers_directory_files(tmp_path):
     (source_dir / "b.md").write_text("B", encoding="utf-8")
     (source_dir / "ignored.bin").write_bytes(b"\x00\x01")
 
-    result = fetch_source_via_adapter(
-        f"local://{source_dir.as_posix()}",
-        operation="discover",
-        max_links=10,
-    )
+    with patch(
+        "asky.research.adapters.RESEARCH_LOCAL_DOCUMENT_ROOTS", [str(tmp_path)]
+    ):
+        result = fetch_source_via_adapter(
+            "local:///corpus",
+            operation="discover",
+            max_links=10,
+        )
 
     assert result is not None
     assert result["error"] is None
@@ -197,11 +203,48 @@ def test_builtin_local_adapter_pdf_requires_pymupdf(tmp_path):
     source_file = tmp_path / "paper.pdf"
     source_file.write_bytes(b"%PDF-1.4\n")
 
-    with patch("asky.research.adapters._load_pymupdf_module", return_value=None):
-        result = fetch_source_via_adapter(str(source_file), operation="read")
+    with (
+        patch("asky.research.adapters.RESEARCH_LOCAL_DOCUMENT_ROOTS", [str(tmp_path)]),
+        patch("asky.research.adapters._load_pymupdf_module", return_value=None),
+    ):
+        result = fetch_source_via_adapter("/paper.pdf", operation="read")
 
     assert result is not None
     assert result["error"] == "PyMuPDF is required to read PDF/EPUB local sources."
+
+
+def test_builtin_local_adapter_requires_document_roots(tmp_path):
+    """Builtin local adapter should reject local reads when roots are not configured."""
+    from asky.research.adapters import fetch_source_via_adapter
+
+    source_file = tmp_path / "notes.txt"
+    source_file.write_text("local research text", encoding="utf-8")
+
+    with patch("asky.research.adapters.RESEARCH_LOCAL_DOCUMENT_ROOTS", []):
+        result = fetch_source_via_adapter("/notes.txt", operation="read")
+
+    assert result is not None
+    assert result["error"] is not None
+    assert "local_document_roots" in result["error"]
+
+
+def test_builtin_local_adapter_treats_absolute_targets_as_root_relative(tmp_path):
+    """Absolute-looking targets should resolve under configured corpus roots."""
+    from asky.research.adapters import fetch_source_via_adapter
+
+    nested_dir = tmp_path / "corpus" / "nested"
+    nested_dir.mkdir(parents=True)
+    source_file = nested_dir / "doc.txt"
+    source_file.write_text("nested doc", encoding="utf-8")
+
+    with patch(
+        "asky.research.adapters.RESEARCH_LOCAL_DOCUMENT_ROOTS", [str(tmp_path / "corpus")]
+    ):
+        result = fetch_source_via_adapter("/nested/doc.txt", operation="read")
+
+    assert result is not None
+    assert result["error"] is None
+    assert "nested doc" in result["content"]
 
 
 def test_extract_local_source_targets_parses_path_tokens():
@@ -214,3 +257,16 @@ def test_extract_local_source_targets_parses_path_tokens():
     assert "local:///tmp/a.pdf" in targets
     assert "./notes.md" in targets
     assert "/tmp/report.txt" in targets
+
+
+def test_redact_local_source_targets_removes_path_tokens():
+    """Local path tokens should be stripped from model-visible query text."""
+    from asky.research.adapters import redact_local_source_targets
+
+    redacted = redact_local_source_targets(
+        "Summarize /tmp/report.txt and compare with ./notes.md for me."
+    )
+
+    assert "/tmp/report.txt" not in redacted
+    assert "./notes.md" not in redacted
+    assert "Summarize" in redacted

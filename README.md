@@ -18,7 +18,7 @@ For programmatic usage (`asky.api`), including full configuration and request op
 ## Key Features
 
 - **Multi-Model Support**: Easily define and switch between various LLMs and providers that supports OpenAI compatible API.
-- **Deep Research Mode**: A specialized mode where the agent iteratively searches, extracts links, and reads content using RAG (Retrieval Augmented Generation) to answer complex queries.
+- **Deep Research Mode**: A specialized mode for iterative, RAG-backed investigation across web sources and preloaded local corpora.
 - **Tool-Calling Integration**: Models can autonomously perform web searches (via SearXNG or Serper API), fetch URL content, and get current date/time to provide accurate, up-to-date answers.
 - **Custom Tools**: Expose any CLI command as a tool for the LLM. Define your own commands and parameters in `config.toml`.
 - **File Prompts**: Load complex prompts directly from files using `file://` URIs (e.g., `asky file://my_prompt.txt`).
@@ -79,6 +79,9 @@ asky what is the correct temperature for green tea
 
 # Research Mode (Iterative deep search)
 asky -r "Compare the latest iPhone vs Samsung flagship specs and reviews"
+
+# Research Mode with local corpus roots (see research.toml)
+asky -r "Use /policies/security.md and summarize password requirements"
 
 # Use a specific model
 asky -m gf "Explain quantum entanglement"
@@ -179,10 +182,43 @@ options:
 ## Features in Depth
 
 ### Deep Research Mode (`-r`)
-For complex topics, use the `--research` flag. This enables a specialized system prompt and toolset:
+For complex topics, use `--research`. This enables a specialized prompt + toolset for multi-step investigation:
 - **extract_links**: Scans pages to find relevant citations without loading full content.
 - **get_link_summaries**: Rapidly summarizes multiple pages to decide which ones to read.
-- **get_relevant_content**: Uses vector embeddings (via RAG) to pull only the specific paragrahps you need from a long document.
+- **get_relevant_content**: Uses vector embeddings (via RAG) to pull only the specific paragraphs you need from a long document.
+
+#### Web-based research
+Use natural prompts; the agent will search and read web sources as needed:
+```bash
+asky -r "Compare OAuth2 device flow vs PKCE for a CLI app"
+```
+
+#### Local-corpus research
+Configure allowed local corpus roots in `research.toml`, then reference document paths in your query:
+```toml
+[research]
+local_document_roots = [
+  "/Users/you/docs/security",
+  "/Users/you/docs/engineering"
+]
+```
+
+```bash
+asky -r "Use /handbook/authentication.md and list MFA requirements"
+asky -r "Compare /rfc/rfc9110.txt with /policies/http-guidelines.md"
+```
+
+Important local behavior:
+- Builtin local loading is enabled only when `research.local_document_roots` is set.
+- Local targets are resolved **relative to configured roots**, even if the target starts with `/`.
+- Supported local target forms include `local://...`, `file://...`, `/...`, `./...`, and `~/...`.
+- Local paths are preprocessed/redacted from model-visible user text; local retrieval should flow through the research knowledge-base tools.
+
+#### Mixed web + local research
+You can combine both in one run:
+```bash
+asky -r "Use /policy/passwords.md and verify whether NIST 800-63B guidance has changed"
+```
 
 ### File Prompts
 You can store complex prompts in a file and feed them to `asky`:
@@ -327,6 +363,35 @@ On first run, a default configuration directory is created at `~/.config/asky/` 
 - `research.toml`: Deep Research settings
 
 You can edit these files individually to configure models, API keys, and other settings. The legacy `config.toml` is still supported for backward compatibility and overrides split files if present.
+
+### Research mode configuration (`research.toml`)
+
+Use `research.toml` to tune retrieval behavior and local corpus boundaries:
+
+```toml
+[research]
+enabled = true
+local_document_roots = [
+  "/Users/you/docs/security",
+  "/Users/you/docs/engineering"
+]
+cache_ttl_hours = 24
+max_links_per_url = 50
+max_relevant_links = 20
+max_chunks_per_retrieval = 5
+
+[research.source_shortlist]
+enabled = true
+enable_research_mode = true
+max_candidates = 40
+max_fetch_urls = 20
+top_k = 8
+```
+
+Notes:
+- Keep `local_document_roots = []` to disable builtin local filesystem ingestion.
+- For local ingestion, query-supplied targets are interpreted as corpus-relative paths under configured roots.
+- Generic URL/content tools reject local filesystem targets by design; local corpus content is preloaded/indexed before model/tool turns in research mode.
 
 ### API Keys
 You can set API keys in two ways:

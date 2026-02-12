@@ -20,7 +20,7 @@ Use `AskyClient.run_turn(request)` for CLI-equivalent orchestration:
 1. Resolve history context (`context.py`)
 2. Resolve session state (`session.py`)
 3. Run pre-LLM preload pipeline (`preload.py`)
-4. Build messages and execute `ConversationEngine`
+4. Build messages (with local-target query redaction + optional local-KB system hint) and execute `ConversationEngine`
 5. Generate summaries and persist session/history turns
 
 ## Runtime Boundary

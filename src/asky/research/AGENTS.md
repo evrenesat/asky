@@ -191,6 +191,9 @@ tool = "read_local"  # or discover_tool + read_tool
 
 When no configured adapter matches, `adapters.py` can handle local sources directly:
 - Accepted targets: `local://...`, `file://...`, absolute/relative local paths.
+- Builtin local fallback is enabled only when `research.local_document_roots` is configured.
+- Targets are normalized as corpus-relative paths under configured roots (absolute-like
+  targets are still treated as relative inside those roots).
 - `extract_local_source_targets(...)` provides deterministic token extraction from prompts for pre-LLM local preload.
 - Directory targets (discover): produce file links as `local://...` (non-recursive in v1).
 - File targets (read/discover): normalize to plain text for cache/indexing.
@@ -203,6 +206,8 @@ When no configured adapter matches, `adapters.py` can handle local sources direc
 - Generic research LLM tools (`extract_links`, `get_link_summaries`, `get_relevant_content`, `get_full_content`) reject local filesystem targets.
 - This prevents implicit local-file access via broad URL-oriented tools.
 - Local-file access should be handled through explicit local-source tooling/adapters in dedicated workflows.
+- Query preprocessing can redact local path tokens from model-visible user text when local
+  preload is active, avoiding direct file-path exposure to the model.
 
 ## Dependencies
 

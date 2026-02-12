@@ -16,6 +16,7 @@ from asky.core import (
     generate_summaries,
 )
 from asky.core.session_manager import SessionManager
+from asky.lazy_imports import call_attr
 from asky.storage import save_interaction
 
 from .context import load_context_from_history
@@ -70,6 +71,7 @@ class AskyClient:
         context_str: str = "",
         session_manager: Optional[SessionManager] = None,
         source_shortlist_context: Optional[str] = None,
+        local_kb_hint_enabled: bool = False,
     ) -> List[Dict[str, str]]:
         """Build a message list for a single asky turn."""
         system_prompt = (
@@ -77,6 +79,14 @@ class AskyClient:
             if self.config.research_mode
             else construct_system_prompt()
         )
+        if local_kb_hint_enabled and self.config.research_mode:
+            system_prompt = (
+                f"{system_prompt}\n\n"
+                "Local Knowledge Base Guidance:\n"
+                "- Local corpus sources were preloaded from configured document roots.\n"
+                "- Do not ask the user for local filesystem paths.\n"
+                "- Start by calling `query_research_memory` with the user's question to retrieve local knowledge base findings."
+            )
         messages: List[Dict[str, str]] = [{"role": "system", "content": system_prompt}]
 
         if session_manager:
@@ -309,11 +319,26 @@ class AskyClient:
             ),
         )
 
+        local_targets = preload.local_payload.get("targets") or []
+        effective_query_text = request.query_text
+        local_kb_hint_enabled = bool(local_targets)
+        if local_kb_hint_enabled:
+            effective_query_text = call_attr(
+                "asky.research.adapters",
+                "redact_local_source_targets",
+                request.query_text,
+            )
+            if not effective_query_text.strip():
+                effective_query_text = (
+                    "Answer the user's request using the preloaded local knowledge base."
+                )
+
         messages = self.build_messages(
-            query_text=request.query_text,
+            query_text=effective_query_text,
             context_str=context.context_str,
             session_manager=session_manager,
             source_shortlist_context=preload.combined_context,
+            local_kb_hint_enabled=local_kb_hint_enabled,
         )
         if messages_prepared_callback:
             messages_prepared_callback(messages)

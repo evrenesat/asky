@@ -72,6 +72,7 @@ Persist model changes using `tomlkit` to preserve formatting.
 | `RESEARCH_CACHE_TTL_HOURS` | Cache expiry |
 | `RESEARCH_CHUNK_SIZE` | Token chunk size |
 | `RESEARCH_EMBEDDING_MODEL` | Embedding model name |
+| `RESEARCH_LOCAL_DOCUMENT_ROOTS` | Allowed corpus roots for builtin local-source loading |
 | `SOURCE_SHORTLIST_*` | Shortlist pipeline settings |
 
 Current bundled shortlist defaults in `research.toml` set a wider pre-LLM budget

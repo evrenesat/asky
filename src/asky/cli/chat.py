@@ -110,6 +110,7 @@ def build_messages(
     session_manager: Optional[SessionManager] = None,
     research_mode: bool = False,
     source_shortlist_context: Optional[str] = None,
+    local_kb_hint_enabled: bool = False,
 ) -> List[Dict[str, str]]:
     """Build the initial message list for the conversation."""
     # Use research prompt if in research mode
@@ -117,6 +118,14 @@ def build_messages(
         system_prompt = construct_research_system_prompt()
     else:
         system_prompt = construct_system_prompt()
+    if local_kb_hint_enabled and research_mode:
+        system_prompt = (
+            f"{system_prompt}\n\n"
+            "Local Knowledge Base Guidance:\n"
+            "- Local corpus sources were preloaded from configured document roots.\n"
+            "- Do not ask the user for local filesystem paths.\n"
+            "- Start by calling `query_research_memory` with the user's question to retrieve local knowledge base findings."
+        )
 
     messages = [
         {

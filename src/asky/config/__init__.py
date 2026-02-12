@@ -118,6 +118,11 @@ RESEARCH_MAX_CHUNKS_PER_RETRIEVAL = _research.get("max_chunks_per_retrieval", 5)
 RESEARCH_SUMMARIZATION_WORKERS = _research.get("summarization_workers", 2)
 RESEARCH_MEMORY_MAX_RESULTS = _research.get("memory_max_results", 10)
 RESEARCH_SOURCE_ADAPTERS = _research.get("source_adapters", {})
+RESEARCH_LOCAL_DOCUMENT_ROOTS = [
+    str(Path(raw_path).expanduser())
+    for raw_path in _research.get("local_document_roots", [])
+    if str(raw_path).strip()
+]
 _research_chromadb = _research.get("chromadb", {})
 RESEARCH_CHROMA_PERSIST_DIRECTORY = Path(
     _research_chromadb.get("persist_directory", "~/.config/asky/chromadb")

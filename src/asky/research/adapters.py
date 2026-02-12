@@ -2,13 +2,13 @@
 
 import json
 import logging
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 import shlex
 from urllib.parse import unquote, urlsplit
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
-from asky.config import RESEARCH_SOURCE_ADAPTERS
+from asky.config import RESEARCH_LOCAL_DOCUMENT_ROOTS, RESEARCH_SOURCE_ADAPTERS
 from asky.html import strip_tags
 from asky.tools import _execute_custom_tool
 
@@ -38,6 +38,12 @@ LOCAL_SUPPORTED_EXTENSIONS = (
 )
 WINDOWS_DRIVE_INDICATOR_INDEX = 1
 LOCAL_TARGET_TRAILING_PUNCTUATION = ".,;:!?)]}>\"'"
+LOCAL_ROOTS_DISABLED_ERROR = (
+    "Local source loading is disabled. Set research.local_document_roots to enable it."
+)
+LOCAL_SOURCE_NOT_FOUND_ERROR = (
+    "Local source not found in configured document roots: {relative_target}"
+)
 
 LINK_HREF_FIELDS = ("href", "url", "target", "id", "path")
 LINK_TEXT_FIELDS = ("text", "title", "name", "label")
@@ -131,11 +137,7 @@ def extract_local_source_targets(text: str) -> List[str]:
     if not text:
         return []
 
-    try:
-        raw_tokens = shlex.split(text)
-    except ValueError:
-        raw_tokens = text.split()
-
+    raw_tokens = _split_query_tokens(text)
     targets: List[str] = []
     seen = set()
     for token in raw_tokens:
@@ -149,6 +151,28 @@ def extract_local_source_targets(text: str) -> List[str]:
         seen.add(candidate)
         targets.append(candidate)
     return targets
+
+
+def redact_local_source_targets(text: str) -> str:
+    """Remove local-source target tokens from free-form user text."""
+    if not text:
+        return ""
+
+    redacted_tokens: List[str] = []
+    for token in _split_query_tokens(text):
+        candidate = token.strip().rstrip(LOCAL_TARGET_TRAILING_PUNCTUATION)
+        if candidate and _is_builtin_local_target(candidate):
+            continue
+        redacted_tokens.append(token)
+    return " ".join(redacted_tokens).strip()
+
+
+def _split_query_tokens(text: str) -> List[str]:
+    """Split user text into shell-like tokens for local-target parsing."""
+    try:
+        return shlex.split(text)
+    except ValueError:
+        return text.split()
 
 
 def _coerce_text(value: Any, fallback: str = "") -> str:
@@ -250,8 +274,8 @@ def _normalize_adapter_payload(
     }
 
 
-def _resolve_local_target_path(target: str) -> Optional[Path]:
-    """Resolve local/file-scheme targets to local filesystem paths."""
+def _extract_local_target_path_candidate(target: str) -> Optional[str]:
+    """Extract the path-like portion from local/file targets."""
     if not target:
         return None
 
@@ -268,7 +292,87 @@ def _resolve_local_target_path(target: str) -> Optional[Path]:
     if not path_candidate:
         return None
 
-    return Path(path_candidate).expanduser()
+    return path_candidate
+
+
+def _normalize_relative_local_target_path(target: str) -> Optional[Path]:
+    """Normalize a local target into a corpus-relative path."""
+    path_candidate = _extract_local_target_path_candidate(target)
+    if not path_candidate:
+        return None
+
+    normalized = path_candidate.strip().replace("\\", "/")
+    if len(normalized) > WINDOWS_DRIVE_INDICATOR_INDEX and normalized[
+        WINDOWS_DRIVE_INDICATOR_INDEX
+    ] == ":":
+        normalized = normalized[WINDOWS_DRIVE_INDICATOR_INDEX + 1 :]
+
+    normalized = normalized.lstrip("/")
+    if normalized.startswith("~/"):
+        normalized = normalized[2:]
+    elif normalized == "~":
+        normalized = ""
+
+    safe_parts: List[str] = []
+    for part in PurePosixPath(normalized).parts:
+        if part in {"", ".", "/"}:
+            continue
+        if part == "..":
+            continue
+        safe_parts.append(part)
+
+    if not safe_parts:
+        return Path(".")
+    return Path(*safe_parts)
+
+
+def _configured_local_document_roots() -> List[Path]:
+    """Return normalized configured corpus roots for local-source loading."""
+    roots: List[Path] = []
+    for raw_root in RESEARCH_LOCAL_DOCUMENT_ROOTS:
+        try:
+            roots.append(Path(raw_root).expanduser().resolve())
+        except Exception:
+            continue
+    return roots
+
+
+def _path_is_within_root(path: Path, root: Path) -> bool:
+    """Check if resolved path remains inside its configured corpus root."""
+    try:
+        path.relative_to(root)
+    except ValueError:
+        return False
+    return True
+
+
+def _resolve_local_target_paths(
+    target: str,
+) -> Tuple[List[Path], Optional[Path], Optional[str]]:
+    """Resolve a local target by searching configured corpus roots."""
+    roots = _configured_local_document_roots()
+    if not roots:
+        return [], None, LOCAL_ROOTS_DISABLED_ERROR
+
+    relative_target = _normalize_relative_local_target_path(target)
+    if relative_target is None:
+        return [], None, f"Invalid local source target: {target}"
+
+    resolved_matches: List[Path] = []
+    for root in roots:
+        candidate = (root / relative_target).resolve()
+        if not _path_is_within_root(candidate, root):
+            continue
+        if candidate.exists():
+            resolved_matches.append(candidate)
+
+    if resolved_matches:
+        return resolved_matches, relative_target, None
+
+    relative_label = relative_target.as_posix()
+    return [], relative_target, LOCAL_SOURCE_NOT_FOUND_ERROR.format(
+        relative_target=relative_label
+    )
 
 
 def _local_target_from_path(path: Path) -> str:
@@ -367,56 +471,76 @@ def _fetch_builtin_local_source(
     if not _is_builtin_local_target(target):
         return None
 
-    resolved_path = _resolve_local_target_path(target)
-    if resolved_path is None:
+    resolved_paths, relative_target, resolve_error = _resolve_local_target_paths(target)
+    if relative_target is None:
         return {
             "content": "",
             "title": target,
             "links": [],
-            "error": f"Invalid local source target: {target}",
+            "error": resolve_error or f"Invalid local source target: {target}",
         }
 
-    if not resolved_path.exists():
+    if not resolved_paths:
         return {
             "content": "",
-            "title": str(resolved_path),
+            "title": relative_target.as_posix(),
             "links": [],
-            "error": f"Local source does not exist: {resolved_path}",
+            "error": resolve_error,
         }
 
-    if resolved_path.is_dir():
-        links = _discover_local_directory_links(resolved_path, max_links=max_links)
-        if operation == "read":
+    selected_file = next((path for path in resolved_paths if path.is_file()), None)
+    if selected_file is not None:
+        file_content, content_error = _read_local_file_content(selected_file)
+        if content_error:
             return {
                 "content": "",
-                "title": resolved_path.name or str(resolved_path),
-                "links": links,
-                "error": "Directory targets support discovery only; select file links to read content.",
+                "title": selected_file.name,
+                "links": [],
+                "error": content_error,
             }
-        summary = (
-            f"Local directory {resolved_path} with {len(links)} discoverable files."
-        )
+
         return {
-            "content": summary,
-            "title": resolved_path.name or str(resolved_path),
-            "links": links,
+            "content": file_content,
+            "title": selected_file.name,
+            "links": [],
             "error": None,
+            "resolved_target": _local_target_from_path(selected_file),
         }
 
-    file_content, content_error = _read_local_file_content(resolved_path)
-    if content_error:
+    relative_label = relative_target.as_posix()
+    links: List[Dict[str, str]] = []
+    seen_hrefs = set()
+    for resolved_path in resolved_paths:
+        discovered_links = _discover_local_directory_links(
+            resolved_path, max_links=max_links
+        )
+        for link in discovered_links:
+            href = str(link.get("href", "")).strip()
+            if not href or href in seen_hrefs:
+                continue
+            seen_hrefs.add(href)
+            links.append(link)
+            if len(links) >= max_links:
+                break
+        if len(links) >= max_links:
+            break
+
+    if operation == "read":
         return {
             "content": "",
-            "title": resolved_path.name,
-            "links": [],
-            "error": content_error,
+            "title": relative_label,
+            "links": links,
+            "error": "Directory targets support discovery only; select file links to read content.",
         }
-
+    summary = (
+        f"Local directory '{relative_label}' with {len(links)} discoverable files."
+    )
     return {
-        "content": file_content,
-        "title": resolved_path.name,
-        "links": [],
+        "content": summary,
+        "title": relative_label,
+        "links": links,
         "error": None,
+        "resolved_target": _local_target_from_path(resolved_paths[0]),
     }
 
 

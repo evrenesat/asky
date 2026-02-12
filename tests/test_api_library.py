@@ -25,6 +25,24 @@ def test_asky_client_build_messages_with_context_and_preloaded_sources():
     assert "Preloaded sources gathered before tool calls" in messages[2]["content"]
 
 
+def test_asky_client_build_messages_adds_local_kb_guidance():
+    client = AskyClient(
+        AskyConfig(
+            model_alias="gf",
+            research_mode=True,
+        )
+    )
+
+    messages = client.build_messages(
+        query_text="Answer this",
+        local_kb_hint_enabled=True,
+    )
+
+    assert messages[0]["role"] == "system"
+    assert "Local Knowledge Base Guidance" in messages[0]["content"]
+    assert "query_research_memory" in messages[0]["content"]
+
+
 @patch("asky.api.client.create_default_tool_registry")
 @patch("asky.api.client.ConversationEngine")
 def test_asky_client_run_messages_uses_default_registry(
@@ -183,3 +201,43 @@ def test_asky_client_run_turn_halts_on_ambiguous_session(
     assert result.final_answer == ""
     mock_resolve_session.assert_called_once()
     mock_run_messages.assert_not_called()
+
+
+@patch("asky.api.client.save_interaction")
+@patch("asky.api.client.generate_summaries", return_value=("qsum", "asum"))
+@patch.object(AskyClient, "run_messages", return_value="Final")
+@patch(
+    "asky.api.client.run_preload_pipeline",
+    return_value=PreloadResolution(
+        combined_context="Preloaded context",
+        local_payload={"targets": ["/tmp/corpus/doc.md"], "ingested": []},
+        shortlist_stats={"enabled": True},
+    ),
+)
+@patch(
+    "asky.api.client.resolve_session_for_turn",
+    return_value=(None, SessionResolution()),
+)
+def test_asky_client_run_turn_redacts_local_targets_for_model(
+    mock_resolve_session,
+    mock_preload,
+    mock_run_messages,
+    mock_generate_summaries,
+    mock_save_interaction,
+):
+    client = AskyClient(AskyConfig(model_alias="gf", research_mode=True))
+
+    result = client.run_turn(
+        AskyTurnRequest(
+            query_text="Use /tmp/corpus/doc.md and summarize the policy changes",
+        )
+    )
+
+    assert result.halted is False
+    assert "/tmp/corpus/doc.md" not in result.messages[-1]["content"]
+    assert "summarize the policy changes" in result.messages[-1]["content"]
+    assert "Local Knowledge Base Guidance" in result.messages[0]["content"]
+    mock_resolve_session.assert_called_once()
+    mock_preload.assert_called_once()
+    mock_run_messages.assert_called_once()
+    mock_save_interaction.assert_called_once()

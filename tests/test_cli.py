@@ -311,6 +311,19 @@ def test_build_messages_with_source_shortlist_context(mock_args):
     assert "https://example.com" in messages[1]["content"]
 
 
+def test_build_messages_with_local_kb_guidance(mock_args):
+    messages = build_messages(
+        mock_args,
+        "",
+        "test query",
+        research_mode=True,
+        local_kb_hint_enabled=True,
+    )
+
+    assert "Local Knowledge Base Guidance" in messages[0]["content"]
+    assert "query_research_memory" in messages[0]["content"]
+
+
 def test_build_shortlist_banner_stats():
     from asky.cli.chat import _build_shortlist_banner_stats
 

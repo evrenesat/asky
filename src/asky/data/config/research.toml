@@ -4,6 +4,11 @@
 # Enable research mode tools
 enabled = true
 
+# Restrict local-source ingestion to these root directories.
+# Local targets in prompts are treated as corpus-relative paths under these roots.
+# Leave empty to disable builtin local filesystem ingestion.
+local_document_roots = []
+
 # Cache TTL in hours (cached pages expire after this time)
 cache_ttl_hours = 24
 
