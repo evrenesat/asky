@@ -54,6 +54,22 @@ def test_parse_args_defaults():
             assert args.model == "gf"
 
 
+def test_parse_args_help_uses_explicit_typed_metavars(capsys):
+    with patch("sys.argv", ["asky", "--help"]):
+        with pytest.raises(SystemExit) as excinfo:
+            parse_args()
+        assert excinfo.value.code == 0
+
+    help_output = capsys.readouterr().out
+    assert "HISTORY_IDS" in help_output
+    assert "SESSION_SELECTOR" in help_output
+    assert "LINE_COUNT" in help_output
+
+    assert "TERMINAL_LINES" not in help_output
+    assert "PRINT_SESSION" not in help_output
+    assert "SESSION_HISTORY" not in help_output
+
+
 def test_parse_args_options():
     with patch(
         "sys.argv",

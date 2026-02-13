@@ -23,6 +23,9 @@ Command-line interface layer handling argument parsing, command routing, and use
 ## Entry Point (`main.py`)
 
 - Parses arguments with `argparse`
+  - Help placeholders (`metavar`) are intentionally explicit typed descriptors
+    (e.g., `HISTORY_IDS`, `SESSION_SELECTOR`, `LINE_COUNT`) to keep `--help`
+    output user-oriented instead of mirroring internal destination names.
 - Routes to appropriate handler based on command flags
 - Implements lazy startup for fast CLI response:
   - Completion, imports, DB init are deferred until needed

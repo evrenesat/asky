@@ -1,9 +1,7 @@
-
 <img src="https://github.com/evrenesat/asky/raw/main/assets/asky_icon.png" alt="asky icon" width="200" align="right">
 
 <!-- <font size="6">**asky**</font> -->
 <img src="https://github.com/evrenesat/asky/raw/main/assets/title.png" alt="asky title">
-
 
 asky is an AI-powered web search CLI with LLM tool-calling capabilities.
 
@@ -39,7 +37,6 @@ For programmatic usage (`asky.api`), including full configuration and request op
 5. **Final Answer**: The LLM synthesizes all gathered information into a concise, formatted response.
 6. **Persistence**: The interaction is saved to your local history for future reference.
 
-
 ## Installation
 
 ```bash
@@ -65,7 +62,6 @@ uv tool install "asky-cli[iterm]"
 # or from source
 uv tool install -e ".[iterm]"
 ```
-
 
 ## Usage
 
@@ -105,8 +101,6 @@ asky --mail user@example.com --subject "Meeting Summary" "Summarize the last 3 e
 > [!NOTE]
 > **Zsh Users**: When using `~` for relative IDs, you must either quote the value (e.g., `asky -c "~1"`) or place it immediately after the flag without a space (e.g., `asky -c~1`). If you use a space without quotes (e.g., `asky -c ~1`), zsh will attempt to expand it as a directory stack entry.
 
-
-
 ```console
 ➜  ~ asky -p
 
@@ -135,46 +129,57 @@ Tool-calling CLI with model selection.
 positional arguments:
   query                 The query string
 
-options:
-  -h, --help            show this help message and exit
-  -m, --model {gf,glmair,glmflash,q34t,q34,lfm,q8,q30,onano,omini,qwenmax,qwenflash,qnext,nna3b,p4mini,On3b,Ogpt20,Ol370,Ogfl,gfl}
+-h, --help            show this help message and exit
+  -m, --model {gf,glmair,glmflash,q34t,q34,lfm,q8,q30,onano,omini,qwenmax,qwenflash,qnext,glm47,nna3b,p4mini,On3b,Ogpt20,Ol370,lama1b,Ogfl,gfl,mini,glm5}
                         Select the model alias
-  -c, --continue-chat CONTINUE_IDS
+  -c, --continue-chat HISTORY_IDS
                         Continue conversation with context from specific history IDs (comma-separated, e.g. '1,2').
   -s, --summarize       Enable summarize mode (summarizes URL content and uses summaries for chat context)
-  --delete-messages [ID|ID-ID|ID,ID]
+  --delete-messages [MESSAGE_SELECTOR]
                         Delete message history records. usage: --delete-messages [ID|ID-ID|ID,ID] or --delete-messages --all
-  --delete-sessions [ID|ID-ID|ID,ID]
+  --delete-sessions [SESSION_SELECTOR]
                         Delete session records and their messages. usage: --delete-sessions [ID|ID-ID|ID,ID] or --delete-sessions --all
   --all                 Used with --delete-messages or --delete-sessions to delete ALL records.
-  -H, --history [N]
+  -H, --history [COUNT]
                         Show last N queries and answer summaries (default 10).
-  -pa, --print-answer PRINT_IDS
+                        Use with --print-answer to print the full answer(s).
+  -pa, --print-answer HISTORY_IDS
                         Print the answer(s) for specific history IDs (comma-separated).
-  -ps, --print-session PRINT_SESSION
+  -ps, --print-session SESSION_SELECTOR
                         Print session content by session ID or name.
   -p, --prompts         List all configured user prompts.
   -v, --verbose         Enable verbose output (prints config and LLM inputs).
   -o, --open            Open the final answer in a browser using a markdown template.
-  --mail MAIL_RECIPIENTS
-                        Send the final answer via email to comma-separated addresses.
-  --subject SUBJECT     Subject line for the email (used with --mail).
-  --push-data PUSH_DATA_ENDPOINT
-                        Push query result to a configured endpoint after query completes.
+  --mail RECIPIENTS     Send the final answer via email to comma-separated addresses.
+  --subject EMAIL_SUBJECT
+                        Subject line for the email (used with --mail).
+  --push-data ENDPOINT  Push query result to a configured endpoint after query completes.
   --push-param KEY VALUE
-                        Dynamic parameter for --push-data. Can be repeated.
-  -ss, --sticky-session STICKY_SESSION [STICKY_SESSION ...]
-                        Create and activate a new named session (then exits).
-  -rs, --resume-session RESUME_SESSION [RESUME_SESSION ...]
-                        Resume an existing session by ID or name.
-  -sfm, --session-from-message SESSION_FROM_MESSAGE
-                        Convert a specific history message ID into a session and resume it.
+                        Dynamic parameter for --push-data. Can be repeated. Example: --push-param title 'My Title'
+  -ss, --sticky-session SESSION_NAME [SESSION_NAME ...]
+                        Create and activate a new named session (then exits). Usage: -ss My Session Name
+  --add-model           Interactively add a new model definition.
+  --edit-model [MODEL_ALIAS]
+                        Interactively edit an existing model definition.
+  -rs, --resume-session SESSION_SELECTOR [SESSION_SELECTOR ...]
+                        Resume an existing session by ID or name (partial match supported).
   -se, --session-end    End the current active session
-  -sh, --session-history [SESSION_HISTORY]
+  -sh, --session-history [COUNT]
                         Show last N sessions (default 10).
   -r, --research        Enable deep research mode with link extraction and RAG-based content retrieval.
-  -tl, --terminal-lines [TERMINAL_LINES]
-                        Include the last N lines of terminal context in the query.
+                        In this mode, the LLM uses specialized tools:
+                          - extract_links: Discover links (content cached, only links returned)
+                          - get_link_summaries: Get AI summaries of cached pages
+                          - get_relevant_content: RAG-based retrieval of relevant sections
+                          - get_full_content: Get complete cached content
+  -sfm, --session-from-message HISTORY_ID
+                        Convert a specific history message ID into a session and resume it.
+  --reply               Resume the last conversation (converting history to session if needed).
+  -L, --lean            Disable pre-LLM source shortlisting for this run (lean mode).
+  -off, -tool-off, --tool-off TOOL
+                        Disable an LLM tool for this run. Repeat or use comma-separated names (e.g. -off web_search -off get_url_content).
+  -tl, --terminal-lines [LINE_COUNT]
+                        Include the last N lines of terminal context in the query (default 10 if flag used without value).
   --completion-script {bash,zsh}
                         Print shell setup snippet for argcomplete and exit.
 ```
@@ -182,19 +187,25 @@ options:
 ## Features in Depth
 
 ### Deep Research Mode (`-r`)
+
 For complex topics, use `--research`. This enables a specialized prompt + toolset for multi-step investigation:
+
 - **extract_links**: Scans pages to find relevant citations without loading full content.
 - **get_link_summaries**: Rapidly summarizes multiple pages to decide which ones to read.
 - **get_relevant_content**: Uses vector embeddings (via RAG) to pull only the specific paragraphs you need from a long document.
 
 #### Web-based research
+
 Use natural prompts; the agent will search and read web sources as needed:
+
 ```bash
 asky -r "Compare OAuth2 device flow vs PKCE for a CLI app"
 ```
 
 #### Local-corpus research
+
 Configure allowed local corpus roots in `research.toml`, then reference document paths in your query:
+
 ```toml
 [research]
 local_document_roots = [
@@ -209,27 +220,35 @@ asky -r "Compare /rfc/rfc9110.txt with /policies/http-guidelines.md"
 ```
 
 Important local behavior:
+
 - Builtin local loading is enabled only when `research.local_document_roots` is set.
 - Local targets are resolved **relative to configured roots**, even if the target starts with `/`.
 - Supported local target forms include `local://...`, `file://...`, `/...`, `./...`, and `~/...`.
 - Local paths are preprocessed/redacted from model-visible user text; local retrieval should flow through the research knowledge-base tools.
 
 #### Mixed web + local research
+
 You can combine both in one run:
+
 ```bash
 asky -r "Use /policy/passwords.md and verify whether NIST 800-63B guidance has changed"
 ```
 
 ### File Prompts
+
 You can store complex prompts in a file and feed them to `asky`:
+
 ```bash
 asky file://my_complex_prompt.txt
 ```
+
 This is useful for repetitive tasks like "Code Review", "Summarize Release Notes", etc.
 File prompts are validated for size limits (configurable in `config.toml`).
 
 ### Session Management
+
 Organize your work into named sessions:
+
 ```bash
 # Start a new session for a specific project
 asky -ss "Project Alpha"
@@ -242,6 +261,7 @@ asky -sfm 42 continue this thread
 ```
 
 ### Shell Auto-Completion
+
 Enable tab completion for flags and dynamic values (models, history IDs, session IDs/names):
 
 ```bash
@@ -261,12 +281,16 @@ Session completion (`-ps`, `-rs`) now returns one selector per session (name-der
 Continue-chat completion (`-c`) uses the same selector style for history items, and selector tokens resolve back to numeric IDs automatically.
 
 ### Output Actions
+
 Automate your workflow by pushing results to other services:
+
 - **Email**: `asky --mail me@work.com "Send me the daily briefing"`
 - **Push Data**: `asky --push-data https://my-webhook.com/endpoint "Analyze this log"`
 
 ### Model Management
+
 Easily manage your model configurations directly from the CLI:
+
 ```bash
 # Interactively add a new model (searches OpenRouter)
 asky --add-model
@@ -276,6 +300,7 @@ asky --edit-model my-alias
 ```
 
 ### Terminal Context Integration
+
 This feature allows you to include the last N lines of your terminal screen as context for your query. Useful when you want to ask "why am I getting this error?".
 
 - **Installation**: Requires `iterm` optional dependency.
@@ -284,11 +309,10 @@ This feature allows you to include the last N lines of your terminal screen as c
   asky -tl 5 why am I getting this error
   ```
 - **Configuration**: You can modify `terminal_context_lines` in `config.toml` to set a different default value.
-> [!NOTE]
-> This feature requires iTerm2 Python API, you can enable it from iTerm2 settings.
+  > [!NOTE]
+  > This feature requires iTerm2 Python API, you can enable it from iTerm2 settings.
 
 <img src="https://github.com/evrenesat/asky/raw/main/assets/iterm_config.png" alt="iterm config" width="400">
-
 
 ## Custom Tools
 
@@ -337,6 +361,7 @@ default = "."
 > **Security Risk**: Custom tools execute commands using your system shell. While asky attempts to quote arguments safely, exposing powerful CLI tools to an LLM can be risky. Use this feature with caution.
 
 ### How it works:
+
 - **Placeholders**: Use `{param_name}` in the `command` string to inject arguments. If no placeholders are found, argument is appended to command.
 - **Quoting**: All arguments are automatically cleaned (inner double-quotes removed) and wrapped in double-quotes for safety.
 - **Execution**: Commands are executed via terminal shell, allowing for advanced piping and redirection.
@@ -349,8 +374,8 @@ default = "."
 > **Optional Parameters**: If you define a parameter with a `default` value in `config.toml`, it will be automatically injected into your `command` if the LLM omits it.
 
 ## Configuration options
-[See default configuration](./src/asky/data/config/general.toml)
 
+[See default configuration](./src/asky/data/config/general.toml)
 
 On first run, a default configuration directory is created at `~/.config/asky/` containing several TOML files to help organize your settings:
 
@@ -389,16 +414,20 @@ top_k = 8
 ```
 
 Notes:
+
 - Keep `local_document_roots = []` to disable builtin local filesystem ingestion.
 - For local ingestion, query-supplied targets are interpreted as corpus-relative paths under configured roots.
 - Generic URL/content tools reject local filesystem targets by design; local corpus content is preloaded/indexed before model/tool turns in research mode.
 
 ### API Keys
+
 You can set API keys in two ways:
+
 1. **Environment Variables**: Set `GOOGLE_API_KEY` (or other configured env vars) in your shell.
 2. **Config File**: Add keys directly to `api.toml`.
 
 Example `general.toml`:
+
 ```toml
 [general]
 default_model = "gf"
@@ -407,6 +436,7 @@ terminal_context_lines = 10
 ```
 
 Example `api.toml`:
+
 ```toml
 [api.gemini]
 api_key_env = "GOOGLE_API_KEY"
@@ -416,23 +446,27 @@ url = "http://localhost:1234/v1/chat/completions"
 ```
 
 ### Verification
+
 Run with `-v` to see the loaded configuration:
+
 ```bash
 asky -v
 ```
 
-
 ## Web Search
 
-asky works best with a web search tool. You can use SearXNG or Serper API. 
+asky works best with a web search tool. You can use SearXNG or Serper API.
 
 ### Serper API
-Serper is a paid service, but gives 2500 requests for free. 
+
+Serper is a paid service, but gives 2500 requests for free.
 
 ### Install & configure SearXNG
+
 SearXNG is free and open source, it's easy to set up with a single docker command.
 
 Following command taken from [SearXNG docs](https://docs.searxng.org/admin/installation-docker.html#instancing).
+
 ```bash
 docker pull docker.io/searxng/searxng:latest
 
@@ -447,20 +481,22 @@ $ docker run --name searxng -d \
     -v "./data/:/var/cache/searxng/" \
     docker.io/searxng/searxng:latest
 ```
+
 You need to add "-json" to the formats section of the default searxng config.yaml file.
+
 ```yaml
-  # remove format to deny access, use lower case.
-  # formats: [html, csv, json, rss]
-  formats:
-    - html
-    - json
+# remove format to deny access, use lower case.
+# formats: [html, csv, json, rss]
+formats:
+  - html
+  - json
 ```
+
 Then restart the container.
+
 ```bash
 docker restart searxng
 ```
-
-
 
 ## Requirements
 

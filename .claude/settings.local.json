@@ -8,7 +8,8 @@
       "Bash(git add:*)",
       "Bash(git commit:*)",
       "Bash(uv run:*)",
-      "Bash(ls:*)"
+      "Bash(ls:*)",
+      "Bash(wc:*)"
     ]
   }
 }

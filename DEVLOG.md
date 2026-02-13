@@ -1,5 +1,41 @@
 For older logs, see [DEVLOG_ARCHIVE.md](DEVLOG_ARCHIVE.md)
 
+## 2026-02-12
+
+### CLI Help Placeholder Cleanup (Typed Metavars)
+**Summary**: Replaced argparse default placeholder names in `--help` output with explicit typed metavars so value expectations are clearer and less repetitive.
+
+- **Changed**:
+  - Updated:
+    - `/Users/evren/code/asky/src/asky/cli/main.py`
+      - added explicit `metavar` values for value-taking flags that previously relied on default destination-name placeholders.
+      - applied consistent typed placeholders including:
+        - `HISTORY_IDS`
+        - `MESSAGE_SELECTOR`
+        - `SESSION_SELECTOR`
+        - `COUNT`
+        - `RECIPIENTS`
+        - `EMAIL_SUBJECT`
+        - `ENDPOINT`
+        - `SESSION_NAME`
+        - `MODEL_ALIAS`
+        - `HISTORY_ID`
+        - `LINE_COUNT`
+  - Added tests:
+    - `/Users/evren/code/asky/tests/test_cli.py`
+      - added `--help` regression test to assert representative typed placeholders are present.
+      - added assertions that previous lazy placeholders (`TERMINAL_LINES`, `PRINT_SESSION`, `SESSION_HISTORY`) are no longer shown.
+  - Updated docs:
+    - `/Users/evren/code/asky/src/asky/cli/AGENTS.md`
+      - documented that CLI help metavars are intentionally explicit and user-oriented.
+
+- **Why**:
+  - Default argparse metavars mirrored internal arg destinations and made help text look noisy and repetitive.
+  - Typed placeholders improve readability and clarify expected value shapes without changing runtime behavior.
+
+- **Gotchas / Follow-up**:
+  - This is a user-facing help-text change only; parsing behavior and command semantics are unchanged.
+
 ## 2026-02-11
 
 ### README Research Mode Documentation Refresh (Web + Local Corpus)

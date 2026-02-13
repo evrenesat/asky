@@ -81,6 +81,7 @@ def parse_args() -> argparse.Namespace:
         "-c",
         "--continue-chat",
         dest="continue_ids",
+        metavar="HISTORY_IDS",
         help="Continue conversation with context from specific history IDs (comma-separated, e.g. '1,2').",
     )
     parser.add_argument(
@@ -93,12 +94,14 @@ def parse_args() -> argparse.Namespace:
         "--delete-messages",
         nargs="?",
         const="interactive",
+        metavar="MESSAGE_SELECTOR",
         help="Delete message history records. usage: --delete-messages [ID|ID-ID|ID,ID] or --delete-messages --all",
     )
     parser.add_argument(
         "--delete-sessions",
         nargs="?",
         const="interactive",
+        metavar="SESSION_SELECTOR",
         help="Delete session records and their messages. usage: --delete-sessions [ID|ID-ID|ID,ID] or --delete-sessions --all",
     )
     parser.add_argument(
@@ -112,6 +115,7 @@ def parse_args() -> argparse.Namespace:
         nargs="?",
         type=int,
         const=10,
+        metavar="COUNT",
         help="Show last N queries and answer summaries (default 10).\n"
         "Use with --print-answer to print the full answer(s).",
     )
@@ -119,12 +123,14 @@ def parse_args() -> argparse.Namespace:
         "-pa",
         "--print-answer",
         dest="print_ids",
+        metavar="HISTORY_IDS",
         help="Print the answer(s) for specific history IDs (comma-separated).",
     )
     print_session_action = parser.add_argument(
         "-ps",
         "--print-session",
         dest="print_session",
+        metavar="SESSION_SELECTOR",
         help="Print session content by session ID or name.",
     )
     parser.add_argument(
@@ -148,15 +154,18 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--mail",
         dest="mail_recipients",
+        metavar="RECIPIENTS",
         help="Send the final answer via email to comma-separated addresses.",
     )
     parser.add_argument(
         "--subject",
+        metavar="EMAIL_SUBJECT",
         help="Subject line for the email (used with --mail).",
     )
     parser.add_argument(
         "--push-data",
         dest="push_data_endpoint",
+        metavar="ENDPOINT",
         help="Push query result to a configured endpoint after query completes.",
     )
     parser.add_argument(
@@ -172,6 +181,7 @@ def parse_args() -> argparse.Namespace:
         "-ss",
         "--sticky-session",
         nargs="+",
+        metavar="SESSION_NAME",
         help="Create and activate a new named session (then exits). Usage: -ss My Session Name",
     )
 
@@ -185,6 +195,7 @@ def parse_args() -> argparse.Namespace:
         "--edit-model",
         nargs="?",
         const="",
+        metavar="MODEL_ALIAS",
         help="Interactively edit an existing model definition.",
     )
 
@@ -192,6 +203,7 @@ def parse_args() -> argparse.Namespace:
         "-rs",
         "--resume-session",
         nargs="+",
+        metavar="SESSION_SELECTOR",
         help="Resume an existing session by ID or name (partial match supported).",
     )
     parser.add_argument(
@@ -206,6 +218,7 @@ def parse_args() -> argparse.Namespace:
         nargs="?",
         type=int,
         const=10,
+        metavar="COUNT",
         help="Show last N sessions (default 10).",
     )
     parser.add_argument(
@@ -223,6 +236,7 @@ def parse_args() -> argparse.Namespace:
         "-sfm",
         "--session-from-message",
         dest="session_from_message",
+        metavar="HISTORY_ID",
         help="Convert a specific history message ID into a session and resume it.",
     )
     parser.add_argument(
@@ -256,6 +270,7 @@ def parse_args() -> argparse.Namespace:
         "--terminal-lines",
         nargs="?",
         const="__default__",
+        metavar="LINE_COUNT",
         help="Include the last N lines of terminal context in the query (default 10 if flag used without value).",
     )
     parser.add_argument(
