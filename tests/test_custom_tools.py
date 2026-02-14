@@ -106,11 +106,11 @@ def test_execute_custom_tool_quoting(mock_run, mock_custom_tools):
 
 @patch("subprocess.run")
 def test_dispatch_custom_tool(mock_run, mock_custom_tools):
-    from asky.core import create_default_tool_registry
+    from asky.core import create_tool_registry
 
     mock_run.return_value = MagicMock(stdout="ok", stderr="", returncode=0)
 
-    registry = create_default_tool_registry()
+    registry = create_tool_registry()
     call = {"function": {"name": "echo", "arguments": '{"msg": "test"}'}}
 
     result = registry.dispatch(call, summarize=False)
@@ -132,9 +132,9 @@ def test_custom_tool_disabled(mock_run, mock_custom_tools):
 
     # We need to import create_default_tool_registry inside the test or setup
     # to ensure it uses the mocked CUSTOM_TOOLS
-    from asky.core.engine import create_default_tool_registry
+    from asky.core.tool_registry_factory import create_tool_registry
 
-    registry = create_default_tool_registry()
+    registry = create_tool_registry()
     tool_names = registry.get_tool_names()
 
     assert "disabled_tool" not in tool_names

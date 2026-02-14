@@ -1,7 +1,8 @@
 import pytest
 from unittest.mock import MagicMock, patch
 from asky.core.api_client import UsageTracker
-from asky.core.engine import create_default_tool_registry, generate_summaries
+from asky.core.engine import generate_summaries
+from asky.core.tool_registry_factory import create_tool_registry
 from asky.config import SUMMARIZATION_MODEL
 
 
@@ -31,7 +32,7 @@ def test_generate_summaries_uses_tracker():
 
 def test_registry_binds_summarization_tracker():
     tracker = UsageTracker()
-    registry = create_default_tool_registry(summarization_tracker=tracker)
+    registry = create_tool_registry(summarization_tracker=tracker)
 
     # Get the executor for 'get_url_content'
     # Note: registry._executors is private but we can access it for testing or use dispatch
@@ -65,7 +66,7 @@ def test_registry_wires_summarization_progress_callbacks():
     tracker = UsageTracker()
     status_messages = []
 
-    registry = create_default_tool_registry(
+    registry = create_tool_registry(
         summarization_tracker=tracker,
         summarization_status_callback=status_messages.append,
     )

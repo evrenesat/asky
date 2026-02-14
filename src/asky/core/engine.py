@@ -245,7 +245,9 @@ class ConversationEngine:
                         "tool_call_id": call["id"],
                         "content": json.dumps(result),
                     }
-                    compacted_tool_message = self._compact_tool_message(raw_tool_message)
+                    compacted_tool_message = self._compact_tool_message(
+                        raw_tool_message
+                    )
                     messages.append(
                         {
                             "role": "tool",
@@ -562,7 +564,9 @@ class ConversationEngine:
 
         return final_answer
 
-    def _handle_400_error(self, error: requests.exceptions.HTTPError, messages: List[Dict[str, Any]]) -> None:
+    def _handle_400_error(
+        self, error: requests.exceptions.HTTPError, messages: List[Dict[str, Any]]
+    ) -> None:
         """Raise a non-interactive overflow error for callers to handle."""
         compacted_messages = self.check_and_compact(messages)
         self._emit_event(
@@ -582,7 +586,7 @@ class ConversationEngine:
         logger.exception("Engine failure")
 
 
-def create_default_tool_registry(
+def create_tool_registry(
     usage_tracker: Optional[UsageTracker] = None,
     summarization_tracker: Optional[UsageTracker] = None,
     summarization_status_callback: Optional[Callable[[Optional[str]], None]] = None,
@@ -592,7 +596,7 @@ def create_default_tool_registry(
     """Create a ToolRegistry with all default and custom tools."""
     return call_attr(
         "asky.core.tool_registry_factory",
-        "create_default_tool_registry",
+        "create_tool_registry",
         usage_tracker=usage_tracker,
         summarization_tracker=summarization_tracker,
         summarization_status_callback=summarization_status_callback,

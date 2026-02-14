@@ -15,6 +15,7 @@ from asky.config import (
 from asky.core.api_client import UsageTracker, get_llm_msg
 from asky.core.registry import ToolRegistry
 from asky.lazy_imports import call_attr, load_module
+from asky.research.tools import ACQUISITION_TOOL_NAMES
 
 ToolExecutor = Callable[[Dict[str, Any]], Dict[str, Any]]
 CustomToolExecutor = Callable[[str, Dict[str, Any]], Dict[str, Any]]
@@ -55,7 +56,7 @@ def _is_tool_enabled(tool_name: str, disabled_tools: Set[str]) -> bool:
     return tool_name not in disabled_tools
 
 
-def create_default_tool_registry(
+def create_tool_registry(
     usage_tracker: Optional[UsageTracker] = None,
     summarization_tracker: Optional[UsageTracker] = None,
     summarization_status_callback: Optional[Callable[[Optional[str]], None]] = None,
@@ -283,6 +284,7 @@ def create_research_tool_registry(
     custom_tools: Optional[Dict[str, Any]] = None,
     disabled_tools: Optional[Set[str]] = None,
     session_id: Optional[str] = None,
+    corpus_preloaded: bool = False,
 ) -> ToolRegistry:
     """Create a ToolRegistry with research mode tools."""
     registry = ToolRegistry()
@@ -290,6 +292,9 @@ def create_research_tool_registry(
     custom_tool_executor = execute_custom_tool_fn or _execute_custom_tool
     active_custom_tools = custom_tools if custom_tools is not None else CUSTOM_TOOLS
     excluded_tools = disabled_tools or set()
+    if corpus_preloaded:
+        excluded_tools = excluded_tools | ACQUISITION_TOOL_NAMES
+
     load_research_tool_bindings = (
         load_research_tool_bindings_fn or _default_research_bindings_loader
     )

@@ -11,11 +11,14 @@ from asky.core import (
     UsageTracker,
     construct_research_system_prompt,
     construct_system_prompt,
-    create_default_tool_registry,
-    create_research_tool_registry,
     generate_summaries,
+    SessionManager,
+    append_research_guidance,
 )
-from asky.core.session_manager import SessionManager
+from asky.core.tool_registry_factory import (
+    create_tool_registry,
+    create_research_tool_registry,
+)
 from asky.lazy_imports import call_attr
 from asky.storage import save_interaction
 
@@ -70,24 +73,23 @@ class AskyClient:
         query_text: str,
         context_str: str = "",
         session_manager: Optional[SessionManager] = None,
-        source_shortlist_context: Optional[str] = None,
+        preload: Optional[PreloadResolution] = None,
         local_kb_hint_enabled: bool = False,
-    ) -> List[Dict[str, str]]:
+    ) -> List[Dict[str, Any]]:
         """Build a message list for a single asky turn."""
         system_prompt = (
             construct_research_system_prompt()
             if self.config.research_mode
             else construct_system_prompt()
         )
-        if local_kb_hint_enabled and self.config.research_mode:
-            system_prompt = (
-                f"{system_prompt}\n\n"
-                "Local Knowledge Base Guidance:\n"
-                "- Local corpus sources were preloaded from configured document roots.\n"
-                "- Do not ask the user for local filesystem paths.\n"
-                "- Start by calling `query_research_memory` with the user's question to retrieve local knowledge base findings."
+        if self.config.research_mode:
+            system_prompt = append_research_guidance(
+                system_prompt,
+                corpus_preloaded=preload.is_corpus_preloaded if preload else False,
+                local_kb_hint_enabled=local_kb_hint_enabled,
             )
-        messages: List[Dict[str, str]] = [{"role": "system", "content": system_prompt}]
+
+        messages: List[Dict[str, Any]] = [{"role": "system", "content": system_prompt}]
 
         if session_manager:
             messages.extend(session_manager.build_context_messages())
@@ -104,11 +106,11 @@ class AskyClient:
             )
 
         user_content = query_text
-        if source_shortlist_context:
+        if preload and preload.combined_context:
             user_content = (
                 f"{query_text}\n\n"
-                "Preloaded sources gathered before tool calls:\n"
-                f"{source_shortlist_context}\n\n"
+                f"Preloaded sources gathered before tool calls:\n"
+                f"{preload.combined_context}\n\n"
                 "Use this preloaded corpus as a starting point, then verify with tools before citing."
             )
 
@@ -138,7 +140,10 @@ class AskyClient:
         *,
         session_manager: Optional[SessionManager] = None,
         research_session_id: Optional[str] = None,
-        display_callback: Optional[Callable[..., None]] = None,
+        preload: Optional[PreloadResolution] = None,
+        display_callback: Optional[
+            Callable[[int, Optional[str], bool, Optional[str]], None]
+        ] = None,
         verbose_output_callback: Optional[Callable[[Any], None]] = None,
         summarization_status_callback: Optional[Callable[[Optional[str]], None]] = None,
         event_callback: Optional[Callable[[str, Dict[str, Any]], None]] = None,
@@ -147,18 +152,19 @@ class AskyClient:
         if self.config.research_mode:
             registry = create_research_tool_registry(
                 usage_tracker=self.usage_tracker,
-                disabled_tools=set(self.config.disabled_tools),
+                disabled_tools=self.config.disabled_tools,
                 session_id=research_session_id,
+                corpus_preloaded=preload.is_corpus_preloaded if preload else False,
             )
         else:
-            registry = create_default_tool_registry(
+            registry = create_tool_registry(
                 usage_tracker=self.usage_tracker,
                 summarization_tracker=self.summarization_tracker,
                 summarization_status_callback=summarization_status_callback,
                 summarization_verbose_callback=(
                     verbose_output_callback if self.config.verbose else None
                 ),
-                disabled_tools=set(self.config.disabled_tools),
+                disabled_tools=self.config.disabled_tools,
             )
 
         self._append_enabled_tool_guidelines(
@@ -186,28 +192,30 @@ class AskyClient:
         context_str: str = "",
         session_manager: Optional[SessionManager] = None,
         research_session_id: Optional[str] = None,
-        source_shortlist_context: Optional[str] = None,
+        preload: Optional[PreloadResolution] = None,
         display_callback: Optional[Callable[..., None]] = None,
         verbose_output_callback: Optional[Callable[[Any], None]] = None,
         summarization_status_callback: Optional[Callable[[Optional[str]], None]] = None,
         event_callback: Optional[Callable[[str, Dict[str, Any]], None]] = None,
     ) -> AskyChatResult:
-        """Run a complete chat turn and return structured result data."""
+        """Run a simplified chat turn without session/preload orchestration."""
         messages = self.build_messages(
             query_text=query_text,
             context_str=context_str,
             session_manager=session_manager,
-            source_shortlist_context=source_shortlist_context,
+            preload=preload,
         )
         final_answer = self.run_messages(
             messages,
             session_manager=session_manager,
             research_session_id=research_session_id,
+            preload=preload,
             display_callback=display_callback,
             verbose_output_callback=verbose_output_callback,
             summarization_status_callback=summarization_status_callback,
             event_callback=event_callback,
         )
+
         query_summary, answer_summary = ("", "")
         if final_answer:
             query_summary, answer_summary = generate_summaries(
@@ -344,7 +352,7 @@ class AskyClient:
             query_text=effective_query_text,
             context_str=context.context_str,
             session_manager=session_manager,
-            source_shortlist_context=preload.combined_context,
+            preload=preload,
             local_kb_hint_enabled=local_kb_hint_enabled,
         )
         if messages_prepared_callback:
@@ -358,6 +366,7 @@ class AskyClient:
                 if session_manager and session_manager.current_session
                 else None
             ),
+            preload=preload,
             display_callback=display_callback,
             verbose_output_callback=verbose_output_callback,
             summarization_status_callback=summarization_status_callback,

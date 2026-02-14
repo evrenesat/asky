@@ -115,6 +115,21 @@ def extract_calls(msg: Dict[str, Any], turn: int) -> List[Dict[str, Any]]:
     return []
 
 
+RESEARCH_RETRIEVAL_ONLY_GUIDANCE = """
+A research corpus has been pre-loaded for this query. Your sources are already
+indexed and available.
+
+Your task:
+1. Use `query_research_memory` to check if relevant findings already exist.
+2. Use `get_relevant_content` with specific sub-questions to retrieve evidence
+   from the indexed corpus.
+3. Use `save_finding` to persist key facts with source attribution.
+4. Synthesize your findings into a comprehensive answer with citations.
+
+Do NOT attempt to browse new URLs or extract links — the corpus is already built.
+"""
+
+
 def construct_system_prompt() -> str:
     """Build the system prompt based on mode flags."""
     from asky.config import (
@@ -156,3 +171,23 @@ def construct_research_system_prompt() -> str:
 
     # Fallback to monolithic prompt if components are missing
     return RESEARCH_SYSTEM_PROMPT.replace("{CURRENT_DATE}", current_date)
+
+
+def append_research_guidance(
+    system_prompt: str,
+    corpus_preloaded: bool = False,
+    local_kb_hint_enabled: bool = False,
+) -> str:
+    """Append context-aware research guidance to the system prompt."""
+    if corpus_preloaded:
+        system_prompt = f"{system_prompt}\n{RESEARCH_RETRIEVAL_ONLY_GUIDANCE}"
+
+    if local_kb_hint_enabled:
+        system_prompt = (
+            f"{system_prompt}\n\n"
+            "Local Knowledge Base Guidance:\n"
+            "- Local corpus sources were preloaded from configured document roots.\n"
+            "- Do not ask the user for local filesystem paths.\n"
+            "- Start by calling `query_research_memory` with the user's question to retrieve local knowledge base findings."
+        )
+    return system_prompt

@@ -372,16 +372,20 @@ def test_build_messages_with_context(mock_args):
 
 
 def test_build_messages_with_source_shortlist_context(mock_args):
-    shortlist_context = "1. Example source (score=0.81)\nURL: https://example.com"
+    from unittest.mock import MagicMock
+
+    mock_preload = MagicMock()
+    mock_preload.combined_context = "shortlist summary"
+    mock_preload.is_corpus_preloaded = False
+
     messages = build_messages(
         mock_args,
         "",
         "test query",
-        source_shortlist_context=shortlist_context,
+        preload=mock_preload,
     )
     assert len(messages) == 2
-    assert "Preloaded sources gathered before tool calls" in messages[1]["content"]
-    assert "https://example.com" in messages[1]["content"]
+    assert "shortlist summary" in messages[1]["content"]
 
 
 def test_build_messages_with_local_kb_guidance(mock_args):
@@ -395,6 +399,23 @@ def test_build_messages_with_local_kb_guidance(mock_args):
 
     assert "Local Knowledge Base Guidance" in messages[0]["content"]
     assert "query_research_memory" in messages[0]["content"]
+
+
+def test_build_messages_with_retrieval_guidance(mock_args):
+    # Mock a PreloadResolution with preloaded content
+    mock_preload = MagicMock()
+    mock_preload.is_corpus_preloaded = True
+
+    messages = build_messages(
+        mock_args,
+        "",
+        "test query",
+        research_mode=True,
+        preload=mock_preload,
+    )
+
+    assert "A research corpus has been pre-loaded" in messages[0]["content"]
+    assert "Do NOT attempt to browse new URLs" in messages[0]["content"]
 
 
 def test_build_shortlist_banner_stats():

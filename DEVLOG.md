@@ -1,4 +1,44 @@
-For older logs, see [DEVLOG_ARCHIVE.md](DEVLOG_ARCHIVE.md)
+# DEVLOG
+
+For older logs, see [DEVLOG_ARCHIVE.md](DEVLOG_ARCHIVE.md).
+
+## 2026-02-14
+
+### Per-Stage Research Tool Exposure + Simplified Retrieval Guidance
+
+**Summary**: Refactored research tools into Acquisition and Retrieval sets. The system now dynamically excludes acquisition tools (caching/browsing) when a corpus is pre-loaded (web shortlist or local ingestion), forcing the model to focus on retrieval and synthesis. Added a streamlined "retrieval-only" system prompt guidance for these scenarios.
+
+- **Changed**:
+  - **Tool Grouping**:
+    - `src/asky/research/tools.py`: Defined `ACQUISITION_TOOL_NAMES` and `RETRIEVAL_TOOL_NAMES`.
+  - **Dynamic Registry**:
+    - `src/asky/core/tool_registry_factory.py`: `create_research_tool_registry` now accepts `corpus_preloaded` and excludes acquisition tools when true.
+  - **Prompt Guidance**:
+    - `src/asky/core/prompts.py`: Added `RESEARCH_RETRIEVAL_ONLY_GUIDANCE` constant.
+    - `src/asky/api/client.py` & `src/asky/cli/chat.py`: Injected retrieval-only guidance in `build_messages` when `corpus_preloaded=True`.
+  - **Orchestration**:
+    - `AskyClient.run_turn` now calculates `corpus_preloaded` based on preload stats and propagates it through the message building and tool registry creation phases.
+- **Added Tests**:
+  - `tests/test_tools.py`: Verified tool set coverage and conditional registry exclusion.
+  - `tests/test_api_library.py`: Verified prompt guidance injection and orchestration state propagation.
+  - `tests/test_cli.py`: Verified CLI message building parity.
+- **Documentation**:
+  - `ARCHITECTURE.md`: Added Design Decision #14 (Corpus-Aware Tool Exposure).
+  - `src/asky/research/AGENTS.md`: Documented tool set split.
+  - `src/asky/core/AGENTS.md`: Documented `corpus_preloaded` registry behavior.
+
+- **Why**:
+  - Prevents LLMs from wasting turns on redundant URL discovery/caching when data is already available in the preloaded corpus.
+  - Simplifies the tool surface for smaller models in retrieval-heavy stages.
+
+- **Result**: 478 tests pass (471 baseline + 7 new tests/updates).
+
+**Post-Review Fixes**:
+- Fixed type annotation: `messages` local variable now correctly typed as `List[Dict[str, Any]]` instead of `List[Dict[str, str]]` in `client.py`.
+- Removed backward compatibility shim from `AskyClient.chat()` — now directly uses `PreloadResolution` parameter (no external users to break).
+- Fixed DEVLOG.md archive link from absolute `file:///` URL to relative markdown link.
+- Removed dead `PreloadResolution` import from `test_cli.py`.
+- Removed unused `import sys` from `cli/chat.py`.
 
 ## 2026-02-14
 

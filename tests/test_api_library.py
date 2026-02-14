@@ -1,4 +1,4 @@
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, patch, ANY
 
 from asky.api import AskyClient, AskyConfig, AskyTurnRequest
 from asky.api.types import ContextResolution, PreloadResolution, SessionResolution
@@ -14,7 +14,9 @@ def test_asky_client_build_messages_with_context_and_preloaded_sources():
     messages = client.build_messages(
         query_text="What happened?",
         context_str="Prior context",
-        source_shortlist_context="1. https://example.com",
+        preload=PreloadResolution(
+            combined_context="1. https://example.com",
+        ),
     )
 
     assert messages[0]["role"] == "system"
@@ -43,7 +45,7 @@ def test_asky_client_build_messages_adds_local_kb_guidance():
     assert "query_research_memory" in messages[0]["content"]
 
 
-@patch("asky.api.client.create_default_tool_registry")
+@patch("asky.api.client.create_tool_registry")
 @patch("asky.api.client.ConversationEngine")
 def test_asky_client_run_messages_uses_default_registry(
     mock_engine_cls, mock_create_default_registry
@@ -98,12 +100,13 @@ def test_asky_client_run_messages_uses_research_registry(
         {"role": "user", "content": "Q"},
     ]
 
-    client.run_messages(messages, research_session_id="42")
+    client.run_messages(messages, research_session_id="42", preload=PreloadResolution())
 
     mock_create_research_registry.assert_called_once_with(
         usage_tracker=client.usage_tracker,
         disabled_tools={"web_search"},
         session_id="42",
+        corpus_preloaded=False,
     )
 
 
@@ -224,7 +227,9 @@ def test_asky_client_run_turn_halts_on_ambiguous_session(
     "asky.api.client.resolve_session_for_turn",
     return_value=(None, SessionResolution()),
 )
+@patch("asky.api.client.create_research_tool_registry")
 def test_asky_client_run_turn_redacts_local_targets_for_model(
+    mock_create_registry,
     mock_resolve_session,
     mock_preload,
     mock_run_messages,
@@ -245,7 +250,16 @@ def test_asky_client_run_turn_redacts_local_targets_for_model(
     assert "Local Knowledge Base Guidance" in result.messages[0]["content"]
     mock_resolve_session.assert_called_once()
     mock_preload.assert_called_once()
-    mock_run_messages.assert_called_once()
+    mock_run_messages.assert_called_once_with(
+        result.messages,
+        session_manager=ANY,
+        research_session_id=None,
+        preload=result.preload,
+        display_callback=None,
+        verbose_output_callback=None,
+        summarization_status_callback=None,
+        event_callback=None,
+    )
     mock_save_interaction.assert_called_once()
 
 
@@ -300,10 +314,89 @@ def test_asky_client_run_turn_enables_hint_with_only_explicit_paths(
 
     # Check for the hint in system prompt or messages
     assert any(
-        "Local Knowledge Base Guidance" in m["content"] for m in result.messages
-    ), "Local KB hint should be present when explicit paths are provided"
-    client.run_turn(request)
-
+        "Local Knowledge Base Guidance" in m["content"]
+        for m in mock_run.call_args.args[0]
+        if m["role"] == "system"
+    )
     # Verify local_corpus_paths reached the pipeline
     _, kwargs = mock_preload.call_args
     assert kwargs["local_corpus_paths"] == ["/opt/explicit"]
+
+
+def test_asky_client_build_messages_adds_retrieval_only_guidance():
+    config = AskyConfig(model_alias="mini", research_mode=True)
+    client = AskyClient(config)
+
+    messages = client.build_messages(
+        query_text="foo",
+        preload=PreloadResolution(
+            local_payload={"stats": {"indexed_chunks": 1}},
+            combined_context="preloaded context",
+        ),
+    )
+
+    system_msg = next(m["content"] for m in messages if m["role"] == "system")
+    assert "A research corpus has been pre-loaded" in system_msg
+    assert "Do NOT attempt to browse new URLs" in system_msg
+
+
+def test_asky_client_build_messages_no_retrieval_guidance_when_not_preloaded():
+    config = AskyConfig(model_alias="mini", research_mode=True)
+    client = AskyClient(config)
+
+    messages = client.build_messages(
+        query_text="foo",
+        preload=PreloadResolution(
+            combined_context="preloaded context",
+        ),
+    )
+
+    system_msg = next(m["content"] for m in messages if m["role"] == "system")
+    assert "A research corpus has been pre-loaded" not in system_msg
+
+
+@patch("asky.api.client.save_interaction")
+@patch("asky.api.client.generate_summaries", return_value=("qsum", "asum"))
+@patch.object(AskyClient, "run_messages", return_value="Final")
+@patch(
+    "asky.api.client.run_preload_pipeline",
+)
+@patch(
+    "asky.api.client.resolve_session_for_turn",
+    return_value=(None, SessionResolution()),
+)
+def test_asky_client_run_turn_passes_corpus_preloaded_to_run_messages(
+    mock_resolve_session,
+    mock_preload,
+    mock_run_messages,
+    mock_generate_summaries,
+    mock_save_interaction,
+):
+    client = AskyClient(AskyConfig(model_alias="gf", research_mode=True))
+
+    # Case 1: Local indexed chunks > 0
+    mock_preload.return_value = PreloadResolution(
+        local_payload={"stats": {"indexed_chunks": 5}},
+        shortlist_payload={"fetched_count": 0},
+    )
+    client.run_turn(AskyTurnRequest(query_text="foo"))
+    _, kwargs = mock_run_messages.call_args
+    assert kwargs["preload"].is_corpus_preloaded is True
+
+    # Case 2: Web shortlist fetched > 0
+    mock_preload.return_value = PreloadResolution(
+        local_payload={"stats": {"indexed_chunks": 0}},
+        shortlist_payload={"fetched_count": 3},
+    )
+    client.run_turn(AskyTurnRequest(query_text="foo"))
+    _, kwargs = mock_run_messages.call_args
+    assert kwargs["preload"].is_corpus_preloaded is True
+
+    # Case 3: Neither
+    mock_preload.return_value = PreloadResolution(
+        local_payload={"stats": {"indexed_chunks": 0}},
+        shortlist_payload={"fetched_count": 0},
+    )
+    client.run_turn(AskyTurnRequest(query_text="foo"))
+    _, kwargs = mock_run_messages.call_args
+    assert kwargs["preload"].is_corpus_preloaded is False

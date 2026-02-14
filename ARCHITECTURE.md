@@ -368,6 +368,16 @@ Imports deferred until needed:
 
 ---
 
+### 14. Corpus-Aware Tool Exposure
+
+To optimize LLM tool usage, especially for smaller models, research tools are logically split into **Acquisition** (extracting and caching new data) and **Retrieval** (searching within already cached data) sets.
+
+When a corpus has been pre-built by acquisition stages (local ingestion or web shortlist), `AskyClient` dynamically excludes acquisition tools from the model's tool registry. This prevents models from wasting turns attempting to re-fetch or explore URLs that are already indexed, forcing them to focus on high-value retrieval and synthesis.
+
+A simplified "retrieval-only" system prompt guidance is injected in these cases to reflect the pre-loaded state.
+
+---
+
 ## Version Information
 
 - **Python**: 3.10+

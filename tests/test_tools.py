@@ -79,10 +79,14 @@ def test_execute_get_url_content_batch(mock_requests_get):
 
 
 def test_execute_get_url_content_rejects_local_targets(mock_requests_get):
-    result = execute_get_url_content({"urls": ["local:///tmp/file.txt", "/tmp/file.txt"]})
+    result = execute_get_url_content(
+        {"urls": ["local:///tmp/file.txt", "/tmp/file.txt"]}
+    )
 
     assert "local:///tmp/file.txt" in result
-    assert "Local filesystem targets are not supported" in result["local:///tmp/file.txt"]
+    assert (
+        "Local filesystem targets are not supported" in result["local:///tmp/file.txt"]
+    )
     assert "/tmp/file.txt" in result
     assert "Local filesystem targets are not supported" in result["/tmp/file.txt"]
 
@@ -126,7 +130,7 @@ def test_execute_get_url_details_rejects_non_http_target(mock_requests_get):
 
 @patch("asky.tools.SEARCH_PROVIDER", "searxng")
 def test_dispatch_tool_registry_search(mock_requests_get):
-    from asky.core import create_default_tool_registry
+    from asky.core import create_tool_registry
 
     # Mock web search dispatch
     mock_response = MagicMock()
@@ -135,7 +139,7 @@ def test_dispatch_tool_registry_search(mock_requests_get):
     mock_response.text = ""
     mock_requests_get.return_value = mock_response
 
-    registry = create_default_tool_registry()
+    registry = create_tool_registry()
     call = {"function": {"name": "web_search", "arguments": '{"q": "test"}'}}
 
     result = registry.dispatch(call, summarize=False)
@@ -210,7 +214,7 @@ def test_registry_guidelines_are_not_sent_in_api_schema():
 
 
 def test_default_registry_respects_disabled_tools_and_custom_guidelines():
-    from asky.core.tool_registry_factory import create_default_tool_registry
+    from asky.core.tool_registry_factory import create_tool_registry
 
     custom_tools = {
         "custom_echo": {
@@ -225,7 +229,7 @@ def test_default_registry_respects_disabled_tools_and_custom_guidelines():
         }
     }
 
-    registry = create_default_tool_registry(
+    registry = create_tool_registry(
         execute_web_search_fn=lambda _args: {},
         execute_get_url_content_fn=lambda _args: {},
         execute_get_url_details_fn=lambda _args: {},
@@ -305,3 +309,75 @@ def test_research_registry_injects_session_id_for_memory_tools():
 
     assert save_calls[-1]["session_id"] == "session-123"
     assert query_calls[-1]["session_id"] == "explicit"
+
+
+def test_tool_name_sets_cover_all_schemas():
+    from asky.research.tools import (
+        ACQUISITION_TOOL_NAMES,
+        RESEARCH_TOOL_SCHEMAS,
+        RETRIEVAL_TOOL_NAMES,
+    )
+
+    all_schema_names = {s["name"] for s in RESEARCH_TOOL_SCHEMAS}
+    covered_names = ACQUISITION_TOOL_NAMES | RETRIEVAL_TOOL_NAMES
+    assert covered_names == all_schema_names
+
+
+def test_research_registry_corpus_preloaded_excludes_acquisition_tools():
+    from asky.core.tool_registry_factory import create_research_tool_registry
+    from asky.research.tools import ACQUISITION_TOOL_NAMES, RETRIEVAL_TOOL_NAMES
+
+    # Dummy bindings for all tools
+    bindings = {
+        "schemas": [
+            {"name": name, "parameters": {"type": "object", "properties": {}}}
+            for name in (ACQUISITION_TOOL_NAMES | RETRIEVAL_TOOL_NAMES)
+        ],
+    }
+    for name in ACQUISITION_TOOL_NAMES | RETRIEVAL_TOOL_NAMES:
+        bindings[name] = lambda _args: {}
+
+    registry = create_research_tool_registry(
+        load_research_tool_bindings_fn=lambda: bindings,
+        disabled_tools={"web_search"},
+        corpus_preloaded=True,
+    )
+
+    schemas = registry.get_schemas()
+    schema_names = {s["function"]["name"] for s in schemas}
+
+    # Acquisition tools should be missing
+    for name in ACQUISITION_TOOL_NAMES:
+        assert name not in schema_names
+
+    # Retrieval tools should be present
+    for name in RETRIEVAL_TOOL_NAMES:
+        assert name in schema_names
+
+
+def test_research_registry_corpus_not_preloaded_keeps_all_tools():
+    from asky.core.tool_registry_factory import create_research_tool_registry
+    from asky.research.tools import ACQUISITION_TOOL_NAMES, RETRIEVAL_TOOL_NAMES
+
+    # Dummy bindings
+    bindings = {
+        "schemas": [
+            {"name": name, "parameters": {"type": "object", "properties": {}}}
+            for name in (ACQUISITION_TOOL_NAMES | RETRIEVAL_TOOL_NAMES)
+        ],
+    }
+    for name in ACQUISITION_TOOL_NAMES | RETRIEVAL_TOOL_NAMES:
+        bindings[name] = lambda _args: {}
+
+    registry = create_research_tool_registry(
+        load_research_tool_bindings_fn=lambda: bindings,
+        disabled_tools={"web_search"},
+        corpus_preloaded=False,
+    )
+
+    schemas = registry.get_schemas()
+    schema_names = {s["function"]["name"] for s in schemas}
+
+    # All tools should be present (except web_search which we disabled manually)
+    for name in ACQUISITION_TOOL_NAMES | RETRIEVAL_TOOL_NAMES:
+        assert name in schema_names

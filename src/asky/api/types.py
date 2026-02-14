@@ -83,6 +83,13 @@ class PreloadResolution:
     shortlist_reason: str = ""
     combined_context: Optional[str] = None
 
+    @property
+    def is_corpus_preloaded(self) -> bool:
+        """Check if any corpus material has been preloaded (local or web)."""
+        local_indexed = self.local_payload.get("stats", {}).get("indexed_chunks", 0) > 0
+        shortlist_fetched = self.shortlist_payload.get("fetched_count", 0) > 0
+        return local_indexed or shortlist_fetched
+
 
 @dataclass
 class AskyTurnResult(AskyChatResult):

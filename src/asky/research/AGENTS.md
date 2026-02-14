@@ -4,34 +4,34 @@ RAG-powered research mode with caching, semantic search, and persistent memory.
 
 ## Module Overview
 
-| Module | Purpose |
-|--------|---------|
-| `tools.py` | Research tool schemas and executors |
-| `cache.py` | `ResearchCache` for URL content/links |
-| `vector_store.py` | `VectorStore` for hybrid semantic search |
-| `vector_store_chunk_link_ops.py` | Chunk/link embedding and retrieval operations |
-| `vector_store_finding_ops.py` | Research findings embedding/search operations |
-| `vector_store_common.py` | Shared vector math and constants |
-| `embeddings.py` | `EmbeddingClient` for local embeddings |
-| `chunker.py` | Token-aware text chunking |
-| `source_shortlist.py` | Pre-LLM source ranking pipeline |
-| `shortlist_collect.py` | Candidate/seed-link collection stage |
-| `shortlist_score.py` | Semantic + heuristic scoring stage |
-| `shortlist_types.py` | Shared shortlist datatypes and callback aliases |
-| `adapters.py` | Non-HTTP source adapters |
+| Module                           | Purpose                                         |
+| -------------------------------- | ----------------------------------------------- |
+| `tools.py`                       | Research tool schemas and executors             |
+| `cache.py`                       | `ResearchCache` for URL content/links           |
+| `vector_store.py`                | `VectorStore` for hybrid semantic search        |
+| `vector_store_chunk_link_ops.py` | Chunk/link embedding and retrieval operations   |
+| `vector_store_finding_ops.py`    | Research findings embedding/search operations   |
+| `vector_store_common.py`         | Shared vector math and constants                |
+| `embeddings.py`                  | `EmbeddingClient` for local embeddings          |
+| `chunker.py`                     | Token-aware text chunking                       |
+| `source_shortlist.py`            | Pre-LLM source ranking pipeline                 |
+| `shortlist_collect.py`           | Candidate/seed-link collection stage            |
+| `shortlist_score.py`             | Semantic + heuristic scoring stage              |
+| `shortlist_types.py`             | Shared shortlist datatypes and callback aliases |
+| `adapters.py`                    | Non-HTTP source adapters                        |
 
 ## Research Tools (`tools.py`)
 
 ### Available Tools
 
-| Tool | Description |
-|------|-------------|
-| `extract_links` | Cache URL content, return discovered links |
-| `get_link_summaries` | Get AI-generated page summaries |
-| `get_relevant_content` | RAG retrieval of relevant chunks |
-| `get_full_content` | Complete cached content |
-| `save_finding` | Persist insights to research memory |
-| `query_research_memory` | Semantic search over saved findings |
+| Tool                    | Description                                |
+| ----------------------- | ------------------------------------------ |
+| `extract_links`         | Cache URL content, return discovered links |
+| `get_link_summaries`    | Get AI-generated page summaries            |
+| `get_relevant_content`  | RAG retrieval of relevant chunks           |
+| `get_full_content`      | Complete cached content                    |
+| `save_finding`          | Persist insights to research memory        |
+| `query_research_memory` | Semantic search over saved findings        |
 
 Tool schemas also support optional `system_prompt_guideline` metadata used by
 chat/system-prompt assembly when the tool is enabled for a run.
@@ -39,6 +39,15 @@ When a chat session is active, registry plumbing can inject `session_id` into
 memory tool calls so findings are written/read in session scope.
 Research chat flow now guarantees that a session exists (auto-created when needed),
 so session-scoped memory isolation is available by default in research mode.
+
+### Tool Sets by Stage
+
+Tools are grouped into constants to support per-stage exposure:
+
+- `ACQUISITION_TOOL_NAMES`: `extract_links`, `get_link_summaries`, `get_full_content`.
+- `RETRIEVAL_TOOL_NAMES`: `get_relevant_content`, `save_finding`, `query_research_memory`.
+
+When a corpus is pre-loaded by acquisition stages, acquisition tools are excluded to prevent redundant LLM work.
 
 ### Execution Flow
 
@@ -78,11 +87,11 @@ Hybrid semantic search combining ChromaDB dense and SQLite BM25 lexical retrieva
 
 ### Collections
 
-| Collection | Content |
-|------------|---------|
-| `content_chunks` | Text chunks from cached pages |
-| `link_embeddings` | Link anchor text for relevance filtering |
-| `research_findings` | Saved insights for memory queries |
+| Collection          | Content                                  |
+| ------------------- | ---------------------------------------- |
+| `content_chunks`    | Text chunks from cached pages            |
+| `link_embeddings`   | Link anchor text for relevance filtering |
+| `research_findings` | Saved insights for memory queries        |
 
 ### Hybrid Ranking
 
@@ -190,6 +199,7 @@ tool = "read_local"  # or discover_tool + read_tool
 ### Built-in Local Fallback
 
 When no configured adapter matches, `adapters.py` can handle local sources directly:
+
 - Accepted targets: `local://...`, `file://...`, absolute/relative local paths.
 - Builtin local fallback is enabled only when `research.local_document_roots` is configured.
 - Targets are normalized as corpus-relative paths under configured roots (absolute-like

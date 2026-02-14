@@ -198,12 +198,32 @@ Useful for recalling facts, statistics, or insights you've discovered before."""
 ]
 
 
+# Tool names grouped by pipeline stage purpose.
+ACQUISITION_TOOL_NAMES = frozenset(
+    {
+        "extract_links",
+        "get_link_summaries",
+        "get_full_content",
+    }
+)
+
+RETRIEVAL_TOOL_NAMES = frozenset(
+    {
+        "get_relevant_content",
+        "save_finding",
+        "query_research_memory",
+    }
+)
+
+
 def _sanitize_url(url: str) -> str:
     """Remove artifacts from URLs."""
     return sanitize_url(url)
 
 
-def _split_local_targets(urls: List[str]) -> tuple[List[str], Dict[str, Dict[str, str]]]:
+def _split_local_targets(
+    urls: List[str],
+) -> tuple[List[str], Dict[str, Dict[str, str]]]:
     """Separate local filesystem targets from eligible URLs."""
     eligible: List[str] = []
     rejected: Dict[str, Dict[str, str]] = {}
@@ -528,9 +548,7 @@ def execute_get_link_summaries(args: Dict[str, Any]) -> Dict[str, Any]:
     for url in urls:
         summary_info = cache.get_summary(url)
         if not summary_info and has_source_adapter(url):
-            _, adapter_error = _ensure_adapter_cached(
-                cache, url, require_content=True
-            )
+            _, adapter_error = _ensure_adapter_cached(cache, url, require_content=True)
             if adapter_error:
                 results[url] = {"error": f"Adapter fetch failed: {adapter_error}"}
                 continue

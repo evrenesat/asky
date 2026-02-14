@@ -1,11 +1,15 @@
 """Chat implementation for asky CLI."""
 
+from __future__ import annotations
 import argparse
 import logging
 import time
-from typing import Any, List, Dict, Optional, Set
+from typing import Any, List, Dict, Optional, Set, TYPE_CHECKING
 
 from rich.console import Console
+
+if TYPE_CHECKING:
+    from asky.api.types import PreloadResolution
 from rich.panel import Panel
 from rich.table import Table
 
@@ -29,6 +33,7 @@ from asky.core import (
     SessionManager,
     get_shell_session_id,
     set_shell_session_id,
+    append_research_guidance,
 )
 from asky.storage import (
     get_history,
@@ -111,23 +116,20 @@ def build_messages(
     query_text: str,
     session_manager: Optional[SessionManager] = None,
     research_mode: bool = False,
-    source_shortlist_context: Optional[str] = None,
+    preload: Optional[PreloadResolution] = None,
     local_kb_hint_enabled: bool = False,
 ) -> List[Dict[str, str]]:
     """Build the initial message list for the conversation."""
     # Use research prompt if in research mode
     if research_mode:
         system_prompt = construct_research_system_prompt()
+        system_prompt = append_research_guidance(
+            system_prompt,
+            corpus_preloaded=preload.is_corpus_preloaded if preload else False,
+            local_kb_hint_enabled=local_kb_hint_enabled,
+        )
     else:
         system_prompt = construct_system_prompt()
-    if local_kb_hint_enabled and research_mode:
-        system_prompt = (
-            f"{system_prompt}\n\n"
-            "Local Knowledge Base Guidance:\n"
-            "- Local corpus sources were preloaded from configured document roots.\n"
-            "- Do not ask the user for local filesystem paths.\n"
-            "- Start by calling `query_research_memory` with the user's question to retrieve local knowledge base findings."
-        )
 
     messages = [
         {
@@ -147,11 +149,11 @@ def build_messages(
         )
 
     user_content = query_text
-    if source_shortlist_context:
+    if preload and preload.combined_context:
         user_content = (
             f"{query_text}\n\n"
             f"Preloaded sources gathered before tool calls:\n"
-            f"{source_shortlist_context}\n\n"
+            f"{preload.combined_context}\n\n"
             "Use this preloaded corpus as a starting point, then verify with tools before citing."
         )
 
