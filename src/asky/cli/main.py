@@ -105,6 +105,11 @@ def parse_args() -> argparse.Namespace:
         help="Delete session records and their messages. usage: --delete-sessions [ID|ID-ID|ID,ID] or --delete-sessions --all",
     )
     parser.add_argument(
+        "--clean-session-research",
+        metavar="SESSION_SELECTOR",
+        help="Delete research data (findings and vectors) for a session but keep messages. usage: --clean-session-research [ID|NAME]",
+    )
+    parser.add_argument(
         "--all",
         action="store_true",
         help="Used with --delete-messages or --delete-sessions to delete ALL records.",
@@ -279,6 +284,11 @@ def parse_args() -> argparse.Namespace:
         const="__default__",
         metavar="LINE_COUNT",
         help="Include the last N lines of terminal context in the query (default 10 if flag used without value).",
+    )
+    parser.add_argument(
+        "-sp",
+        "--system-prompt",
+        help="Override the configured default system prompt for this run.",
     )
     parser.add_argument(
         "--completion-script",
@@ -502,6 +512,8 @@ def main() -> None:
     if history.handle_delete_messages_command(args):
         return
     if sessions.handle_delete_sessions_command(args):
+        return
+    if sessions.handle_clean_session_research_command(args):
         return
     if args.print_session:
         sessions.print_session_command(

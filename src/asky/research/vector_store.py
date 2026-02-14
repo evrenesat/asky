@@ -131,7 +131,9 @@ class VectorStore:
                 metadata={"hnsw:space": CHROMA_COLLECTION_SPACE},
             )
         except Exception as exc:
-            logger.error("Failed to open Chroma collection '%s': %s", collection_name, exc)
+            logger.error(
+                "Failed to open Chroma collection '%s': %s", collection_name, exc
+            )
             return None
 
     def _table_has_column(self, table_name: str, column_name: str) -> bool:
@@ -316,7 +318,9 @@ class VectorStore:
         top_k: int,
     ) -> List[Tuple[str, float]]:
         """Search chunk similarities in ChromaDB."""
-        return chunk_link_ops.search_chunks_with_chroma(self, cache_id, query_embedding, top_k)
+        return chunk_link_ops.search_chunks_with_chroma(
+            self, cache_id, query_embedding, top_k
+        )
 
     def _search_chunks_with_sqlite(
         self,
@@ -325,7 +329,9 @@ class VectorStore:
         top_k: int,
     ) -> List[Tuple[str, float]]:
         """Search chunk similarities in SQLite by scanning stored vectors."""
-        return chunk_link_ops.search_chunks_with_sqlite(self, cache_id, query_embedding, top_k)
+        return chunk_link_ops.search_chunks_with_sqlite(
+            self, cache_id, query_embedding, top_k
+        )
 
     def search_chunks(
         self,
@@ -343,7 +349,9 @@ class VectorStore:
         top_k: int,
     ) -> List[Tuple[Dict[str, str], float]]:
         """Rank links with Chroma vector search."""
-        return chunk_link_ops.rank_links_with_chroma(self, cache_id, query_embedding, top_k)
+        return chunk_link_ops.rank_links_with_chroma(
+            self, cache_id, query_embedding, top_k
+        )
 
     def _rank_links_with_sqlite(
         self,
@@ -352,7 +360,9 @@ class VectorStore:
         top_k: int,
     ) -> List[Tuple[Dict[str, str], float]]:
         """Rank links by scanning SQLite link vectors."""
-        return chunk_link_ops.rank_links_with_sqlite(self, cache_id, query_embedding, top_k)
+        return chunk_link_ops.rank_links_with_sqlite(
+            self, cache_id, query_embedding, top_k
+        )
 
     def rank_links_by_relevance(
         self,
@@ -478,6 +488,10 @@ class VectorStore:
     def has_finding_embedding(self, finding_id: int) -> bool:
         """Check if a finding has an embedding."""
         return finding_ops.has_finding_embedding(self, finding_id)
+
+    def delete_findings_by_session(self, session_id: str) -> int:
+        """Delete findings and their embeddings for a session."""
+        return finding_ops.delete_findings_by_session(self, session_id)
 
 
 def get_vector_store() -> VectorStore:

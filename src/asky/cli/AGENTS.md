@@ -45,6 +45,7 @@ Command-line interface layer handling argument parsing, command routing, and use
 | `-r, --research`               | Enable deep research mode                     |
 | `-lc, --local-corpus`          | Explicit local research corpus (implies `-r`) |
 | `-sfm, --session-from-message` | `history.py`                                  |
+| `--clean-session-research`     | `sessions.py`                                 |
 
 ## Chat Flow (`chat.py`)
 

@@ -12,6 +12,10 @@ local_document_roots = []
 # Cache TTL in hours (cached pages expire after this time)
 cache_ttl_hours = 24
 
+# Evidence extraction (post-retrieval LLM fact extraction)
+evidence_extraction_enabled = false
+evidence_extraction_max_chunks = 10
+
 # Maximum links to return per URL (before relevance filtering)
 max_links_per_url = 50
 

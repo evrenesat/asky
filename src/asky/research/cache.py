@@ -274,7 +274,9 @@ class ResearchCache:
         if clear_chunks:
             cursor.execute("DELETE FROM content_chunks WHERE cache_id = ?", (cache_id,))
         if clear_links:
-            cursor.execute("DELETE FROM link_embeddings WHERE cache_id = ?", (cache_id,))
+            cursor.execute(
+                "DELETE FROM link_embeddings WHERE cache_id = ?", (cache_id,)
+            )
         if clear_chunks or clear_links:
             self._clear_chroma_vectors(
                 cache_id=cache_id,
@@ -472,9 +474,7 @@ class ResearchCache:
         logger.debug(f"Cached URL {url} with id={cache_id}")
         return cache_id
 
-    def _schedule_summarization(
-        self, cache_id: int, url: str, content: str
-    ) -> None:
+    def _schedule_summarization(self, cache_id: int, url: str, content: str) -> None:
         """Schedule background summarization task."""
 
         def summarize_task():
@@ -555,9 +555,7 @@ class ResearchCache:
             now = datetime.now().isoformat()
 
             # Get IDs of expired entries first
-            c.execute(
-                "SELECT id FROM research_cache WHERE expires_at < ?", (now,)
-            )
+            c.execute("SELECT id FROM research_cache WHERE expires_at < ?", (now,))
             expired_ids = [row[0] for row in c.fetchall()]
 
             if expired_ids:
@@ -600,9 +598,7 @@ class ResearchCache:
         c.execute("SELECT COUNT(*) FROM research_cache")
         total = c.fetchone()[0]
 
-        c.execute(
-            "SELECT COUNT(*) FROM research_cache WHERE expires_at > ?", (now,)
-        )
+        c.execute("SELECT COUNT(*) FROM research_cache WHERE expires_at > ?", (now,))
         valid = c.fetchone()[0]
 
         c.execute(

@@ -16,6 +16,7 @@ RAG-powered research mode with caching, semantic search, and persistent memory.
 | `chunker.py`                     | Token-aware text chunking                       |
 | `source_shortlist.py`            | Pre-LLM source ranking pipeline                 |
 | `query_expansion.py`             | Decomposing queries into sub-queries.           |
+| `evidence_extraction.py`         | Post-retrieval LLM fact extraction.             |
 | `shortlist_collect.py`           | Candidate/seed-link collection stage            |
 | `shortlist_score.py`             | Semantic + heuristic scoring stage              |
 | `shortlist_types.py`             | Shared shortlist datatypes and callback aliases |
@@ -110,6 +111,7 @@ final_score = (dense_weight * semantic_score) + ((1 - dense_weight) * lexical_sc
 - `search_content_chunks()`: Hybrid search with diversity filtering
 - `search_relevant_links()`: Filter links by semantic relevance
 - `clear_cache_embeddings()`: Remove stale vectors on invalidation
+- `delete_findings_by_session()`: Session-scoped cleanup of findings and vectors
 
 ### Internal Module Split
 

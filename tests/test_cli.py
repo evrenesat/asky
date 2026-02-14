@@ -1427,3 +1427,61 @@ def test_list_prompts_truncates_long_expansion(capsys):
     captured = capsys.readouterr()
     # Should have ... for truncation
     assert "..." in captured.out
+
+
+def test_parse_args_system_prompt():
+    with patch("sys.argv", ["asky", "-sp", "Custom System Prompt", "query"]):
+        args = parse_args()
+        assert args.system_prompt == "Custom System Prompt"
+
+    with patch("sys.argv", ["asky", "--system-prompt", "Another Prompt", "query"]):
+        args = parse_args()
+        assert args.system_prompt == "Another Prompt"
+
+
+def test_build_messages_with_override(mock_args):
+    messages = build_messages(
+        mock_args, context_str="", query_text="Q", system_prompt_override="Override"
+    )
+    assert messages[0]["content"] == "Override"
+
+
+@patch("asky.cli.chat.AskyClient")
+@patch("asky.cli.chat.get_shell_session_id", return_value=None)
+@patch("asky.cli.chat.InterfaceRenderer")
+@patch("asky.cli.chat.LIVE_BANNER", False)
+def test_run_chat_passes_system_prompt_override(
+    mock_renderer, mock_get_shell, mock_client_cls
+):
+    mock_args = argparse.Namespace(
+        model="gf",
+        research=False,
+        local_corpus=None,
+        summarize=False,
+        open=False,
+        continue_ids=None,
+        sticky_session=None,
+        resume_session=None,
+        lean=False,
+        tool_off=[],
+        terminal_lines=None,
+        save_history=True,
+        verbose=False,
+        system_prompt="Custom Override",
+    )
+
+    mock_turn_result = MagicMock()
+    mock_turn_result.final_answer = None
+    mock_turn_result.halted = True
+    mock_turn_result.notices = []
+
+    with patch("asky.cli.chat.MODELS", {"gf": {"id": "g"}}):
+        mock_client = MagicMock()
+        mock_client.run_turn.return_value = mock_turn_result
+        mock_client_cls.return_value = mock_client
+
+        run_chat(mock_args, "query")
+
+        # Verify AskyConfig was created with system_prompt_override
+        config_arg = mock_client_cls.call_args[0][0]
+        assert config_arg.system_prompt_override == "Custom Override"

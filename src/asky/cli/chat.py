@@ -118,10 +118,13 @@ def build_messages(
     research_mode: bool = False,
     preload: Optional[PreloadResolution] = None,
     local_kb_hint_enabled: bool = False,
+    system_prompt_override: Optional[str] = None,
 ) -> List[Dict[str, str]]:
     """Build the initial message list for the conversation."""
     # Use research prompt if in research mode
-    if research_mode:
+    if system_prompt_override:
+        system_prompt = system_prompt_override
+    elif research_mode:
         system_prompt = construct_research_system_prompt()
         system_prompt = append_research_guidance(
             system_prompt,
@@ -426,6 +429,7 @@ def run_chat(args: argparse.Namespace, query_text: str) -> None:
                 open_browser=args.open,
                 research_mode=research_mode,
                 disabled_tools=disabled_tools,
+                system_prompt_override=getattr(args, "system_prompt", None),
             ),
             usage_tracker=usage_tracker,
             summarization_tracker=summarization_tracker,

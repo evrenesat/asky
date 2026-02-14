@@ -400,3 +400,37 @@ def test_asky_client_run_turn_passes_corpus_preloaded_to_run_messages(
     client.run_turn(AskyTurnRequest(query_text="foo"))
     _, kwargs = mock_run_messages.call_args
     assert kwargs["preload"].is_corpus_preloaded is False
+
+
+def test_asky_client_uses_system_prompt_override():
+    client = AskyClient(
+        AskyConfig(
+            model_alias="gf",
+            system_prompt_override="Override Prompt",
+        )
+    )
+    messages = client.build_messages(query_text="Hi")
+    assert messages[0]["role"] == "system"
+    assert "Override Prompt" in messages[0]["content"]
+    assert "helpful assistant" not in messages[0]["content"]
+
+
+def test_asky_client_override_with_research_guidance_and_hints():
+    client = AskyClient(
+        AskyConfig(
+            model_alias="gf",
+            research_mode=True,
+            system_prompt_override="Override Prompt",
+        )
+    )
+    # Mock preload where is_corpus_preloaded=True
+    preload = MagicMock()
+    preload.is_corpus_preloaded = True
+
+    messages = client.build_messages(
+        query_text="Hi", preload=preload, local_kb_hint_enabled=True
+    )
+    assert "Override Prompt" in messages[0]["content"]
+    # Check that research guidance is STILL appended
+    assert "A research corpus has been pre-loaded" in messages[0]["content"]
+    assert "Local Knowledge Base Guidance" in messages[0]["content"]

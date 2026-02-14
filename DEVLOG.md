@@ -4,6 +4,77 @@ For older logs, see [DEVLOG_ARCHIVE.md](DEVLOG_ARCHIVE.md).
 
 ## 2026-02-14
 
+### System Prompt Override Flag and API Capability
+
+**Summary**: Added support for overriding the default system prompt via CLI and API. This allows users to customize the model's behavior/persona without modifying configuration files.
+
+- **Added**:
+  - CLI: `--system-prompt` / `-sp` flag in `src/asky/cli/main.py`.
+  - API: `system_prompt_override` field to `AskyConfig` in `src/asky/api/types.py`.
+- **Changed**:
+  - `src/asky/api/client.py`: `build_messages` uses the override if provided.
+  - `src/asky/cli/chat.py`: Propagates CLI flag to API config and updated signature of CLI-layer `build_messages`.
+- **Tests**:
+  - Added coverage for override logic in `tests/test_api_library.py` and argument parsing in `tests/test_cli.py`.
+- **Why**:
+  - Provides a quick way to switch model personas or experiment with system instructions on the fly.
+  - Useful for specialized research tasks or specific model instruction requirements.
+
+### Session-Scoped Research Data Cleanup
+
+**Summary**: Added CLI and API support for selective cleanup of research findings and vector embeddings while preserving conversation history. This allows users to "forget" research context for a specific session without losing the chat log.
+
+- **Added**:
+  - `src/asky/research/cache.py`: `delete_findings_by_session()` method.
+  - `src/asky/research/vector_store_finding_ops.py`: `delete_findings_by_session()` function (SQLite + Chroma).
+  - `tests/test_session_research_cleanup.py`: Comprehensive tests for session isolation and multi-layer cleanup.
+- **Changed**:
+  - **CLI**:
+    - `src/asky/cli/main.py`: Added `--clean-session-research SESSION_SELECTOR` flag.
+    - `src/asky/cli/sessions.py`: Implemented `handle_clean_session_research_command` with session resolution.
+  - **API**:
+    - `src/asky/api/client.py`: Added `cleanup_session_research_data()` orchestration method.
+  - **Tests**:
+    - `tests/test_startup_cleanup.py`: Fixed regression where truthy MagicMocks for new flag caused early exit.
+- **Why**:
+  - Complements `--delete-sessions` (full wipe) with a surgical research-only cleanup option. Useful when research data becomes stale or irrelevant but the conversation summary is still valuable.
+
+### Evidence-Focused Extraction Pipeline Step
+
+**Summary**: Added a post-retrieval evidence extraction step that processes retrieved chunks with a focused LLM prompt to extract structured facts. This improves synthesis quality, especially for smaller models.
+
+- **Added**:
+  - `src/asky/research/evidence_extraction.py`: New module for fact extraction and context formatting.
+  - `tests/test_evidence_extraction.py`: Unit tests for extraction logic and edge cases.
+- **Changed**:
+  - **Pipeline Integration**:
+    - `src/asky/api/preload.py`: `run_preload_pipeline` now optionally runs `extract_evidence_from_chunks` if enabled.
+    - `src/asky/api/types.py`: `PreloadResolution` updated with `evidence_context` and `evidence_payload` fields.
+  - **Configuration**:
+    - `src/asky/data/config/research.toml`: Added `evidence_extraction_enabled` (default false) and `evidence_extraction_max_chunks` (default 10).
+    - `src/asky/config/__init__.py`: Exported new research constants.
+  - **Documentation**:
+    - `src/asky/research/AGENTS.md`: Documented new module.
+    - `ARCHITECTURE.md`: Added Design Decision #16 and updated retrieval flow diagram.
+- **Why**:
+  - Raw chunks can be noisy or contain irrelevant info; pre-extracting focused facts makes the final synthesis step more reliable and efficient.
+
+**Post-Review Fixes (Round 1)**:
+
+- Fixed `is_corpus_preloaded` to remove circular dependency: evidence extraction only runs when corpus is already preloaded, so `evidence_found` check was dead code.
+- Simplified dataclass serialization in preload.py: removed fragile `hasattr` check and duplicate fallback logic.
+- Restored Decision 15 (Query Expansion) to ARCHITECTURE.md that was accidentally removed.
+- Added missing `asdict` import in preload.py.
+
+**Post-Review Fixes (Round 2)**:
+
+- **client.py**: Removed confusing leftover comment block and simplified return shape to `{"deleted": int}`.
+- **cache.py**: Removed `delete_findings_by_session()` method (dead code — `vector_store_finding_ops` already handles both SQLite + Chroma cleanup).
+- **vector_store_finding_ops.py**: Removed ownership-confusion comment explaining cache vs vector_store split.
+- **sessions.py**: Updated CLI output to use `results['deleted']` instead of `results['findings_deleted']`.
+- **preload.py**: Added guard for empty `sub_queries` in evidence extraction block to short-circuit gracefully.
+- **tests/test_session_research_cleanup.py**: Removed obsolete `test_cache_delete_findings_by_session`, updated orchestration and CLI tests to use new return shape.
+
 ### Per-Stage Research Tool Exposure + Simplified Retrieval Guidance
 
 **Summary**: Refactored research tools into Acquisition and Retrieval sets. The system now dynamically excludes acquisition tools (caching/browsing) when a corpus is pre-loaded (web shortlist or local ingestion), forcing the model to focus on retrieval and synthesis. Added a streamlined "retrieval-only" system prompt guidance for these scenarios.
@@ -60,6 +131,7 @@ For older logs, see [DEVLOG_ARCHIVE.md](DEVLOG_ARCHIVE.md).
 - **Documentation**: Updated `ARCHITECTURE.md` (Decision #15) and `src/asky/research/AGENTS.md`
 
 **Post-Review Fixes**:
+
 - Fixed AGENTS.md table corruption (restored ChromaDB collection entries, removed file descriptions)
 - Removed unused `sub_queries` parameter from `preload_local_research_sources()` signature
 - Fixed kwarg forwarding in `expand_query()` proxy to match target function signatures

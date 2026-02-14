@@ -77,11 +77,15 @@ class AskyClient:
         local_kb_hint_enabled: bool = False,
     ) -> List[Dict[str, Any]]:
         """Build a message list for a single asky turn."""
-        system_prompt = (
-            construct_research_system_prompt()
-            if self.config.research_mode
-            else construct_system_prompt()
-        )
+        if self.config.system_prompt_override:
+            system_prompt = self.config.system_prompt_override
+        else:
+            system_prompt = (
+                construct_research_system_prompt()
+                if self.config.research_mode
+                else construct_system_prompt()
+            )
+
         if self.config.research_mode:
             system_prompt = append_research_guidance(
                 system_prompt,
@@ -417,3 +421,16 @@ class AskyClient:
             session=session_resolution,
             preload=preload,
         )
+
+    def cleanup_session_research_data(self, session_id: str) -> dict:
+        """Delete research findings and vectors for a session.
+
+        Returns {"deleted": int} — count of findings/vectors removed.
+        """
+        from asky.research.vector_store import VectorStore
+
+        vector_store = VectorStore()
+        # VectorStore handles both ChromaDB embeddings and SQLite row deletion
+        deleted = vector_store.delete_findings_by_session(str(session_id))
+
+        return {"deleted": deleted}

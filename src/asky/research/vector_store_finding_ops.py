@@ -7,7 +7,11 @@ import logging
 from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple
 
 from asky.research.embeddings import EmbeddingClient
-from asky.research.vector_store_common import cosine_similarity, distance_to_similarity, first_query_result
+from asky.research.vector_store_common import (
+    cosine_similarity,
+    distance_to_similarity,
+    first_query_result,
+)
 
 if TYPE_CHECKING:
     from asky.research.vector_store import VectorStore
@@ -32,7 +36,10 @@ def upsert_finding_to_chroma(
             documents=[finding_text],
             embeddings=[embedding],
             metadatas=[
-                {"finding_id": finding_id, "embedding_model": store.embedding_client.model}
+                {
+                    "finding_id": finding_id,
+                    "embedding_model": store.embedding_client.model,
+                }
             ],
         )
     except Exception as exc:
@@ -322,3 +329,46 @@ def has_finding_embedding(store: "VectorStore", finding_id: int) -> bool:
     count = c.fetchone()[0]
     conn.close()
     return count > 0
+
+
+def delete_findings_by_session(store: "VectorStore", session_id: str) -> int:
+    """Delete findings and their embeddings for a session from both SQLite and ChromaDB.
+
+    Returns the number of findings deleted.
+    """
+    conn = store._get_conn()
+    c = conn.cursor()
+    # Get all finding IDs for this session to delete from Chroma
+    c.execute("SELECT id FROM research_findings WHERE session_id = ?", (session_id,))
+    finding_ids = [row[0] for row in c.fetchall()]
+
+    if not finding_ids:
+        conn.close()
+        return 0
+
+    # 1. Delete from ChromaDB
+    collection = store._get_chroma_collection(store.chroma_findings_collection)
+    if collection is not None:
+        try:
+            chroma_ids = [store._finding_chroma_id(fid) for fid in finding_ids]
+            collection.delete(ids=chroma_ids)
+        except Exception as exc:
+            logger.error(
+                "Failed to delete matching finding embeddings from ChromaDB for session %s: %s",
+                session_id,
+                exc,
+            )
+
+    # 2. Delete from SQLite
+    c.execute("DELETE FROM research_findings WHERE session_id = ?", (session_id,))
+    deleted_count = c.rowcount
+    conn.commit()
+    conn.close()
+
+    if deleted_count > 0:
+        logger.debug(
+            "Deleted %s findings and embeddings for session %s",
+            deleted_count,
+            session_id,
+        )
+    return deleted_count

@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import time
-from typing import Any, Callable, Dict, Optional
+from dataclasses import asdict
+from typing import Any, Callable, Dict, List, Optional
 
 from asky.config import (
     SOURCE_SHORTLIST_ENABLED,
@@ -12,6 +13,8 @@ from asky.config import (
     QUERY_EXPANSION_ENABLED,
     QUERY_EXPANSION_MODE,
     QUERY_EXPANSION_MAX_SUB_QUERIES,
+    RESEARCH_EVIDENCE_EXTRACTION_ENABLED,
+    RESEARCH_EVIDENCE_EXTRACTION_MAX_CHUNKS,
 )
 from asky.lazy_imports import call_attr
 
@@ -76,6 +79,35 @@ def format_local_ingestion_context(local_payload: Dict[str, Any]) -> Optional[st
         "asky.cli.local_ingestion_flow",
         "format_local_ingestion_context",
         local_payload,
+    )
+
+
+def extract_evidence(*args: Any, **kwargs: Any) -> Any:
+    """Lazy import evidence extraction."""
+    return call_attr(
+        "asky.research.evidence_extraction",
+        "extract_evidence_from_chunks",
+        *args,
+        **kwargs,
+    )
+
+
+def format_evidence_context(evidence: List[Any]) -> Optional[str]:
+    """Lazy import evidence formatter."""
+    return call_attr(
+        "asky.research.evidence_extraction",
+        "format_evidence_context",
+        evidence,
+    )
+
+
+def get_relevant_content(*args: Any, **kwargs: Any) -> Dict[str, Any]:
+    """Lazy import research retrieval tool."""
+    return call_attr(
+        "asky.research.tools",
+        "execute_get_relevant_content",
+        *args,
+        **kwargs,
     )
 
 
@@ -247,9 +279,68 @@ def run_preload_pipeline(
         shortlist_payload,
         shortlist_elapsed_ms,
     )
+
+    # Post-retrieval evidence extraction (optional)
+    if (
+        research_mode
+        and RESEARCH_EVIDENCE_EXTRACTION_ENABLED
+        and preload.is_corpus_preloaded
+        and sub_queries  # Skip if no sub-queries available
+    ):
+        if status_callback:
+            status_callback("Evidence extraction: processing retrieved chunks")
+        evidence_start = time.perf_counter()
+
+        # 1. Collect candidate chunks for each sub-query
+        all_candidate_chunks: List[Dict[str, Any]] = []
+        all_urls = []
+        if preload.local_payload.get("ingested"):
+            all_urls.extend([ing["url"] for ing in preload.local_payload["ingested"]])
+        if preload.shortlist_payload.get("candidates"):
+            all_urls.extend([c["url"] for c in preload.shortlist_payload["candidates"]])
+
+        if all_urls:
+            unique_urls = list(dict.fromkeys(all_urls))
+            for sq in sub_queries:
+                rag_results = get_relevant_content({"urls": unique_urls, "query": sq})
+                for url, res in rag_results.items():
+                    if isinstance(res, dict) and "chunks" in res:
+                        all_candidate_chunks.extend(res["chunks"])
+
+        # 2. Extract structured evidence facts
+        if all_candidate_chunks:
+            # Dedupe chunks by text to avoid redundant extraction calls
+            seen_texts = set()
+            unique_chunks = []
+            for chunk in all_candidate_chunks:
+                if chunk["text"] not in seen_texts:
+                    seen_texts.add(chunk["text"])
+                    unique_chunks.append(chunk)
+
+            evidence_list = extract_evidence(
+                chunks=unique_chunks,
+                query=query_text,
+                llm_client=llm_client,
+                model=model_config.get("model", ""),
+                max_chunks=RESEARCH_EVIDENCE_EXTRACTION_MAX_CHUNKS,
+            )
+
+            # extract_evidence always returns List[EvidenceFact] dataclasses
+            preload.evidence_payload = {"facts": [asdict(f) for f in evidence_list]}
+
+            preload.evidence_context = format_evidence_context(evidence_list)
+            preload.evidence_elapsed_ms = (time.perf_counter() - evidence_start) * 1000
+
+            if status_callback:
+                status_callback(
+                    f"Evidence extraction ready: {len(evidence_list)} facts extracted "
+                    f"in {preload.evidence_elapsed_ms:.0f}ms"
+                )
+
     preload.combined_context = combine_preloaded_source_context(
         preload.local_context,
         shortlist_context,
+        preload.evidence_context,
         additional_source_context,
     )
     return preload

@@ -145,3 +145,39 @@ def handle_delete_sessions_command(args) -> bool:
             print(f"Deleted {count} session record(s) and their messages.")
         return True
     return False
+
+
+def handle_clean_session_research_command(args) -> bool:
+    """Handle clean-session-research flag."""
+    if not getattr(args, "clean_session_research", None):
+        return False
+
+    from asky.storage import get_session_by_id, get_session_by_name
+    from asky.api import AskyClient, AskyConfig
+
+    selector = args.clean_session_research
+
+    # Resolve session
+    session = None
+    try:
+        session_id = int(selector)
+        session = get_session_by_id(session_id)
+    except ValueError:
+        session = get_session_by_name(selector)
+
+    if not session:
+        print(f"Error: Session '{selector}' not found.")
+        return True
+
+    # Confirm (optional, but good practice for deletion)
+    # The user didn't explicitly ask for confirmation, but --delete-sessions is interactive by default if no ID.
+    # Here we have an ID/Selector. Let's just proceed.
+
+    client = AskyClient(AskyConfig(model_alias=getattr(args, "model", "default")))
+    results = client.cleanup_session_research_data(str(session.id))
+
+    print(
+        f"Cleaned research data for session {session.id} ({session.name or 'unnamed'}): "
+        f"{results['deleted']} findings/vectors removed."
+    )
+    return True

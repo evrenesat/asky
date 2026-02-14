@@ -118,6 +118,12 @@ RESEARCH_MAX_RELEVANT_LINKS = _research.get("max_relevant_links", 20)
 RESEARCH_CHUNK_SIZE = _research.get("chunk_size", 256)
 RESEARCH_CHUNK_OVERLAP = _research.get("chunk_overlap", 48)
 RESEARCH_MAX_CHUNKS_PER_RETRIEVAL = _research.get("max_chunks_per_retrieval", 5)
+RESEARCH_EVIDENCE_EXTRACTION_ENABLED = _research.get(
+    "evidence_extraction_enabled", False
+)
+RESEARCH_EVIDENCE_EXTRACTION_MAX_CHUNKS = _research.get(
+    "evidence_extraction_max_chunks", 10
+)
 RESEARCH_SUMMARIZATION_WORKERS = _research.get("summarization_workers", 2)
 RESEARCH_MEMORY_MAX_RESULTS = _research.get("memory_max_results", 10)
 RESEARCH_SOURCE_ADAPTERS = _research.get("source_adapters", {})

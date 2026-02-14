@@ -17,6 +17,7 @@ class AskyConfig:
     research_mode: bool = False
     disabled_tools: Set[str] = field(default_factory=set)
     model_parameters_override: Dict[str, Any] = field(default_factory=dict)
+    system_prompt_override: Optional[str] = None
 
 
 @dataclass
@@ -82,6 +83,9 @@ class PreloadResolution:
     shortlist_enabled: bool = False
     shortlist_reason: str = ""
     sub_queries: List[str] = field(default_factory=list)
+    evidence_context: Optional[str] = None
+    evidence_payload: Dict[str, Any] = field(default_factory=dict)
+    evidence_elapsed_ms: float = 0.0
     combined_context: Optional[str] = None
 
     @property

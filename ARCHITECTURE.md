@@ -210,6 +210,10 @@ get_relevant_content(urls, query)
 Hybrid ranking: Chroma dense + SQLite BM25
     ↓
 Top chunks returned with relevance scores
+    ↓
+Evidence Extraction (optional)
+    ↓
+Structured facts injected into context
 ```
 
 Local-file targets can still be preloaded/indexed through research adapters:
@@ -251,6 +255,8 @@ results.jsonl + results.md + summary.json + report.md
 ```
 
 ### Research Memory Flow (Session-Scoped)
+
+Findings and embeddings are isolated by `session_id`. Selective cleanup via `--clean-session-research` removes these records for a session while preserving conversation history.
 
 ```
 save_finding(...)
@@ -393,3 +399,12 @@ A simplified "retrieval-only" system prompt guidance is injected in these cases 
   - Deterministic mode uses YAKE for keyphrase clustering.
   - LLM mode (optional) uses a small structured-output call.
   - `PreloadResolution` stores sub-queries; shortlist and local ingestion use them for multi-pass retrieval.
+
+### Decision 16: Evidence-Focused Extraction
+
+- **Context**: Raw chunks are often noisy; smaller models benefit from structured facts.
+- **Decision**: Add a post-retrieval fact extraction step using a focused LLM prompt.
+- **Implementation**:
+  - Optional stage in `run_preload_pipeline` (enabled via `research.toml`).
+  - Processes top-k retrieved chunks (max 10).
+  - Produces structured JSON facts injected as a "Structured Evidence" section in the user prompt.

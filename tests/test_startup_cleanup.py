@@ -52,6 +52,7 @@ class TestStartupCleanup:
                 args.query = ["test", "query"]
                 args.reply = False
                 args.session_from_message = None
+                args.clean_session_research = None
                 args.completion_script = None
 
                 mock_parse.return_value = args

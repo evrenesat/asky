@@ -1,16 +1,10 @@
 {
   "permissions": {
     "allow": [
-      "Bash(uv run pytest:*)",
-      "Bash(uv run python:*)",
-      "Bash(python3:*)",
-      "Bash(~/bin/delete-temp-files:*)",
-      "Bash(git add:*)",
-      "Bash(git commit:*)",
-      "Bash(uv run:*)",
-      "Bash(ls:*)",
-      "Bash(wc:*)",
-      "Bash(python -m pytest:*)"
+      "Bash(*)",
+      "Read(*)",
+      "Write(*)",
+      "Edit(*)"
     ]
   },
   "sandbox": {

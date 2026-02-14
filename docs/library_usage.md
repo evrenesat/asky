@@ -47,15 +47,16 @@ from asky.api import (
 
 `AskyConfig` configures the client instance itself (model/mode/tool behavior).
 
-| Field | Type | Required | Default | Description |
-|---|---|---|---|---|
-| `model_alias` | `str` | yes | - | Must exist in configured `MODELS` (for example `gf`). |
-| `summarize` | `bool` | no | `False` | Passed into core tool dispatch/summarization behavior. |
-| `verbose` | `bool` | no | `False` | Enables verbose tool tracing payloads/callback behavior. |
-| `open_browser` | `bool` | no | `False` | Allows engine/browser rendering path for final answer. |
-| `research_mode` | `bool` | no | `False` | Uses research prompt/tool registry and research session behavior. |
-| `disabled_tools` | `set[str]` | no | `set()` | Runtime tool exclusion by exact tool name. |
-| `model_parameters_override` | `dict[str, Any]` | no | `{}` | Merged over configured model `parameters` for this client instance. |
+| Field                       | Type             | Required | Default | Description                                                         |
+| --------------------------- | ---------------- | -------- | ------- | ------------------------------------------------------------------- |
+| `model_alias`               | `str`            | yes      | -       | Must exist in configured `MODELS` (for example `gf`).               |
+| `summarize`                 | `bool`           | no       | `False` | Passed into core tool dispatch/summarization behavior.              |
+| `verbose`                   | `bool`           | no       | `False` | Enables verbose tool tracing payloads/callback behavior.            |
+| `open_browser`              | `bool`           | no       | `False` | Allows engine/browser rendering path for final answer.              |
+| `research_mode`             | `bool`           | no       | `False` | Uses research prompt/tool registry and research session behavior.   |
+| `disabled_tools`            | `set[str]`       | no       | `set()` | Runtime tool exclusion by exact tool name.                          |
+| `model_parameters_override` | `dict[str, Any]` | no       | `{}`    | Merged over configured model `parameters` for this client instance. |
+| `system_prompt_override`    | `str \| None`    | no       | `None`  | Override the default system prompt.                                 |
 
 Example:
 
@@ -72,19 +73,19 @@ client = AskyClient(cfg)
 
 `AskyTurnRequest` controls one full orchestrated turn.
 
-| Field | Type | Required | Default | Description |
-|---|---|---|---|---|
-| `query_text` | `str` | yes | - | User query text. |
-| `continue_ids` | `str \| None` | no | `None` | History selector string, e.g. `"1,2"` or `"~1"`. |
-| `summarize_context` | `bool` | no | `False` | If `True`, loads summarized context instead of full. |
-| `sticky_session_name` | `str \| None` | no | `None` | Create and attach to a new named session. |
-| `resume_session_term` | `str \| None` | no | `None` | Resume by ID/name/partial-name. |
-| `shell_session_id` | `int \| None` | no | `None` | Optional pre-resolved shell session id for auto-resume logic. |
-| `lean` | `bool` | no | `False` | Disables shortlist via policy resolution (`lean` mode). |
-| `preload_local_sources` | `bool` | no | `True` | Run local-source ingestion preload stage. |
-| `preload_shortlist` | `bool` | no | `True` | Run shortlist preload stage. |
-| `additional_source_context` | `str \| None` | no | `None` | Extra corpus context appended to preload context. |
-| `save_history` | `bool` | no | `True` | Persist turn (session/global history) after completion. |
+| Field                       | Type          | Required | Default | Description                                                   |
+| --------------------------- | ------------- | -------- | ------- | ------------------------------------------------------------- |
+| `query_text`                | `str`         | yes      | -       | User query text.                                              |
+| `continue_ids`              | `str \| None` | no       | `None`  | History selector string, e.g. `"1,2"` or `"~1"`.              |
+| `summarize_context`         | `bool`        | no       | `False` | If `True`, loads summarized context instead of full.          |
+| `sticky_session_name`       | `str \| None` | no       | `None`  | Create and attach to a new named session.                     |
+| `resume_session_term`       | `str \| None` | no       | `None`  | Resume by ID/name/partial-name.                               |
+| `shell_session_id`          | `int \| None` | no       | `None`  | Optional pre-resolved shell session id for auto-resume logic. |
+| `lean`                      | `bool`        | no       | `False` | Disables shortlist via policy resolution (`lean` mode).       |
+| `preload_local_sources`     | `bool`        | no       | `True`  | Run local-source ingestion preload stage.                     |
+| `preload_shortlist`         | `bool`        | no       | `True`  | Run shortlist preload stage.                                  |
+| `additional_source_context` | `str \| None` | no       | `None`  | Extra corpus context appended to preload context.             |
+| `save_history`              | `bool`        | no       | `True`  | Persist turn (session/global history) after completion.       |
 
 Example:
 
