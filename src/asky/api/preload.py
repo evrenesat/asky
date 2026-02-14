@@ -9,6 +9,9 @@ from asky.config import (
     SOURCE_SHORTLIST_ENABLED,
     SOURCE_SHORTLIST_ENABLE_RESEARCH_MODE,
     SOURCE_SHORTLIST_ENABLE_STANDARD_MODE,
+    QUERY_EXPANSION_ENABLED,
+    QUERY_EXPANSION_MODE,
+    QUERY_EXPANSION_MAX_SUB_QUERIES,
 )
 from asky.lazy_imports import call_attr
 
@@ -24,6 +27,27 @@ def shortlist_prompt_sources(*args: Any, **kwargs: Any) -> Dict[str, Any]:
         "shortlist_prompt_sources",
         *args,
         **kwargs,
+    )
+
+
+def expand_query(*args: Any, **kwargs: Any) -> List[str]:
+    """Lazy import query expansion."""
+    mode = kwargs.pop("mode", "deterministic")
+    query = kwargs.pop("query", "")
+
+    if mode == "llm":
+        # LLM mode accepts llm_client, model, max_sub_queries
+        return call_attr(
+            "asky.research.query_expansion",
+            "expand_query_with_llm",
+            query,
+            **kwargs,
+        )
+    # Deterministic mode only accepts query (positional)
+    return call_attr(
+        "asky.research.query_expansion",
+        "expand_query_deterministic",
+        query,
     )
 
 
@@ -124,9 +148,33 @@ def run_preload_pipeline(
     local_ingestion_formatter: Callable[
         [Dict[str, Any]], Optional[str]
     ] = format_local_ingestion_context,
+    llm_client: Any = None,
+    expansion_executor: Callable[..., List[str]] = expand_query,
 ) -> PreloadResolution:
     """Run local+shortlist preloads and return their combined context payload."""
     preload = PreloadResolution()
+
+    # Decompose query if expansion is enabled
+    sub_queries = [query_text]
+    if research_mode and QUERY_EXPANSION_ENABLED:
+        if status_callback:
+            status_callback(f"Query expansion: mode={QUERY_EXPANSION_MODE}")
+
+        expansion_kwargs = {
+            "query": query_text,
+            "mode": QUERY_EXPANSION_MODE,
+            "max_sub_queries": QUERY_EXPANSION_MAX_SUB_QUERIES,
+        }
+        if QUERY_EXPANSION_MODE == "llm" and llm_client:
+            expansion_kwargs["llm_client"] = llm_client
+            expansion_kwargs["model"] = model_config.get(
+                "model", ""
+            )  # Use current model for expansion if not specified
+
+        sub_queries = expansion_executor(**expansion_kwargs)
+        preload.sub_queries = sub_queries
+        if status_callback and len(sub_queries) > 1:
+            status_callback(f"Query expanded into {len(sub_queries)} sub-queries")
 
     if research_mode and preload_local_sources:
         if status_callback:
@@ -179,6 +227,7 @@ def run_preload_pipeline(
             user_prompt=query_text,
             research_mode=research_mode,
             status_callback=status_callback,
+            queries=sub_queries if len(sub_queries) > 1 else None,
         )
         shortlist_elapsed_ms = (time.perf_counter() - shortlist_start) * 1000
         if shortlist_payload.get("enabled"):

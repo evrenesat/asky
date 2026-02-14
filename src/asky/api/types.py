@@ -81,6 +81,7 @@ class PreloadResolution:
     shortlist_elapsed_ms: float = 0.0
     shortlist_enabled: bool = False
     shortlist_reason: str = ""
+    sub_queries: List[str] = field(default_factory=list)
     combined_context: Optional[str] = None
 
     @property

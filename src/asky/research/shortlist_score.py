@@ -15,22 +15,35 @@ GetEmbeddingClient = Callable[[], Any]
 NormalizeWhitespace = Callable[[str], str]
 
 
-def resolve_scoring_query(
+def resolve_scoring_queries(
     *,
+    queries: Optional[Sequence[str]],
     query_text: str,
     keyphrases: Sequence[str],
     candidates: Sequence[CandidateRecord],
     search_phrase_count: int,
     query_fallback_chars: int,
     normalize_whitespace: NormalizeWhitespace,
-) -> str:
-    """Resolve best-effort scoring query when prompt text is sparse."""
+) -> List[str]:
+    """Resolve best-effort scoring queries when prompt text is sparse."""
+    if queries:
+        # Filter out empty or duplicate queries
+        seen = set()
+        results = []
+        for q in queries:
+            normalized = normalize_whitespace(q)
+            if normalized and normalized not in seen:
+                results.append(normalized)
+                seen.add(normalized)
+        if results:
+            return results
+
     normalized_query = normalize_whitespace(query_text)
     if normalized_query:
-        return normalized_query
+        return [normalized_query]
 
     if keyphrases:
-        return " ".join(keyphrases[:search_phrase_count])
+        return [" ".join(keyphrases[:search_phrase_count])]
 
     fallback_parts: List[str] = []
     for candidate in candidates[:2]:
@@ -38,7 +51,7 @@ def resolve_scoring_query(
             fallback_parts.append(candidate.title)
         if candidate.text:
             fallback_parts.append(candidate.text[:query_fallback_chars])
-    return normalize_whitespace(" ".join(fallback_parts))
+    return [normalize_whitespace(" ".join(fallback_parts))]
 
 
 def _keyphrase_overlap_ratio(keyphrases: Sequence[str], lowered_document: str) -> float:
@@ -100,7 +113,7 @@ def _build_selection_reasons(
 def score_candidates(
     *,
     candidates: Sequence[CandidateRecord],
-    scoring_query: str,
+    scoring_queries: Sequence[str],
     keyphrases: Sequence[str],
     seed_urls: Sequence[str],
     embedding_client: Optional[Any],
@@ -124,29 +137,32 @@ def score_candidates(
     if not candidates:
         return []
 
-    query_embedding: Optional[List[float]] = None
+    query_embeddings: List[List[float]] = []
     doc_embeddings: List[List[float]] = []
     doc_strings: List[str] = [
         _build_document_string(candidate, doc_lead_chars) for candidate in candidates
     ]
 
-    if scoring_query:
+    if scoring_queries:
         client = embedding_client or get_embedding_client()
         has_cached_failure = getattr(client, "has_model_load_failure", None)
         if callable(has_cached_failure) and has_cached_failure():
             warnings.append("embedding_skipped:cached_model_load_failure")
             logger.debug(
-                "source_shortlist embedding skipped due to cached model load failure query_len=%d docs=%d",
-                len(scoring_query),
+                "source_shortlist embedding skipped due to cached model load failure queries=%d docs=%d",
+                len(scoring_queries),
                 len(doc_strings),
             )
         else:
             try:
+                # Embed each query separately
                 embed_query_start = time.perf_counter()
-                query_embedding = client.embed_single(scoring_query)
+                for q in scoring_queries:
+                    if q:
+                        query_embeddings.append(client.embed_single(q))
                 query_elapsed = (time.perf_counter() - embed_query_start) * 1000
                 if metrics is not None:
-                    metrics["embedding_query_calls"] += 1
+                    metrics["embedding_query_calls"] += len(query_embeddings)
 
                 embed_docs_start = time.perf_counter()
                 doc_embeddings = client.embed(doc_strings)
@@ -156,29 +172,29 @@ def score_candidates(
                     metrics["embedding_doc_count"] += len(doc_strings)
 
                 logger.debug(
-                    "source_shortlist embeddings complete query_len=%d docs=%d query_embed_ms=%.2f docs_embed_ms=%.2f",
-                    len(scoring_query),
+                    "source_shortlist embeddings complete queries=%d docs=%d query_embed_ms=%.2f docs_embed_ms=%.2f",
+                    len(query_embeddings),
                     len(doc_strings),
                     query_elapsed,
                     docs_elapsed,
                 )
             except Exception as exc:
                 warnings.append(f"embedding_error:{exc}")
-                query_embedding = None
+                query_embeddings = []
                 doc_embeddings = []
                 logger.debug(
-                    "source_shortlist embedding failed query_len=%d docs=%d error=%s",
-                    len(scoring_query),
+                    "source_shortlist embedding failed queries=%d docs=%d error=%s",
+                    len(scoring_queries),
                     len(doc_strings),
                     exc,
                 )
 
-    if query_embedding and len(doc_embeddings) != len(candidates):
+    if query_embeddings and len(doc_embeddings) != len(candidates):
         warnings.append("embedding_warning:mismatched_doc_embeddings")
         doc_embeddings = []
         logger.debug(
-            "source_shortlist embedding mismatch query_embedding=%s doc_embeddings=%d candidates=%d",
-            bool(query_embedding),
+            "source_shortlist embedding mismatch query_embeddings=%d doc_embeddings=%d candidates=%d",
+            len(query_embeddings),
             len(doc_embeddings),
             len(candidates),
         )
@@ -193,11 +209,13 @@ def score_candidates(
     for idx, candidate in enumerate(candidates):
         document = doc_strings[idx].lower()
         semantic_score = 0.0
-        if query_embedding and doc_embeddings:
-            semantic_score = max(
-                0.0,
-                cosine_similarity(query_embedding, doc_embeddings[idx]),
-            )
+        if query_embeddings and doc_embeddings:
+            # Use max similarity across all sub-queries
+            similarities = [
+                cosine_similarity(q_emb, doc_embeddings[idx])
+                for q_emb in query_embeddings
+            ]
+            semantic_score = max(0.0, *similarities) if similarities else 0.0
 
         overlap_ratio = _keyphrase_overlap_ratio(lowered_keyphrases, document)
         bonus = overlap_bonus_weight * overlap_ratio

@@ -109,6 +109,9 @@ PUSH_DATA_ENDPOINTS = _CONFIG.get("push_data", {})
 # Research Mode
 _research = _CONFIG.get("research", {})
 RESEARCH_ENABLED = _research.get("enabled", True)
+QUERY_EXPANSION_ENABLED = _research.get("query_expansion_enabled", True)
+QUERY_EXPANSION_MODE = _research.get("query_expansion_mode", "deterministic")
+QUERY_EXPANSION_MAX_SUB_QUERIES = _research.get("max_sub_queries", 4)
 RESEARCH_CACHE_TTL_HOURS = _research.get("cache_ttl_hours", 24)
 RESEARCH_MAX_LINKS_PER_URL = _research.get("max_links_per_url", 50)
 RESEARCH_MAX_RELEVANT_LINKS = _research.get("max_relevant_links", 20)
@@ -153,9 +156,7 @@ SOURCE_SHORTLIST_SEED_LINK_EXPANSION_ENABLED = _source_shortlist.get(
     "seed_link_expansion_enabled", True
 )
 SOURCE_SHORTLIST_SEED_LINK_MAX_PAGES = _source_shortlist.get("seed_link_max_pages", 3)
-SOURCE_SHORTLIST_SEED_LINKS_PER_PAGE = _source_shortlist.get(
-    "seed_links_per_page", 50
-)
+SOURCE_SHORTLIST_SEED_LINKS_PER_PAGE = _source_shortlist.get("seed_links_per_page", 50)
 SOURCE_SHORTLIST_SEARCH_RESULT_COUNT = _source_shortlist.get("search_result_count", 40)
 SOURCE_SHORTLIST_MAX_CANDIDATES = _source_shortlist.get("max_candidates", 40)
 SOURCE_SHORTLIST_MAX_FETCH_URLS = _source_shortlist.get("max_fetch_urls", 20)

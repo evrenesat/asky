@@ -113,6 +113,11 @@ overlap_bonus_weight = 0.10
 short_text_penalty = 0.10
 noise_path_penalty = 0.15
 
+# Query expansion before shortlist and local-source ingestion
+query_expansion_enabled = true
+query_expansion_mode = "deterministic" # or "llm"
+max_sub_queries = 4
+
 # Local sentence-transformers settings
 [research.embedding]
 # Model name to load in-process

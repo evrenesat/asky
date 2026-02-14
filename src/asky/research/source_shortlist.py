@@ -50,7 +50,7 @@ from asky.config import (
 from asky.html import HTMLStripper
 from asky.retrieval import fetch_url_document
 from asky.research.shortlist_collect import collect_candidates
-from asky.research.shortlist_score import resolve_scoring_query, score_candidates
+from asky.research.shortlist_score import resolve_scoring_queries, score_candidates
 from asky.research.shortlist_types import (
     CandidateRecord,
     FetchExecutor,
@@ -148,6 +148,7 @@ MAX_SHORTLIST_CONTEXT_ITEMS = 5
 MAX_SHORTLIST_CONTEXT_SNIPPET_CHARS = 420
 MAX_TITLE_CHARS = 180
 
+
 def extract_prompt_urls_and_query_text(user_prompt: str) -> Tuple[List[str], str]:
     """Extract URLs from prompt and return the remaining query text."""
     if not user_prompt:
@@ -220,6 +221,7 @@ def shortlist_prompt_sources(
     embedding_client: Optional["EmbeddingClient"] = None,
     seed_link_extractor: Optional[SeedLinkExtractor] = None,
     status_callback: Optional[StatusCallback] = None,
+    queries: Optional[List[str]] = None,
 ) -> Dict[str, Any]:
     """Build a ranked shortlist of relevant sources without using an LLM."""
     total_start = time.perf_counter()
@@ -255,6 +257,7 @@ def shortlist_prompt_sources(
             "seed_urls": [],
             "query_text": "",
             "search_query": "",
+            "search_queries": [],
             "keyphrases": [],
             "candidates": [],
             "warnings": [],
@@ -278,7 +281,14 @@ def shortlist_prompt_sources(
     parse_start = time.perf_counter()
     seed_urls, query_text = extract_prompt_urls_and_query_text(user_prompt)
     keyphrases = extract_keyphrases(query_text)
-    search_query = build_search_query(query_text, keyphrases)
+
+    # If explicit queries provided (expansion), use them for search.
+    # Otherwise fallback to single build_search_query.
+    if queries:
+        search_queries = queries
+    else:
+        search_queries = [build_search_query(query_text, keyphrases)]
+
     parse_ms = _elapsed_ms(parse_start)
 
     active_search_executor = search_executor or _default_search_executor
@@ -290,7 +300,7 @@ def shortlist_prompt_sources(
     collect_start = time.perf_counter()
     candidates = collect_candidates(
         seed_urls=seed_urls,
-        search_query=search_query,
+        search_queries=search_queries,
         search_executor=active_search_executor,
         seed_link_extractor=active_seed_link_extractor,
         warnings=warnings,
@@ -336,7 +346,8 @@ def shortlist_prompt_sources(
             "enabled": True,
             "seed_urls": seed_urls,
             "query_text": query_text,
-            "search_query": search_query,
+            "search_query": search_queries[0] if search_queries else "",
+            "search_queries": search_queries,
             "keyphrases": keyphrases,
             "candidates": [],
             "warnings": warnings,
@@ -382,7 +393,8 @@ def shortlist_prompt_sources(
             "enabled": True,
             "seed_urls": seed_urls,
             "query_text": query_text,
-            "search_query": search_query,
+            "search_query": search_queries[0] if search_queries else "",
+            "search_queries": search_queries,
             "keyphrases": keyphrases,
             "candidates": [],
             "warnings": warnings,
@@ -402,7 +414,8 @@ def shortlist_prompt_sources(
             },
         }
 
-    scoring_query = resolve_scoring_query(
+    scoring_queries = resolve_scoring_queries(
+        queries=queries,
         query_text=query_text,
         keyphrases=keyphrases,
         candidates=fetched_candidates,
@@ -414,7 +427,7 @@ def shortlist_prompt_sources(
     score_start = time.perf_counter()
     scored_candidates = score_candidates(
         candidates=fetched_candidates,
-        scoring_query=scoring_query,
+        scoring_queries=scoring_queries,
         keyphrases=keyphrases,
         seed_urls=seed_urls,
         embedding_client=embedding_client,
@@ -492,7 +505,8 @@ def shortlist_prompt_sources(
         "enabled": True,
         "seed_urls": seed_urls,
         "query_text": query_text,
-        "search_query": search_query,
+        "search_query": search_queries[0] if search_queries else "",
+        "search_queries": search_queries,
         "keyphrases": keyphrases,
         "candidates": shortlisted,
         "warnings": warnings,
@@ -712,7 +726,9 @@ def _default_search_executor(args: Dict[str, Any]) -> Dict[str, Any]:
 
 def _get_embedding_client() -> "EmbeddingClient":
     """Lazy-load embedding client factory only when scoring needs embeddings."""
-    from asky.research.embeddings import get_embedding_client as get_embedding_client_impl
+    from asky.research.embeddings import (
+        get_embedding_client as get_embedding_client_impl,
+    )
 
     return get_embedding_client_impl()
 
@@ -743,7 +759,9 @@ def _get_yake_module() -> Optional[Any]:
 def _extract_path_tokens(path: str) -> str:
     """Extract lexical tokens from URL path."""
     raw_tokens = PATH_TOKEN_SPLIT_PATTERN.split(path or "")
-    filtered_tokens = [token.lower() for token in raw_tokens if token and len(token) > 1]
+    filtered_tokens = [
+        token.lower() for token in raw_tokens if token and len(token) > 1
+    ]
     return " ".join(filtered_tokens)
 
 
@@ -850,9 +868,7 @@ def _elapsed_ms(start: float) -> float:
     return (time.perf_counter() - start) * 1000
 
 
-def _notify_status(
-    status_callback: Optional[StatusCallback], message: str
-) -> None:
+def _notify_status(status_callback: Optional[StatusCallback], message: str) -> None:
     """Emit shortlist status update when callback is configured."""
     if not status_callback:
         return

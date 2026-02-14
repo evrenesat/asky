@@ -384,3 +384,12 @@ A simplified "retrieval-only" system prompt guidance is injected in these cases 
 - **Key Dependencies**: `requests`, `rich`, `pyperclip`, `markdown`
 - **Storage**: SQLite (local file at `~/.config/asky/history.db`)
 - **Configuration**: TOML format
+
+### Decision 15: Pre-retrieval Query Expansion
+
+- **Context**: Complex research queries often cover multiple topics, making single-pass search retrieval suboptimal.
+- **Decision**: Introduce a query expansion stage before retrieval.
+- **Implementation**:
+  - Deterministic mode uses YAKE for keyphrase clustering.
+  - LLM mode (optional) uses a small structured-output call.
+  - `PreloadResolution` stores sub-queries; shortlist and local ingestion use them for multi-pass retrieval.

@@ -34,11 +34,37 @@ For older logs, see [DEVLOG_ARCHIVE.md](DEVLOG_ARCHIVE.md).
 - **Result**: 478 tests pass (471 baseline + 7 new tests/updates).
 
 **Post-Review Fixes**:
+
 - Fixed type annotation: `messages` local variable now correctly typed as `List[Dict[str, Any]]` instead of `List[Dict[str, str]]` in `client.py`.
 - Removed backward compatibility shim from `AskyClient.chat()` — now directly uses `PreloadResolution` parameter (no external users to break).
 - Fixed DEVLOG.md archive link from absolute `file:///` URL to relative markdown link.
 - Removed dead `PreloadResolution` import from `test_cli.py`.
 - Removed unused `import sys` from `cli/chat.py`.
+
+### Query Expansion
+
+**Summary**: Added pre-retrieval query expansion to improve recall for complex multi-part questions. The system now decomposes queries into 2-4 focused sub-queries before search and scoring.
+
+- **Implementation**:
+  - Created `src/asky/research/query_expansion.py` with two modes:
+    - **Deterministic**: Uses YAKE keyphrase extraction to form sub-queries
+    - **LLM-assisted** (optional): Single structured-output call to decompose the question
+  - Integrated into `src/asky/api/preload.py` before shortlist/local ingestion
+  - Updated shortlist pipeline to accept and use multiple queries:
+    - `source_shortlist.py`: Multi-query search and max-similarity scoring
+    - `shortlist_collect.py`: Weighted budget allocation (50% to original, 50% split across sub-queries)
+    - `shortlist_score.py`: Max similarity across all sub-query embeddings
+  - Added `search_queries` list to shortlist payload alongside legacy `search_query` key
+  - Config: `research.toml` controls enabled/mode/max_sub_queries
+- **Added Tests**: 6 tests in `tests/test_query_expansion.py` covering both modes and fallback behavior
+- **Documentation**: Updated `ARCHITECTURE.md` (Decision #15) and `src/asky/research/AGENTS.md`
+
+**Post-Review Fixes**:
+- Fixed AGENTS.md table corruption (restored ChromaDB collection entries, removed file descriptions)
+- Removed unused `sub_queries` parameter from `preload_local_research_sources()` signature
+- Fixed kwarg forwarding in `expand_query()` proxy to match target function signatures
+- Added `search_queries` list to all shortlist payload return points (preserves full query context)
+- Improved search budget allocation: original query gets 50%, sub-queries split remainder evenly
 
 ## 2026-02-14
 

@@ -15,6 +15,7 @@ RAG-powered research mode with caching, semantic search, and persistent memory.
 | `embeddings.py`                  | `EmbeddingClient` for local embeddings          |
 | `chunker.py`                     | Token-aware text chunking                       |
 | `source_shortlist.py`            | Pre-LLM source ranking pipeline                 |
+| `query_expansion.py`             | Decomposing queries into sub-queries.           |
 | `shortlist_collect.py`           | Candidate/seed-link collection stage            |
 | `shortlist_score.py`             | Semantic + heuristic scoring stage              |
 | `shortlist_types.py`             | Shared shortlist datatypes and callback aliases |

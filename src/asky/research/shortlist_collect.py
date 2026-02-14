@@ -103,7 +103,7 @@ def collect_seed_link_candidates(
 def collect_candidates(
     *,
     seed_urls: Sequence[str],
-    search_query: str,
+    search_queries: Sequence[str],
     search_executor: SearchExecutor,
     seed_link_extractor: SeedLinkExtractor,
     warnings: List[str],
@@ -123,7 +123,7 @@ def collect_candidates(
     elapsed_ms: ElapsedMs,
     logger: Any,
 ) -> List[CandidateRecord]:
-    """Collect candidates from prompt seed URLs and optional web search."""
+    """Collect candidates from prompt seed URLs and optional web searches."""
     import time
 
     collected: List[CandidateRecord] = [
@@ -165,63 +165,78 @@ def collect_candidates(
     if metrics is not None:
         metrics["candidate_inputs"] = len(collected)
 
-    should_search = bool(search_query) and (not seed_urls or search_with_seed_urls)
+    should_search = bool(search_queries) and (not seed_urls or search_with_seed_urls)
 
     if should_search:
-        search_start = time.perf_counter()
-        try:
-            if metrics is not None:
-                metrics["search_calls"] += 1
-            search_payload = search_executor(
-                {"q": search_query, "count": search_result_count}
+        # Distribute search_result_count across queries with weighting.
+        # Original query (first) gets 50% of budget, rest split evenly.
+        query_count = len(search_queries)
+        if query_count == 1:
+            budget_allocation = [search_result_count]
+        else:
+            original_budget = max(1, search_result_count // 2)
+            remaining_budget = search_result_count - original_budget
+            sub_query_budget = max(1, remaining_budget // (query_count - 1))
+            budget_allocation = [original_budget] + [sub_query_budget] * (
+                query_count - 1
             )
-        except Exception as exc:
-            warnings.append(f"search_error:{exc}")
-            logger.debug(
-                "source_shortlist search failed query_len=%d elapsed=%.2fms error=%s",
-                len(search_query),
-                elapsed_ms(search_start),
-                exc,
-            )
-            search_payload = {"results": []}
 
-        if isinstance(search_payload, dict):
-            if search_payload.get("error"):
-                warnings.append(f"search_error:{search_payload['error']}")
+        for idx, q in enumerate(search_queries):
+            if not q:
+                continue
+
+            search_start = time.perf_counter()
+            try:
+                if metrics is not None:
+                    metrics["search_calls"] += 1
+                search_payload = search_executor({"q": q, "count": budget_allocation[idx]})
+            except Exception as exc:
+                warnings.append(f"search_error:{exc}")
                 logger.debug(
-                    "source_shortlist search error payload query_len=%d elapsed=%.2fms error=%s",
-                    len(search_query),
+                    "source_shortlist search failed query_len=%d elapsed=%.2fms error=%s",
+                    len(q),
                     elapsed_ms(search_start),
-                    search_payload.get("error"),
+                    exc,
                 )
-            results_count = len(search_payload.get("results", []))
-            if metrics is not None:
-                metrics["search_results"] += results_count
-            logger.debug(
-                "source_shortlist search completed query_len=%d results=%d elapsed=%.2fms",
-                len(search_query),
-                results_count,
-                elapsed_ms(search_start),
-            )
-            for result in search_payload.get("results", []):
-                url = normalize_whitespace(str(result.get("url", "")))
-                if not url:
-                    continue
-                title = normalize_whitespace(str(result.get("title", "")))
-                snippet = normalize_whitespace(str(result.get("snippet", "")))
-                collected.append(
-                    CandidateRecord(
-                        url=url,
-                        source_type="search",
-                        title=title[:max_title_chars],
-                        search_snippet=snippet,
+                search_payload = {"results": []}
+
+            if isinstance(search_payload, dict):
+                if search_payload.get("error"):
+                    warnings.append(f"search_error:{search_payload['error']}")
+                    logger.debug(
+                        "source_shortlist search error payload query_len=%d elapsed=%.2fms error=%s",
+                        len(q),
+                        elapsed_ms(search_start),
+                        search_payload.get("error"),
                     )
+                results_count = len(search_payload.get("results", []))
+                if metrics is not None:
+                    metrics["search_results"] += results_count
+                logger.debug(
+                    "source_shortlist search completed query_len=%d results=%d elapsed=%.2fms",
+                    len(q),
+                    results_count,
+                    elapsed_ms(search_start),
                 )
+                for result in search_payload.get("results", []):
+                    url = normalize_whitespace(str(result.get("url", "")))
+                    if not url:
+                        continue
+                    title = normalize_whitespace(str(result.get("title", "")))
+                    snippet = normalize_whitespace(str(result.get("snippet", "")))
+                    collected.append(
+                        CandidateRecord(
+                            url=url,
+                            source_type="search",
+                            title=title[:max_title_chars],
+                            search_snippet=snippet,
+                        )
+                    )
     else:
         logger.debug(
-            "source_shortlist skipping search seed_urls=%d search_query_present=%s config_search_with_seed=%s",
+            "source_shortlist skipping search seed_urls=%d search_queries=%d config_search_with_seed=%s",
             len(seed_urls),
-            bool(search_query),
+            len(search_queries),
             search_with_seed_urls,
         )
 
