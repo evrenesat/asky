@@ -44,7 +44,9 @@ logger = logging.getLogger(__name__)
 
 def shortlist_prompt_sources(*args: Any, **kwargs: Any) -> Dict[str, Any]:
     """Lazy-import shortlist pipeline so startup cost is paid only when enabled."""
-    return call_attr("asky.research.source_shortlist", "shortlist_prompt_sources", *args, **kwargs)
+    return call_attr(
+        "asky.research.source_shortlist", "shortlist_prompt_sources", *args, **kwargs
+    )
 
 
 def preload_local_research_sources(*args: Any, **kwargs: Any) -> Dict[str, Any]:
@@ -202,8 +204,8 @@ def _append_enabled_tool_guidelines(
         "Enabled Tool Guidelines:",
         *[f"- {guideline}" for guideline in tool_guidelines],
     ]
-    messages[0]["content"] = (
-        f"{messages[0].get('content', '')}\n" + "\n".join(guideline_lines)
+    messages[0]["content"] = f"{messages[0].get('content', '')}\n" + "\n".join(
+        guideline_lines
     )
 
 
@@ -233,7 +235,9 @@ def _ensure_research_session(
     return active_manager
 
 
-def _print_shortlist_verbose(console: Console, shortlist_payload: Dict[str, Any]) -> None:
+def _print_shortlist_verbose(
+    console: Console, shortlist_payload: Dict[str, Any]
+) -> None:
     """Render shortlist processing/selection trace for verbose terminal output."""
     if not shortlist_payload.get("enabled"):
         console.print(
@@ -322,6 +326,10 @@ def run_chat(args: argparse.Namespace, query_text: str) -> None:
     summarization_tracker = UsageTracker()
     model_config = MODELS[args.model]
     research_mode = bool(getattr(args, "research", False))
+    local_corpus = getattr(args, "local_corpus", None)
+    if local_corpus:
+        research_mode = True
+
     disabled_tools = _parse_disabled_tools(getattr(args, "tool_off", []))
 
     # Setup display renderer early so pre-LLM shortlist work is visible in banner
@@ -440,6 +448,7 @@ def run_chat(args: argparse.Namespace, query_text: str) -> None:
             preload_local_sources=True,
             preload_shortlist=True,
             additional_source_context=None,
+            local_corpus_paths=local_corpus,
             save_history=True,
         )
 
@@ -469,9 +478,13 @@ def run_chat(args: argparse.Namespace, query_text: str) -> None:
 
         if args.verbose and turn_result.preload.shortlist_payload:
             verbose_console = (
-                renderer.live.console if LIVE_BANNER and renderer.live else renderer.console
+                renderer.live.console
+                if LIVE_BANNER and renderer.live
+                else renderer.console
             )
-            _print_shortlist_verbose(verbose_console, turn_result.preload.shortlist_payload)
+            _print_shortlist_verbose(
+                verbose_console, turn_result.preload.shortlist_payload
+            )
 
         for notice in turn_result.notices:
             if notice.startswith("No sessions found matching"):

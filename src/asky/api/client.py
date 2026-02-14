@@ -128,8 +128,8 @@ class AskyClient:
             "Enabled Tool Guidelines:",
             *[f"- {guideline}" for guideline in tool_guidelines],
         ]
-        messages[0]["content"] = (
-            f"{messages[0].get('content', '')}\n" + "\n".join(guideline_lines)
+        messages[0]["content"] = f"{messages[0].get('content', '')}\n" + "\n".join(
+            guideline_lines
         )
 
     def run_messages(
@@ -237,14 +237,20 @@ class AskyClient:
         summarization_status_callback: Optional[Callable[[Optional[str]], None]] = None,
         event_callback: Optional[Callable[[str, Dict[str, Any]], None]] = None,
         preload_status_callback: Optional[Callable[[str], None]] = None,
-        messages_prepared_callback: Optional[Callable[[List[Dict[str, Any]]], None]] = None,
+        messages_prepared_callback: Optional[
+            Callable[[List[Dict[str, Any]]], None]
+        ] = None,
         set_shell_session_id_fn: Optional[Callable[[int], None]] = None,
         clear_shell_session_fn: Optional[Callable[[], None]] = None,
         shortlist_executor: Optional[Callable[..., Dict[str, Any]]] = None,
         shortlist_formatter: Optional[Callable[[Dict[str, Any]], str]] = None,
-        shortlist_stats_builder: Optional[Callable[[Dict[str, Any], float], Dict[str, Any]]] = None,
+        shortlist_stats_builder: Optional[
+            Callable[[Dict[str, Any], float], Dict[str, Any]]
+        ] = None,
         local_ingestion_executor: Optional[Callable[..., Dict[str, Any]]] = None,
-        local_ingestion_formatter: Optional[Callable[[Dict[str, Any]], Optional[str]]] = None,
+        local_ingestion_formatter: Optional[
+            Callable[[Dict[str, Any]], Optional[str]]
+        ] = None,
     ) -> AskyTurnResult:
         """Run a full API-orchestrated turn including context/session/preload."""
         notices: List[str] = []
@@ -276,7 +282,9 @@ class AskyClient:
         notices.extend(session_resolution.notices)
 
         if self.config.research_mode:
-            notices.insert(0, "Research mode enabled - using link extraction and RAG tools")
+            notices.insert(
+                0, "Research mode enabled - using link extraction and RAG tools"
+            )
 
         halted = bool(session_resolution.halt_reason)
         if halted:
@@ -307,6 +315,7 @@ class AskyClient:
             preload_local_sources=request.preload_local_sources,
             preload_shortlist=request.preload_shortlist,
             additional_source_context=request.additional_source_context,
+            local_corpus_paths=request.local_corpus_paths,
             status_callback=preload_status_callback,
             shortlist_executor=shortlist_executor or shortlist_prompt_sources,
             shortlist_formatter=shortlist_formatter or format_shortlist_context,
@@ -321,7 +330,7 @@ class AskyClient:
 
         local_targets = preload.local_payload.get("targets") or []
         effective_query_text = request.query_text
-        local_kb_hint_enabled = bool(local_targets)
+        local_kb_hint_enabled = bool(local_targets) or bool(request.local_corpus_paths)
         if local_kb_hint_enabled:
             effective_query_text = call_attr(
                 "asky.research.adapters",
@@ -329,9 +338,7 @@ class AskyClient:
                 request.query_text,
             )
             if not effective_query_text.strip():
-                effective_query_text = (
-                    "Answer the user's request using the preloaded local knowledge base."
-                )
+                effective_query_text = "Answer the user's request using the preloaded local knowledge base."
 
         messages = self.build_messages(
             query_text=effective_query_text,

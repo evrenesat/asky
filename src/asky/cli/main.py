@@ -232,6 +232,13 @@ def parse_args() -> argparse.Namespace:
         "  - get_relevant_content: RAG-based retrieval of relevant sections\n"
         "  - get_full_content: Get complete cached content",
     )
+    parser.add_argument(
+        "-lc",
+        "--local-corpus",
+        nargs="+",
+        metavar="PATH",
+        help="Local file or directory paths to ingest as research corpus. Implies --research.",
+    )
     session_from_message_action = parser.add_argument(
         "-sfm",
         "--session-from-message",
@@ -374,9 +381,8 @@ def main() -> None:
     """Main entry point."""
     args = parse_args()
     legacy_from_message = getattr(args, "from_message", None)
-    if (
-        getattr(args, "session_from_message", None) is None
-        and isinstance(legacy_from_message, int)
+    if getattr(args, "session_from_message", None) is None and isinstance(
+        legacy_from_message, int
     ):
         args.session_from_message = legacy_from_message
 

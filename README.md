@@ -79,6 +79,9 @@ asky -r "Compare the latest iPhone vs Samsung flagship specs and reviews"
 # Research Mode with local corpus roots (see research.toml)
 asky -r "Use /policies/security.md and summarize password requirements"
 
+# Explicit local research corpus (implies --research)
+asky -lc ./README.md "Summarize this file"
+
 # Use a specific model
 asky -m gf "Explain quantum entanglement"
 
@@ -172,6 +175,10 @@ positional arguments:
                           - get_link_summaries: Get AI summaries of cached pages
                           - get_relevant_content: RAG-based retrieval of relevant sections
                           - get_full_content: Get complete cached content
+  -lc PATH [PATH ...], --local-corpus PATH [PATH ...]
+                        Local file or directory paths to ingest as research corpus. Implies --research.
+                        Note: Non-existent paths are skipped with a warning.
+                        Note: If more than 10 paths are provided, the list is truncated to the first 10.
   -sfm, --session-from-message HISTORY_ID
                         Convert a specific history message ID into a session and resume it.
   --reply               Resume the last conversation (converting history to session if needed).

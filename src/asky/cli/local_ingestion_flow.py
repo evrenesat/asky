@@ -91,9 +91,20 @@ def preload_local_research_sources(
     status_callback: Optional[StatusCallback] = None,
     max_targets: int = DEFAULT_MAX_LOCAL_TARGETS,
     max_discovered_links_per_target: int = DEFAULT_MAX_DISCOVERED_LINKS_PER_TARGET,
+    explicit_targets: Optional[List[str]] = None,
 ) -> Dict[str, Any]:
     """Preload local sources into research cache/vector store before first LLM call."""
-    discovered_targets = extract_local_source_targets(user_prompt)
+    if explicit_targets:
+        discovered_targets = explicit_targets
+    else:
+        discovered_targets = extract_local_source_targets(user_prompt)
+
+    if explicit_targets and len(explicit_targets) > max_targets:
+        # Warn about truncation
+        print(
+            f"Warning: {len(explicit_targets)} local corpus paths provided, but max is {max_targets}. Truncating."
+        )
+
     targets = _dedupe_preserve_order(discovered_targets)[:max_targets]
     payload: Dict[str, Any] = {
         "enabled": bool(targets),
@@ -127,7 +138,9 @@ def preload_local_research_sources(
             max_links=max_discovered_links_per_target,
         )
         if seed_payload is None:
-            payload["warnings"].append(f"No local adapter available for target: {target}")
+            payload["warnings"].append(
+                f"No local adapter available for target: {target}"
+            )
             continue
         if seed_payload.get("error"):
             payload["warnings"].append(

@@ -4,21 +4,21 @@ Command-line interface layer handling argument parsing, command routing, and use
 
 ## Module Overview
 
-| Module | Purpose |
-|--------|---------|
-| `main.py` | Entry point, argument parsing, command routing |
-| `chat.py` | Chat conversation orchestration |
+| Module                    | Purpose                                                                         |
+| ------------------------- | ------------------------------------------------------------------------------- |
+| `main.py`                 | Entry point, argument parsing, command routing                                  |
+| `chat.py`                 | Chat conversation orchestration                                                 |
 | `local_ingestion_flow.py` | Pre-LLM local source preload for research mode (path-redacted local KB context) |
-| `shortlist_flow.py` | Pre-LLM shortlist execution + banner updates |
-| `completion.py` | Shell completion with argcomplete |
-| `display.py` | Banner rendering, live status updates |
-| `history.py` | History viewing/deletion commands |
-| `sessions.py` | Session management commands |
-| `prompts.py` | User prompt listing |
-| `models.py` | Interactive model add/edit commands |
-| `openrouter.py` | OpenRouter API client for model discovery |
-| `terminal.py` | Terminal context fetching |
-| `utils.py` | Query expansion, config printing |
+| `shortlist_flow.py`       | Pre-LLM shortlist execution + banner updates                                    |
+| `completion.py`           | Shell completion with argcomplete                                               |
+| `display.py`              | Banner rendering, live status updates                                           |
+| `history.py`              | History viewing/deletion commands                                               |
+| `sessions.py`             | Session management commands                                                     |
+| `prompts.py`              | User prompt listing                                                             |
+| `models.py`               | Interactive model add/edit commands                                             |
+| `openrouter.py`           | OpenRouter API client for model discovery                                       |
+| `terminal.py`             | Terminal context fetching                                                       |
+| `utils.py`                | Query expansion, config printing                                                |
 
 ## Entry Point (`main.py`)
 
@@ -33,17 +33,18 @@ Command-line interface layer handling argument parsing, command routing, and use
 
 ### Key CLI Flags
 
-| Flag | Handler |
-|------|---------|
-| `-m, --model` | Model selection |
-| `-c, --continue-chat` | Context loading from previous IDs |
-| `-H, --history` | `history.py` |
-| `-pa, --print-answer` | `history.py` |
-| `-ss, --sticky-session` | `sessions.py` |
-| `-rs, --resume-session` | `sessions.py` |
-| `-off, -tool-off, --tool-off` | `chat.py` (runtime tool exclusion) |
-| `-p, --prompts` | `prompts.py` |
-| `--add-model`, `--edit-model` | `models.py` |
+| Flag                           | Handler                                       |
+| ------------------------------ | --------------------------------------------- |
+| `-m, --model`                  | Model selection                               |
+| `-c, --continue-chat`          | Context loading from previous IDs             |
+| `-H, --history`                | `history.py`                                  |
+| `-pa, --print-answer`          | `history.py`                                  |
+| `-ss, --sticky-session`        | `sessions.py`                                 |
+| `-rs, --resume-session`        | `sessions.py`                                 |
+| `-off, -tool-off, --tool-off`  | `chat.py` (runtime tool exclusion)            |
+| `-r, --research`               | Enable deep research mode                     |
+| `-lc, --local-corpus`          | Explicit local research corpus (implies `-r`) |
+| `-sfm, --session-from-message` | `history.py`                                  |
 
 ## Chat Flow (`chat.py`)
 

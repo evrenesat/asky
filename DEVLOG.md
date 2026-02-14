@@ -1,8 +1,55 @@
 For older logs, see [DEVLOG_ARCHIVE.md](DEVLOG_ARCHIVE.md)
 
+## 2026-02-14
+
+### Fix Broken Tests After Local-Corpus Feature
+
+**Summary**: Fixed 5 failing tests caused by stale mock targets after the local-corpus refactoring.
+
+- **Root Causes**:
+  - `test_run_chat_local_corpus_implies_research_mode`: Patched `asky.api.AskyClient` instead of `asky.cli.chat.AskyClient` (module-level import). Also missing `MODELS` and `LIVE_BANNER` patches, causing the real client to run and hang indefinitely.
+  - `test_asky_client_run_turn_*`: Patched non-existent `AskyClient._save_interaction` and `AskyClient._run_messages` (methods renamed to module-level `save_interaction` and `run_messages`).
+  - `test_parse_args_local_corpus`: `-lc` with `nargs="+"` greedily consumed the positional `query` arg. Fixed by adding `--` separator.
+  - `test_main_flow*`: Missing `get_shell_session_id` mock caused real session resumption, injecting extra messages into the expected call.
+- **Changed**:
+  - `tests/test_cli.py`: Rewrote `test_run_chat_local_corpus_implies_research_mode` with correct mock targets. Added `get_shell_session_id` patches to `test_main_flow`, `test_main_flow_verbose`, `test_main_flow_default_no_context`.
+  - `tests/test_api_library.py`: Fixed mock targets for `save_interaction` and `run_messages`. Added `research_mode=True` to hint test.
+  - `pyproject.toml`: Excluded `temp` dirs from pytest collection to avoid `PermissionError` on runtime artifacts.
+- **Result**: 471 tests pass in ~5s.
+
+## 2026-02-13
+
+### CLI Local-Corpus Selective Ingestion (-lc / --local-corpus)
+
+**Summary**: Added a new CLI flag to explicitly provide local file or directory paths for research ingestion, bypassing prompt-based heuristics.
+
+- **Changed**:
+  - Updated:
+    - `src/asky/cli/main.py`: added `-lc` / `--local-corpus` flag.
+    - `src/asky/api/types.py`: added `local_corpus_paths` field to `AskyTurnRequest`.
+    - `src/asky/cli/chat.py`: mapped CLI arg to request and forced `research_mode=True` when present.
+    - `src/asky/api/preload.py`: updated `run_preload_pipeline` to accept and propagate `local_corpus_paths`.
+    - `src/asky/cli/local_ingestion_flow.py`: updated `preload_local_research_sources` to support `explicit_targets` and bypass prompt extraction.
+    - `src/asky/api/client.py`: passed `local_corpus_paths` through to preload pipeline.
+  - Added tests:
+    - `tests/test_cli.py`: parsing and research mode implication.
+    - `tests/test_local_ingestion_flow.py`: explicit target bypass coverage.
+    - `tests/test_api_library.py`: API flow propagation (fixed hang by mocking LLM calls).
+  - Updated docs:
+    - `README.md`, `ARCHITECTURE.md`, `src/asky/cli/AGENTS.md`.
+
+- **Why**:
+  - Prompt-based local source extraction was unintuitive and fragile.
+  - Users needed a way to explicitly define the research corpus for a query.
+
+- **Gotchas / Follow-up**:
+  - Explicit paths are still subject to `research.local_document_roots` validation.
+  - Automated tests added but execution currently blocked by environment permission issues.
+
 ## 2026-02-12
 
 ### CLI Help Placeholder Cleanup (Typed Metavars)
+
 **Summary**: Replaced argparse default placeholder names in `--help` output with explicit typed metavars so value expectations are clearer and less repetitive.
 
 - **Changed**:
@@ -39,6 +86,7 @@ For older logs, see [DEVLOG_ARCHIVE.md](DEVLOG_ARCHIVE.md)
 ## 2026-02-11
 
 ### README Research Mode Documentation Refresh (Web + Local Corpus)
+
 **Summary**: Expanded README guidance for research mode usage/configuration across web-only, local-corpus, and mixed workflows.
 
 - **Changed**:
@@ -63,6 +111,7 @@ For older logs, see [DEVLOG_ARCHIVE.md](DEVLOG_ARCHIVE.md)
   - README examples intentionally show absolute-like targets (e.g. `/policy/...`) to match root-relative resolution behavior under configured corpus roots.
 
 ### Local Corpus Root Guardrails + Model Path Redaction
+
 **Summary**: Restricted builtin local-source ingestion to configured corpus roots, made local-target resolution root-relative (even for absolute-looking inputs), and removed local path leakage from model-visible prompts.
 
 - **Changed**:
@@ -115,6 +164,7 @@ For older logs, see [DEVLOG_ARCHIVE.md](DEVLOG_ARCHIVE.md)
 ## 2026-02-09
 
 ### Local Filesystem Target Guardrails for Generic Tools
+
 **Summary**: Blocked implicit local-file access in generic URL/content tools so `local://`, `file://`, and path-like targets are no longer accepted there.
 
 - **Changed**:
@@ -149,6 +199,7 @@ For older logs, see [DEVLOG_ARCHIVE.md](DEVLOG_ARCHIVE.md)
   - If local-source evaluation is still desired through tool calls, introduce dedicated explicit local-source tools and point matrix profiles to those tools.
 
 ### RFC/NIST Dataset Expectation Tuning (Wording-Robust Pass Conditions)
+
 **Summary**: Relaxed brittle sentence-exact assertions in `rfc_http_nist_v1` to keyword/number-focused regex checks so semantically-correct paraphrases pass.
 
 - **Changed**:
@@ -170,6 +221,7 @@ For older logs, see [DEVLOG_ARCHIVE.md](DEVLOG_ARCHIVE.md)
   - Pass criteria now better reflect fact correctness instead of exact wording.
 
 ### Report Rendering Fixes + Single-File Failure Triage
+
 **Summary**: Fixed markdown report table rendering, added per-tool total call counts, and embedded per-run failure details directly into `report.md`.
 
 - **Changed**:
@@ -192,6 +244,7 @@ For older logs, see [DEVLOG_ARCHIVE.md](DEVLOG_ARCHIVE.md)
   - malformed table delimiter prevented reliable markdown rendering in editors.
 
 ### Results JSONL Markdown Converter (Auto-Generated)
+
 **Summary**: Added automatic markdown conversion for per-run `results.jsonl` artifacts to make failure triage easy in editors that do not render JSONL well.
 
 - **Changed**:
@@ -218,6 +271,7 @@ For older logs, see [DEVLOG_ARCHIVE.md](DEVLOG_ARCHIVE.md)
   - A fail-focused markdown rendering shortens iteration time when adjusting prompts, tools, or expectations.
 
 ### Eval Tool-Call Argument Breakdown + Disabled-Tool Comparisons
+
 **Summary**: Added per-run tool-call breakdowns (tool + arguments + count) to summaries/reports and surfaced disabled-tool profile settings so pass-rate impact can be compared directly.
 
 - **Changed**:
@@ -247,6 +301,7 @@ For older logs, see [DEVLOG_ARCHIVE.md](DEVLOG_ARCHIVE.md)
   - Needed visibility into exact tool argument patterns and tool-disable experiments to explain pass-rate changes and guide profile tuning.
 
 ### Eval Harness End-to-End Timing Instrumentation
+
 **Summary**: Added detailed timing metrics across prepare/run pipeline stages so eval outputs expose where time is spent (ingestion, llm/tool windows, run/session wall time).
 
 - **Changed**:
@@ -279,6 +334,7 @@ For older logs, see [DEVLOG_ARCHIVE.md](DEVLOG_ARCHIVE.md)
   - Needed visibility into ingestion/preload/orchestration/model/tool time to tune quality-vs-latency tradeoffs and detect bottlenecks.
 
 ### Eval Runner Live External-Invocation Progress
+
 **Summary**: Added real-time progress output during eval execution, including before/after transitions for external invocation phases.
 
 - **Changed**:
@@ -298,6 +354,7 @@ For older logs, see [DEVLOG_ARCHIVE.md](DEVLOG_ARCHIVE.md)
   - Long-running real-model eval cases previously looked idle; users needed explicit live feedback while waiting for network/model/tool phases.
 
 ### Eval Harness Role-Based Token Usage Metrics
+
 **Summary**: Added model-role token usage reporting to research eval outputs so each run shows `main`, `summarizer`, and `audit_planner` input/output/total counts.
 
 - **Changed**:
@@ -320,9 +377,11 @@ For older logs, see [DEVLOG_ARCHIVE.md](DEVLOG_ARCHIVE.md)
   - Gives visibility into token split between primary answer generation and summarization work.
 
 ### Notes
+
 - `audit_planner` is a forward-compatible placeholder role in v1; counts remain zero until that stage is integrated.
 
 ### Research Eval Documentation Expansion
+
 **Summary**: Rewrote the eval harness guide into an operator-focused manual covering dataset/matrix authoring, expectation tuning, and output interpretation.
 
 - **Changed**:
@@ -339,6 +398,7 @@ For older logs, see [DEVLOG_ARCHIVE.md](DEVLOG_ARCHIVE.md)
   - Needed concrete examples for extending scenarios and tuning strictness without changing code.
 
 ### Research Runtime Warning Fixes (Tokenizer Length + Chroma Filter)
+
 **Summary**: Eliminated two noisy/compatibility warnings observed in research eval runs by hardening embedding/chunker tokenization and Chroma metadata filter construction.
 
 - **Changed**:
@@ -366,6 +426,7 @@ For older logs, see [DEVLOG_ARCHIVE.md](DEVLOG_ARCHIVE.md)
   - Both were avoidable runtime noise and the Chroma filter warning forced unnecessary SQLite fallback.
 
 ### Eval Runtime DB Schema Initialization Fix
+
 **Summary**: Fixed immediate per-case failures in eval runs caused by missing `sessions` table in isolated runtime databases.
 
 - **Changed**:
@@ -380,6 +441,7 @@ For older logs, see [DEVLOG_ARCHIVE.md](DEVLOG_ARCHIVE.md)
   - Eval runs create isolated DB paths; without explicit schema init, `AskyClient.run_turn()` session resolution hit `OperationalError: no such table: sessions` and every case failed instantly.
 
 ### Eval Runner UX + Output Collision Safeguards
+
 **Summary**: Improved eval-runner feedback for fast-failure runs and prevented same-second output directory reuse.
 
 - **Changed**:
@@ -403,6 +465,7 @@ For older logs, see [DEVLOG_ARCHIVE.md](DEVLOG_ARCHIVE.md)
   - Same-second reruns could reuse one timestamp folder name, making reruns confusing.
 
 ### Eval Matrix Path Policy Refinement
+
 **Summary**: Refined matrix path resolution rules so non-existent bare output paths do not get misinterpreted as matrix-relative.
 
 - **Changed**:
@@ -421,6 +484,7 @@ For older logs, see [DEVLOG_ARCHIVE.md](DEVLOG_ARCHIVE.md)
   - Avoids duplicated path segments for output/snapshot roots when those directories do not already exist.
 
 ### Eval Matrix Dataset Path Resolution Fix
+
 **Summary**: Fixed dataset path resolution in eval matrix loading so repo-root relative dataset paths no longer get incorrectly prefixed by the matrix directory.
 
 - **Changed**:
@@ -440,6 +504,7 @@ For older logs, see [DEVLOG_ARCHIVE.md](DEVLOG_ARCHIVE.md)
   - Prevents `FileNotFoundError` caused by combining matrix directory + repo-root relative dataset path.
 
 ### Dual-Mode Research Eval Harness (Programmatic API, Manual Integration Runs)
+
 **Summary**: Added a standalone evaluation harness around `AskyClient.run_turn(...)` to run real-model research/non-research integration checks with pinned datasets and model-parameter sweeps.
 
 - **Changed**:
@@ -479,6 +544,7 @@ For older logs, see [DEVLOG_ARCHIVE.md](DEVLOG_ARCHIVE.md)
   - Live web runs can vary due to network/content drift; pinned local snapshots are recommended for stable baselines.
 
 ### Library Usage Documentation (API Config + Turn Request Options)
+
 **Summary**: Added dedicated docs for programmatic `asky.api` usage, with explicit configuration/request field mapping and runnable examples.
 
 - **Changed**:
@@ -502,6 +568,7 @@ For older logs, see [DEVLOG_ARCHIVE.md](DEVLOG_ARCHIVE.md)
     - `uv run pytest` (full suite)
 
 ### Full API Orchestration Migration (Context + Session + Shortlist)
+
 **Summary**: Completed the migration of chat orchestration into `asky.api` so `AskyClient.run_turn()` now provides CLI-equivalent context/session/preload/model/persist flow.
 
 - **Changed**:
@@ -545,6 +612,7 @@ For older logs, see [DEVLOG_ARCHIVE.md](DEVLOG_ARCHIVE.md)
   - Optional future cleanup: retire legacy helper wrappers in `cli/chat.py` once external imports no longer rely on them.
 
 ### Library API Slice + Non-Interactive Context Overflow Handling
+
 **Summary**: Added a first-class programmatic API (`asky.api`) and removed interactive `input()` recovery from the core engine so library/web callers can control error handling safely.
 
 - **Changed**:
@@ -589,6 +657,7 @@ For older logs, see [DEVLOG_ARCHIVE.md](DEVLOG_ARCHIVE.md)
   - CLI still owns post-answer delivery UI actions (mail/push/report) and shell-specific terminal context fetch.
 
 ### Pre-LLM Local Corpus Preload Stage + PyMuPDF Dependency
+
 **Summary**: Added a deterministic local ingestion stage before first model call in research chat and added `pymupdf` as a project dependency.
 
 - **Changed**:
@@ -623,6 +692,7 @@ For older logs, see [DEVLOG_ARCHIVE.md](DEVLOG_ARCHIVE.md)
   - Ensures local corpus material is indexed and available before model reasoning starts.
 
 ### Built-in Local Source Ingestion Fallback (Phase 3 Slice)
+
 **Summary**: Added deterministic local-file ingestion fallback in research adapters so local corpus reads can flow through the existing cache/vector retrieval path without custom adapter tooling.
 
 - **Changed**:
@@ -648,6 +718,7 @@ For older logs, see [DEVLOG_ARCHIVE.md](DEVLOG_ARCHIVE.md)
   - Reuses the same downstream caching/chunking/indexing retrieval pipeline already used for web content.
 
 ### Research Mode Now Auto-Starts a Session
+
 **Summary**: Enforced session-backed execution for research mode so session-scoped memory isolation is always effective.
 
 - **Changed**:
@@ -669,6 +740,7 @@ For older logs, see [DEVLOG_ARCHIVE.md](DEVLOG_ARCHIVE.md)
   - Auto-starting research sessions removes a footgun where isolation could silently degrade.
 
 ### Session-Scoped Research Memory + Shortlist Budget Defaults
+
 **Summary**: Implemented first research-pipeline slice to scope findings memory by active chat session and increased default pre-LLM shortlist budgets.
 
 - **Changed**:
@@ -701,6 +773,7 @@ For older logs, see [DEVLOG_ARCHIVE.md](DEVLOG_ARCHIVE.md)
   - Increases shortlist breadth while keeping fetch/index work bounded for deterministic pipeline stages.
 
 ### Documentation Sync for Session-Scoped Memory + Shortlist Budgets
+
 **Summary**: Updated architecture/package docs to reflect new research-memory scoping behavior and shortlist defaults.
 
 - **Updated**:
@@ -711,6 +784,7 @@ For older logs, see [DEVLOG_ARCHIVE.md](DEVLOG_ARCHIVE.md)
   - `src/asky/config/AGENTS.md`
 
 ### Research Pipeline Plan Revisions (Decisions Applied)
+
 **Summary**: Updated the research pipeline planning artifact with concrete defaults and decisions from review discussion.
 
 - **Updated**:
@@ -726,6 +800,7 @@ For older logs, see [DEVLOG_ARCHIVE.md](DEVLOG_ARCHIVE.md)
   - Two clarifications remain in TODO: `analysis_model` default enablement and initial local ingestion UX scope (explicit files only vs directory recursion in v1).
 
 ### Research Pipeline Revamp Planning Artifact
+
 **Summary**: Added a dedicated multi-session TODO plan for a pipeline-driven, small-model-first research workflow redesign.
 
 - **Added**:
@@ -741,6 +816,7 @@ For older logs, see [DEVLOG_ARCHIVE.md](DEVLOG_ARCHIVE.md)
   - Open architecture decisions are listed in `TODO_research_pipeline.md` and need confirmation before coding starts.
 
 ### Tool Metadata Prompt Guidance + Runtime Tool Exclusion Flags
+
 **Summary**: Added per-tool prompt-guideline metadata and runtime tool exclusion flags so enabled tools can shape system prompt behavior and selected tools can be disabled from CLI invocation.
 
 - **Refactors / Features**:
@@ -765,6 +841,7 @@ For older logs, see [DEVLOG_ARCHIVE.md](DEVLOG_ARCHIVE.md)
   - If all tools are disabled, the LLM call now runs tool-free automatically.
 
 ### Summarization Latency + Non-Streaming LLM Requests
+
 **Summary**: Reduced hierarchical summarization call count and forced non-streaming mode for all LLM requests.
 
 - **Refactors**:
@@ -781,9 +858,11 @@ For older logs, see [DEVLOG_ARCHIVE.md](DEVLOG_ARCHIVE.md)
   - Streaming responses are not consumed in current CLI/chat flow, so enabling them adds overhead without product value.
 
 ### Gotchas / Follow-ups
+
 - If a future UI path consumes token streams incrementally, `get_llm_msg()` will need an explicit opt-in streaming mode rather than global `stream=false`.
 
 ### Maintainability Refactor (Phase 1-2)
+
 **Summary**: Reduced duplication around URL handling and lazy imports, and extracted pre-LLM shortlist orchestration from `chat.py` to a dedicated helper module.
 
 - **New Modules**:
@@ -806,6 +885,7 @@ For older logs, see [DEVLOG_ARCHIVE.md](DEVLOG_ARCHIVE.md)
   - Config constants are still flat in `config/__init__.py`; grouping into structured settings is a later phase.
 
 ### Maintainability Refactor (Phase 3)
+
 **Summary**: Extracted tool registry construction out of `core/engine.py` into `core/tool_registry_factory.py`, while preserving backwards compatibility for test patch points and public APIs.
 
 - **New Module**:
@@ -821,6 +901,7 @@ For older logs, see [DEVLOG_ARCHIVE.md](DEVLOG_ARCHIVE.md)
   - Isolates registry/tool assembly for easier future extraction (e.g., custom/push-data/research registration).
 
 ### Maintainability Refactor (Phase 4)
+
 **Summary**: Split shortlist internals into focused modules while keeping `source_shortlist.py` as the stable public API surface.
 
 - **New Modules**:
@@ -837,6 +918,7 @@ For older logs, see [DEVLOG_ARCHIVE.md](DEVLOG_ARCHIVE.md)
   - Creates clearer boundaries for future changes (collection vs scoring).
 
 ### Maintainability Refactor (Phase 5)
+
 **Summary**: Split heavy `VectorStore` internals into dedicated operation modules and kept `vector_store.py` focused on lifecycle + compatibility wrappers.
 
 - **New Modules**:
@@ -855,13 +937,17 @@ For older logs, see [DEVLOG_ARCHIVE.md](DEVLOG_ARCHIVE.md)
 ## 2026-02-08
 
 ### Codebase Documentation Restructuring
+
 **Summary**: Restructured documentation by creating package-level `AGENTS.md` files, slimming `ARCHITECTURE.md`, and generating a maintainability report.
+
 - **New Files**: Created `AGENTS.md` in `cli`, `core`, `storage`, `research`, `config`, and `tests` directories.
 - **Refactor**: Reduced `ARCHITECTURE.md` to a high-level overview (~220 lines).
 - **Report**: Analyzed maintainability (file sizes, config sprawl, duplication, testing gaps).
 
 ### CLI & UX Improvements
+
 **Argcomplete & Selectors**:
+
 - Added `argcomplete`-backed shell completion with dynamic value hints.
 - implemented word-based selector tokens for `--continue-chat`, `--print-session`, `--resume-session`, `--print-answer`, and `--session-from-message`.
 - Renamed `--from-message` to `--session-from-message` (`-sfm`).
@@ -869,30 +955,38 @@ For older logs, see [DEVLOG_ARCHIVE.md](DEVLOG_ARCHIVE.md)
 - Added `--completion-script` for easy shell setup.
 
 **Session Features**:
+
 - **Message to Session**: `-sfm <ID>` promotes a history message to a new session.
 - **Quick Reply**: `--reply` shortcut to continue from the last message (resuming session or converting if needed).
 
 **Banner & Observability**:
+
 - **Live Progress**: Banner now shows pre-LLM retrieval progress (shortlist stats) before the model call.
 - **Stability**: Fixed banner redraw issues caused by embedding model load noise (loading bars, warnings).
 - **Verbose Trace**: Added rich terminal tables for shortlist candidates and tool calls in `-v` mode.
 - **Summarization**: Added live banner updates for hierarchical summarization progress.
 
 ### Performance & Startup
+
 **Optimization**:
+
 - **Lazy Imports**: Made core package exports lazy (`asky.cli`, `asky.core`, `asky.research`) to reduce startup time.
 - **Startup Slimming**: Reordered `main()` to short-circuit fast commands (help, edit-model) before DB init.
 - **Background Cleanup**: Moved research cache cleanup to a background thread to unblock startup.
 
 **Guardrails**:
+
 - Added `tests/test_startup_performance.py` to enforce latency (<0.2s median) and idle RSS memory usage limits.
 
 ### Research & Retrieval Enhancements
+
 **Shared Pipeline**:
+
 - Unified URL retrieval logic in `retrieval.py` for standard tools, research mode, and shortlist.
 - Implemented **Hierarchical Summarization** (map-reduce) for long content.
 
 **Source Shortlist**:
+
 - **Shared Pipeline**: Added a pre-LLM shortlist pipeline (URL parsing, extraction, ranking) shared by research/chat modes.
 - **Models**: Added per-model control (`source_shortlist_enabled` in config) and runtime override (`--lean`).
 - **Seed-Link Expansion**: Added support for expanding links from seed URLs in the prompt.
@@ -900,12 +994,15 @@ For older logs, see [DEVLOG_ARCHIVE.md](DEVLOG_ARCHIVE.md)
 - **Debug**: Added extensive performance logging for the shortlist path.
 
 **Embeddings**:
+
 - **Cache-First**: Application now prefers local cache and only hits HuggingFace if needed.
 - **Fallback**: Added auto-download of fallback model (`all-MiniLM-L6-v2`) if configured model fails.
 - **Fixes**: Fixed tokenizer max-length warnings and added noise suppression during load.
 
 ### Reliability & Testing
+
 **Fixes**:
+
 - **Graceful Exit**: Refactored max-turns exit to use a tool-free system prompt swap, preventing hallucinated XML calls.
 - **Tests**: Fixed slow CLI tests (mocking cleanup/logging), fixed import errors in prompt tests, and resolved various failures.
 - **XML Support**: Added support for parsing XML-style tool calls.

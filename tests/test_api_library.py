@@ -59,7 +59,10 @@ def test_asky_client_run_messages_uses_default_registry(
     mock_engine_cls.return_value = engine
 
     client = AskyClient(AskyConfig(model_alias="gf"))
-    messages = [{"role": "system", "content": "System"}, {"role": "user", "content": "Q"}]
+    messages = [
+        {"role": "system", "content": "System"},
+        {"role": "user", "content": "Q"},
+    ]
 
     final_answer = client.run_messages(messages)
 
@@ -90,7 +93,10 @@ def test_asky_client_run_messages_uses_research_registry(
             disabled_tools={"web_search"},
         )
     )
-    messages = [{"role": "system", "content": "System"}, {"role": "user", "content": "Q"}]
+    messages = [
+        {"role": "system", "content": "System"},
+        {"role": "user", "content": "Q"},
+    ]
 
     client.run_messages(messages, research_session_id="42")
 
@@ -241,3 +247,63 @@ def test_asky_client_run_turn_redacts_local_targets_for_model(
     mock_preload.assert_called_once()
     mock_run_messages.assert_called_once()
     mock_save_interaction.assert_called_once()
+
+
+@patch("asky.api.client.run_preload_pipeline", return_value=PreloadResolution())
+@patch(
+    "asky.api.client.resolve_session_for_turn", return_value=(None, SessionResolution())
+)
+@patch("asky.api.client.AskyClient.run_messages")
+@patch("asky.api.client.save_interaction")
+def test_asky_client_run_turn_propagates_local_corpus_paths(
+    mock_save, mock_run, mock_resolve_session, mock_preload
+):
+    client = AskyClient(AskyConfig(model_alias="gf"))
+    request = AskyTurnRequest(query_text="Q", local_corpus_paths=["/a/b"])
+
+    # Mock run_messages to avoid actual LLM call/hang
+    mock_run.return_value = ([], [])
+
+    client.run_turn(request)
+
+    mock_preload.assert_called_once()
+    call_kwargs = mock_preload.call_args[1]
+    assert call_kwargs["local_corpus_paths"] == ["/a/b"]
+
+
+@patch("asky.api.client.run_preload_pipeline")
+@patch(
+    "asky.api.client.resolve_session_for_turn", return_value=(None, SessionResolution())
+)
+@patch("asky.api.client.AskyClient.run_messages")
+@patch("asky.api.client.save_interaction")
+def test_asky_client_run_turn_enables_hint_with_only_explicit_paths(
+    mock_save, mock_run, mock_resolve_session, mock_preload
+):
+    # Setup preload to return NO discovered targets
+    mock_preload.return_value = PreloadResolution(local_payload={"targets": []})
+
+    mock_run.return_value = ([], [])
+
+    client = AskyClient(AskyConfig(model_alias="gf", research_mode=True))
+    # Provide explicit paths but query has no targets
+    request = AskyTurnRequest(
+        query_text="Generic query", local_corpus_paths=["/opt/explicit"]
+    )
+
+    result = client.run_turn(request)
+
+    # Verify hint was injected despite empty local_payload targets
+    # (The hint is usually "Local Knowledge Base Guidance" in system prompt or similar)
+    # Based on client.py logic: local_kb_hint_enabled -> redact_local_source_targets call
+    # We can check if the hint exists in messages.
+
+    # Check for the hint in system prompt or messages
+    assert any(
+        "Local Knowledge Base Guidance" in m["content"] for m in result.messages
+    ), "Local KB hint should be present when explicit paths are provided"
+    client.run_turn(request)
+
+    # Verify local_corpus_paths reached the pipeline
+    _, kwargs = mock_preload.call_args
+    assert kwargs["local_corpus_paths"] == ["/opt/explicit"]

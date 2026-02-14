@@ -124,16 +124,16 @@ For test organization, see `tests/AGENTS.md`.
 
 ## Package Documentation
 
-| Package | Documentation | Key Components |
-|---------|---------------|----------------|
-| `cli/` | [cli/AGENTS.md](src/asky/cli/AGENTS.md) | Entry point, chat flow, commands |
-| `api/` | [api/AGENTS.md](src/asky/api/AGENTS.md) | `AskyClient`, turn orchestration services |
-| `core/` | [core/AGENTS.md](src/asky/core/AGENTS.md) | ConversationEngine, ToolRegistry, API client |
-| `storage/` | [storage/AGENTS.md](src/asky/storage/AGENTS.md) | SQLite repository, data model |
-| `research/` | [research/AGENTS.md](src/asky/research/AGENTS.md) | Cache, vector store, embeddings |
-| `evals/` | (manual harness) | Dual-mode research integration evaluation runner |
-| `config/` | [config/AGENTS.md](src/asky/config/AGENTS.md) | TOML loading, constants |
-| `tests/` | [tests/AGENTS.md](tests/AGENTS.md) | Test organization, patterns |
+| Package     | Documentation                                     | Key Components                                   |
+| ----------- | ------------------------------------------------- | ------------------------------------------------ |
+| `cli/`      | [cli/AGENTS.md](src/asky/cli/AGENTS.md)           | Entry point, chat flow, commands                 |
+| `api/`      | [api/AGENTS.md](src/asky/api/AGENTS.md)           | `AskyClient`, turn orchestration services        |
+| `core/`     | [core/AGENTS.md](src/asky/core/AGENTS.md)         | ConversationEngine, ToolRegistry, API client     |
+| `storage/`  | [storage/AGENTS.md](src/asky/storage/AGENTS.md)   | SQLite repository, data model                    |
+| `research/` | [research/AGENTS.md](src/asky/research/AGENTS.md) | Cache, vector store, embeddings                  |
+| `evals/`    | (manual harness)                                  | Dual-mode research integration evaluation runner |
+| `config/`   | [config/AGENTS.md](src/asky/config/AGENTS.md)     | TOML loading, constants                          |
+| `tests/`    | [tests/AGENTS.md](tests/AGENTS.md)                | Test organization, patterns                      |
 
 ---
 
@@ -144,7 +144,7 @@ For test organization, see `tests/AGENTS.md`.
 ```
 User Query
     ↓
-CLI (main.py) → parse_args()
+CLI (main.py) → parse_args() (-lc implies -r)
     ↓
 chat.py → build AskyTurnRequest + UI callbacks
     ↓
@@ -213,6 +213,7 @@ Top chunks returned with relevance scores
 ```
 
 Local-file targets can still be preloaded/indexed through research adapters:
+
 - built-in adapter fallback is gated by `research.local_document_roots`,
 - user-supplied local targets are normalized as corpus-relative paths under those roots
   (absolute-looking inputs are still treated as relative),
@@ -278,52 +279,67 @@ so callers (CLI/API/web) can choose retry/switch/fail behavior externally.
 ## Design Decisions
 
 ### 1. Unified Messages Table
+
 History and session messages share the `messages` table:
+
 - **History**: `session_id IS NULL`, stored as User + Assistant pairs
 - **Sessions**: `session_id IS NOT NULL`, individual messages
 
 ### 2. Shell-Sticky Sessions
+
 Sessions tied to terminal via lock files (`/tmp/asky_session_{PID}`) for automatic resumption.
 
 ### 3. Dynamic Tool Registry
+
 Tools registered at runtime enabling:
+
 - Different tool sets per task
 - Easy custom tool addition
 - Clean separation of definition and execution
 
 ### 4. Naive Token Counting
+
 Uses `chars / 4` approximation for context management, avoiding tokenizer dependencies.
 
 ### 5. Hybrid Search (Dense + Lexical)
+
 Research mode combines ChromaDB vectors for semantic search with SQLite FTS5 for BM25 lexical scoring.
 
 ### 6. Shared Source Shortlisting
+
 Single implementation reused by research and standard chat modes with per-mode enablement flags.
 
 ### 7. Lazy Loading
+
 Imports deferred until needed:
+
 - Research cache only on compaction
 - Tool executors on first use
 - Argcomplete only when completing
 - Shared helper utilities (`lazy_imports.py`) keep lazy bindings consistent across modules
 
 ### 8. Shared URL Normalization
+
 - URL sanitization and canonical normalization are centralized in `url_utils.py`
 - Retrieval, standard tools, research tools, and shortlist reuse the same helper logic
 
 ### 9. Registry Factory Separation
+
 - `core/tool_registry_factory.py` owns default/research registry assembly
 - `core/engine.py` now focuses on the conversation loop and context management
 
 ### 10. Research Module Decomposition
+
 - `research/source_shortlist.py` keeps public API/orchestration while collection/scoring live in focused modules.
 - `research/vector_store.py` keeps lifecycle and compatibility methods while heavy chunk/link/finding operations live in dedicated ops modules.
 
 ### 11. Bounded Hierarchical Summarization
+
 - `summarization.py` uses a bounded map + single final reduce strategy for long content.
 - This keeps hierarchical quality improvements while capping LLM round-trips to `chunk_count + 1`.
 
 ### 12. Tool Metadata-Driven Prompt Guidance
+
 - Tool definitions can include `system_prompt_guideline` metadata (built-in, research, custom, push-data).
 - `ToolRegistry` stores this metadata and emits:
   - API-safe tool schemas (`name`, `description`, `parameters`) for LLM tool-calling
@@ -331,6 +347,7 @@ Imports deferred until needed:
 - Runtime tool exclusions (`-off` / `-tool-off` / `--tool-off`) are applied during registry construction.
 
 ### 13. Session-Scoped Research Memory
+
 - Research registry creation can inject active `session_id` into memory tools (`save_finding`, `query_research_memory`).
 - Memory writes and reads can be isolated to the current chat session without adding extra user-facing tool parameters.
 
@@ -338,16 +355,16 @@ Imports deferred until needed:
 
 ## Supporting Modules
 
-| Module | Purpose |
-|--------|---------|
+| Module             | Purpose                                                  |
+| ------------------ | -------------------------------------------------------- |
 | `summarization.py` | Bounded hierarchical summarization (map + single reduce) |
-| `retrieval.py` | Shared URL retrieval via Trafilatura |
-| `html.py` | HTML stripping, link extraction |
-| `push_data.py` | HTTP data push to endpoints |
-| `email_sender.py` | SMTP email sending |
-| `rendering.py` | Browser markdown rendering |
-| `banner.py` | CLI banner display |
-| `logger.py` | Rotating file-based logging |
+| `retrieval.py`     | Shared URL retrieval via Trafilatura                     |
+| `html.py`          | HTML stripping, link extraction                          |
+| `push_data.py`     | HTTP data push to endpoints                              |
+| `email_sender.py`  | SMTP email sending                                       |
+| `rendering.py`     | Browser markdown rendering                               |
+| `banner.py`        | CLI banner display                                       |
+| `logger.py`        | Rotating file-based logging                              |
 
 ---
 

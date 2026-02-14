@@ -115,6 +115,63 @@ def test_parse_args_tool_off_aliases():
         assert args.query == ["query"]
 
 
+def test_parse_args_local_corpus():
+    with patch("sys.argv", ["asky", "-lc", "/a/b", "/c/d", "--", "query"]):
+        args = parse_args()
+        assert args.local_corpus == ["/a/b", "/c/d"]
+        assert args.query == ["query"]
+
+
+def test_run_chat_local_corpus_implies_research_mode():
+    from asky.cli.chat import run_chat
+
+    mock_args = argparse.Namespace(
+        model="gf",
+        research=False,
+        local_corpus=["/tmp/corpus"],
+        summarize=False,
+        open=False,
+        continue_ids=None,
+        sticky_session=None,
+        resume_session=None,
+        lean=False,
+        tool_off=[],
+        terminal_lines=None,
+        save_history=True,
+        verbose=False,
+    )
+
+    mock_turn_result = MagicMock()
+    mock_turn_result.final_answer = None
+    mock_turn_result.halted = True
+    mock_turn_result.notices = []
+
+    with (
+        patch(
+            "asky.cli.chat.MODELS",
+            {"gf": {"id": "gemini-flash"}},
+        ),
+        patch("asky.cli.chat.AskyClient") as mock_client_cls,
+        patch("asky.cli.chat.get_shell_session_id", return_value=None),
+        patch("asky.cli.chat.InterfaceRenderer"),
+        patch("asky.cli.chat.LIVE_BANNER", False),
+    ):
+        mock_client = MagicMock()
+        mock_client.run_turn.return_value = mock_turn_result
+        mock_client_cls.return_value = mock_client
+
+        run_chat(mock_args, "query")
+
+        # Verify AskyConfig was created with research_mode=True
+        config_arg = mock_client_cls.call_args[0][0]
+        assert config_arg.research_mode is True
+
+        # Verify local_corpus_paths was passed in the turn request
+        mock_client.run_turn.assert_called_once()
+        request_arg = mock_client.run_turn.call_args[0][0]
+        assert request_arg.local_corpus_paths == ["/tmp/corpus"]
+
+
 def test_parse_args_terminal_lines_explicit():
     """Test -tl with explicit integer."""
     with patch("sys.argv", ["asky", "-tl", "20", "query"]):
@@ -429,7 +486,9 @@ def test_ensure_research_session_creates_session_when_missing():
 
     with (
         patch("asky.cli.chat.SessionManager", return_value=manager) as mock_manager_cls,
-        patch("asky.cli.chat.generate_session_name", return_value="research_topic") as mock_name,
+        patch(
+            "asky.cli.chat.generate_session_name", return_value="research_topic"
+        ) as mock_name,
         patch("asky.cli.chat.set_shell_session_id") as mock_set_session_id,
     ):
         ensured = _ensure_research_session(
@@ -655,7 +714,9 @@ def test_main_completion_script_early_exit(
 @patch("asky.cli.main.setup_logging")
 @patch("asky.cli.main.ResearchCache")
 @patch("asky.cli.terminal.get_terminal_context")
+@patch("asky.cli.chat.get_shell_session_id", return_value=None)
 def test_main_flow(
+    mock_get_shell,
     mock_get_term,
     mock_research_cache,
     mock_setup_logging,
@@ -741,7 +802,11 @@ def test_main_flow(
 @patch("asky.cli.main.setup_logging")
 @patch("asky.cli.main.ResearchCache")
 @patch("asky.cli.terminal.get_terminal_context")
+@patch("asky.cli.chat.get_shell_session_id", return_value=None)
+@patch("asky.storage.sqlite.SQLiteHistoryRepository")
 def test_main_flow_verbose(
+    mock_repo,
+    mock_get_shell,
     mock_get_term,
     mock_research_cache,
     mock_setup_logging,
@@ -834,7 +899,11 @@ def test_main_flow_verbose(
 @patch("asky.cli.chat.save_interaction")
 @patch("asky.cli.terminal.get_terminal_context")
 @patch("asky.cli.main.setup_logging")
+@patch("asky.cli.chat.get_shell_session_id", return_value=None)
+@patch("asky.storage.sqlite.SQLiteHistoryRepository")
 def test_main_flow_default_no_context(
+    mock_repo,
+    mock_get_shell,
     mock_setup_logging,
     mock_get_term,
     mock_save,

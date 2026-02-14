@@ -11,3 +11,4 @@ __pycache__/
 *.pyc
 .eggs/
 ~/.config/asky/asky.log
+TODO_research_pipeline.md

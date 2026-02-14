@@ -33,7 +33,9 @@ def test_preload_local_research_sources_ingests_discovered_documents():
             return_value=["/tmp/corpus"],
         ),
         patch("asky.cli.local_ingestion_flow.ResearchCache", return_value=cache),
-        patch("asky.cli.local_ingestion_flow.get_vector_store", return_value=vector_store),
+        patch(
+            "asky.cli.local_ingestion_flow.get_vector_store", return_value=vector_store
+        ),
         patch("asky.cli.local_ingestion_flow.chunk_text", return_value=[(0, "chunk")]),
         patch("pathlib.Path.exists", return_value=True),
         patch("pathlib.Path.resolve") as mock_resolve,
@@ -84,3 +86,23 @@ def test_format_local_ingestion_context_outputs_compact_summary():
     assert "Local knowledge base preloaded before tool calls" in context
     assert "Documents indexed: 1" in context
     assert "Chunk embeddings added: 2" in context
+
+
+def test_preload_local_research_sources_uses_explicit_targets():
+    from asky.cli.local_ingestion_flow import preload_local_research_sources
+
+    with (
+        patch(
+            "asky.cli.local_ingestion_flow.extract_local_source_targets"
+        ) as mock_extract,
+        patch("asky.cli.local_ingestion_flow.ResearchCache"),
+        patch("asky.cli.local_ingestion_flow.get_vector_store"),
+        patch("asky.cli.local_ingestion_flow.fetch_source_via_adapter") as mock_fetch,
+    ):
+        mock_fetch.return_value = None  # Just to stop early
+        payload = preload_local_research_sources(
+            "ignore paths in prompt", explicit_targets=["/explicit/path"]
+        )
+
+    assert payload["targets"] == ["/explicit/path"]
+    mock_extract.assert_not_called()

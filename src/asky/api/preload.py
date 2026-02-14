@@ -111,12 +111,19 @@ def run_preload_pipeline(
     preload_local_sources: bool = True,
     preload_shortlist: bool = True,
     additional_source_context: Optional[str] = None,
+    local_corpus_paths: Optional[List[str]] = None,
     status_callback: Optional[StatusCallback] = None,
     shortlist_executor: Callable[..., Dict[str, Any]] = shortlist_prompt_sources,
     shortlist_formatter: Callable[[Dict[str, Any]], str] = format_shortlist_context,
-    shortlist_stats_builder: Callable[[Dict[str, Any], float], Dict[str, Any]] = build_shortlist_stats,
-    local_ingestion_executor: Callable[..., Dict[str, Any]] = preload_local_research_sources,
-    local_ingestion_formatter: Callable[[Dict[str, Any]], Optional[str]] = format_local_ingestion_context,
+    shortlist_stats_builder: Callable[
+        [Dict[str, Any], float], Dict[str, Any]
+    ] = build_shortlist_stats,
+    local_ingestion_executor: Callable[
+        ..., Dict[str, Any]
+    ] = preload_local_research_sources,
+    local_ingestion_formatter: Callable[
+        [Dict[str, Any]], Optional[str]
+    ] = format_local_ingestion_context,
 ) -> PreloadResolution:
     """Run local+shortlist preloads and return their combined context payload."""
     preload = PreloadResolution()
@@ -125,7 +132,10 @@ def run_preload_pipeline(
         if status_callback:
             status_callback("Local corpus: starting pre-LLM ingestion")
         local_start = time.perf_counter()
-        local_payload = local_ingestion_executor(user_prompt=query_text)
+        local_payload = local_ingestion_executor(
+            user_prompt=query_text,
+            explicit_targets=local_corpus_paths,
+        )
         local_elapsed_ms = (time.perf_counter() - local_start) * 1000
         preload.local_payload = local_payload
         preload.local_elapsed_ms = local_elapsed_ms

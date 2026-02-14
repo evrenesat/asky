@@ -45,6 +45,7 @@ class AskyTurnRequest:
     preload_local_sources: bool = True
     preload_shortlist: bool = True
     additional_source_context: Optional[str] = None
+    local_corpus_paths: Optional[List[str]] = None
     save_history: bool = True
 
 

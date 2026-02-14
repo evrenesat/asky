@@ -68,7 +68,7 @@ dev = [
 ]
 
 [tool.pytest.ini_options]
-norecursedirs = ["data", "dist"]
+norecursedirs = ["data", "dist", "temp", "evals/research_pipeline/matrices/temp"]
 filterwarnings = [
     "ignore:websockets.legacy is deprecated:DeprecationWarning",
 ]
