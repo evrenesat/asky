@@ -259,6 +259,8 @@ def test_asky_client_run_turn_redacts_local_targets_for_model(
         verbose_output_callback=None,
         summarization_status_callback=None,
         event_callback=None,
+        lean=False,
+        disabled_tools=None,
     )
     mock_save_interaction.assert_called_once()
 

@@ -343,6 +343,14 @@ def run_chat(args: argparse.Namespace, query_text: str) -> None:
 
     disabled_tools = _parse_disabled_tools(getattr(args, "tool_off", []))
 
+    is_lean = bool(getattr(args, "lean", False))
+    if is_lean:
+        from asky.core.tool_registry_factory import get_all_available_tool_names
+
+        # In lean mode, disable ALL tools
+        all_tools = get_all_available_tool_names()
+        disabled_tools.update(all_tools)
+
     # Setup display renderer early so pre-LLM shortlist work is visible in banner
     renderer = InterfaceRenderer(
         model_config=model_config,
@@ -365,10 +373,17 @@ def run_chat(args: argparse.Namespace, query_text: str) -> None:
             # Stop the Live display before printing final answer
             renderer.stop_live()
             if final_answer:
-                renderer.print_final_answer(final_answer)
+                if is_lean:
+                    # Render raw markdown without "Assistant:" label
+                    from rich.markdown import Markdown
+
+                    renderer.console.print(Markdown(final_answer))
+                else:
+                    renderer.print_final_answer(final_answer)
         else:
             # Update banner in-place
-            renderer.update_banner(current_turn, status_message)
+            if use_banner:
+                renderer.update_banner(current_turn, status_message)
 
     def verbose_output_callback(renderable: Any) -> None:
         """Route verbose output through the active live console when present."""
@@ -384,21 +399,22 @@ def run_chat(args: argparse.Namespace, query_text: str) -> None:
                 border_style="cyan",
                 expand=False,
             )
-        if LIVE_BANNER and renderer.live:
+        if use_banner and renderer.live:
             renderer.live.console.print(renderable)
             return
         renderer.console.print(renderable)
 
     def summarization_status_callback(message: Optional[str]) -> None:
         """Refresh banner during internal summarization calls."""
-        if not LIVE_BANNER:
+        if not use_banner:
             return
         renderer.update_banner(renderer.current_turn, status_message=message)
 
     # Wrap in try/finally to ensure renderer.stop_live() is called.
     try:
         effective_query_text = query_text
-        if LIVE_BANNER:
+        use_banner = LIVE_BANNER and not is_lean
+        if use_banner:
             renderer.start_live()
 
         # Handle Terminal Context
@@ -411,7 +427,7 @@ def run_chat(args: argparse.Namespace, query_text: str) -> None:
             warn_on_error = args.terminal_lines is not None
 
             status_cb = lambda msg: (
-                renderer.update_banner(0, status_message=msg) if LIVE_BANNER else None
+                renderer.update_banner(0, status_message=msg) if use_banner else None
             )
 
             inject_terminal_context(
@@ -424,7 +440,7 @@ def run_chat(args: argparse.Namespace, query_text: str) -> None:
             if working_messages and working_messages[-1]["role"] == "user":
                 effective_query_text = working_messages[-1]["content"]
 
-            if LIVE_BANNER:
+            if use_banner:
                 renderer.update_banner(0, status_message=None)
 
         asky_client = AskyClient(
@@ -464,7 +480,7 @@ def run_chat(args: argparse.Namespace, query_text: str) -> None:
             save_history=True,
         )
 
-        display_cb = display_callback if LIVE_BANNER else None
+        display_cb = display_callback
         turn_result = asky_client.run_turn(
             turn_request,
             display_callback=display_cb,
@@ -472,7 +488,7 @@ def run_chat(args: argparse.Namespace, query_text: str) -> None:
             summarization_status_callback=summarization_status_callback,
             preload_status_callback=(
                 (lambda message: renderer.update_banner(0, status_message=message))
-                if LIVE_BANNER
+                if use_banner
                 else None
             ),
             messages_prepared_callback=lambda msgs: setattr(renderer, "messages", msgs),
@@ -491,7 +507,7 @@ def run_chat(args: argparse.Namespace, query_text: str) -> None:
         if args.verbose and turn_result.preload.shortlist_payload:
             verbose_console = (
                 renderer.live.console
-                if LIVE_BANNER and renderer.live
+                if use_banner and renderer.live
                 else renderer.console
             )
             _print_shortlist_verbose(
@@ -514,7 +530,7 @@ def run_chat(args: argparse.Namespace, query_text: str) -> None:
         if turn_result.halted:
             return
 
-        if final_answer and turn_request.save_history:
+        if final_answer and turn_request.save_history and not is_lean:
             console.print("\n[Saving interaction...]")
 
         # Auto-generate HTML Report
@@ -546,7 +562,7 @@ def run_chat(args: argparse.Namespace, query_text: str) -> None:
                 )
 
             report_path = save_html_report(html_source)
-            if report_path:
+            if report_path and not is_lean:
                 console.print(f"Open in browser: [bold cyan]file://{report_path}[/]")
 
         # Send Email if requested
@@ -570,10 +586,12 @@ def run_chat(args: argparse.Namespace, query_text: str) -> None:
                 model=args.model,
             )
             if result["success"]:
-                console.print(
-                    f"[Push data successful: {result['endpoint']} - {result['status_code']}]"
-                )
+                if not is_lean:
+                    console.print(
+                        f"[Push data successful: {result['endpoint']} - {result['status_code']}]"
+                    )
             else:
+                # Always print errors
                 console.print(
                     f"[Push data failed: {result['endpoint']} - {result['error']}]"
                 )

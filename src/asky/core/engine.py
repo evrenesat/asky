@@ -68,6 +68,7 @@ class ConversationEngine:
         session_manager: Optional[Any] = None,
         verbose_output_callback: Optional[Callable[[Any], None]] = None,
         event_callback: Optional[Callable[[str, Dict[str, Any]], None]] = None,
+        lean: bool = False,
     ):
         self.model_config = model_config
         self.tool_registry = tool_registry
@@ -78,6 +79,7 @@ class ConversationEngine:
         self.session_manager = session_manager
         self.verbose_output_callback = verbose_output_callback
         self.event_callback = event_callback
+        self.lean = lean
         self._research_cache = None
         self.start_time: float = 0
         self.final_answer: str = ""
@@ -123,7 +125,9 @@ class ConversationEngine:
                     f"- Turns Remaining: {turns_left} (out of {MAX_TURNS})\n"
                     f"Please manage your context usage efficiently."
                 )
-                if messages and messages[0]["role"] == "system":
+                # In lean mode, we suppress these system updates to keep the context clean
+                # and avoid "nagging" the model, as requested by power users.
+                if not self.lean and messages and messages[0]["role"] == "system":
                     messages[0]["content"] = original_system_prompt + status_msg
 
                 # Wrap display_callback to match api_client expectation

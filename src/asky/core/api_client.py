@@ -143,6 +143,7 @@ def get_llm_msg(
 
     for attempt in range(MAX_RETRIES):
         try:
+            logger.debug(f"URL: {url}, Headers: {headers}")
             resp = requests.post(
                 url, json=payload, headers=headers, timeout=REQUEST_TIMEOUT
             )

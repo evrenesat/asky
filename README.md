@@ -175,6 +175,8 @@ positional arguments:
                           - get_link_summaries: Get AI summaries of cached pages
                           - get_relevant_content: RAG-based retrieval of relevant sections
                           - get_full_content: Get complete cached content
+                          - save_finding: Persist insights to research memory
+                          - query_research_memory: Semantic search over saved findings
   -lc PATH [PATH ...], --local-corpus PATH [PATH ...]
                         Local file or directory paths to ingest as research corpus. Implies --research.
                         Note: Non-existent paths are skipped with a warning.
@@ -200,6 +202,74 @@ For complex topics, use `--research`. This enables a specialized prompt + toolse
 - **extract_links**: Scans pages to find relevant citations without loading full content.
 - **get_link_summaries**: Rapidly summarizes multiple pages to decide which ones to read.
 - **get_relevant_content**: Uses vector embeddings (via RAG) to pull only the specific paragraphs you need from a long document.
+- **get_full_content**: Retrieves complete cached content for detailed analysis.
+- **save_finding**: Persist insights to research memory for later retrieval.
+- **query_research_memory**: Semantic search over saved findings using natural language.
+
+#### Research Workflow
+
+```mermaid
+flowchart TD
+    A[User Query] --> B{Research Mode?}
+    B -->|Yes| C[Extract Local Targets]
+    B -->|No| D[Standard Tool Loop]
+    C --> E[Preload Local Corpus]
+    E --> F[Query Expansion]
+    F --> G[Source Shortlisting]
+    G --> H[Web Search + Seed Links]
+    H --> I[Fetch Content]
+    I --> J[Chunk Content]
+    J --> K[Generate Embeddings]
+    K --> L[Store in Vector DB]
+    L --> M[LLM with Research Tools]
+    M --> N{Tool Call}
+    N -->|extract_links| O[Cache URL + Extract Links]
+    N -->|get_link_summaries| P[Generate Page Summaries]
+    N -->|get_relevant_content| Q[Hybrid Search + Retrieve Chunks]
+    N -->|save_finding| R[Persist to Research Memory]
+    N -->|query_research_memory| S[Search Saved Findings]
+    O --> M
+    P --> M
+    Q --> M
+    R --> M
+    S --> M
+    M --> T[Final Answer]
+    T --> U[Save to Session History]
+```
+
+#### Session-Scoped Research Memory
+
+Research mode automatically creates a session for each research run. Findings saved with `save_finding` are scoped to the session and persist across multiple turns within that session. Findings remain available until the session is explicitly deleted by the user. This enables:
+- Building knowledge incrementally across multiple research turns
+- Querying previously discovered insights
+- Isolating research contexts between different topics
+
+#### Hybrid Semantic Search
+
+Research mode uses hybrid semantic search combining:
+- **Dense retrieval**: ChromaDB nearest-neighbor cosine similarity
+- **Lexical retrieval**: SQLite FTS5 BM25 scoring
+
+The final score combines both approaches: `final_score = (dense_weight * semantic_score) + ((1 - dense_weight) * lexical_score)`. This provides both semantic understanding and precise keyword matching, with a fallback to SQLite-based cosine scan if Chroma is unavailable.
+
+#### Evidence Extraction
+
+Enable post-retrieval LLM fact extraction by setting `evidence_extraction_enabled = true` in `research.toml`. This extracts specific facts from retrieved chunks, useful for:
+- Extracting compliance requirements from policy documents
+- Identifying specific technical specifications
+- Pulling out quantitative data points
+
+#### Query Expansion
+
+Research mode can decompose complex queries into sub-queries for better source discovery. Configure in `research.toml`:
+```toml
+query_expansion_enabled = true
+query_expansion_mode = "deterministic"  # or "llm"
+max_sub_queries = 4
+```
+
+- **deterministic**: Rule-based query decomposition
+- **llm**: AI-powered query expansion (may be slower but more accurate)
 
 #### Web-based research
 
@@ -240,6 +310,75 @@ You can combine both in one run:
 ```bash
 asky -r "Use /policy/passwords.md and verify whether NIST 800-63B guidance has changed"
 ```
+
+#### Local Source Adapters
+
+Route non-HTTP sources to custom tools using the adapter system:
+
+```toml
+[research.source_adapters.local]
+prefix = "local://"
+tool = "read_local"  # or discover_tool + read_tool
+```
+
+The built-in local fallback handles `local://...`, `file://...`, and direct local paths when `research.local_document_roots` is configured. Supported file types include:
+- Text-like: `.txt`, `.md`, `.markdown`, `.html`, `.htm`, `.json`, `.csv`
+- Document-like: `.pdf`, `.epub` (via PyMuPDF)
+
+**Security Guardrails**: Generic research tools (`extract_links`, `get_link_summaries`, `get_relevant_content`, `get_full_content`) reject local filesystem targets by design. Local-file access flows through explicit local-source tooling/adapters.
+
+#### Advanced Research Use Cases
+
+**Multi-Document Research**
+```bash
+# Compare multiple RFCs
+asky -r "Compare /rfc/rfc9110.txt with /rfc/rfc9111.txt and identify key differences"
+```
+
+**Research Memory Persistence**
+```bash
+# Start a research session
+asky -r "Investigate OAuth2 device flow implementation patterns"
+
+# Later, query saved findings within the session
+asky -r "What were the key security considerations from the OAuth2 research?"
+```
+
+**Evidence Extraction**
+```bash
+# Configure in research.toml: evidence_extraction_enabled = true
+asky -r "Extract specific password requirements from /policies/security.md"
+```
+
+**Custom Source Adapters**
+```bash
+# Configure adapter in research.toml
+# Then use custom sources
+asky -r "Analyze local://my-knowledge-base for compliance issues"
+```
+
+### Research Mode Architecture
+
+Research mode is built on several core components:
+
+| Component | Description |
+|-----------|-------------|
+| **ResearchCache** | Caches fetched URL content and extracted links with TTL-based expiry |
+| **VectorStore** | Hybrid semantic search combining ChromaDB (dense) and SQLite BM25 (lexical) |
+| **EmbeddingClient** | Local sentence-transformer embeddings using all-MiniLM-L6-v2 |
+| **TextChunker** | Token-aware sentence chunking for optimal embedding boundaries |
+| **SourceShortlist** | Pre-LLM source ranking pipeline for improved relevance |
+| **QueryExpander** | Decomposes complex queries into sub-queries |
+| **EvidenceExtractor** | Post-retrieval LLM fact extraction |
+| **Adapters** | Routes non-HTTP sources to custom tools |
+
+#### Vector Collections
+
+| Collection | Content |
+|-----------|---------|
+| `content_chunks` | Text chunks from cached pages |
+| `link_embeddings` | Link anchor text for relevance filtering |
+| `research_findings` | Saved insights for memory queries |
 
 ### File Prompts
 
@@ -402,29 +541,136 @@ Use `research.toml` to tune retrieval behavior and local corpus boundaries:
 
 ```toml
 [research]
+# Enable research mode tools
 enabled = true
+
+# Restrict local-source ingestion to these root directories
 local_document_roots = [
   "/Users/you/docs/security",
   "/Users/you/docs/engineering"
 ]
+
+# Cache TTL in hours (cached pages expire after this time)
 cache_ttl_hours = 24
+
+# Evidence extraction (post-retrieval LLM fact extraction)
+evidence_extraction_enabled = false
+evidence_extraction_max_chunks = 10
+
+# Maximum links to return per URL (before relevance filtering)
 max_links_per_url = 50
+
+# Maximum links after relevance filtering (when query is provided)
 max_relevant_links = 20
+
+# Chunk size for content splitting (tokens, clamped by embedding model max length)
+chunk_size = 256
+
+# Chunk overlap for context continuity (tokens)
+chunk_overlap = 48
+
+# Number of relevant chunks to retrieve per URL in RAG queries
 max_chunks_per_retrieval = 5
 
+# Background summarization thread pool size
+summarization_workers = 2
+
+# Maximum findings to return from research memory queries
+memory_max_results = 10
+
+# ChromaDB configuration
+[research.chromadb]
+# Directory used by ChromaDB's persistent client
+persist_directory = "~/.config/asky/chromadb"
+
+# Collection names for research mode vectors
+chunks_collection = "asky_content_chunks"
+links_collection = "asky_link_embeddings"
+findings_collection = "asky_research_findings"
+
+# Source shortlisting configuration
 [research.source_shortlist]
+# Master switch for source shortlisting before first LLM call
 enabled = true
+
+# Enable source shortlisting in research mode
 enable_research_mode = true
+
+# Enable source shortlisting in standard (non-research) mode
+enable_standard_mode = true
+
+# If true, run web search even when the prompt already includes URLs
+search_with_seed_urls = false
+
+# If true, shortlist expansion extracts and adds links from seed URLs
+seed_link_expansion_enabled = true
+
+# Max number of seed pages to expand for links
+seed_link_max_pages = 3
+
+# Max extracted links to consider from each seed page before dedupe/caps
+seed_links_per_page = 50
+
+# Number of search results to pull as initial candidates
+search_result_count = 40
+
+# Candidate caps to control pre-LLM fetch cost
 max_candidates = 40
 max_fetch_urls = 20
+
+# Number of ranked candidates to pass forward
 top_k = 8
+
+# Extracted text thresholds and payload sizing
+min_content_chars = 300
+max_scoring_chars = 5000
+snippet_chars = 700
+doc_lead_chars = 1400
+query_fallback_chars = 600
+
+# Keyphrase extraction controls
+keyphrase_min_query_chars = 220
+keyphrase_top_k = 20
+search_phrase_count = 5
+
+# Scoring heuristics
+short_text_threshold = 700
+same_domain_bonus = 0.05
+overlap_bonus_weight = 0.10
+short_text_penalty = 0.10
+noise_path_penalty = 0.15
+
+# Query expansion before shortlist and local-source ingestion
+query_expansion_enabled = true
+query_expansion_mode = "deterministic"  # or "llm"
+max_sub_queries = 4
+
+# Embedding model configuration
+[research.embedding]
+# Model name to load in-process
+model = "all-MiniLM-L6-v2"
+
+# Batch size for local encoding
+batch_size = 32
+
+# Torch device for embedding model (cpu, cuda, mps)
+device = "cpu"
+
+# Normalize vectors so cosine similarity is stable across retrieval calls
+normalize = true
+
+# If true, do not download models and use only local cache
+local_files_only = false
 ```
 
-Notes:
+#### Configuration Notes
 
 - Keep `local_document_roots = []` to disable builtin local filesystem ingestion.
 - For local ingestion, query-supplied targets are interpreted as corpus-relative paths under configured roots.
 - Generic URL/content tools reject local filesystem targets by design; local corpus content is preloaded/indexed before model/tool turns in research mode.
+- **Chunking**: `chunk_size` and `chunk_overlap` control how documents are split for embedding. Larger chunks capture more context but reduce precision; overlap ensures continuity.
+- **Embeddings**: The default model `all-MiniLM-L6-v2` provides good balance of speed and accuracy. Change `device` to `cuda` or `mps` for GPU acceleration.
+- **Source Shortlisting**: The pipeline ranks sources before the LLM sees them, improving relevance. Adjust `top_k` to control how many sources are passed to the model.
 
 ### API Keys
 

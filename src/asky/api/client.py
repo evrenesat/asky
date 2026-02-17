@@ -151,12 +151,18 @@ class AskyClient:
         verbose_output_callback: Optional[Callable[[Any], None]] = None,
         summarization_status_callback: Optional[Callable[[Optional[str]], None]] = None,
         event_callback: Optional[Callable[[str, Dict[str, Any]], None]] = None,
+        lean: bool = False,
+        disabled_tools: Optional[Set[str]] = None,
     ) -> str:
         """Run chat completion for prepared messages."""
+        effective_disabled_tools = (
+            disabled_tools if disabled_tools is not None else self.config.disabled_tools
+        )
+
         if self.config.research_mode:
             registry = create_research_tool_registry(
                 usage_tracker=self.usage_tracker,
-                disabled_tools=self.config.disabled_tools,
+                disabled_tools=effective_disabled_tools,
                 session_id=research_session_id,
                 corpus_preloaded=preload.is_corpus_preloaded if preload else False,
             )
@@ -168,7 +174,7 @@ class AskyClient:
                 summarization_verbose_callback=(
                     verbose_output_callback if self.config.verbose else None
                 ),
-                disabled_tools=self.config.disabled_tools,
+                disabled_tools=effective_disabled_tools,
             )
 
         self._append_enabled_tool_guidelines(
@@ -186,6 +192,7 @@ class AskyClient:
             session_manager=session_manager,
             verbose_output_callback=verbose_output_callback,
             event_callback=event_callback,
+            lean=lean,
         )
         return engine.run(messages, display_callback=display_callback)
 
@@ -201,6 +208,7 @@ class AskyClient:
         verbose_output_callback: Optional[Callable[[Any], None]] = None,
         summarization_status_callback: Optional[Callable[[Optional[str]], None]] = None,
         event_callback: Optional[Callable[[str, Dict[str, Any]], None]] = None,
+        lean: bool = False,
     ) -> AskyChatResult:
         """Run a simplified chat turn without session/preload orchestration."""
         messages = self.build_messages(
@@ -218,6 +226,7 @@ class AskyClient:
             verbose_output_callback=verbose_output_callback,
             summarization_status_callback=summarization_status_callback,
             event_callback=event_callback,
+            lean=lean,
         )
 
         query_summary, answer_summary = ("", "")
@@ -362,6 +371,15 @@ class AskyClient:
         if messages_prepared_callback:
             messages_prepared_callback(messages)
 
+        # Calculate effective disabled tools
+        effective_disabled_tools = None
+        if request.lean:
+            from asky.core.tool_registry_factory import get_all_available_tool_names
+
+            # In lean mode, disable ALL tools
+            effective_disabled_tools = set(self.config.disabled_tools)
+            effective_disabled_tools.update(get_all_available_tool_names())
+
         final_answer = self.run_messages(
             messages,
             session_manager=session_manager,
@@ -375,6 +393,8 @@ class AskyClient:
             verbose_output_callback=verbose_output_callback,
             summarization_status_callback=summarization_status_callback,
             event_callback=event_callback,
+            lean=request.lean,
+            disabled_tools=effective_disabled_tools,
         )
 
         query_summary, answer_summary = ("", "")

@@ -2,6 +2,23 @@
 
 For older logs, see [DEVLOG_ARCHIVE.md](DEVLOG_ARCHIVE.md).
 
+## 2026-02-17
+
+### Lean Mode Enhancements (Tool Disabling + Clean System Prompt)
+
+**Summary**: Enhanced `--lean` mode to automatically disable all tools, suppress per-turn "Turns Remaining" system prompt updates, and silence informational CLI output (banners, labels, save messages) for a distraction-free experience.
+
+- **Changed**:
+  - `src/asky/cli/chat.py`:
+    - `run_chat` now disabled tools when `lean=True`.
+    - suppresses banner, "Assistant:" label, and informational messages ("Saving...", "Open in browser...") in lean mode.
+  - `src/asky/core/engine.py`: `ConversationEngine` now accepts a `lean` flag and suppresses `[SYSTEM UPDATE]` messages when enabled.
+  - `src/asky/api/client.py`: Propagated `lean` flag and `disabled_tools` overrides through `run_turn`, `run_messages`, and `chat` methods.
+- **Added**:
+  - `tests/test_lean_mode.py`: New comprehensive tests for lean mode behavior across CLI, API, and Engine layers, including output suppression.
+- **Why**:
+  - Users wanted a true "lean" mode that relies solely on the model's internal knowledge without tool overhead, nagging system updates, or CLI noise.
+
 ## 2026-02-14
 
 ### Tool Management Improvements (Autocomplete, List, Disable-All)
