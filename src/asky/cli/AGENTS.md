@@ -33,19 +33,20 @@ Command-line interface layer handling argument parsing, command routing, and use
 
 ### Key CLI Flags
 
-| Flag                           | Handler                                       |
-| ------------------------------ | --------------------------------------------- |
-| `-m, --model`                  | Model selection                               |
-| `-c, --continue-chat`          | Context loading from previous IDs             |
-| `-H, --history`                | `history.py`                                  |
-| `-pa, --print-answer`          | `history.py`                                  |
-| `-ss, --sticky-session`        | `sessions.py`                                 |
-| `-rs, --resume-session`        | `sessions.py`                                 |
-| `-off, -tool-off, --tool-off`  | `chat.py` (runtime tool exclusion)            |
-| `-r, --research`               | Enable deep research mode                     |
-| `-lc, --local-corpus`          | Explicit local research corpus (implies `-r`) |
-| `-sfm, --session-from-message` | `history.py`                                  |
-| `--clean-session-research`     | `sessions.py`                                 |
+| Flag                           | Handler                                            |
+| ------------------------------ | -------------------------------------------------- |
+| `-m, --model`                  | Model selection                                    |
+| `-c, --continue-chat`          | Context loading from previous IDs                  |
+| `-H, --history`                | `history.py`                                       |
+| `-pa, --print-answer`          | `history.py`                                       |
+| `-ss, --sticky-session`        | `sessions.py`                                      |
+| `-rs, --resume-session`        | `sessions.py`                                      |
+| `-off, -tool-off, --tool-off`  | `chat.py` (runtime tool exclusion, supports `all`) |
+| `--list-tools`                 | `main.py` (list all LLM tools and exit)            |
+| `-r, --research`               | Enable deep research mode                          |
+| `-lc, --local-corpus`          | Explicit local research corpus (implies `-r`)      |
+| `-sfm, --session-from-message` | `history.py`                                       |
+| `--clean-session-research`     | `sessions.py`                                      |
 
 ## Chat Flow (`chat.py`)
 

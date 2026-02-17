@@ -192,6 +192,12 @@ def _parse_disabled_tools(raw_values: Optional[List[str]]) -> Set[str]:
             tool_name = token.strip()
             if tool_name:
                 disabled_tools.add(tool_name)
+
+    if "all" in disabled_tools:
+        from asky.core.tool_registry_factory import get_all_available_tool_names
+
+        return set(get_all_available_tool_names())
+
     return disabled_tools
 
 

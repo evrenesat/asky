@@ -118,7 +118,7 @@ def get_llm_msg(
 
     current_backoff = INITIAL_BACKOFF
 
-    logger.info(f"Sending request to LLM: {model_id}")
+    logger.info(f"Sending request to LLM: {model_id} as {LLM_USER_AGENT}")
     # Log system messages separately
     for m in messages:
         if m.get("role") == "system":

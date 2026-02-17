@@ -396,3 +396,31 @@ def create_research_tool_registry(
         )
 
     return registry
+
+
+def get_all_available_tool_names() -> List[str]:
+    """Gather all tool names from default, research, custom, and push endpoints."""
+    names: Set[str] = {"web_search", "get_url_content", "get_url_details"}
+
+    # Research tools
+    from asky.research.tools import RESEARCH_TOOL_SCHEMAS
+
+    for schema in RESEARCH_TOOL_SCHEMAS:
+        names.add(schema["name"])
+
+    # Custom tools
+    for tool_name, tool_data in CUSTOM_TOOLS.items():
+        if tool_data.get("enabled", True):
+            names.add(tool_name)
+
+    # Push data tools
+    try:
+        from asky.push_data import get_enabled_endpoints
+
+        for endpoint_name in get_enabled_endpoints():
+            names.add(f"push_data_{endpoint_name}")
+    except Exception:
+        # Fallback if push_data module fails to load or similar
+        pass
+
+    return sorted(list(names))

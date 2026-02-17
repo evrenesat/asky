@@ -57,7 +57,9 @@ Builds `ToolRegistry` instances used by chat flow:
 
 - `create_default_tool_registry()`: standard web/content/detail/custom/push-data tools
 - `create_research_tool_registry()`: research-mode schemas/executors + custom tools
-- Both factories accept runtime `disabled_tools` to skip tool registration per request.
+  Both factories accept runtime `disabled_tools` to skip tool registration per request.
+- `get_all_available_tool_names()`: standalone helper to aggregate names from default,
+  research, custom, and push-data sources. Used by CLI for listing and autocompletion.
 - Research factory also accepts optional `session_id`; when set, it auto-injects that ID
   into research memory tool calls (`save_finding`, `query_research_memory`) for
   session-scoped persistence/retrieval.

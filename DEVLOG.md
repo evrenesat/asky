@@ -4,6 +4,27 @@ For older logs, see [DEVLOG_ARCHIVE.md](DEVLOG_ARCHIVE.md).
 
 ## 2026-02-14
 
+### Tool Management Improvements (Autocomplete, List, Disable-All)
+
+**Summary**: Enhanced the CLI and core tool registration to improve tool discoverability and management. Added shell autocompletion for tool names, a command to list available tools, and a convenient way to disable all tools at once.
+
+- **Added**:
+  - `src/asky/core/tool_registry_factory.py`: `get_all_available_tool_names()` helper to discover all registered tools (default, research, custom, push-data).
+  - `src/asky/cli/completion.py`: `complete_tool_names()` provider for argcomplete.
+  - **CLI**:
+    - `--list-tools`: New flag to print available LLM tools and exit.
+    - `--tool-off all`: New keyword to disable all tools in a single command.
+- **Changed**:
+  - `src/asky/cli/main.py`: Integrated the new flag and registered the autocompleter.
+  - `src/asky/cli/chat.py`: Updated `_parse_disabled_tools` to handle the `all` keyword.
+- **Tests**:
+  - Added `tests/test_tool_management.py` covering tool discovery, completion, and wildcard disabling.
+- **Why**:
+  - Improved UX for users who want to know what tools are available or want to quickly run a "clean" LLM pass without tool overhead.
+  - Addresses the difficulty of manually entering long tool names without shell completion.
+
+## 2026-02-14
+
 ### System Prompt Override Flag and API Capability
 
 **Summary**: Added support for overriding the default system prompt via CLI and API. This allows users to customize the model's behavior/persona without modifying configuration files.

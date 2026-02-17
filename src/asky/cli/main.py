@@ -64,6 +64,7 @@ def parse_args() -> argparse.Namespace:
         parse_answer_selector_token,
         parse_session_selector_token,
         enable_argcomplete,
+        complete_tool_names,
     )
 
     parser = argparse.ArgumentParser(
@@ -275,7 +276,12 @@ def parse_args() -> argparse.Namespace:
         action="append",
         default=[],
         metavar="TOOL",
-        help="Disable an LLM tool for this run. Repeat or use comma-separated names (e.g. -off web_search -off get_url_content).",
+        help='Disable an LLM tool for this run. Repeat or use comma-separated names, use "all" to disable all tools.  (e.g. -off web_search -off get_url_content).',
+    )
+    parser.add_argument(
+        "--list-tools",
+        action="store_true",
+        help="List all available tools and exit.",
     )
     parser.add_argument(
         "-tl",
@@ -303,6 +309,7 @@ def parse_args() -> argparse.Namespace:
     print_session_action.completer = complete_session_tokens
     resume_session_action.completer = complete_session_tokens
     session_from_message_action.completer = complete_single_answer_id
+    parser._option_string_actions["--tool-off"].completer = complete_tool_names
 
     enable_argcomplete(parser)
     return parser.parse_args()
@@ -444,6 +451,16 @@ def main() -> None:
     if args.prompts:
         utils.load_custom_prompts()
         prompts.list_prompts_command()
+        return
+
+    if args.list_tools:
+        from asky.core.tool_registry_factory import get_all_available_tool_names
+
+        tools = get_all_available_tool_names()
+        print("\nAvailable LLM tools:")
+        for t in tools:
+            print(f"  - {t}")
+        print()
         return
 
     needs_db = any(

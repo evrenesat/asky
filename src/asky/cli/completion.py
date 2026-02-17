@@ -387,3 +387,20 @@ def _get_recent_session_hints() -> Mapping[str, str]:
         session_token = _build_session_selector_token(session.id, session_name)
         hints[session_token] = f"session #{session.id} | {session_label}"
     return hints
+
+
+def complete_tool_names(
+    prefix: str, parsed_args: argparse.Namespace, **kwargs: object
+) -> List[str]:
+    """Complete tool names for --tool-off."""
+    del parsed_args, kwargs
+    try:
+        from asky.core.tool_registry_factory import get_all_available_tool_names
+
+        tools = get_all_available_tool_names()
+        # Always suggest 'all' first if it matches
+        candidates = ["all"] + tools
+        return _prefix_filter(candidates, prefix)
+    except Exception as exc:
+        logger.debug("Failed to load tool names for completion: %s", exc)
+        return []
