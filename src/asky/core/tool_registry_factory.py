@@ -222,6 +222,15 @@ def create_tool_registry(
             lambda args, name=tool_name: custom_tool_executor(name, args),
         )
 
+    if _is_tool_enabled("save_memory", excluded_tools):
+        from asky.memory.tools import MEMORY_TOOL_SCHEMA
+
+        registry.register(
+            "save_memory",
+            MEMORY_TOOL_SCHEMA,
+            lambda args: call_attr("asky.memory.tools", "execute_save_memory", args),
+        )
+
     from asky.push_data import execute_push_data, get_enabled_endpoints
 
     for endpoint_name, endpoint_config in get_enabled_endpoints().items():
@@ -395,12 +404,21 @@ def create_research_tool_registry(
             lambda args, name=tool_name: custom_tool_executor(name, args),
         )
 
+    if _is_tool_enabled("save_memory", excluded_tools):
+        from asky.memory.tools import MEMORY_TOOL_SCHEMA
+
+        registry.register(
+            "save_memory",
+            MEMORY_TOOL_SCHEMA,
+            lambda args: call_attr("asky.memory.tools", "execute_save_memory", args),
+        )
+
     return registry
 
 
 def get_all_available_tool_names() -> List[str]:
     """Gather all tool names from default, research, custom, and push endpoints."""
-    names: Set[str] = {"web_search", "get_url_content", "get_url_details"}
+    names: Set[str] = {"web_search", "get_url_content", "get_url_details", "save_memory"}
 
     # Research tools
     from asky.research.tools import RESEARCH_TOOL_SCHEMAS

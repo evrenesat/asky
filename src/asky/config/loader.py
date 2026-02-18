@@ -53,6 +53,7 @@ def load_config() -> Dict[str, Any]:
         "push_data.toml",
         "research.toml",
         "models.toml",
+        "memory.toml",
     ]
 
     final_config: Dict[str, Any] = {
@@ -65,6 +66,7 @@ def load_config() -> Dict[str, Any]:
         "email": {},
         "push_data": {},
         "research": {},
+        "memory": {},
     }
 
     # Helper to merge dictionaries

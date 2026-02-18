@@ -2,6 +2,44 @@
 
 For older logs, see [DEVLOG_ARCHIVE.md](DEVLOG_ARCHIVE.md).
 
+## 2026-02-18
+
+### User Memory Feature
+
+**Summary**: Implemented a persistent cross-session user memory system. The LLM can save user facts via a `save_memory` tool, memories are recalled automatically each turn (injected into system prompt), deduplicated via cosine similarity, and can be auto-extracted per-session via `--elephant-mode`.
+
+- **Added**:
+  - `src/asky/memory/` — new package:
+    - `store.py` — SQLite CRUD for `user_memories` table.
+    - `vector_ops.py` — embedding store/search via Chroma (`asky_user_memories` collection) with SQLite BLOB fallback.
+    - `recall.py` — per-turn recall pipeline injecting `## User Memory` into system prompt.
+    - `tools.py` — `save_memory` LLM tool with dedup (cosine ≥ 0.90 threshold).
+    - `auto_extract.py` — background LLM extraction of facts from conversation turns.
+    - `AGENTS.md` — package documentation.
+  - `src/asky/data/config/memory.toml` — configurable memory defaults.
+  - `src/asky/cli/memory_commands.py` — `--list-memories`, `--delete-memory`, `--clear-memories` handlers.
+  - `tests/test_user_memory.py` — 28 test cases covering store, recall, tools, CLI flags, session persistence, auto-extraction, and system prompt injection.
+- **Changed**:
+  - `src/asky/config/__init__.py` — added `USER_MEMORY_*` constants.
+  - `src/asky/config/loader.py` — loads `memory.toml`.
+  - `src/asky/storage/interface.py` — `Session` dataclass gains `memory_auto_extract` field; added abstract `set_session_memory_auto_extract`.
+  - `src/asky/storage/sqlite.py` — `user_memories` table init + migration, `memory_auto_extract` column, session CRUD updated.
+  - `src/asky/api/types.py` — `elephant_mode` on `AskyTurnRequest`, `memory_auto_extract` on `SessionResolution`, `memory_context` on `PreloadResolution`.
+  - `src/asky/api/preload.py` — memory recall as first step in `run_preload_pipeline`.
+  - `src/asky/api/client.py` — injects `memory_context` into system prompt; launches auto-extraction daemon thread when `memory_auto_extract` is set.
+  - `src/asky/api/session.py` — `resolve_session_for_turn` propagates `elephant_mode` to session creation/resumption.
+  - `src/asky/core/session_manager.py` — `create_session` accepts `memory_auto_extract`.
+  - `src/asky/core/tool_registry_factory.py` — `save_memory` registered in default and research registries.
+  - `src/asky/cli/main.py` — added `--list-memories`, `--delete-memory`, `--clear-memories`, `--elephant-mode`/`-em` flags; fixed `list_tools` early-exit to use `getattr` (resolves pre-existing test breakage from `8d233f6`).
+  - `src/asky/cli/chat.py` — passes `elephant_mode` to `AskyTurnRequest` with guard warning when no session is active.
+  - `tests/test_startup_cleanup.py` — fixed mock_args fixture to include `list_tools`/memory flags so MagicMock doesn't return truthy for them.
+  - `ARCHITECTURE.md` — added `memory/` package, User Memory Flow, Decision 17.
+- **Gotchas**:
+  - Memory is always **global** (not session-scoped); contrast with research findings which are session-scoped.
+  - `--elephant-mode` without `-ss`/`-rs` is silently ignored (with a printed warning).
+  - `has_any_memories()` checks for `embedding IS NOT NULL` to avoid running the embedding pipeline when the table is empty.
+  - Auto-extraction runs in a daemon thread; no result is awaited.
+
 ## 2026-02-17
 
 ### Lean Mode Enhancements (Tool Disabling + Clean System Prompt)

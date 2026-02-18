@@ -15,6 +15,9 @@ from asky.config import (
     QUERY_EXPANSION_MAX_SUB_QUERIES,
     RESEARCH_EVIDENCE_EXTRACTION_ENABLED,
     RESEARCH_EVIDENCE_EXTRACTION_MAX_CHUNKS,
+    USER_MEMORY_ENABLED,
+    USER_MEMORY_RECALL_TOP_K,
+    USER_MEMORY_RECALL_MIN_SIMILARITY,
 )
 from asky.lazy_imports import call_attr
 
@@ -98,6 +101,16 @@ def format_evidence_context(evidence: List[Any]) -> Optional[str]:
         "asky.research.evidence_extraction",
         "format_evidence_context",
         evidence,
+    )
+
+
+def recall_memories(*args: Any, **kwargs: Any) -> Any:
+    """Lazy import memory recall pipeline."""
+    return call_attr(
+        "asky.memory.recall",
+        "recall_memories_for_query",
+        *args,
+        **kwargs,
     )
 
 
@@ -185,6 +198,14 @@ def run_preload_pipeline(
 ) -> PreloadResolution:
     """Run local+shortlist preloads and return their combined context payload."""
     preload = PreloadResolution()
+
+    # Memory recall — runs in all modes except lean
+    if USER_MEMORY_ENABLED and not lean:
+        preload.memory_context = recall_memories(
+            query_text=query_text,
+            top_k=USER_MEMORY_RECALL_TOP_K,
+            min_similarity=USER_MEMORY_RECALL_MIN_SIMILARITY,
+        )
 
     # Decompose query if expansion is enabled
     sub_queries = [query_text]

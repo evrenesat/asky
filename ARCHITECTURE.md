@@ -103,6 +103,7 @@ src/asky/
 ├── core/               # Conversation engine → see core/AGENTS.md
 ├── storage/            # Data persistence → see storage/AGENTS.md
 ├── research/           # Research mode RAG → see research/AGENTS.md
+├── memory/             # Cross-session user memory → see memory/AGENTS.md
 ├── evals/              # Manual integration eval harnesses (research + standard)
 ├── config/             # Configuration → see config/AGENTS.md
 ├── tools.py            # Tool execution (web search, URL fetch, custom)
@@ -131,6 +132,7 @@ For test organization, see `tests/AGENTS.md`.
 | `core/`     | [core/AGENTS.md](src/asky/core/AGENTS.md)         | ConversationEngine, ToolRegistry, API client     |
 | `storage/`  | [storage/AGENTS.md](src/asky/storage/AGENTS.md)   | SQLite repository, data model                    |
 | `research/` | [research/AGENTS.md](src/asky/research/AGENTS.md) | Cache, vector store, embeddings                  |
+| `memory/`   | [memory/AGENTS.md](src/asky/memory/AGENTS.md)     | Cross-session user memory store, recall, tools   |
 | `evals/`    | (manual harness)                                  | Dual-mode research integration evaluation runner |
 | `config/`   | [config/AGENTS.md](src/asky/config/AGENTS.md)     | TOML loading, constants                          |
 | `tests/`    | [tests/AGENTS.md](tests/AGENTS.md)                | Test organization, patterns                      |
@@ -274,6 +276,29 @@ VectorStore.search_findings(..., session_id=active_session)
 Semantic/fallback results filtered to current session scope
 ```
 
+### User Memory Flow
+
+```
+Every Turn (non-lean):
+    memory/recall.py → has_any_memories()? → embed query → search user_memories
+    ↓
+    Top-K results (cosine ≥ 0.35) injected as "## User Memory" into system prompt
+
+Explicit Save (save_memory tool):
+    LLM calls save_memory → execute_save_memory()
+    ↓
+    find_near_duplicate() (cosine ≥ 0.90) → update existing OR insert new
+    ↓
+    store_memory_embedding() → SQLite BLOB + Chroma upsert
+
+Session Auto-Extraction (--elephant-mode):
+    After run_turn() completes → daemon thread
+    ↓
+    auto_extract.py → LLM extracts JSON facts from query+answer
+    ↓
+    execute_save_memory() for each fact (dedup built in)
+```
+
 ### Context Overflow Handling
 
 `ConversationEngine` no longer performs interactive retries (`input()`) on HTTP 400
@@ -399,6 +424,22 @@ A simplified "retrieval-only" system prompt guidance is injected in these cases 
   - Deterministic mode uses YAKE for keyphrase clustering.
   - LLM mode (optional) uses a small structured-output call.
   - `PreloadResolution` stores sub-queries; shortlist and local ingestion use them for multi-pass retrieval.
+
+### Decision 17: Cross-Session User Memory
+
+- **Context**: Users want the LLM to remember persistent preferences and facts across separate invocations.
+- **Decision**: Global `user_memories` table + separate Chroma collection (`asky_user_memories`) decoupled from session/research state.
+- **Implementation**:
+  - `memory/store.py` — pure SQLite CRUD for `user_memories`.
+  - `memory/vector_ops.py` — embedding storage and cosine-similarity search (Chroma primary, SQLite BLOB fallback).
+  - `memory/recall.py` — query-time recall injected as `## User Memory` section in system prompt (runs in all modes unless `lean`).
+  - `memory/tools.py` — `save_memory` LLM tool available in all registries; dedup via cosine threshold (0.90).
+  - `memory/auto_extract.py` — session-scoped background extraction when `--elephant-mode` is active.
+- **Key invariants**:
+  - Memory recall short-circuits if no embeddings exist (`has_any_memories()`).
+  - Memory is always **global** (not scoped to session or research mode).
+  - Auto-extraction runs in a daemon thread; never blocks response delivery.
+  - `--elephant-mode` requires an active session (`-ss` / `-rs`); otherwise ignored with a warning.
 
 ### Decision 16: Evidence-Focused Extraction
 

@@ -95,6 +95,9 @@ class AskyClient:
 
         messages: List[Dict[str, Any]] = [{"role": "system", "content": system_prompt}]
 
+        if preload and preload.memory_context:
+            messages[0]["content"] += f"\n\n{preload.memory_context}"
+
         if session_manager:
             messages.extend(session_manager.build_context_messages())
         elif context_str:
@@ -297,6 +300,7 @@ class AskyClient:
             resume_session_term=request.resume_session_term,
             shell_session_id=request.shell_session_id,
             research_mode=self.config.research_mode,
+            elephant_mode=request.elephant_mode,
             set_shell_session_id_fn=set_shell_session_id_fn,
             clear_shell_session_fn=clear_shell_session_fn,
         )
@@ -396,6 +400,27 @@ class AskyClient:
             lean=request.lean,
             disabled_tools=effective_disabled_tools,
         )
+
+        # Auto-extraction of facts in elephant mode — non-blocking background thread
+        if final_answer and session_resolution.memory_auto_extract:
+            import threading
+
+            from asky.config import DB_PATH, RESEARCH_CHROMA_PERSIST_DIRECTORY
+            from asky.core.api_client import get_llm_msg
+
+            threading.Thread(
+                target=call_attr,
+                args=("asky.memory.auto_extract", "extract_and_save_memories_from_turn"),
+                kwargs={
+                    "query": request.query_text,
+                    "answer": final_answer,
+                    "llm_client": get_llm_msg,
+                    "model": self.model_config.get("model", ""),
+                    "db_path": DB_PATH,
+                    "chroma_dir": RESEARCH_CHROMA_PERSIST_DIRECTORY,
+                },
+                daemon=True,
+            ).start()
 
         query_summary, answer_summary = ("", "")
         if final_answer:

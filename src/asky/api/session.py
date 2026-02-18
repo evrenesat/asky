@@ -28,6 +28,7 @@ def resolve_session_for_turn(
     resume_session_term: Optional[str] = None,
     shell_session_id: Optional[int] = None,
     research_mode: bool = False,
+    elephant_mode: bool = False,
     set_shell_session_id_fn: Optional[Callable[[int], None]] = None,
     clear_shell_session_fn: Optional[Callable[[], None]] = None,
     session_manager_cls: Type[SessionManager] = SessionManager,
@@ -42,11 +43,14 @@ def resolve_session_for_turn(
             usage_tracker,
             summarization_tracker=summarization_tracker,
         )
-        created_session = session_manager.create_session(sticky_session_name)
+        created_session = session_manager.create_session(
+            sticky_session_name, memory_auto_extract=elephant_mode
+        )
         if set_shell_session_id_fn:
             set_shell_session_id_fn(int(created_session.id))
         resolution.session_id = int(created_session.id)
         resolution.event = "session_created"
+        resolution.memory_auto_extract = bool(created_session.memory_auto_extract)
         resolution.notices.append(
             f"Session {created_session.id} ('{created_session.name}') created and active"
         )
@@ -83,6 +87,13 @@ def resolve_session_for_turn(
             set_shell_session_id_fn(int(resumed.id))
         resolution.session_id = int(resumed.id)
         resolution.event = "session_resumed"
+
+        if elephant_mode and not resumed.memory_auto_extract:
+            session_manager.repo.set_session_memory_auto_extract(int(resumed.id), True)
+            resolution.memory_auto_extract = True
+        else:
+            resolution.memory_auto_extract = bool(resumed.memory_auto_extract)
+
         resolution.notices.append(
             f"Resumed session {resumed.id} ('{resumed.name or 'auto'}')"
         )
@@ -101,6 +112,7 @@ def resolve_session_for_turn(
             session_manager.current_session = session
             resolution.session_id = int(session.id)
             resolution.event = "session_auto_resumed"
+            resolution.memory_auto_extract = bool(session.memory_auto_extract)
             resolution.notices.append(
                 f"Resuming session {session.id} ({session.name or 'auto'})"
             )
@@ -118,17 +130,30 @@ def resolve_session_for_turn(
             usage_tracker=usage_tracker,
             summarization_tracker=summarization_tracker,
             query_text=query_text,
+            elephant_mode=elephant_mode,
             set_shell_session_id_fn=set_shell_session_id_fn,
             session_manager_cls=session_manager_cls,
         )
         if created:
             resolution.event = "research_session_created"
+            resolution.memory_auto_extract = bool(created.memory_auto_extract)
             resolution.notices.append(
                 f"Research mode: started session {created.id} ('{created.name or 'auto'}')"
             )
             resolution.session_id = int(created.id)
         elif session_manager and session_manager.current_session:
             resolution.session_id = int(session_manager.current_session.id)
+            if elephant_mode:
+                # propagate elephant mode to existing research session
+                if not session_manager.current_session.memory_auto_extract:
+                    session_manager.repo.set_session_memory_auto_extract(
+                        int(session_manager.current_session.id), True
+                    )
+                resolution.memory_auto_extract = True
+            else:
+                resolution.memory_auto_extract = bool(
+                    session_manager.current_session.memory_auto_extract
+                )
 
     return session_manager, resolution
 
@@ -140,6 +165,7 @@ def ensure_research_session(
     usage_tracker: UsageTracker,
     summarization_tracker: UsageTracker,
     query_text: str,
+    elephant_mode: bool = False,
     set_shell_session_id_fn: Optional[Callable[[int], None]] = None,
     session_manager_cls: Type[SessionManager] = SessionManager,
 ) -> tuple[SessionManager, Optional[Any]]:
@@ -153,7 +179,9 @@ def ensure_research_session(
         summarization_tracker=summarization_tracker,
     )
     session_name = generate_session_name(query_text or "research")
-    created_session = active_manager.create_session(session_name)
+    created_session = active_manager.create_session(
+        session_name, memory_auto_extract=elephant_mode
+    )
     if set_shell_session_id_fn:
         set_shell_session_id_fn(int(created_session.id))
     return active_manager, created_session

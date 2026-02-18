@@ -457,6 +457,19 @@ def run_chat(args: argparse.Namespace, query_text: str) -> None:
             summarization_tracker=summarization_tracker,
         )
 
+        elephant_mode = bool(getattr(args, "elephant_mode", False))
+        has_session = bool(
+            getattr(args, "sticky_session", None)
+            or getattr(args, "resume_session", None)
+            or get_shell_session_id()
+        )
+        if elephant_mode and not has_session:
+            console.print(
+                "[yellow]Warning:[/] --elephant-mode requires an active session "
+                "(-ss or -rs). Flag ignored."
+            )
+            elephant_mode = False
+
         turn_request = AskyTurnRequest(
             query_text=effective_query_text,
             continue_ids=args.continue_ids,
@@ -478,6 +491,7 @@ def run_chat(args: argparse.Namespace, query_text: str) -> None:
             additional_source_context=None,
             local_corpus_paths=local_corpus,
             save_history=True,
+            elephant_mode=elephant_mode,
         )
 
         display_cb = display_callback

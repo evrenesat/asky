@@ -66,6 +66,19 @@ class SQLiteHistoryRepository(HistoryRepository):
         """
         )
 
+        # Schema migration: add memory_auto_extract column to existing sessions tables
+        try:
+            c.execute(
+                "ALTER TABLE sessions ADD COLUMN memory_auto_extract INTEGER DEFAULT 0"
+            )
+        except sqlite3.OperationalError:
+            pass  # column already exists
+
+        # User memories table
+        from asky.memory.store import init_memory_table
+
+        init_memory_table(c)
+
         conn.commit()
         conn.close()
 
@@ -493,19 +506,37 @@ class SQLiteHistoryRepository(HistoryRepository):
 
     # Session management methods (from SessionRepository)
 
-    def create_session(self, model: str, name: Optional[str] = None) -> int:
+    def create_session(
+        self,
+        model: str,
+        name: Optional[str] = None,
+        memory_auto_extract: bool = False,
+    ) -> int:
         """Create a new session and return its ID."""
         conn = self._get_conn()
         c = conn.cursor()
         timestamp = datetime.now().isoformat()
         c.execute(
-            "INSERT INTO sessions (name, model, created_at) VALUES (?, ?, ?)",
-            (name, model, timestamp),
+            "INSERT INTO sessions (name, model, created_at, memory_auto_extract) VALUES (?, ?, ?, ?)",
+            (name, model, timestamp, int(memory_auto_extract)),
         )
         session_id = c.lastrowid
         conn.commit()
         conn.close()
         return session_id
+
+    def set_session_memory_auto_extract(
+        self, session_id: int, enabled: bool
+    ) -> None:
+        """Enable or disable auto memory extraction for a session."""
+        conn = self._get_conn()
+        c = conn.cursor()
+        c.execute(
+            "UPDATE sessions SET memory_auto_extract = ? WHERE id = ?",
+            (int(enabled), session_id),
+        )
+        conn.commit()
+        conn.close()
 
     def get_sessions_by_name(self, name: str) -> List[Session]:
         """Return all sessions matching the given name."""
@@ -513,7 +544,7 @@ class SQLiteHistoryRepository(HistoryRepository):
         conn.row_factory = sqlite3.Row
         c = conn.cursor()
         c.execute(
-            "SELECT id, name, model, created_at, compacted_summary FROM sessions WHERE name = ? ORDER BY created_at DESC",
+            "SELECT id, name, model, created_at, compacted_summary, memory_auto_extract FROM sessions WHERE name = ? ORDER BY created_at DESC",
             (name,),
         )
         rows = c.fetchall()
@@ -525,6 +556,7 @@ class SQLiteHistoryRepository(HistoryRepository):
                 model=r["model"],
                 created_at=r["created_at"],
                 compacted_summary=r["compacted_summary"],
+                memory_auto_extract=bool(r["memory_auto_extract"]),
             )
             for r in rows
         ]
@@ -535,7 +567,7 @@ class SQLiteHistoryRepository(HistoryRepository):
         conn.row_factory = sqlite3.Row
         c = conn.cursor()
         c.execute(
-            "SELECT id, name, model, created_at, compacted_summary FROM sessions WHERE id = ?",
+            "SELECT id, name, model, created_at, compacted_summary, memory_auto_extract FROM sessions WHERE id = ?",
             (session_id,),
         )
         row = c.fetchone()
@@ -547,6 +579,7 @@ class SQLiteHistoryRepository(HistoryRepository):
                 model=row["model"],
                 created_at=row["created_at"],
                 compacted_summary=row["compacted_summary"],
+                memory_auto_extract=bool(row["memory_auto_extract"]),
             )
         return None
 
@@ -556,7 +589,7 @@ class SQLiteHistoryRepository(HistoryRepository):
         conn.row_factory = sqlite3.Row
         c = conn.cursor()
         c.execute(
-            "SELECT id, name, model, created_at, compacted_summary FROM sessions WHERE name = ? ORDER BY created_at DESC LIMIT 1",
+            "SELECT id, name, model, created_at, compacted_summary, memory_auto_extract FROM sessions WHERE name = ? ORDER BY created_at DESC LIMIT 1",
             (name,),
         )
         row = c.fetchone()
@@ -568,6 +601,7 @@ class SQLiteHistoryRepository(HistoryRepository):
                 model=row["model"],
                 created_at=row["created_at"],
                 compacted_summary=row["compacted_summary"],
+                memory_auto_extract=bool(row["memory_auto_extract"]),
             )
         return None
 
@@ -632,7 +666,7 @@ class SQLiteHistoryRepository(HistoryRepository):
         conn.row_factory = sqlite3.Row
         c = conn.cursor()
         c.execute(
-            "SELECT id, name, model, created_at, compacted_summary FROM sessions ORDER BY created_at DESC LIMIT ?",
+            "SELECT id, name, model, created_at, compacted_summary, memory_auto_extract FROM sessions ORDER BY created_at DESC LIMIT ?",
             (limit,),
         )
         rows = c.fetchall()
@@ -644,6 +678,7 @@ class SQLiteHistoryRepository(HistoryRepository):
                 model=r["model"],
                 created_at=r["created_at"],
                 compacted_summary=r["compacted_summary"],
+                memory_auto_extract=bool(r["memory_auto_extract"]),
             )
             for r in rows
         ]

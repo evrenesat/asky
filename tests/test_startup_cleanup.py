@@ -54,6 +54,10 @@ class TestStartupCleanup:
                 args.session_from_message = None
                 args.clean_session_research = None
                 args.completion_script = None
+                args.list_tools = False
+                args.list_memories = False
+                args.delete_memory = None
+                args.clear_memories = False
 
                 mock_parse.return_value = args
                 yield mock_parse

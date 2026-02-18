@@ -1,0 +1,6 @@
+[memory]
+enabled = true
+recall_top_k = 5
+recall_min_similarity = 0.35
+dedup_threshold = 0.90
+chroma_collection = "asky_user_memories"

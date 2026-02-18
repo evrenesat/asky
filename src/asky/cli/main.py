@@ -284,6 +284,28 @@ def parse_args() -> argparse.Namespace:
         help="List all available tools and exit.",
     )
     parser.add_argument(
+        "--list-memories",
+        action="store_true",
+        help="List all saved user memories and exit.",
+    )
+    parser.add_argument(
+        "--delete-memory",
+        metavar="MEMORY_ID",
+        type=int,
+        help="Delete a user memory by ID and exit.",
+    )
+    parser.add_argument(
+        "--clear-memories",
+        action="store_true",
+        help="Delete ALL user memories and exit.",
+    )
+    parser.add_argument(
+        "-em",
+        "--elephant-mode",
+        action="store_true",
+        help="Enable automatic memory extraction for this session.",
+    )
+    parser.add_argument(
         "-tl",
         "--terminal-lines",
         nargs="?",
@@ -453,7 +475,7 @@ def main() -> None:
         prompts.list_prompts_command()
         return
 
-    if args.list_tools:
+    if getattr(args, "list_tools", False):
         from asky.core.tool_registry_factory import get_all_available_tool_names
 
         tools = get_all_available_tool_names()
@@ -461,6 +483,27 @@ def main() -> None:
         for t in tools:
             print(f"  - {t}")
         print()
+        return
+
+    if getattr(args, "list_memories", False):
+        init_db()
+        from asky.cli.memory_commands import handle_list_memories
+
+        handle_list_memories()
+        return
+
+    if getattr(args, "delete_memory", None) is not None:
+        init_db()
+        from asky.cli.memory_commands import handle_delete_memory
+
+        handle_delete_memory(args.delete_memory)
+        return
+
+    if getattr(args, "clear_memories", False):
+        init_db()
+        from asky.cli.memory_commands import handle_clear_memories
+
+        handle_clear_memories()
         return
 
     needs_db = any(

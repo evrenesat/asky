@@ -72,6 +72,7 @@ class Session:
     model: str
     created_at: str
     compacted_summary: Optional[str]
+    memory_auto_extract: bool = False
 
 
 class HistoryRepository(ABC):
@@ -173,4 +174,9 @@ class HistoryRepository(ABC):
     @abstractmethod
     def list_sessions(self, limit: int) -> list:
         """List recently created sessions."""
+        pass
+
+    @abstractmethod
+    def set_session_memory_auto_extract(self, session_id: int, enabled: bool) -> None:
+        """Enable or disable auto memory extraction for a session."""
         pass

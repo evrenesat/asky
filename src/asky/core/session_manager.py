@@ -241,13 +241,18 @@ class SessionManager:
         self.current_session: Optional[Session] = None
         self.context_size = model_config.get("context_size", DEFAULT_CONTEXT_SIZE)
 
-    def create_session(self, name: str) -> Session:
+    def create_session(self, name: str, memory_auto_extract: bool = False) -> Session:
         """Create a new named session.
 
         args:
             name: The name for the new session.
+            memory_auto_extract: Enable automatic fact extraction for this session.
         """
-        sid = self.repo.create_session(self.model_config["alias"], name=name)
+        sid = self.repo.create_session(
+            self.model_config["alias"],
+            name=name,
+            memory_auto_extract=memory_auto_extract,
+        )
         self.current_session = self.repo.get_session_by_id(sid)
         return self.current_session
 

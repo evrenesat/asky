@@ -207,6 +207,14 @@ SUMMARIZE_PAGE_PROMPT = _prompts.get(
     "summarize_page", "Summarize this webpage content concisely in 2-3 sentences."
 )
 
+# User Memory
+_memory = _CONFIG.get("memory", {})
+USER_MEMORY_ENABLED = _memory.get("enabled", True)
+USER_MEMORY_RECALL_TOP_K = _memory.get("recall_top_k", 5)
+USER_MEMORY_RECALL_MIN_SIMILARITY = _memory.get("recall_min_similarity", 0.35)
+USER_MEMORY_DEDUP_THRESHOLD = _memory.get("dedup_threshold", 0.90)
+USER_MEMORY_CHROMA_COLLECTION = _memory.get("chroma_collection", "asky_user_memories")
+
 # Email
 _email = _CONFIG.get("email", {})
 SMTP_HOST = _email.get("smtp_host", "localhost")

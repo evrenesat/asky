@@ -48,6 +48,7 @@ class AskyTurnRequest:
     additional_source_context: Optional[str] = None
     local_corpus_paths: Optional[List[str]] = None
     save_history: bool = True
+    elephant_mode: bool = False
 
 
 @dataclass
@@ -67,6 +68,7 @@ class SessionResolution:
     notices: List[str] = field(default_factory=list)
     halt_reason: Optional[str] = None
     matched_sessions: List[Dict[str, Any]] = field(default_factory=list)
+    memory_auto_extract: bool = False
 
 
 @dataclass
@@ -87,6 +89,7 @@ class PreloadResolution:
     evidence_payload: Dict[str, Any] = field(default_factory=dict)
     evidence_elapsed_ms: float = 0.0
     combined_context: Optional[str] = None
+    memory_context: Optional[str] = None
 
     @property
     def is_corpus_preloaded(self) -> bool:
