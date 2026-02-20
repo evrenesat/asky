@@ -15,18 +15,25 @@ def init_memory_table(cursor: sqlite3.Cursor) -> None:
         """
         CREATE TABLE IF NOT EXISTS user_memories (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
+            session_id INTEGER,
             memory_text TEXT NOT NULL,
             tags TEXT,
             embedding BLOB,
             embedding_model TEXT,
             created_at TEXT NOT NULL,
-            updated_at TEXT NOT NULL
+            updated_at TEXT NOT NULL,
+            FOREIGN KEY (session_id) REFERENCES sessions(id)
         )
         """
     )
 
 
-def save_memory(db_path: Path, memory_text: str, tags: List[str] = None) -> int:
+def save_memory(
+    db_path: Path,
+    memory_text: str,
+    tags: List[str] = None,
+    session_id: Optional[int] = None,
+) -> int:
     """Insert a new memory row and return its ID."""
     if not memory_text or not memory_text.strip():
         raise ValueError("memory_text must be non-empty")
@@ -36,8 +43,8 @@ def save_memory(db_path: Path, memory_text: str, tags: List[str] = None) -> int:
     c = conn.cursor()
     now = datetime.now().isoformat()
     c.execute(
-        "INSERT INTO user_memories (memory_text, tags, created_at, updated_at) VALUES (?, ?, ?, ?)",
-        (memory_text.strip(), json.dumps(tags), now, now),
+        "INSERT INTO user_memories (session_id, memory_text, tags, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
+        (session_id, memory_text.strip(), json.dumps(tags), now, now),
     )
     memory_id = c.lastrowid
     conn.commit()
@@ -64,23 +71,32 @@ def update_memory(
     return success
 
 
-def get_all_memories(db_path: Path, limit: int = 200) -> List[Dict[str, Any]]:
-    """Return all memories ordered by created_at DESC."""
+def get_all_memories(
+    db_path: Path, session_id: Optional[int] = None, limit: int = 200
+) -> List[Dict[str, Any]]:
+    """Return filtered memories ordered by created_at DESC.
+
+    If session_id is provided, returns both session-specific and global (session_id IS NULL) memories.
+    If session_id is None, returns only global memories.
+    """
     conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
     c = conn.cursor()
-    c.execute(
-        """
-        SELECT id, memory_text, tags, embedding_model, created_at, updated_at
-        FROM user_memories ORDER BY created_at DESC LIMIT ?
-        """,
-        (limit,),
-    )
+
+    query = """
+        SELECT id, session_id, memory_text, tags, embedding_model, created_at, updated_at
+        FROM user_memories
+        WHERE (session_id = ? OR session_id IS NULL)
+        ORDER BY created_at DESC LIMIT ?
+    """
+    c.execute(query, (session_id, limit))
+
     rows = c.fetchall()
     conn.close()
     return [
         {
             "id": r["id"],
+            "session_id": r["session_id"],
             "memory_text": r["memory_text"],
             "tags": json.loads(r["tags"]) if r["tags"] else [],
             "embedding_model": r["embedding_model"],
@@ -98,7 +114,7 @@ def get_memory_by_id(db_path: Path, memory_id: int) -> Optional[Dict[str, Any]]:
     c = conn.cursor()
     c.execute(
         """
-        SELECT id, memory_text, tags, embedding_model, created_at, updated_at
+        SELECT id, session_id, memory_text, tags, embedding_model, created_at, updated_at
         FROM user_memories WHERE id = ?
         """,
         (memory_id,),
@@ -109,6 +125,7 @@ def get_memory_by_id(db_path: Path, memory_id: int) -> Optional[Dict[str, Any]]:
         return None
     return {
         "id": row["id"],
+        "session_id": row["session_id"],
         "memory_text": row["memory_text"],
         "tags": json.loads(row["tags"]) if row["tags"] else [],
         "embedding_model": row["embedding_model"],

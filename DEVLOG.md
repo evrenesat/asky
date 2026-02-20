@@ -2,6 +2,22 @@
 
 For older logs, see [DEVLOG_ARCHIVE.md](DEVLOG_ARCHIVE.md).
 
+## 2026-02-19
+
+### User Memory Refactor: Session Scoping & Global Triggers
+
+**Summary**: Refactored the user memory system to be **session-scoped by default**. Added a "Universal Global Trigger" feature to explicitly save global memories.
+
+- **Changed**:
+  - `src/asky/storage/sqlite.py`: Added `session_id` column to `user_memories`.
+  - `src/asky/memory/store.py` & `vector_ops.py`: Updated storage and retrieval to respect session ID.
+  - `src/asky/api/client.py`: Implemented global trigger interception (default: "remember globally:", "global memory:").
+  - `README.md`: Documented new scoping behavior and triggers.
+- **Key Behavior**:
+  - **Session Isolation**: Memories saved during a session (e.g., `asky -ss "Work"`) are only recalled in that session.
+  - **Global Fallback**: Global memories (saved with no session) are available to **all** sessions.
+  - **Global Triggers**: Starting a query with "remember globally:" strips the trigger, runs the turn, and extracts facts into the _global_ scope.
+
 ## 2026-02-18
 
 ### User Memory Feature

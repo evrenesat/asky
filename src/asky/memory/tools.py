@@ -36,6 +36,7 @@ MEMORY_TOOL_SCHEMA: Dict[str, Any] = {
                 "items": {"type": "string"},
                 "description": "Optional tags for categorization (e.g. ['preference', 'personal'])",
             },
+            # session_id is injected by the tool executor if available, not by the LLM
         },
         "required": ["memory"],
     },
@@ -50,6 +51,7 @@ def execute_save_memory(args: Dict[str, Any]) -> Dict[str, Any]:
 
     memory_text = args.get("memory", "")
     tags: List[str] = args.get("tags") or []
+    session_id: Optional[int] = args.get("session_id")  # Injected by ToolRegistry
 
     if not memory_text or not memory_text.strip():
         return {"status": "error", "error": "memory text must be non-empty"}
@@ -63,9 +65,11 @@ def execute_save_memory(args: Dict[str, Any]) -> Dict[str, Any]:
             text=memory_text,
             threshold=USER_MEMORY_DEDUP_THRESHOLD,
             collection_name=USER_MEMORY_CHROMA_COLLECTION,
+            session_id=session_id,
         )
 
         if existing_id is not None:
+            # We assume updates don't change session ownership
             db_update_memory(DB_PATH, existing_id, memory_text, tags)
             store_memory_embedding(
                 db_path=DB_PATH,
@@ -73,6 +77,7 @@ def execute_save_memory(args: Dict[str, Any]) -> Dict[str, Any]:
                 memory_id=existing_id,
                 text=memory_text,
                 collection_name=USER_MEMORY_CHROMA_COLLECTION,
+                session_id=session_id,
             )
             return {
                 "status": "updated",
@@ -80,13 +85,14 @@ def execute_save_memory(args: Dict[str, Any]) -> Dict[str, Any]:
                 "deduplicated": True,
             }
 
-        memory_id = db_save_memory(DB_PATH, memory_text, tags)
+        memory_id = db_save_memory(DB_PATH, memory_text, tags, session_id=session_id)
         store_memory_embedding(
             db_path=DB_PATH,
             chroma_dir=RESEARCH_CHROMA_PERSIST_DIRECTORY,
             memory_id=memory_id,
             text=memory_text,
             collection_name=USER_MEMORY_CHROMA_COLLECTION,
+            session_id=session_id,
         )
         return {"status": "saved", "memory_id": memory_id, "deduplicated": False}
 

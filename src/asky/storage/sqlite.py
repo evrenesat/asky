@@ -79,6 +79,13 @@ class SQLiteHistoryRepository(HistoryRepository):
 
         init_memory_table(c)
 
+        # Schema migration: add session_id to user_memories if missing
+        try:
+            c.execute("ALTER TABLE user_memories ADD COLUMN session_id INTEGER")
+            # Existing memories have NULL session_id -> effectively Global.
+        except sqlite3.OperationalError:
+            pass  # column already exists
+
         conn.commit()
         conn.close()
 
@@ -525,9 +532,7 @@ class SQLiteHistoryRepository(HistoryRepository):
         conn.close()
         return session_id
 
-    def set_session_memory_auto_extract(
-        self, session_id: int, enabled: bool
-    ) -> None:
+    def set_session_memory_auto_extract(self, session_id: int, enabled: bool) -> None:
         """Enable or disable auto memory extraction for a session."""
         conn = self._get_conn()
         c = conn.cursor()

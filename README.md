@@ -21,6 +21,7 @@ For programmatic usage (`asky.api`), including full configuration and request op
 - **Custom Tools**: Expose any CLI command as a tool for the LLM. Define your own commands and parameters in `config.toml`.
 - **File Prompts**: Load complex prompts directly from files using `file://` URIs (e.g., `asky file://my_prompt.txt`).
 - **Smart Context Management**: Automatically summarizes web content and older conversation history to maximize the LLM's context window usage.
+- **User Memory (Elephant Mode)**: Cross-session persistent memory that allows the LLM to remember facts, preferences, and details across separate conversations.
 - **Conversation History**: Maintains a local SQLite database of your queries and answers (with their summaries), allowing for context-aware follow-up questions.
 - **Predefined Prompts**: Users can define and quickly invoke common prompt patterns using simple slashes (e.g., `/gn` for get latest news from The Guardian).
 - **Clipboard Integration**: Use `/cp` to expand the query with clipboard content.
@@ -98,6 +99,15 @@ asky -c "~2" what about the one before that?
 
 # Send result to email
 asky --mail user@example.com --subject "Meeting Summary" "Summarize the last 3 emails about Project X"
+
+# User Memory (Elephant Mode)
+asky -ss "My Session" -em "Remember that I prefer Python for backend tasks"
+asky "What is my preferred backend language?"
+
+# Manage memories
+asky --list-memories
+asky --delete-memory 5
+asky --clear-memories
 
 ```
 
@@ -240,6 +250,7 @@ flowchart TD
 #### Session-Scoped Research Memory
 
 Research mode automatically creates a session for each research run. Findings saved with `save_finding` are scoped to the session and persist across multiple turns within that session. Findings remain available until the session is explicitly deleted by the user. This enables:
+
 - Building knowledge incrementally across multiple research turns
 - Querying previously discovered insights
 - Isolating research contexts between different topics
@@ -247,6 +258,7 @@ Research mode automatically creates a session for each research run. Findings sa
 #### Hybrid Semantic Search
 
 Research mode uses hybrid semantic search combining:
+
 - **Dense retrieval**: ChromaDB nearest-neighbor cosine similarity
 - **Lexical retrieval**: SQLite FTS5 BM25 scoring
 
@@ -255,6 +267,7 @@ The final score combines both approaches: `final_score = (dense_weight * semanti
 #### Evidence Extraction
 
 Enable post-retrieval LLM fact extraction by setting `evidence_extraction_enabled = true` in `research.toml`. This extracts specific facts from retrieved chunks, useful for:
+
 - Extracting compliance requirements from policy documents
 - Identifying specific technical specifications
 - Pulling out quantitative data points
@@ -262,6 +275,7 @@ Enable post-retrieval LLM fact extraction by setting `evidence_extraction_enable
 #### Query Expansion
 
 Research mode can decompose complex queries into sub-queries for better source discovery. Configure in `research.toml`:
+
 ```toml
 query_expansion_enabled = true
 query_expansion_mode = "deterministic"  # or "llm"
@@ -322,6 +336,7 @@ tool = "read_local"  # or discover_tool + read_tool
 ```
 
 The built-in local fallback handles `local://...`, `file://...`, and direct local paths when `research.local_document_roots` is configured. Supported file types include:
+
 - Text-like: `.txt`, `.md`, `.markdown`, `.html`, `.htm`, `.json`, `.csv`
 - Document-like: `.pdf`, `.epub` (via PyMuPDF)
 
@@ -330,12 +345,14 @@ The built-in local fallback handles `local://...`, `file://...`, and direct loca
 #### Advanced Research Use Cases
 
 **Multi-Document Research**
+
 ```bash
 # Compare multiple RFCs
 asky -r "Compare /rfc/rfc9110.txt with /rfc/rfc9111.txt and identify key differences"
 ```
 
 **Research Memory Persistence**
+
 ```bash
 # Start a research session
 asky -r "Investigate OAuth2 device flow implementation patterns"
@@ -345,40 +362,83 @@ asky -r "What were the key security considerations from the OAuth2 research?"
 ```
 
 **Evidence Extraction**
+
 ```bash
 # Configure in research.toml: evidence_extraction_enabled = true
 asky -r "Extract specific password requirements from /policies/security.md"
 ```
 
 **Custom Source Adapters**
+
 ```bash
 # Configure adapter in research.toml
 # Then use custom sources
 asky -r "Analyze local://my-knowledge-base for compliance issues"
 ```
 
-### Research Mode Architecture
+### User Memory & Elephant Mode
+
+asky now supports a persistent memory system that evolves with your conversations.
+
+**Visualizing Memory:**
+
+- **Session-Scoped**: By default, memories learned in a specific session (e.g., via `--session "ProjectX"`) are isolated to that session. Use this for project-specific details.
+- **Global**: Memories can be made global (available to all sessions).
+  - **Trigger**: Start any sentence with **"remember globally:"** or **"global memory:"** (configurable) to force a fact to be global.
+  - **Effect**: The CLI strips this trigger, processes your prompt normally, and then extracts the fact into the global knowledge base.
+
+**modes:**
+
+1. **Manual**: You explicitly tell asky to remember something.
+   ```bash
+   asky "remember this: using python 3.12 for this project"
+   # OR for global truth
+   asky "remember globally: I always prefer clean architecture"
+   ```
+   sessions and conversations.
+
+- **Manual Memory**: The LLM can proactively use the `save_memory` tool to store a fact it detects in the conversation.
+- **Elephant Mode (`-em`)**: When active, asky automatically extracts key facts from the conversation at the end of each turn and saves them to your memory.
+- **Global Recall**: Relevant memories are automatically retrieved and injected into the LLM's prompt in every conversation (unless in `--lean` mode).
+
+#### Memory Management CLI
+
+- **`--list-memories`**: View all saved facts and their IDs.
+- **`--delete-memory MEMORY_ID`**: Remove a specific memory.
+- **`--clear-memories`**: Wipe all saved memories.
+
+#### How it works
+
+1. **Extraction**: Facts are extracted as concise, standalone sentences (e.g., "The user prefers dark mode for UI designs").
+2. **Storage**: Memories are stored in a local SQLite table and indexed in a vector database (ChromaDB) for semantic retrieval.
+3. **Retrieval**: Every time you send a query, asky searches your memories for high-relevance facts (cosine similarity threshold of 0.35) and includes them as "User Memory" in the system prompt.
+4. **Deduplication**: When saving new memories, asky checks for existing similar facts to avoid redundancy.
+
+> [!IMPORTANT]
+> **Elephant Mode requires a session**: To use `--elephant-mode` (or `-em`), you must be in an active session (using `-ss` or `-rs`).
+
+#### Research Mode Architecture
 
 Research mode is built on several core components:
 
-| Component | Description |
-|-----------|-------------|
-| **ResearchCache** | Caches fetched URL content and extracted links with TTL-based expiry |
-| **VectorStore** | Hybrid semantic search combining ChromaDB (dense) and SQLite BM25 (lexical) |
-| **EmbeddingClient** | Local sentence-transformer embeddings using all-MiniLM-L6-v2 |
-| **TextChunker** | Token-aware sentence chunking for optimal embedding boundaries |
-| **SourceShortlist** | Pre-LLM source ranking pipeline for improved relevance |
-| **QueryExpander** | Decomposes complex queries into sub-queries |
-| **EvidenceExtractor** | Post-retrieval LLM fact extraction |
-| **Adapters** | Routes non-HTTP sources to custom tools |
+| Component             | Description                                                                 |
+| --------------------- | --------------------------------------------------------------------------- |
+| **ResearchCache**     | Caches fetched URL content and extracted links with TTL-based expiry        |
+| **VectorStore**       | Hybrid semantic search combining ChromaDB (dense) and SQLite BM25 (lexical) |
+| **EmbeddingClient**   | Local sentence-transformer embeddings using all-MiniLM-L6-v2                |
+| **TextChunker**       | Token-aware sentence chunking for optimal embedding boundaries              |
+| **SourceShortlist**   | Pre-LLM source ranking pipeline for improved relevance                      |
+| **QueryExpander**     | Decomposes complex queries into sub-queries                                 |
+| **EvidenceExtractor** | Post-retrieval LLM fact extraction                                          |
+| **Adapters**          | Routes non-HTTP sources to custom tools                                     |
 
 #### Vector Collections
 
-| Collection | Content |
-|-----------|---------|
-| `content_chunks` | Text chunks from cached pages |
-| `link_embeddings` | Link anchor text for relevance filtering |
-| `research_findings` | Saved insights for memory queries |
+| Collection          | Content                                  |
+| ------------------- | ---------------------------------------- |
+| `content_chunks`    | Text chunks from cached pages            |
+| `link_embeddings`   | Link anchor text for relevance filtering |
+| `research_findings` | Saved insights for memory queries        |
 
 ### File Prompts
 

@@ -36,6 +36,7 @@ def extract_and_save_memories_from_turn(
     model: str,
     db_path: Path,
     chroma_dir: Path,
+    session_id: Optional[int] = None,
 ) -> List[int]:
     """Extract persistent user facts from a conversation turn and save them to memory.
 
@@ -87,10 +88,35 @@ def extract_and_save_memories_from_turn(
     for fact in facts:
         if not isinstance(fact, str) or not fact.strip():
             continue
-        result = execute_save_memory({"memory": fact.strip()})
+        # We explicitly pass session_id to the tool executor
+        result = execute_save_memory({"memory": fact.strip(), "session_id": session_id})
         if result.get("status") in ("saved", "updated"):
             mid = result.get("memory_id")
             if mid is not None:
                 saved_ids.append(int(mid))
 
     return saved_ids
+
+
+def extract_global_facts_from_turn(
+    query: str,
+    answer: str,
+    llm_client: Callable[..., Dict[str, Any]],
+    model: str,
+    db_path: Path,
+    chroma_dir: Path,
+) -> List[int]:
+    """Extract persistent GLOBAL user facts from a conversation turn.
+
+    This is a convenience wrapper for extract_and_save_memories_from_turn
+    that forces session_id=None (Global).
+    """
+    return extract_and_save_memories_from_turn(
+        query=query,
+        answer=answer,
+        llm_client=llm_client,
+        model=model,
+        db_path=db_path,
+        chroma_dir=chroma_dir,
+        session_id=None,  # Force Global
+    )

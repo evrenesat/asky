@@ -214,6 +214,9 @@ USER_MEMORY_RECALL_TOP_K = _memory.get("recall_top_k", 5)
 USER_MEMORY_RECALL_MIN_SIMILARITY = _memory.get("recall_min_similarity", 0.35)
 USER_MEMORY_DEDUP_THRESHOLD = _memory.get("dedup_threshold", 0.90)
 USER_MEMORY_CHROMA_COLLECTION = _memory.get("chroma_collection", "asky_user_memories")
+USER_MEMORY_GLOBAL_TRIGGERS = _memory.get(
+    "global_triggers", ["remember globally:", "global memory:"]
+)
 
 # Email
 _email = _CONFIG.get("email", {})

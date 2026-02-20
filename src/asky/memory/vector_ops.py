@@ -26,9 +26,7 @@ def _get_chroma_client(chroma_dir: Path) -> Optional[Any]:
         return None
 
 
-def _get_chroma_collection(
-    chroma_dir: Path, collection_name: str
-) -> Optional[Any]:
+def _get_chroma_collection(chroma_dir: Path, collection_name: str) -> Optional[Any]:
     """Get or create a named Chroma collection."""
     client = _get_chroma_client(chroma_dir)
     if client is None:
@@ -62,6 +60,7 @@ def store_memory_embedding(
     memory_id: int,
     text: str,
     collection_name: str,
+    session_id: Optional[int] = None,
 ) -> bool:
     """Embed text and persist it to SQLite BLOB and Chroma collection."""
     if not text or not text.strip():
@@ -89,6 +88,15 @@ def store_memory_embedding(
         # Upsert to Chroma
         collection = _get_chroma_collection(chroma_dir, collection_name)
         if collection is not None:
+            metadata = {
+                "memory_id": memory_id,
+                "embedding_model": client.model,
+            }
+            if session_id is not None:
+                metadata["session_id"] = session_id
+            # Note: Chroma metadata values must be str, int, float, or bool.
+            # We don't store None for session_id to save space/complexity; missing key implies global.
+
             try:
                 chroma_id = _memory_chroma_id(memory_id)
                 collection.delete(ids=[chroma_id])
@@ -96,7 +104,7 @@ def store_memory_embedding(
                     ids=[chroma_id],
                     documents=[text],
                     embeddings=[embedding],
-                    metadatas=[{"memory_id": memory_id, "embedding_model": client.model}],
+                    metadatas=[metadata],
                 )
             except Exception as exc:
                 logger.warning("Failed to upsert memory embedding to Chroma: %s", exc)
@@ -113,17 +121,37 @@ def _search_with_chroma(
     top_k: int,
     collection_name: str,
     embedding_model: str,
+    session_id: Optional[int] = None,
 ) -> List[Tuple[int, float]]:
     """Query Chroma and return (memory_id, similarity) pairs."""
     collection = _get_chroma_collection(chroma_dir, collection_name)
     if collection is None:
         return []
 
+    where_filter: Dict[str, Any] = {"embedding_model": embedding_model}
+
+    # Session filtering: (session_id == SID) OR (session_id is not set / global)
+    # Chroma 'where' syntax for OR requires "$or": [{cond1}, {cond2}].
+    # But checking for "missing" metadata key is tricky in Chroma.
+    # However, we only store session_id if it is not None.
+    # So Global memories have NO session_id key.
+    # Chroma doesn't easily support "key does not exist".
+    # Workaround: We will query for session_id=SID, and also query for all, then filter in Python?
+    # Better: When saving global memories, we could save session_id=0 or -1?
+    # No, let's stick to the plan: explicit session_id or missing.
+    # Actually, Chroma `where` doesn't support "is null" or missing key easily in all versions.
+    # FASTEST PATH: Query for MORE results (top_k * 3), then filter in Python metadata check.
+    # This avoids complex where-clauses that might fail on older Chroma versions.
+
+    # Wait, if we use $or, we need to explicitly set session_id for global too?
+    # Let's adjust: In store_memory_embedding, if session_id is None, we don't set it.
+    # So we fetch top_k * 3, then keep if (meta.get("session_id") == session_id) OR (meta.get("session_id") is None).
+
     try:
         response = collection.query(
             query_embeddings=[query_embedding],
-            n_results=top_k,
-            where={"embedding_model": embedding_model},
+            n_results=top_k * 4,  # Fetch more to allow for filtering
+            where=where_filter,
             include=["metadatas", "distances"],
         )
     except Exception as exc:
@@ -142,6 +170,15 @@ def _search_with_chroma(
     for meta, dist in zip(meta_list, dist_list):
         if not meta:
             continue
+
+        # FILTER: Keep if belongs to this session OR is global (no session_id in meta)
+        mem_sid = meta.get("session_id")
+        if mem_sid is not None:
+            # It's a session memory. Must match our session_id.
+            if session_id is None or mem_sid != session_id:
+                continue
+        # If mem_sid is None, it's global -> Keep it.
+
         raw_id = meta.get("memory_id")
         try:
             memory_id = int(raw_id)
@@ -159,15 +196,18 @@ def _search_with_sqlite(
     query_embedding: List[float],
     top_k: int,
     min_similarity: float,
+    session_id: Optional[int] = None,
 ) -> List[Tuple[Dict[str, Any], float]]:
     """Full scan of SQLite embeddings with cosine similarity. Used as Chroma fallback."""
     import json
 
     conn = sqlite3.connect(db_path)
     c = conn.cursor()
-    c.execute(
-        "SELECT id, memory_text, tags, created_at, embedding FROM user_memories WHERE embedding IS NOT NULL"
-    )
+
+    # Filter only relevant rows first to reduce cosine calc load
+    query = "SELECT id, session_id, memory_text, tags, created_at, embedding FROM user_memories WHERE embedding IS NOT NULL AND (session_id = ? OR session_id IS NULL)"
+    c.execute(query, (session_id,))
+
     rows = c.fetchall()
     conn.close()
 
@@ -176,13 +216,14 @@ def _search_with_sqlite(
 
     results = []
     for row in rows:
-        memory_id, memory_text, tags_json, created_at, embedding_bytes = row
+        memory_id, mem_sid, memory_text, tags_json, created_at, embedding_bytes = row
         stored_embedding = EmbeddingClient.deserialize_embedding(embedding_bytes)
         similarity = cosine_similarity(query_embedding, stored_embedding)
         if similarity < min_similarity:
             continue
         memory_dict = {
             "id": memory_id,
+            "session_id": mem_sid,
             "memory_text": memory_text,
             "tags": json.loads(tags_json) if tags_json else [],
             "created_at": created_at,
@@ -200,6 +241,7 @@ def search_memories(
     top_k: int,
     min_similarity: float,
     collection_name: str,
+    session_id: Optional[int] = None,
 ) -> List[Tuple[Dict[str, Any], float]]:
     """Search memories by embedding similarity. Returns (memory_dict, similarity) pairs."""
     import json
@@ -217,11 +259,11 @@ def search_memories(
             top_k=top_k,
             collection_name=collection_name,
             embedding_model=client.model,
+            session_id=session_id,
         )
 
         if chroma_results:
             memory_ids = [mid for mid, _ in chroma_results]
-            sims_by_id = {mid: sim for mid, sim in chroma_results}
 
             # Fetch rows from SQLite for the found IDs
             conn = sqlite3.connect(db_path)
@@ -229,7 +271,7 @@ def search_memories(
             c = conn.cursor()
             placeholders = ",".join("?" * len(memory_ids))
             c.execute(
-                f"SELECT id, memory_text, tags, created_at FROM user_memories WHERE id IN ({placeholders})",
+                f"SELECT id, session_id, memory_text, tags, created_at FROM user_memories WHERE id IN ({placeholders})",
                 memory_ids,
             )
             rows = c.fetchall()
@@ -247,6 +289,7 @@ def search_memories(
                     (
                         {
                             "id": row["id"],
+                            "session_id": row["session_id"],
                             "memory_text": row["memory_text"],
                             "tags": json.loads(row["tags"]) if row["tags"] else [],
                             "created_at": row["created_at"],
@@ -262,6 +305,7 @@ def search_memories(
             query_embedding=query_embedding,
             top_k=top_k,
             min_similarity=min_similarity,
+            session_id=session_id,
         )
     except Exception as exc:
         logger.error("Memory search failed: %s", exc)
@@ -274,6 +318,7 @@ def find_near_duplicate(
     text: str,
     threshold: float,
     collection_name: str,
+    session_id: Optional[int] = None,
 ) -> Optional[int]:
     """Return memory_id if a near-duplicate already exists above threshold, else None."""
     if not text or not text.strip():
@@ -289,6 +334,7 @@ def find_near_duplicate(
             top_k=1,
             collection_name=collection_name,
             embedding_model=client.model,
+            session_id=session_id,
         )
 
         if chroma_results:
@@ -302,6 +348,7 @@ def find_near_duplicate(
             query_embedding=embedding,
             top_k=1,
             min_similarity=threshold,
+            session_id=session_id,
         )
         if fallback:
             return fallback[0][0]["id"]
@@ -322,9 +369,7 @@ def delete_memory_from_chroma(
     try:
         collection.delete(ids=[_memory_chroma_id(memory_id)])
     except Exception as exc:
-        logger.warning(
-            "Failed to delete memory %s from Chroma: %s", memory_id, exc
-        )
+        logger.warning("Failed to delete memory %s from Chroma: %s", memory_id, exc)
 
 
 def clear_all_memory_embeddings(chroma_dir: Path, collection_name: str) -> None:

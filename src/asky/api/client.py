@@ -332,8 +332,23 @@ class AskyClient:
                 preload=PreloadResolution(),
             )
 
+        # Global Memory Trigger Detection
+        from asky.config import USER_MEMORY_GLOBAL_TRIGGERS
+
+        capture_global_memory = False
+        effective_query_text = request.query_text
+
+        for trigger in USER_MEMORY_GLOBAL_TRIGGERS:
+            if effective_query_text.lower().startswith(trigger.lower()):
+                # Strip trigger and whitespace
+                effective_query_text = effective_query_text[len(trigger) :].strip()
+                capture_global_memory = True
+                notices.append(f"Global memory trigger detected: '{trigger}'")
+                break
+
+        # Process preload with *potentially modified* query text
         preload = run_preload_pipeline(
-            query_text=request.query_text,
+            query_text=effective_query_text,
             research_mode=self.config.research_mode,
             model_config=self.model_config,
             lean=request.lean,
@@ -354,13 +369,16 @@ class AskyClient:
         )
 
         local_targets = preload.local_payload.get("targets") or []
-        effective_query_text = request.query_text
+        # Preload pipeline might have used original query (if we didn't update it above, but we did)
+        # However, run_preload_pipeline does its own things.
+        # We need to make sure subsequent steps use effective_query_text.
+
         local_kb_hint_enabled = bool(local_targets) or bool(request.local_corpus_paths)
         if local_kb_hint_enabled:
             effective_query_text = call_attr(
                 "asky.research.adapters",
                 "redact_local_source_targets",
-                request.query_text,
+                effective_query_text,
             )
             if not effective_query_text.strip():
                 effective_query_text = "Answer the user's request using the preloaded local knowledge base."
@@ -401,18 +419,44 @@ class AskyClient:
             disabled_tools=effective_disabled_tools,
         )
 
-        # Auto-extraction of facts in elephant mode — non-blocking background thread
+        # Auto-extraction of facts
+        import threading
+        from asky.config import DB_PATH, RESEARCH_CHROMA_PERSIST_DIRECTORY
+        from asky.core.api_client import get_llm_msg
+
+        # 1. Session-scoped extraction (Elephant Mode)
         if final_answer and session_resolution.memory_auto_extract:
-            import threading
-
-            from asky.config import DB_PATH, RESEARCH_CHROMA_PERSIST_DIRECTORY
-            from asky.core.api_client import get_llm_msg
-
+            # We must pass the current session ID
+            current_sid = (
+                session_manager.current_session.id
+                if session_manager and session_manager.current_session
+                else None
+            )
             threading.Thread(
                 target=call_attr,
-                args=("asky.memory.auto_extract", "extract_and_save_memories_from_turn"),
+                args=(
+                    "asky.memory.auto_extract",
+                    "extract_and_save_memories_from_turn",
+                ),
                 kwargs={
-                    "query": request.query_text,
+                    "query": effective_query_text,
+                    "answer": final_answer,
+                    "llm_client": get_llm_msg,
+                    "model": self.model_config.get("model", ""),
+                    "db_path": DB_PATH,
+                    "chroma_dir": RESEARCH_CHROMA_PERSIST_DIRECTORY,
+                    "session_id": current_sid,
+                },
+                daemon=True,
+            ).start()
+
+        # 2. Global extraction (Triggered)
+        if final_answer and capture_global_memory:
+            threading.Thread(
+                target=call_attr,
+                args=("asky.memory.auto_extract", "extract_global_facts_from_turn"),
+                kwargs={
+                    "query": effective_query_text,
                     "answer": final_answer,
                     "llm_client": get_llm_msg,
                     "model": self.model_config.get("model", ""),
