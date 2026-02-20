@@ -1453,6 +1453,8 @@ def test_build_messages_with_override(mock_args):
 def test_run_chat_passes_system_prompt_override(
     mock_renderer, mock_get_shell, mock_client_cls
 ):
+    from asky.cli.chat import run_chat
+
     mock_args = argparse.Namespace(
         model="gf",
         research=False,

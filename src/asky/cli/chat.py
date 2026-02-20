@@ -548,7 +548,7 @@ def run_chat(args: argparse.Namespace, query_text: str) -> None:
             console.print("\n[Saving interaction...]")
 
         # Auto-generate HTML Report
-        if final_answer:
+        if final_answer and not is_lean:
             from asky.rendering import save_html_report
 
             html_source = ""
@@ -576,7 +576,7 @@ def run_chat(args: argparse.Namespace, query_text: str) -> None:
                 )
 
             report_path = save_html_report(html_source)
-            if report_path and not is_lean:
+            if report_path:
                 console.print(f"Open in browser: [bold cyan]file://{report_path}[/]")
 
         # Send Email if requested

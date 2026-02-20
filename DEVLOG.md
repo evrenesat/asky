@@ -2,6 +2,35 @@
 
 For older logs, see [DEVLOG_ARCHIVE.md](DEVLOG_ARCHIVE.md).
 
+## 2026-02-20
+
+### Lean Mode Speed Optimizations
+
+**Summary**: Optimized the execution path for lean mode by bypassing summarization and background extraction.
+
+- **Changed**:
+  - `src/asky/api/client.py`: Disabled memory auto-extraction, global trigger checks, and dialogue summarizations (`generate_summaries`) when `--lean` is active.
+  - `src/asky/cli/chat.py`: Skipped HTML report generation when `--lean` is enabled to save I/O and markdown generation time.
+  - `tests/test_cli.py`: Fixed a missing import error (`run_chat`) in `test_run_chat_passes_system_prompt_override`.
+- **Key Behavior**:
+  - Lean mode now skips non-essential processing steps entirely to provide the fastest response possible. This reduces CPU and I/O overhead significantly.
+
+## 2026-02-20
+
+### Extensive Documentation Migration
+
+**Summary**: Migrated extensive detailed documentation from `README.md` into dedicated markdown files within a new `docs/` directory.
+
+- **Added**:
+  - `docs/research_mode.md`: Detailed explanation of Deep Research Mode, caching, vectors, evidence extraction, etc.
+  - `docs/elephant_mode.md`: Explanation of global and session-scoped User Memory triggers and mechanics.
+  - `docs/custom_tools.md`: Notes on extending the LLM's capabilities via custom local shell commands.
+  - `docs/configuration.md`: Notes on TOML configs, API Keys, Sessions, and Web Search configurations.
+- **Changed**:
+  - `README.md`: Completely rewritten to act as a focused entry point. Added a "Mindset / Philosophy" section illustrating the core single-command UNIX-tool approach of the project, followed by a succinct CLI feature overview and a Documentation Index linking to the extended `docs/*.md` files.
+- **Why**:
+  - The README was becoming too long and crowded, making it difficult for new users to quickly grasp the core feature set without scrolling through deep implementation details.
+
 ## 2026-02-19
 
 ### User Memory Refactor: Session Scoping & Global Triggers

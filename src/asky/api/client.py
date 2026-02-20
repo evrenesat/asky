@@ -233,7 +233,7 @@ class AskyClient:
         )
 
         query_summary, answer_summary = ("", "")
-        if final_answer:
+        if final_answer and not lean:
             query_summary, answer_summary = generate_summaries(
                 query_text,
                 final_answer,
@@ -332,19 +332,20 @@ class AskyClient:
                 preload=PreloadResolution(),
             )
 
-        # Global Memory Trigger Detection
-        from asky.config import USER_MEMORY_GLOBAL_TRIGGERS
-
         capture_global_memory = False
         effective_query_text = request.query_text
 
-        for trigger in USER_MEMORY_GLOBAL_TRIGGERS:
-            if effective_query_text.lower().startswith(trigger.lower()):
-                # Strip trigger and whitespace
-                effective_query_text = effective_query_text[len(trigger) :].strip()
-                capture_global_memory = True
-                notices.append(f"Global memory trigger detected: '{trigger}'")
-                break
+        if not request.lean:
+            # Global Memory Trigger Detection
+            from asky.config import USER_MEMORY_GLOBAL_TRIGGERS
+
+            for trigger in USER_MEMORY_GLOBAL_TRIGGERS:
+                if effective_query_text.lower().startswith(trigger.lower()):
+                    # Strip trigger and whitespace
+                    effective_query_text = effective_query_text[len(trigger) :].strip()
+                    capture_global_memory = True
+                    notices.append(f"Global memory trigger detected: '{trigger}'")
+                    break
 
         # Process preload with *potentially modified* query text
         preload = run_preload_pipeline(
@@ -419,60 +420,62 @@ class AskyClient:
             disabled_tools=effective_disabled_tools,
         )
 
-        # Auto-extraction of facts
-        import threading
-        from asky.config import DB_PATH, RESEARCH_CHROMA_PERSIST_DIRECTORY
-        from asky.core.api_client import get_llm_msg
+        if not request.lean:
+            # Auto-extraction of facts
+            import threading
+            from asky.config import DB_PATH, RESEARCH_CHROMA_PERSIST_DIRECTORY
+            from asky.core.api_client import get_llm_msg
 
-        # 1. Session-scoped extraction (Elephant Mode)
-        if final_answer and session_resolution.memory_auto_extract:
-            # We must pass the current session ID
-            current_sid = (
-                session_manager.current_session.id
-                if session_manager and session_manager.current_session
-                else None
-            )
-            threading.Thread(
-                target=call_attr,
-                args=(
-                    "asky.memory.auto_extract",
-                    "extract_and_save_memories_from_turn",
-                ),
-                kwargs={
-                    "query": effective_query_text,
-                    "answer": final_answer,
-                    "llm_client": get_llm_msg,
-                    "model": self.model_config.get("model", ""),
-                    "db_path": DB_PATH,
-                    "chroma_dir": RESEARCH_CHROMA_PERSIST_DIRECTORY,
-                    "session_id": current_sid,
-                },
-                daemon=True,
-            ).start()
+            # 1. Session-scoped extraction (Elephant Mode)
+            if final_answer and session_resolution.memory_auto_extract:
+                # We must pass the current session ID
+                current_sid = (
+                    session_manager.current_session.id
+                    if session_manager and session_manager.current_session
+                    else None
+                )
+                threading.Thread(
+                    target=call_attr,
+                    args=(
+                        "asky.memory.auto_extract",
+                        "extract_and_save_memories_from_turn",
+                    ),
+                    kwargs={
+                        "query": effective_query_text,
+                        "answer": final_answer,
+                        "llm_client": get_llm_msg,
+                        "model": self.model_config.get("model", ""),
+                        "db_path": DB_PATH,
+                        "chroma_dir": RESEARCH_CHROMA_PERSIST_DIRECTORY,
+                        "session_id": current_sid,
+                    },
+                    daemon=True,
+                ).start()
 
-        # 2. Global extraction (Triggered)
-        if final_answer and capture_global_memory:
-            threading.Thread(
-                target=call_attr,
-                args=("asky.memory.auto_extract", "extract_global_facts_from_turn"),
-                kwargs={
-                    "query": effective_query_text,
-                    "answer": final_answer,
-                    "llm_client": get_llm_msg,
-                    "model": self.model_config.get("model", ""),
-                    "db_path": DB_PATH,
-                    "chroma_dir": RESEARCH_CHROMA_PERSIST_DIRECTORY,
-                },
-                daemon=True,
-            ).start()
+            # 2. Global extraction (Triggered)
+            if final_answer and capture_global_memory:
+                threading.Thread(
+                    target=call_attr,
+                    args=("asky.memory.auto_extract", "extract_global_facts_from_turn"),
+                    kwargs={
+                        "query": effective_query_text,
+                        "answer": final_answer,
+                        "llm_client": get_llm_msg,
+                        "model": self.model_config.get("model", ""),
+                        "db_path": DB_PATH,
+                        "chroma_dir": RESEARCH_CHROMA_PERSIST_DIRECTORY,
+                    },
+                    daemon=True,
+                ).start()
 
         query_summary, answer_summary = ("", "")
         if final_answer:
-            query_summary, answer_summary = generate_summaries(
-                request.query_text,
-                final_answer,
-                usage_tracker=self.summarization_tracker,
-            )
+            if not request.lean:
+                query_summary, answer_summary = generate_summaries(
+                    request.query_text,
+                    final_answer,
+                    usage_tracker=self.summarization_tracker,
+                )
             if request.save_history:
                 if session_manager:
                     session_manager.save_turn(
@@ -481,7 +484,7 @@ class AskyClient:
                         query_summary,
                         answer_summary,
                     )
-                    if session_manager.check_and_compact():
+                    if not request.lean and session_manager.check_and_compact():
                         notices.append("Session context compacted")
                 else:
                     save_interaction(
