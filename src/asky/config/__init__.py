@@ -49,6 +49,27 @@ MAX_BACKOFF = _limits.get("max_backoff", 60)
 SEARCH_TIMEOUT = _limits.get("search_timeout", 20)
 FETCH_TIMEOUT = _limits.get("fetch_timeout", 20)
 
+# Summarization Settings
+_summarizer_section = _CONFIG.get("summarizer", {})
+SUMMARIZATION_LAZY_THRESHOLD_CHARS = _summarizer_section.get(
+    "lazy_threshold_chars", 2000
+)
+SUMMARIZATION_HIERARCHICAL_TRIGGER_CHARS = _summarizer_section.get(
+    "hierarchical_trigger_chars", 3200
+)
+SUMMARIZATION_HIERARCHICAL_MAX_INPUT_CHARS = _summarizer_section.get(
+    "hierarchical_max_input_chars", 32000
+)
+SUMMARIZATION_HIERARCHICAL_CHUNK_TARGET_CHARS = _summarizer_section.get(
+    "hierarchical_chunk_target_chars", 2800
+)
+SUMMARIZATION_HIERARCHICAL_CHUNK_OVERLAP_CHARS = _summarizer_section.get(
+    "hierarchical_chunk_overlap_chars", 220
+)
+SUMMARIZATION_HIERARCHICAL_MAP_MAX_OUTPUT_CHARS = _summarizer_section.get(
+    "hierarchical_map_max_output_chars", 750
+)
+
 # Summarization Input Limit Calculation
 _SUMMARIZATION_INPUT_RATIO = 0.8
 _CHARS_PER_TOKEN = 4

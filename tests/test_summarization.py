@@ -5,9 +5,13 @@ from asky import summarization
 
 def test_hierarchical_summarization_for_long_content(monkeypatch):
     """Long inputs should trigger map-reduce summarization calls."""
-    monkeypatch.setattr(summarization, "HIERARCHICAL_TRIGGER_CHARS", 200)
-    monkeypatch.setattr(summarization, "HIERARCHICAL_CHUNK_TARGET_CHARS", 180)
-    monkeypatch.setattr(summarization, "HIERARCHICAL_CHUNK_OVERLAP_CHARS", 30)
+    monkeypatch.setattr(summarization, "SUMMARIZATION_HIERARCHICAL_TRIGGER_CHARS", 200)
+    monkeypatch.setattr(
+        summarization, "SUMMARIZATION_HIERARCHICAL_CHUNK_TARGET_CHARS", 180
+    )
+    monkeypatch.setattr(
+        summarization, "SUMMARIZATION_HIERARCHICAL_CHUNK_OVERLAP_CHARS", 30
+    )
     monkeypatch.setattr(summarization, "HIERARCHICAL_MAX_CHUNKS", 6)
 
     call_counter = {"count": 0}
@@ -33,7 +37,9 @@ def test_hierarchical_summarization_for_long_content(monkeypatch):
 
 def test_single_pass_summarization_for_short_content(monkeypatch):
     """Short inputs should stay on a single summarization call."""
-    monkeypatch.setattr(summarization, "HIERARCHICAL_TRIGGER_CHARS", 10_000)
+    monkeypatch.setattr(
+        summarization, "SUMMARIZATION_HIERARCHICAL_TRIGGER_CHARS", 10_000
+    )
 
     call_counter = {"count": 0}
 
@@ -54,7 +60,7 @@ def test_single_pass_summarization_for_short_content(monkeypatch):
 
 def test_hierarchical_summarization_uses_single_reduce_call(monkeypatch):
     """Hierarchical mode should run map calls plus one final reduce call."""
-    monkeypatch.setattr(summarization, "HIERARCHICAL_TRIGGER_CHARS", 10)
+    monkeypatch.setattr(summarization, "SUMMARIZATION_HIERARCHICAL_TRIGGER_CHARS", 10)
     monkeypatch.setattr(
         summarization,
         "_semantic_chunk_text",

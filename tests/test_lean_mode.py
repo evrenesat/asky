@@ -220,6 +220,7 @@ class TestLeanModeAPI:
             verbose_output_callback=ANY,
             event_callback=ANY,
             lean=True,
+            max_turns=ANY,
         )
 
 

@@ -215,13 +215,20 @@ def test_conversation_engine_compacts_large_tool_payloads_before_append(
         summarize=False,
     )
 
-    final_answer = engine.run(messages)
-    assert final_answer == "Final Answer"
+    with patch.object(
+        engine, "_summarize_and_cache", return_value="stub summary"
+    ) as mock_summarize:
+        final_answer = engine.run(messages)
+        assert final_answer == "Final Answer"
 
-    tool_payload = json.loads(messages[2]["content"])
-    compacted = tool_payload["https://example.com/huge"]["content"]
-    assert "[TRUNCATED]" in compacted
-    assert very_large_content not in compacted
+        tool_payload = json.loads(messages[2]["content"])
+        compacted = tool_payload["https://example.com/huge"]["content"]
+        assert "[COMPACTED]" in compacted
+        assert "stub summary" in compacted
+        assert very_large_content not in compacted
+        mock_summarize.assert_called_once_with(
+            "https://example.com/huge", very_large_content
+        )
 
 
 @patch("asky.core.engine.get_llm_msg")
@@ -259,8 +266,8 @@ def test_conversation_engine_verbose_tool_trace_and_status(mock_get_msg):
     with patch.object(engine, "_print_verbose_tool_call") as mock_verbose_print:
         final_answer = engine.run(
             messages,
-            display_callback=lambda turn, status_message=None, **kwargs: status_updates.append(
-                status_message
+            display_callback=lambda turn, status_message=None, **kwargs: (
+                status_updates.append(status_message)
             ),
         )
 

@@ -2,6 +2,94 @@
 
 For older logs, see [DEVLOG_ARCHIVE.md](DEVLOG_ARCHIVE.md).
 
+## 2026-02-21
+
+### On-Demand Summarization Replacing Truncation in Smart Compaction
+
+**Summary**: When `_compact_tool_message` has no cached summary for a URL and the content exceeds 500 chars, it now generates a summary on the spot via the LLM instead of brutally truncating.
+
+- **Changed**:
+  - `src/asky/core/engine.py`: Extracted `_summarize_and_cache(url, content)`. Calls `_summarize_content` (same prompt and caps used by the background cache summarizer). If the URL already exists in the research cache DB, saves the generated summary back so future compactions find it immediately. Falls back to truncation only if summarization itself raises an exception. Both the dict-value and string-value fallback branches in `_compact_tool_message` now call this helper.
+  - `tests/test_llm.py`: Updated `test_conversation_engine_compacts_large_tool_payloads_before_append` to mock `_summarize_and_cache` returning a stub and assert `[COMPACTED]` prefix instead of `[TRUNCATED]`.
+- **Why**:
+  - Truncation discards context permanently. The model then reasons over a broken `... [TRUNCATED]` stub which often causes it to re-fetch the same URL. Summarization preserves semantic content, and the DB write prevents re-summarizing the same URL on subsequent compactions.
+- **Gotchas**:
+  - `_save_summary` is a "protected" method on `ResearchCache`. If the URL is not in the research cache (e.g. tool returned content without going through the cache), the summary is generated but not persisted - the engine logs this at DEBUG level and continues normally.
+
+### Max Turns CLI Override
+
+**Summary**: Implemented the `-t`/`--turns` command-line flag to override and persist the maximum turn count for conversation sessions.
+
+- **Added**:
+  - `src/asky/cli/main.py`: Added `-t`/`--turns` argument and passed it to `AskyTurnRequest`.
+- **Changed**:
+  - `src/asky/api/types.py`: Added `max_turns` field to `AskyTurnRequest` and `SessionResolution`.
+  - `src/asky/api/session.py`: `resolve_session_for_turn` now propagates `max_turns` to session creation or updates it on session resumption.
+  - `src/asky/api/client.py`: Propagated `max_turns` through the turn execution flow and calculated effective turn limits.
+  - `src/asky/core/engine.py`: `ConversationEngine` now respects dynamically set `max_turns` instead of a hardcoded constant.
+  - `src/asky/core/session_manager.py`: `create_session` now accepts and persists `max_turns`.
+  - `src/asky/storage/sqlite.py`: Added `max_turns` column to `sessions` table and implemented related CRUD operations.
+  - `src/asky/cli/display.py`: `InterfaceRenderer` now displays the effective turn limit in the live banner.
+  - `src/asky/cli/chat.py`: Injected `max_turns` from CLI arguments into the API request layer.
+- **Fixed**:
+  - `src/asky/cli/main.py`: Fixed a `NameError` for `parse_session_selector_token` discovered during end-to-end testing.
+- **Why**:
+  - Users needed a way to control the longevity of complex multi-turn research or coding sessions without modifying global configuration files. Persisting this per-session ensures resumption respects the user's intent.
+
+### Sidebar Index and New HTML Layout
+
+**Summary**: Added a dynamically updated sidebar index to generated HTML reports, allowing users to navigate between all archived reports from a single view.
+
+- **Added**:
+  - `src/asky/rendering.py`: Implemented `_update_sidebar_index` which maintains a `sidebar_index.html` file in the archive directory. Each new report is prepended as a link to this index.
+- **Changed**:
+  - `src/asky/template.html`: Reworked the report template to include a responsive sidebar layout. The sidebar loads `sidebar_index.html` via an `iframe`, ensuring all reports always show the latest index.
+  - `src/asky/rendering.py`: `_save_to_archive` now triggers the sidebar index update after saving a new report.
+- **Why**:
+  - Previously, generated HTML reports were isolated files. Users had to manually find and open other reports from the filesystem. The new sidebar provides a central navigation hub that stays updated across all archives.
+
+### Tool Usage Initialization Configuration
+
+**Summary**: Initialized the tracking for all available tools at the beginning of executions with a defaults of 0 so they're immediately visible in the banner.
+
+- **Changed**:
+  - `src/asky/core/api_client.py`: Added `init_tools(tool_names)` to `UsageTracker` that pre-populates the dictionary with zeroes.
+  - `src/asky/core/engine.py`: Extracted the tool names from `ToolRegistry` right after schemas are generated, and passed them to `init_tools()` during `ConversationEngine.run()` initialization.
+- **Why**:
+  - Previously tools only appeared in the live UI banner after they were explicitly used, which prevented the user from easily seeing the capabilities granted to the model for a specific turn config setting.
+
+### Banner Integration and Background Summarization Tracking
+
+**Summary**: Fixed a set of bugs where the background `ResearchCache` summarizer wouldn't attribute token usage to the live UI banner, and corrected the "Sessions" and "Messages" counts displaying zeros when initialized.
+
+- **Changed**:
+  - `src/asky/research/cache.py` & `tools.py`: Plumbed `summarization_tracker` (extracted from tool arguments via the tool registry factory) straight into `cache_url` and its internal thread pool. This guarantees LLM text summarization triggers update the main application's metrics correctly.
+  - `src/asky/cli/display.py` & `banner.py`: Reworked `BannerState` formatting to accurately query `get_db_record_count()` and specifically query the `SessionManager`'s SQLite repository for total past sessions.
+  - `src/asky/api/client.py`: Injected a `session_resolved_callback` directly into `run_turn` logic. This ensures the CLI renderer is attached to the valid `SessionManager` state well before rendering pauses.
+- **Why**:
+  - The live tracking UI was showing `0 tokens` on the summarizer because `get_link_summaries` spun up independent jobs bypassing the global `UsageTracker`. Likewise, the UI rendered `0` session/messages since the session resolution happened too late for the rendering object to consume it.
+
+### Markdown Rendering List Indentation Fix
+
+**Summary**: Fixed a bug in the `casual-markdown` parser used for HTML archives that caused nested lists to render with extreme indentation due to improperly joined `<ul>` and `<ol>` tags.
+
+- **Changed**:
+  - `src/asky/template.html`: Expanded the list tag joining regex (`/<\/[ou]l\>\n<[ou]l\>/g`) into a `do...while` loop consisting of explicit matches for `<ul>`, `<ol>`, and nested `<ul><ul>` tag groupings. This guarantees consecutive lists correctly merge.
+- **Why**:
+  - The previous regex logic had two fatal flaws:
+    1. It only replaced the first level of adjacent tags per pass. Deeply nested or consecutive lists caused the regular expression to leave unbalanced `<ul>` tags.
+    2. Because it targeted `[ou]l`, it erroneously merged lists of different formats (e.g., merging an `</ol>` closing tag with a `<ul>` opening tag). This wiped out closing tags for adjacent blocks and caused the browser to exponentially indent list content.
+
+### Token Usage Tracking Fix
+
+**Summary**: Fixed a bug where token usage statistics were merged together when the main model and the summarization model shared the same alias, and resolved a shallow copy mutation issue that compounded usage statistics improperly.
+
+- **Changed**:
+  - `src/asky/cli/display.py`: `_get_combined_token_usage()` now separates summarizer token counts by appending ` (Summary)` to identical model aliases. Additionally, implemented a deep copy when combining usages to prevent token figures from compounding exponentially during live banner updates.
+- **Why**:
+  - When the same model was configured for both main chat and summarization operations, their input and output tokens were summed up blindly. This prevented users from tracking cost or context overhead from summaries separately.
+  - Due to a shared reference, token counts were repeatedly added to themselves on every UI refresh.
+
 ## 2026-02-20
 
 ### Lean Mode Speed Optimizations
@@ -25,7 +113,7 @@ For older logs, see [DEVLOG_ARCHIVE.md](DEVLOG_ARCHIVE.md).
   - `docs/research_mode.md`: Detailed explanation of Deep Research Mode, caching, vectors, evidence extraction, etc.
   - `docs/elephant_mode.md`: Explanation of global and session-scoped User Memory triggers and mechanics.
   - `docs/custom_tools.md`: Notes on extending the LLM's capabilities via custom local shell commands.
-  - `docs/configuration.md`: Notes on TOML configs, API Keys, Sessions, and Web Search configurations.
+  - `docs/configuration.md`: Notes on TOML configs, API Keys, Sessions, and Web Search configurations. Highly expanded to detail Limits, Timeouts, Session Compaction, and deeply explain the post-query Summarization Step (and why it temporarily blocks the shell prompt).
 - **Changed**:
   - `README.md`: Completely rewritten to act as a focused entry point. Added a "Mindset / Philosophy" section illustrating the core single-command UNIX-tool approach of the project, followed by a succinct CLI feature overview and a Documentation Index linking to the extended `docs/*.md` files.
 - **Why**:
@@ -1265,3 +1353,15 @@ For older logs, see [DEVLOG_ARCHIVE.md](DEVLOG_ARCHIVE.md).
 - **Graceful Exit**: Refactored max-turns exit to use a tool-free system prompt swap, preventing hallucinated XML calls.
 - **Tests**: Fixed slow CLI tests (mocking cleanup/logging), fixed import errors in prompt tests, and resolved various failures.
 - **XML Support**: Added support for parsing XML-style tool calls.
+
+### 2026-02-21: Fixed Identical Tracker Display Bug in Banner
+
+- **What**: Fixed a bug where the `BannerState` class incorrectly displayed the main model's token usage for the summarization model when both models shared the same alias (e.g., both configured as "step35").
+- **Why**: The UI logic in `banner.py` looked up token usage in a shared dictionary (`token_usage`) using the exact model aliases. When both aliases were identical, `dictionary.get("step35")` fetched the usage of the main model for both lines in the banner, ignoring any suffix hacks or actual summarizer usage.
+- **How**:
+  - Reverted the dictionary suffix hack in `src/asky/cli/display.py` (`_get_combined_token_usage`).
+  - Changed `BannerState` to explicitly accept `main_token_usage` and `sum_token_usage` as separate dictionaries.
+  - Updated `get_token_str` in `banner.py` to use a new `is_summary=True` flag to target the correct dictionary.
+  - Updated `test_banner_compact.py` and `test_display_token_usage.py` to test the new clean architecture.
+- **Round 2 token UI bug**: The banner UI was freezing on 0 summarization tokens because the live display (`renderer.live.stop()`) was stopped _immediately_ after the synchronous background compaction finished. At the start of the compaction, the tokens were 0, and since `update_banner` was never called again _after_ the heavy LLM summarization completed, the final visual state remained frozen at 0 tokens despite the `UsageTracker` being correctly populated.
+- **Fix**: Added a final `renderer.update_banner(renderer.current_turn, status_message=None)` call to the `finally` block in `asky/cli/chat.py` just before `renderer.stop_live()`. This guarantees the final token metrics are pulled from the trackers and rendered onto the screen before the process exits.

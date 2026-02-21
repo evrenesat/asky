@@ -84,6 +84,102 @@ def save_html_report(content: str, filename_hint: Optional[str] = None) -> str:
         return ""
 
 
+def _update_sidebar_index(filename: str, display_title: str) -> None:
+    """Update the sidebar index HTML file with the latest generated report link.
+
+    Args:
+        filename: The filename of the newly generated HTML report.
+        display_title: The title to display for the link.
+    """
+    if not ARCHIVE_DIR.exists():
+        ARCHIVE_DIR.mkdir(parents=True, exist_ok=True)
+
+    index_path = ARCHIVE_DIR / "sidebar_index.html"
+    timestamp_str = datetime.now().strftime("%Y-%m-%d %H:%M")
+
+    link_html = f'      <li class="index-item"><a href="{filename}" target="_parent">{display_title} <span class="time">{timestamp_str}</span></a></li>'
+
+    if not index_path.exists():
+        # Create base index file
+        base_html = f"""<!doctype html>
+<html>
+  <head>
+    <meta charset="UTF-8" />
+    <title>asky History</title>
+    <style>
+      body {{
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+        font-size: 14px;
+        line-height: 1.5;
+        margin: 0;
+        padding: 20px;
+        color: #333;
+        background-color: transparent;
+      }}
+      h2 {{
+        font-size: 1.2em;
+        margin-top: 0;
+        margin-bottom: 15px;
+        border-bottom: 1px solid #eaecef;
+        padding-bottom: 10px;
+      }}
+      ul {{
+        list-style: none;
+        padding: 0;
+        margin: 0;
+      }}
+      li.index-item {{
+        margin-bottom: 8px;
+        padding-bottom: 8px;
+        border-bottom: 1px solid #f6f8fa;
+      }}
+      li.index-item a {{
+        color: #0056b3;
+        text-decoration: none;
+        display: block;
+      }}
+      li.index-item a:hover {{
+        text-decoration: underline;
+      }}
+      .time {{
+        display: block;
+        font-size: 0.85em;
+        color: #6a737d;
+        margin-top: 2px;
+      }}
+      @media (prefers-color-scheme: dark) {{
+        body {{ color: #e0e0e0; }}
+        h2, li.index-item {{ border-color: #30363d; }}
+        li.index-item a {{ color: #58a6ff; }}
+        .time {{ color: #8b949e; }}
+      }}
+    </style>
+  </head>
+  <body>
+    <h2>History Index</h2>
+    <ul id="index-list">
+{link_html}
+    </ul>
+  </body>
+</html>
+"""
+        with open(index_path, "w") as f:
+            f.write(base_html)
+    else:
+        # Update existing index file
+        with open(index_path, "r") as f:
+            content = f.read()
+
+        # Inject new link just after the <ul id="index-list"> tag
+        target_tag = '<ul id="index-list">\n'
+        if target_tag in content:
+            new_content = content.replace(target_tag, f"{target_tag}{link_html}\n", 1)
+            with open(index_path, "w") as f:
+                f.write(new_content)
+        else:
+            logger.warning("Could not find <ul id='index-list'> in sidebar_index.html")
+
+
 def _save_to_archive(
     html_content: str,
     markdown_content: Optional[str] = None,
@@ -116,5 +212,12 @@ def _save_to_archive(
 
     with open(file_path, "w") as f:
         f.write(html_content)
+
+    # Update the sidebar index
+    # Note: slug_source should be the human-readable title without the timestamp suffix
+    display_title = (
+        slug_source if slug_source and slug_source != "untitled" else "Query Result"
+    )
+    _update_sidebar_index(filename, display_title)
 
     return file_path

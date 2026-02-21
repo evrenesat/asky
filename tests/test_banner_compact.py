@@ -18,7 +18,8 @@ def mock_state():
         session_name="test-session",
         session_msg_count=5,
         total_sessions=10,
-        token_usage={"test-model": {"input": 100, "output": 200}},
+        main_token_usage={"test-model": {"input": 100, "output": 200}},
+        sum_token_usage={},
         tool_usage={"search": 1},
         compact_banner=True,
     )

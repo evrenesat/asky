@@ -47,7 +47,7 @@ request_timeout = 60
 default_context_size = 4096
 
 # Default model used when no model is specified via CLI (-m).
-default_model = "gf"
+default_model = "lfm"
 
 # Model used specifically for internal text summarization tasks.
 summarization_model = "lfm"
@@ -58,6 +58,32 @@ user_agent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTM
 # Specific User-Agent string for LLM API requests.
 # Some providers only accept specific user agents for certain subscriptions types.
 llm_user_agent = "asky/1.0.0"
+
+# --- Summarizer Settings ---
+[summarizer]
+# Only summarize past messages (when using -c) if their content length exceeds this many characters.
+# Shorter messages will be included in the context as is to save API calls.
+lazy_threshold_chars = 2000
+
+# The minimum content length required to trigger the hierarchical (chunked) summarization strategy.
+# Content shorter than this but larger than `lazy_threshold_chars` will be summarized in a single pass.
+hierarchical_trigger_chars = 4800
+
+# The absolute maximum input length allowed for summarization.
+# Any text beyond this character count will be truncated before processing.
+hierarchical_max_input_chars = 100000
+
+# The target size for individual semantic chunks when breaking down a long document.
+# Increase this if you are using a capable model with a large context window.
+hierarchical_chunk_target_chars = 1800
+
+# The number of overlapping characters between chunks.
+# This overlap provides context continuity so the model doesn't lose meaning across boundaries.
+hierarchical_chunk_overlap_chars = 120
+
+# The maximum character count for the intermediate (map stage) summaries of each chunk.
+# Ensures the final reduce step receives concise, manageable inputs.
+hierarchical_map_max_output_chars = 750
 
 # --- Limits & Timeouts ---
 [limits]

@@ -32,6 +32,13 @@ class UsageTracker:
             self.tools = {}
         self.tools[tool_name] = self.tools.get(tool_name, 0) + 1
 
+    def init_tools(self, tool_names: List[str]):
+        if not hasattr(self, "tools"):
+            self.tools = {}
+        for name in tool_names:
+            if name not in self.tools:
+                self.tools[name] = 0
+
     def get_tool_usage(self) -> Dict[str, int]:
         return getattr(self, "tools", {})
 

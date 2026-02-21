@@ -30,6 +30,7 @@ class InterfaceRenderer:
         session_manager: Optional[Any] = None,
         messages: Optional[List[Dict[str, Any]]] = None,
         research_mode: bool = False,
+        max_turns: Optional[int] = None,
     ):
         self.model_config = model_config
         self.model_alias = model_alias
@@ -38,16 +39,21 @@ class InterfaceRenderer:
         self.session_manager = session_manager
         self.messages = messages or []
         self.research_mode = research_mode
+        self.max_turns_override = max_turns
         self.console = Console()
         self.live: Optional[Live] = None
         self.shortlist_stats: Dict[str, Any] = {}
         self.current_turn: int = 0
+        self.current_status_message: Optional[str] = None
+
+    def __rich__(self) -> Panel:
+        """Rich protocol to render the banner dynamically based on current tracking state."""
+        return self._build_banner(self.current_turn, self.current_status_message)
 
     def start_live(self) -> None:
         """Start the Live context for in-place banner updates."""
-        initial_banner = self._build_banner(current_turn=0)
         self.live = Live(
-            initial_banner,
+            self,  # Render self using __rich__ method
             console=self.console,
             refresh_per_second=4,
             transient=False,  # Keep the final banner visible after stopping
@@ -59,9 +65,9 @@ class InterfaceRenderer:
     ) -> None:
         """Update the banner in-place without screen clearing."""
         self.current_turn = current_turn
+        self.current_status_message = status_message
         if self.live:
-            banner = self._build_banner(current_turn, status_message)
-            self.live.update(banner)
+            self.live.refresh()
 
     def stop_live(self) -> None:
         """Stop the Live context (call before printing final output)."""
@@ -78,18 +84,6 @@ class InterfaceRenderer:
         if answer:
             self.console.print(f"\n[bold blue]Assistant[/]:")
             self.console.print(Markdown(answer))
-
-    def _get_combined_token_usage(self) -> Dict[str, Dict[str, int]]:
-        """Combine token usage from main and summarization trackers."""
-        combined = dict(self.usage_tracker.usage)
-        if self.summarization_tracker:
-            for alias, usage in self.summarization_tracker.usage.items():
-                if alias in combined:
-                    combined[alias]["input"] += usage["input"]
-                    combined[alias]["output"] += usage["output"]
-                else:
-                    combined[alias] = dict(usage)
-        return combined
 
     def _build_banner(
         self, current_turn: int, status_message: Optional[str] = None
@@ -110,14 +104,18 @@ class InterfaceRenderer:
         s_msg_count = 0
         total_sessions = 0
 
-        if self.session_manager and self.session_manager.current_session:
-            s_name = self.session_manager.current_session.name
-            s_msg_count = len(
-                self.session_manager.repo.get_session_messages(
-                    self.session_manager.current_session.id
+        if self.session_manager:
+            try:
+                total_sessions = self.session_manager.repo.count_sessions()
+            except Exception:
+                pass
+            if self.session_manager.current_session:
+                s_name = self.session_manager.current_session.name
+                s_msg_count = len(
+                    self.session_manager.repo.get_session_messages(
+                        self.session_manager.current_session.id
+                    )
                 )
-            )
-            total_sessions = self.session_manager.repo.count_sessions()
 
         # Embedding stats (research mode only)
         embedding_model = None
@@ -142,6 +140,16 @@ class InterfaceRenderer:
         shortlist_warnings = int(self.shortlist_stats.get("warnings", 0) or 0)
         shortlist_elapsed_ms = float(self.shortlist_stats.get("elapsed_ms", 0.0) or 0.0)
 
+        effective_max_turns = self.max_turns_override
+        if (
+            effective_max_turns is None
+            and self.session_manager
+            and self.session_manager.current_session
+        ):
+            effective_max_turns = self.session_manager.current_session.max_turns
+        if effective_max_turns is None:
+            effective_max_turns = self.model_config.get("max_turns", MAX_TURNS)
+
         state = BannerState(
             model_alias=self.model_alias,
             model_id=model_id,
@@ -149,13 +157,16 @@ class InterfaceRenderer:
             sum_id=sum_id,
             model_ctx=model_ctx,
             sum_ctx=sum_ctx,
-            max_turns=MAX_TURNS,
+            max_turns=effective_max_turns,
             current_turn=current_turn,
             db_count=db_count,
             session_name=s_name,
             session_msg_count=s_msg_count,
             total_sessions=total_sessions,
-            token_usage=self._get_combined_token_usage(),
+            main_token_usage=dict(self.usage_tracker.usage),
+            sum_token_usage=dict(self.summarization_tracker.usage)
+            if self.summarization_tracker
+            else {},
             tool_usage=self.usage_tracker.get_tool_usage(),
             status_message=status_message,
             research_mode=self.research_mode,

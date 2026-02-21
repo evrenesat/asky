@@ -377,6 +377,7 @@ class ResearchCache:
         title: str,
         links: List[Dict[str, str]],
         trigger_summarization: bool = True,
+        usage_tracker: Optional[Any] = None,
     ) -> int:
         """Cache URL content and optionally trigger background summarization.
 
@@ -469,12 +470,14 @@ class ResearchCache:
 
         # Trigger background summarization if content changed
         if trigger_summarization and content_changed and content:
-            self._schedule_summarization(cache_id, url, content)
+            self._schedule_summarization(cache_id, url, content, usage_tracker)
 
         logger.debug(f"Cached URL {url} with id={cache_id}")
         return cache_id
 
-    def _schedule_summarization(self, cache_id: int, url: str, content: str) -> None:
+    def _schedule_summarization(
+        self, cache_id: int, url: str, content: str, usage_tracker: Optional[Any] = None
+    ) -> None:
         """Schedule background summarization task."""
 
         def summarize_task():
@@ -488,6 +491,7 @@ class ResearchCache:
                     content=content[:BACKGROUND_SUMMARY_INPUT_CHARS],
                     prompt_template=SUMMARIZE_PAGE_PROMPT,
                     max_output_chars=BACKGROUND_SUMMARY_MAX_OUTPUT_CHARS,
+                    usage_tracker=usage_tracker,
                 )
 
                 self._save_summary(cache_id, summary)

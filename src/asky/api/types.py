@@ -49,6 +49,7 @@ class AskyTurnRequest:
     local_corpus_paths: Optional[List[str]] = None
     save_history: bool = True
     elephant_mode: bool = False
+    max_turns: Optional[int] = None
 
 
 @dataclass
@@ -69,6 +70,7 @@ class SessionResolution:
     halt_reason: Optional[str] = None
     matched_sessions: List[Dict[str, Any]] = field(default_factory=list)
     memory_auto_extract: bool = False
+    max_turns: Optional[int] = None
 
 
 @dataclass

@@ -107,31 +107,23 @@ def test_asky_client_run_messages_uses_research_registry(
         disabled_tools={"web_search"},
         session_id="42",
         corpus_preloaded=False,
+        summarization_tracker=client.summarization_tracker,
     )
 
 
-@patch("asky.api.client.generate_summaries", return_value=("query-sum", "answer-sum"))
 @patch.object(AskyClient, "run_messages", return_value="Answer")
-def test_asky_client_chat_returns_structured_result(
-    mock_run_messages, mock_generate_summaries
-):
+def test_asky_client_chat_returns_structured_result(mock_run_messages):
     client = AskyClient(AskyConfig(model_alias="gf"))
     result = client.chat(query_text="Question")
 
     assert result.final_answer == "Answer"
-    assert result.query_summary == "query-sum"
-    assert result.answer_summary == "answer-sum"
+    assert result.query_summary == ""
+    assert result.answer_summary == ""
     assert result.model_alias == "gf"
     mock_run_messages.assert_called_once()
-    mock_generate_summaries.assert_called_once_with(
-        "Question",
-        "Answer",
-        usage_tracker=client.summarization_tracker,
-    )
 
 
 @patch("asky.api.client.save_interaction")
-@patch("asky.api.client.generate_summaries", return_value=("qsum", "asum"))
 @patch.object(AskyClient, "run_messages", return_value="Final")
 @patch(
     "asky.api.client.run_preload_pipeline",
@@ -153,7 +145,6 @@ def test_asky_client_run_turn_full_flow_non_session(
     mock_resolve_session,
     mock_preload,
     mock_run_messages,
-    mock_generate_summaries,
     mock_save_interaction,
 ):
     client = AskyClient(AskyConfig(model_alias="gf"))
@@ -167,17 +158,15 @@ def test_asky_client_run_turn_full_flow_non_session(
 
     assert result.halted is False
     assert result.final_answer == "Final"
-    assert result.query_summary == "qsum"
-    assert result.answer_summary == "asum"
+    assert result.query_summary == ""
+    assert result.answer_summary == ""
     assert result.context.resolved_ids == [1, 2]
     assert result.preload.combined_context == "Preloaded context"
     mock_load_context.assert_called_once_with("1,2", True)
     mock_resolve_session.assert_called_once()
     mock_preload.assert_called_once()
     mock_run_messages.assert_called_once()
-    mock_save_interaction.assert_called_once_with(
-        "Question", "Final", "gf", "qsum", "asum"
-    )
+    mock_save_interaction.assert_called_once_with("Question", "Final", "gf", "", "")
 
 
 @patch.object(AskyClient, "run_messages")
@@ -213,7 +202,6 @@ def test_asky_client_run_turn_halts_on_ambiguous_session(
 
 
 @patch("asky.api.client.save_interaction")
-@patch("asky.api.client.generate_summaries", return_value=("qsum", "asum"))
 @patch.object(AskyClient, "run_messages", return_value="Final")
 @patch(
     "asky.api.client.run_preload_pipeline",
@@ -233,7 +221,6 @@ def test_asky_client_run_turn_redacts_local_targets_for_model(
     mock_resolve_session,
     mock_preload,
     mock_run_messages,
-    mock_generate_summaries,
     mock_save_interaction,
 ):
     client = AskyClient(AskyConfig(model_alias="gf", research_mode=True))
@@ -261,6 +248,7 @@ def test_asky_client_run_turn_redacts_local_targets_for_model(
         event_callback=None,
         lean=False,
         disabled_tools=None,
+        max_turns=ANY,
     )
     mock_save_interaction.assert_called_once()
 
@@ -358,7 +346,6 @@ def test_asky_client_build_messages_no_retrieval_guidance_when_not_preloaded():
 
 
 @patch("asky.api.client.save_interaction")
-@patch("asky.api.client.generate_summaries", return_value=("qsum", "asum"))
 @patch.object(AskyClient, "run_messages", return_value="Final")
 @patch(
     "asky.api.client.run_preload_pipeline",
@@ -371,7 +358,6 @@ def test_asky_client_run_turn_passes_corpus_preloaded_to_run_messages(
     mock_resolve_session,
     mock_preload,
     mock_run_messages,
-    mock_generate_summaries,
     mock_save_interaction,
 ):
     client = AskyClient(AskyConfig(model_alias="gf", research_mode=True))

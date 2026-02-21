@@ -393,7 +393,7 @@ Imports deferred until needed:
 | `html.py`          | HTML stripping, link extraction                          |
 | `push_data.py`     | HTTP data push to endpoints                              |
 | `email_sender.py`  | SMTP email sending                                       |
-| `rendering.py`     | Browser markdown rendering                               |
+| `rendering.py`     | Browser markdown rendering + Sidebar Index Generation    |
 | `banner.py`        | CLI banner display                                       |
 | `logger.py`        | Rotating file-based logging                              |
 
@@ -449,3 +449,16 @@ A simplified "retrieval-only" system prompt guidance is injected in these cases 
   - Optional stage in `run_preload_pipeline` (enabled via `research.toml`).
   - Processes top-k retrieved chunks (max 10).
   - Produces structured JSON facts injected as a "Structured Evidence" section in the user prompt.
+
+### Decision 18: Session-Persistent Max Turns
+
+- **Context**: Users need control over turn limits for specific complex sessions (e.g., long research or deep debugging) without changing global app defaults.
+- **Decision**: Introduce a session-level `max_turns` setting that can be overridden via CLI and persists in the database.
+- **Implementation**:
+  - `storage/sqlite.py` — `sessions` table includes `max_turns` column.
+  - `api/session.py` — `resolve_session_for_turn` calculates effective turn limit (CLI override > session setting > model default).
+  - `core/engine.py` — `ConversationEngine` loop uses the dynamic turn limit provided at instantiation.
+  - CLI banner reflects the effective turn count (e.g., `Turns: 2/5`).
+- **Key invariants**:
+  - Passing `-t` / `--turns` while a session is active (or being created) overwrites the persisted setting for that session.
+  - Subsequent resumes of that session automatically use the last-set turn limit.

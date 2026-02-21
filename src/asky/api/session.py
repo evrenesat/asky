@@ -29,6 +29,7 @@ def resolve_session_for_turn(
     shell_session_id: Optional[int] = None,
     research_mode: bool = False,
     elephant_mode: bool = False,
+    max_turns: Optional[int] = None,
     set_shell_session_id_fn: Optional[Callable[[int], None]] = None,
     clear_shell_session_fn: Optional[Callable[[], None]] = None,
     session_manager_cls: Type[SessionManager] = SessionManager,
@@ -44,13 +45,14 @@ def resolve_session_for_turn(
             summarization_tracker=summarization_tracker,
         )
         created_session = session_manager.create_session(
-            sticky_session_name, memory_auto_extract=elephant_mode
+            sticky_session_name, memory_auto_extract=elephant_mode, max_turns=max_turns
         )
         if set_shell_session_id_fn:
             set_shell_session_id_fn(int(created_session.id))
         resolution.session_id = int(created_session.id)
         resolution.event = "session_created"
         resolution.memory_auto_extract = bool(created_session.memory_auto_extract)
+        resolution.max_turns = created_session.max_turns
         resolution.notices.append(
             f"Session {created_session.id} ('{created_session.name}') created and active"
         )
@@ -94,6 +96,13 @@ def resolve_session_for_turn(
         else:
             resolution.memory_auto_extract = bool(resumed.memory_auto_extract)
 
+        if max_turns is not None:
+            session_manager.repo.update_session_max_turns(int(resumed.id), max_turns)
+            resumed.max_turns = max_turns
+            resolution.max_turns = max_turns
+        else:
+            resolution.max_turns = resumed.max_turns
+
         resolution.notices.append(
             f"Resumed session {resumed.id} ('{resumed.name or 'auto'}')"
         )
@@ -113,6 +122,16 @@ def resolve_session_for_turn(
             resolution.session_id = int(session.id)
             resolution.event = "session_auto_resumed"
             resolution.memory_auto_extract = bool(session.memory_auto_extract)
+
+            if max_turns is not None:
+                session_manager.repo.update_session_max_turns(
+                    int(session.id), max_turns
+                )
+                session.max_turns = max_turns
+                resolution.max_turns = max_turns
+            else:
+                resolution.max_turns = session.max_turns
+
             resolution.notices.append(
                 f"Resuming session {session.id} ({session.name or 'auto'})"
             )
@@ -131,12 +150,14 @@ def resolve_session_for_turn(
             summarization_tracker=summarization_tracker,
             query_text=query_text,
             elephant_mode=elephant_mode,
+            max_turns=max_turns,
             set_shell_session_id_fn=set_shell_session_id_fn,
             session_manager_cls=session_manager_cls,
         )
         if created:
             resolution.event = "research_session_created"
             resolution.memory_auto_extract = bool(created.memory_auto_extract)
+            resolution.max_turns = created.max_turns
             resolution.notices.append(
                 f"Research mode: started session {created.id} ('{created.name or 'auto'}')"
             )
@@ -155,6 +176,15 @@ def resolve_session_for_turn(
                     session_manager.current_session.memory_auto_extract
                 )
 
+            if max_turns is not None:
+                session_manager.repo.update_session_max_turns(
+                    int(session_manager.current_session.id), max_turns
+                )
+                session_manager.current_session.max_turns = max_turns
+                resolution.max_turns = max_turns
+            else:
+                resolution.max_turns = session_manager.current_session.max_turns
+
     return session_manager, resolution
 
 
@@ -166,6 +196,7 @@ def ensure_research_session(
     summarization_tracker: UsageTracker,
     query_text: str,
     elephant_mode: bool = False,
+    max_turns: Optional[int] = None,
     set_shell_session_id_fn: Optional[Callable[[int], None]] = None,
     session_manager_cls: Type[SessionManager] = SessionManager,
 ) -> tuple[SessionManager, Optional[Any]]:
@@ -180,7 +211,7 @@ def ensure_research_session(
     )
     session_name = generate_session_name(query_text or "research")
     created_session = active_manager.create_session(
-        session_name, memory_auto_extract=elephant_mode
+        session_name, memory_auto_extract=elephant_mode, max_turns=max_turns
     )
     if set_shell_session_id_fn:
         set_shell_session_id_fn(int(created_session.id))

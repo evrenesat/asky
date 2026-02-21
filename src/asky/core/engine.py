@@ -69,6 +69,7 @@ class ConversationEngine:
         verbose_output_callback: Optional[Callable[[Any], None]] = None,
         event_callback: Optional[Callable[[str, Dict[str, Any]], None]] = None,
         lean: bool = False,
+        max_turns: Optional[int] = None,
     ):
         self.model_config = model_config
         self.tool_registry = tool_registry
@@ -80,6 +81,7 @@ class ConversationEngine:
         self.verbose_output_callback = verbose_output_callback
         self.event_callback = event_callback
         self.lean = lean
+        self.max_turns = max_turns or MAX_TURNS
         self._research_cache = None
         self.start_time: float = 0
         self.final_answer: str = ""
@@ -107,22 +109,22 @@ class ConversationEngine:
         )
 
         try:
-            while turn < MAX_TURNS:
+            while turn < self.max_turns:
                 turn += 1
-                logger.info(f"Starting turn {turn}/{MAX_TURNS}")
-                self._emit_event("turn_start", turn=turn, max_turns=MAX_TURNS)
+                logger.info(f"Starting turn {turn}/{self.max_turns}")
+                self._emit_event("turn_start", turn=turn, max_turns=self.max_turns)
 
                 # Token & Turn Tracking
                 total_tokens = count_tokens(messages)
                 context_size = self.model_config.get(
                     "context_size", DEFAULT_CONTEXT_SIZE
                 )
-                turns_left = MAX_TURNS - turn + 1
+                turns_left = self.max_turns - turn + 1
 
                 status_msg = (
                     f"\n\n[SYSTEM UPDATE]:\n"
                     f"- Context Used: {total_tokens / context_size * 100:.2f}%"
-                    f"- Turns Remaining: {turns_left} (out of {MAX_TURNS})\n"
+                    f"- Turns Remaining: {turns_left} (out of {self.max_turns})\n"
                     f"Please manage your context usage efficiently."
                 )
                 # In lean mode, we suppress these system updates to keep the context clean
@@ -144,6 +146,20 @@ class ConversationEngine:
                 messages = self.check_and_compact(messages)
                 tool_schemas = self.tool_registry.get_schemas()
                 use_tools = bool(tool_schemas)
+
+                # Initialize tracking for all available tools so they appear with 0 usage
+                if (
+                    getattr(self, "_tools_initialized", False) is False
+                    and use_tools
+                    and self.usage_tracker
+                ):
+                    available_tools = [
+                        s.get("function", {}).get("name")
+                        for s in tool_schemas
+                        if s.get("type") == "function"
+                    ]
+                    self.usage_tracker.init_tools([t for t in available_tools if t])
+                    self._tools_initialized = True
                 self._emit_event(
                     "llm_start",
                     turn=turn,
@@ -268,7 +284,7 @@ class ConversationEngine:
                     display_callback(turn)
 
             # Only enter graceful exit if we hit max turns WITHOUT already having a final answer
-            if turn >= MAX_TURNS and not self.final_answer:
+            if turn >= self.max_turns and not self.final_answer:
                 self.final_answer = self._execute_graceful_exit(
                     messages, status_reporter
                 )
@@ -390,18 +406,13 @@ class ConversationEngine:
                     )
                     modified = True
                 else:
-                    # Fallback: Truncate
                     val_content = value.get("content", "")
                     if len(val_content) > 500:
-                        logger.debug(
-                            f"[Smart Compaction] No summary for URL {key} (dict). Truncating content > 500 chars."
-                        )
+                        summary = self._summarize_and_cache(key, val_content)
                         compacted_data[key] = value.copy()
-                        compacted_data[key]["content"] = (
-                            val_content[:500] + "... [TRUNCATED]"
-                        )
+                        compacted_data[key]["content"] = f"[COMPACTED] {summary}"
                         compacted_data[key]["note"] = (
-                            "Content truncated to save context."
+                            "Content replaced with on-demand summary to save context."
                         )
                         modified = True
                     else:
@@ -420,10 +431,8 @@ class ConversationEngine:
                     modified = True
                 else:
                     if len(value) > 500:
-                        logger.debug(
-                            f"[Smart Compaction] No summary for URL {key} (str). Truncating content > 500 chars."
-                        )
-                        compacted_data[key] = value[:500] + "... [TRUNCATED]"
+                        summary = self._summarize_and_cache(key, value)
+                        compacted_data[key] = f"[COMPACTED] {summary}"
                         modified = True
                     else:
                         compacted_data[key] = value
@@ -438,6 +447,36 @@ class ConversationEngine:
             return new_msg
 
         return msg
+
+    def _summarize_and_cache(self, url: str, content: str) -> str:
+        """Summarize URL content on demand and persist the result to the research cache.
+
+        Returns the generated summary, or a truncated fallback if summarization fails.
+        """
+        from asky.summarization import _summarize_content
+        from asky.config import SUMMARIZE_PAGE_PROMPT
+
+        SUMMARY_INPUT_CHARS = 24000
+        SUMMARY_MAX_OUTPUT_CHARS = 800
+
+        logger.debug(f"[Smart Compaction] Generating on-demand summary for {url}")
+        try:
+            summary = _summarize_content(
+                content=content[:SUMMARY_INPUT_CHARS],
+                prompt_template=SUMMARIZE_PAGE_PROMPT,
+                max_output_chars=SUMMARY_MAX_OUTPUT_CHARS,
+                usage_tracker=self.usage_tracker,
+            )
+            cache_id = self.research_cache.get_cache_id(url)
+            if cache_id is not None:
+                self.research_cache._save_summary(cache_id, summary)
+                logger.debug(f"[Smart Compaction] Summary saved to cache for {url}")
+            return summary
+        except Exception as exc:
+            logger.warning(
+                f"[Smart Compaction] On-demand summarization failed for {url}: {exc}. Falling back to truncation."
+            )
+            return content[:SUMMARY_MAX_OUTPUT_CHARS] + "... [TRUNCATED]"
 
     def check_and_compact(self, messages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         """Check if message history exceeds threshold and compact if needed."""
@@ -618,12 +657,14 @@ def create_research_tool_registry(
     usage_tracker: Optional[UsageTracker] = None,
     disabled_tools: Optional[Set[str]] = None,
     session_id: Optional[str] = None,
+    summarization_tracker: Optional[UsageTracker] = None,
 ) -> ToolRegistry:
     """Create a ToolRegistry with research mode tools."""
     return call_attr(
         "asky.core.tool_registry_factory",
         "create_research_tool_registry",
         usage_tracker=usage_tracker,
+        summarization_tracker=summarization_tracker,
         execute_web_search_fn=execute_web_search,
         execute_custom_tool_fn=_execute_custom_tool,
         custom_tools=CUSTOM_TOOLS,

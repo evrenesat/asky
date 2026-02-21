@@ -156,6 +156,7 @@ class AskyClient:
         event_callback: Optional[Callable[[str, Dict[str, Any]], None]] = None,
         lean: bool = False,
         disabled_tools: Optional[Set[str]] = None,
+        max_turns: Optional[int] = None,
     ) -> str:
         """Run chat completion for prepared messages."""
         effective_disabled_tools = (
@@ -168,6 +169,7 @@ class AskyClient:
                 disabled_tools=effective_disabled_tools,
                 session_id=research_session_id,
                 corpus_preloaded=preload.is_corpus_preloaded if preload else False,
+                summarization_tracker=self.summarization_tracker,
             )
         else:
             registry = create_tool_registry(
@@ -196,6 +198,7 @@ class AskyClient:
             verbose_output_callback=verbose_output_callback,
             event_callback=event_callback,
             lean=lean,
+            max_turns=max_turns,
         )
         return engine.run(messages, display_callback=display_callback)
 
@@ -233,12 +236,7 @@ class AskyClient:
         )
 
         query_summary, answer_summary = ("", "")
-        if final_answer and not lean:
-            query_summary, answer_summary = generate_summaries(
-                query_text,
-                final_answer,
-                usage_tracker=self.summarization_tracker,
-            )
+
         return AskyChatResult(
             final_answer=final_answer,
             query_summary=query_summary,
@@ -264,6 +262,7 @@ class AskyClient:
         messages_prepared_callback: Optional[
             Callable[[List[Dict[str, Any]]], None]
         ] = None,
+        session_resolved_callback: Optional[Callable[[Any], None]] = None,
         set_shell_session_id_fn: Optional[Callable[[int], None]] = None,
         clear_shell_session_fn: Optional[Callable[[], None]] = None,
         shortlist_executor: Optional[Callable[..., Dict[str, Any]]] = None,
@@ -275,6 +274,7 @@ class AskyClient:
         local_ingestion_formatter: Optional[
             Callable[[Dict[str, Any]], Optional[str]]
         ] = None,
+        initial_notice_callback: Optional[Callable[[str], None]] = None,
     ) -> AskyTurnResult:
         """Run a full API-orchestrated turn including context/session/preload."""
         notices: List[str] = []
@@ -301,10 +301,14 @@ class AskyClient:
             shell_session_id=request.shell_session_id,
             research_mode=self.config.research_mode,
             elephant_mode=request.elephant_mode,
+            max_turns=request.max_turns,
             set_shell_session_id_fn=set_shell_session_id_fn,
             clear_shell_session_fn=clear_shell_session_fn,
         )
         notices.extend(session_resolution.notices)
+
+        if session_resolved_callback and session_manager:
+            session_resolved_callback(session_manager)
 
         if self.config.research_mode:
             notices.insert(
@@ -346,6 +350,11 @@ class AskyClient:
                     capture_global_memory = True
                     notices.append(f"Global memory trigger detected: '{trigger}'")
                     break
+
+        if initial_notice_callback:
+            for notice in notices:
+                initial_notice_callback(notice)
+            notices.clear()
 
         # Process preload with *potentially modified* query text
         preload = run_preload_pipeline(
@@ -403,6 +412,16 @@ class AskyClient:
             effective_disabled_tools = set(self.config.disabled_tools)
             effective_disabled_tools.update(get_all_available_tool_names())
 
+        import threading
+        from asky.config import DB_PATH, RESEARCH_CHROMA_PERSIST_DIRECTORY, MAX_TURNS
+        from asky.core.api_client import get_llm_msg
+
+        effective_max_turns = (
+            session_resolution.max_turns
+            or request.max_turns
+            or self.model_config.get("max_turns", MAX_TURNS)
+        )
+
         final_answer = self.run_messages(
             messages,
             session_manager=session_manager,
@@ -418,13 +437,11 @@ class AskyClient:
             event_callback=event_callback,
             lean=request.lean,
             disabled_tools=effective_disabled_tools,
+            max_turns=effective_max_turns,
         )
 
         if not request.lean:
             # Auto-extraction of facts
-            import threading
-            from asky.config import DB_PATH, RESEARCH_CHROMA_PERSIST_DIRECTORY
-            from asky.core.api_client import get_llm_msg
 
             # 1. Session-scoped extraction (Elephant Mode)
             if final_answer and session_resolution.memory_auto_extract:
@@ -470,18 +487,12 @@ class AskyClient:
 
         query_summary, answer_summary = ("", "")
         if final_answer:
-            if not request.lean:
-                query_summary, answer_summary = generate_summaries(
-                    request.query_text,
-                    final_answer,
-                    usage_tracker=self.summarization_tracker,
-                )
             if request.save_history:
                 if session_manager:
                     session_manager.save_turn(
                         request.query_text,
                         final_answer,
-                        query_summary,
+                        query_summary,  # We now use lazy evaluate context time
                         answer_summary,
                     )
                     if not request.lean and session_manager.check_and_compact():
@@ -513,6 +524,63 @@ class AskyClient:
             session=session_resolution,
             preload=preload,
         )
+
+    def finalize_turn_history(
+        self,
+        request: "AskyTurnRequest",
+        result: "AskyTurnResult",
+        summarization_status_callback: Optional[Callable[[str], None]] = None,
+    ) -> List[str]:
+        """Save interaction/session history and perform compaction if needed.
+
+        This can be called manually by clients who set request.save_history = False
+        to defer saving until after rendering operations.
+        """
+        notices = []
+        if not result.final_answer:
+            return notices
+
+        from asky.storage import save_interaction
+        from asky.core.session_manager import SessionManager
+
+        if result.session_id:
+            session_manager = SessionManager(
+                model_config=self.model_config,
+                usage_tracker=self.usage_tracker,
+                summarization_tracker=self.summarization_tracker,
+            )
+            session_manager.current_session = getattr(
+                result.session,
+                "current_session",
+                session_manager.repo.get_session_by_id(int(result.session_id)),
+            )
+
+            if summarization_status_callback:
+                summarization_status_callback("Saving session message...")
+
+            session_manager.save_turn(
+                request.query_text,
+                result.final_answer,
+                result.query_summary,
+                result.answer_summary,
+            )
+            if not request.lean:
+                if summarization_status_callback:
+                    summarization_status_callback("Checking context limits...")
+                if session_manager.check_and_compact():
+                    notices.append("Session context compacted")
+        else:
+            if summarization_status_callback:
+                summarization_status_callback("Saving interaction...")
+            save_interaction(
+                request.query_text,
+                result.final_answer,
+                self.config.model_alias,
+                result.query_summary,
+                result.answer_summary,
+            )
+
+        return notices
 
     def cleanup_session_research_data(self, session_id: str) -> dict:
         """Delete research findings and vectors for a session.

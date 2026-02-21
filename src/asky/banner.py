@@ -42,7 +42,8 @@ class BannerState:
     status_message: Optional[str] = None
 
     # Stats
-    token_usage: Dict[str, Dict[str, int]] = field(default_factory=dict)
+    main_token_usage: Dict[str, Dict[str, int]] = field(default_factory=dict)
+    sum_token_usage: Dict[str, Dict[str, int]] = field(default_factory=dict)
     tool_usage: Dict[str, int] = field(default_factory=dict)
 
     # Embedding (Research Mode)
@@ -63,8 +64,9 @@ class BannerState:
     shortlist_warnings: int = 0
     shortlist_elapsed_ms: float = 0.0
 
-    def get_token_str(self, alias: str) -> str:
-        usage = self.token_usage.get(alias, {"input": 0, "output": 0})
+    def get_token_str(self, alias: str, is_summary: bool = False) -> str:
+        usage_dict = self.sum_token_usage if is_summary else self.main_token_usage
+        usage = usage_dict.get(alias, {"input": 0, "output": 0})
         total = usage["input"] + usage["output"]
         # Escape brackets for Rich markup
         return f"\\[in: {usage['input']:,}, out: {usage['output']:,}, total: {total:,} tokens]"
@@ -87,8 +89,10 @@ def get_compact_banner(state: BannerState) -> Panel:
     # Line 1: Models & Tokens
     # 🤖 main_model (id) [in: X, out: Y] | 📝 sum_model [in: X, out: Y]
 
-    main_usage = state.token_usage.get(state.model_alias, {"input": 0, "output": 0})
-    sum_usage = state.token_usage.get(state.sum_alias, {"input": 0, "output": 0})
+    main_usage = state.main_token_usage.get(
+        state.model_alias, {"input": 0, "output": 0}
+    )
+    sum_usage = state.sum_token_usage.get(state.sum_alias, {"input": 0, "output": 0})
 
     line1_parts = []
 
@@ -192,7 +196,7 @@ def get_banner(state: BannerState) -> Panel:
     # 2. Summarizer
     grid.add_row(
         "[bold cyan]Summarizer :[/]",
-        f"[white]{state.sum_alias}[/] ([dim]{state.sum_id}[/]) ({state.sum_ctx // 1000}k) {state.get_token_str(state.sum_alias)}",
+        f"[white]{state.sum_alias}[/] ([dim]{state.sum_id}[/]) ({state.sum_ctx // 1000}k) {state.get_token_str(state.sum_alias, is_summary=True)}",
     )
 
     # 3. Tools Status
@@ -237,7 +241,7 @@ def get_banner(state: BannerState) -> Panel:
 
     # 4. Session Info
     session_details_parts = [
-        f"Messages: {state.session_msg_count}",
+        f"Messages: {state.db_count}",
         f"Sessions: {state.total_sessions}",
     ]
 
@@ -246,7 +250,9 @@ def get_banner(state: BannerState) -> Panel:
         # Truncate long session names
         if len(sess_name) > 30:
             sess_name = sess_name[:27] + "..."
-        session_details_parts.append(f'Current: "{sess_name}"')
+        session_details_parts.append(
+            f'Current: "{sess_name}" ({state.session_msg_count} msgs)'
+        )
 
     session_details = " | ".join(session_details_parts)
     # Add session-wide token usage if available in the tracker for the current session alias?

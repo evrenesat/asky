@@ -25,6 +25,7 @@ from asky.banner import get_banner, BannerState
 from asky.logger import setup_logging, generate_timestamped_log_path
 from asky.storage import init_db, get_db_record_count
 from asky.storage.sqlite import SQLiteHistoryRepository
+from asky.cli.completion import parse_session_selector_token
 
 
 class _LazyModuleProxy:
@@ -90,6 +91,13 @@ def parse_args() -> argparse.Namespace:
         "--summarize",
         action="store_true",
         help="Enable summarize mode (summarizes URL content and uses summaries for chat context)",
+    )
+    parser.add_argument(
+        "-t",
+        "--turns",
+        type=int,
+        metavar="MAX_TURNS",
+        help="Override the configured maximum turn count for this session.",
     )
     parser.add_argument(
         "--delete-messages",

@@ -111,6 +111,7 @@ class ToolRegistry:
 ### UsageTracker
 
 Tracks token usage per model alias for banner display.
+Initializes tool usage tracking for all available tools with a default of 0 at the start of the execution.
 
 ### Retry Logic
 

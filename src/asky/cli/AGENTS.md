@@ -55,7 +55,7 @@ Main conversation entry point via `run_chat()`:
 1. **CLI Adaptation**: Parse args into `AskyTurnRequest` + UI callbacks.
 2. **API Orchestration**: `AskyClient.run_turn()` performs context/session/preload/model/persist flow.
 3. **UI Rendering**: `chat.py` maps API notices/events into Rich output + banner updates.
-4. **Interface Side Effects**: optional browser/email/push/report handling.
+4. **Interface Side Effects**: optional browser/email/push/report handling (including dynamic sidebar index updates).
 
 ### Error Handling
 

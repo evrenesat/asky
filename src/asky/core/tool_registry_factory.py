@@ -294,6 +294,7 @@ def create_research_tool_registry(
     disabled_tools: Optional[Set[str]] = None,
     session_id: Optional[str] = None,
     corpus_preloaded: bool = False,
+    summarization_tracker: Optional[UsageTracker] = None,
 ) -> ToolRegistry:
     """Create a ToolRegistry with research mode tools."""
     registry = ToolRegistry()
@@ -334,17 +335,24 @@ def create_research_tool_registry(
     research_bindings = load_research_tool_bindings()
     schemas = research_bindings["schemas"]
 
-    def _execute_with_session_context(
+    def _execute_with_context(
         executor: ToolExecutor,
     ) -> ToolExecutor:
-        if session_id is None:
+        if session_id is None and summarization_tracker is None:
             return executor
 
         def _wrapped(args: Dict[str, Any]) -> Dict[str, Any]:
-            if "session_id" in args:
+            if (
+                session_id is not None
+                and "session_id" in args
+                and summarization_tracker is None
+            ):
                 return executor(args)
             enriched_args = dict(args)
-            enriched_args["session_id"] = session_id
+            if session_id is not None and "session_id" not in enriched_args:
+                enriched_args["session_id"] = session_id
+            if summarization_tracker is not None:
+                enriched_args["summarization_tracker"] = summarization_tracker
             return executor(enriched_args)
 
         return _wrapped
@@ -354,34 +362,40 @@ def create_research_tool_registry(
         if not _is_tool_enabled(tool_name, excluded_tools):
             continue
         if tool_name == "extract_links":
-            registry.register(tool_name, schema, research_bindings["extract_links"])
+            registry.register(
+                tool_name,
+                schema,
+                _execute_with_context(research_bindings["extract_links"]),
+            )
         elif tool_name == "get_link_summaries":
             registry.register(
                 tool_name,
                 schema,
-                research_bindings["get_link_summaries"],
+                _execute_with_context(research_bindings["get_link_summaries"]),
             )
         elif tool_name == "get_relevant_content":
             registry.register(
                 tool_name,
                 schema,
-                research_bindings["get_relevant_content"],
+                _execute_with_context(research_bindings["get_relevant_content"]),
             )
         elif tool_name == "get_full_content":
-            registry.register(tool_name, schema, research_bindings["get_full_content"])
+            registry.register(
+                tool_name,
+                schema,
+                _execute_with_context(research_bindings["get_full_content"]),
+            )
         elif tool_name == "save_finding":
             registry.register(
                 tool_name,
                 schema,
-                _execute_with_session_context(research_bindings["save_finding"]),
+                _execute_with_context(research_bindings["save_finding"]),
             )
         elif tool_name == "query_research_memory":
             registry.register(
                 tool_name,
                 schema,
-                _execute_with_session_context(
-                    research_bindings["query_research_memory"]
-                ),
+                _execute_with_context(research_bindings["query_research_memory"]),
             )
 
     for tool_name, tool_data in active_custom_tools.items():
@@ -418,7 +432,12 @@ def create_research_tool_registry(
 
 def get_all_available_tool_names() -> List[str]:
     """Gather all tool names from default, research, custom, and push endpoints."""
-    names: Set[str] = {"web_search", "get_url_content", "get_url_details", "save_memory"}
+    names: Set[str] = {
+        "web_search",
+        "get_url_content",
+        "get_url_details",
+        "save_memory",
+    }
 
     # Research tools
     from asky.research.tools import RESEARCH_TOOL_SCHEMAS

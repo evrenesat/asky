@@ -73,6 +73,7 @@ class Session:
     created_at: str
     compacted_summary: Optional[str]
     memory_auto_extract: bool = False
+    max_turns: Optional[int] = None
 
 
 class HistoryRepository(ABC):
@@ -135,7 +136,9 @@ class HistoryRepository(ABC):
 
     # Session management methods
     @abstractmethod
-    def create_session(self, model: str, name: Optional[str] = None) -> int:
+    def create_session(
+        self, model: str, name: Optional[str] = None, max_turns: Optional[int] = None
+    ) -> int:
         """Create a new session and return its ID."""
         pass
 
@@ -179,4 +182,9 @@ class HistoryRepository(ABC):
     @abstractmethod
     def set_session_memory_auto_extract(self, session_id: int, enabled: bool) -> None:
         """Enable or disable auto memory extraction for a session."""
+        pass
+
+    @abstractmethod
+    def update_session_max_turns(self, session_id: int, max_turns: int) -> None:
+        """Update the maximum turns explicitly set for a session."""
         pass

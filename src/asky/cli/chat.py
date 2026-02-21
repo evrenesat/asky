@@ -360,6 +360,7 @@ def run_chat(args: argparse.Namespace, query_text: str) -> None:
         session_manager=None,
         messages=[],
         research_mode=research_mode,
+        max_turns=getattr(args, "turns", None),
     )
 
     # Create display callback for live banner mode
@@ -490,8 +491,9 @@ def run_chat(args: argparse.Namespace, query_text: str) -> None:
             preload_shortlist=True,
             additional_source_context=None,
             local_corpus_paths=local_corpus,
-            save_history=True,
+            save_history=False,  # We handle saving manually after rendering
             elephant_mode=elephant_mode,
+            max_turns=getattr(args, "turns", None),
         )
 
         display_cb = display_callback
@@ -506,6 +508,9 @@ def run_chat(args: argparse.Namespace, query_text: str) -> None:
                 else None
             ),
             messages_prepared_callback=lambda msgs: setattr(renderer, "messages", msgs),
+            session_resolved_callback=lambda sm: setattr(
+                renderer, "session_manager", sm
+            ),
             set_shell_session_id_fn=set_shell_session_id,
             clear_shell_session_fn=clear_shell_session,
             shortlist_executor=shortlist_prompt_sources,
@@ -513,6 +518,11 @@ def run_chat(args: argparse.Namespace, query_text: str) -> None:
             shortlist_stats_builder=_build_shortlist_banner_stats,
             local_ingestion_executor=preload_local_research_sources,
             local_ingestion_formatter=format_local_ingestion_context,
+            initial_notice_callback=lambda notice: console.print(
+                f"[bold red]Error:[/] {notice}"
+                if notice.startswith("No sessions")
+                else f"\n[{notice}]"
+            ),
         )
         final_answer = turn_result.final_answer
 
@@ -544,12 +554,9 @@ def run_chat(args: argparse.Namespace, query_text: str) -> None:
         if turn_result.halted:
             return
 
-        if final_answer and turn_request.save_history and not is_lean:
-            console.print("\n[Saving interaction...]")
-
-        # Auto-generate HTML Report
+        # Auto-generate HTML Report FIRST, before saving history (so the CLI responds faster)
         if final_answer and not is_lean:
-            from asky.rendering import save_html_report
+            from asky.rendering import save_html_report, extract_markdown_title
 
             html_source = ""
             if turn_result.session_id:
@@ -561,23 +568,51 @@ def run_chat(args: argparse.Namespace, query_text: str) -> None:
                     for m in msgs:
                         role_title = "User" if m.role == "user" else "Assistant"
                         transcript_parts.append(f"## {role_title}\n\n{m.content}")
+
+                    # Append the current turn that isn't saved yet
+                    transcript_parts.append(f"## User\n\n{effective_query_text}")
+                    transcript_parts.append(f"## Assistant\n\n{final_answer}")
+
                     html_source = "\n\n---\n\n".join(transcript_parts)
                 except Exception as e:
                     console.print(
                         f"[bold red]Error:[/] fetching session messages for HTML report: {e}"
                     )
-                    html_source = (
-                        f"## Query\n{effective_query_text}\n\n## Answer\n{final_answer}"
-                    )
+                    html_source = f"## Query\n{effective_query_text}\n\n## Assistant\n{final_answer}"
             else:
                 # Single turn report
                 html_source = (
-                    f"## Query\n{effective_query_text}\n\n## Answer\n{final_answer}"
+                    f"## Query\n{effective_query_text}\n\n## Assistant\n{final_answer}"
                 )
 
-            report_path = save_html_report(html_source)
+            # Extract title explicitly from the new answer to fix "untitled" archives
+            filename_hint = extract_markdown_title(final_answer)
+
+            report_path = save_html_report(html_source, filename_hint=filename_hint)
             if report_path:
                 console.print(f"Open in browser: [bold cyan]file://{report_path}[/]")
+
+        # NOW save history synchronously with a live status banner
+        if final_answer and not is_lean:
+            try:
+                if use_banner:
+                    renderer.start_live()
+
+                def on_history_status(msg: str) -> None:
+                    if use_banner:
+                        renderer.update_banner(0, status_message=msg)
+
+                extra_notices = asky_client.finalize_turn_history(
+                    turn_request,
+                    turn_result,
+                    summarization_status_callback=on_history_status,
+                )
+                for notice in extra_notices:
+                    console.print(f"\n[{notice}]")
+            finally:
+                if use_banner:
+                    renderer.update_banner(renderer.current_turn, status_message=None)
+                    renderer.stop_live()
 
         # Send Email if requested
         if final_answer and getattr(args, "mail_recipients", None):

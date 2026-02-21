@@ -329,6 +329,7 @@ def _ensure_adapter_cached(
     query: Optional[str] = None,
     max_links: Optional[int] = None,
     require_content: bool = False,
+    usage_tracker: Optional[Any] = None,
 ) -> tuple[Optional[Dict[str, Any]], Optional[str]]:
     """Ensure adapter targets are cached and optionally hydrated with content."""
     cached = cache.get_cached(url)
@@ -355,6 +356,7 @@ def _ensure_adapter_cached(
         title=parsed.get("title", url),
         links=parsed.get("links", []),
         trigger_summarization=bool(parsed.get("content", "")),
+        usage_tracker=usage_tracker,
     )
 
     cached = cache.get_cached(url)
@@ -451,6 +453,7 @@ def execute_extract_links(args: Dict[str, Any]) -> Dict[str, Any]:
 
     query = args.get("query")
     max_links = args.get("max_links", RESEARCH_MAX_LINKS_PER_URL)
+    usage_tracker = args.get("summarization_tracker")
 
     cache = _get_cache()
     results = dict(rejected_results)
@@ -485,6 +488,7 @@ def execute_extract_links(args: Dict[str, Any]) -> Dict[str, Any]:
                 title=parsed["title"],
                 links=parsed["links"],
                 trigger_summarization=bool(parsed["content"]),
+                usage_tracker=usage_tracker,
             )
 
             links = parsed["links"]
@@ -544,11 +548,14 @@ def execute_get_link_summaries(args: Dict[str, Any]) -> Dict[str, Any]:
 
     cache = _get_cache()
     results = dict(rejected_results)
+    usage_tracker = args.get("summarization_tracker")
 
     for url in urls:
         summary_info = cache.get_summary(url)
         if not summary_info and has_source_adapter(url):
-            _, adapter_error = _ensure_adapter_cached(cache, url, require_content=True)
+            _, adapter_error = _ensure_adapter_cached(
+                cache, url, require_content=True, usage_tracker=usage_tracker
+            )
             if adapter_error:
                 results[url] = {"error": f"Adapter fetch failed: {adapter_error}"}
                 continue
@@ -613,6 +620,7 @@ def execute_get_relevant_content(args: Dict[str, Any]) -> Dict[str, Any]:
 
     cache = _get_cache()
     results = dict(rejected_results)
+    usage_tracker = args.get("summarization_tracker")
 
     for url in urls:
         cached, adapter_error = _ensure_adapter_cached(
@@ -621,6 +629,7 @@ def execute_get_relevant_content(args: Dict[str, Any]) -> Dict[str, Any]:
             query=query,
             max_links=max_chunks,
             require_content=True,
+            usage_tracker=usage_tracker,
         )
         if adapter_error and not cached:
             results[url] = {"error": f"Adapter fetch failed: {adapter_error}"}
@@ -726,10 +735,11 @@ def execute_get_full_content(args: Dict[str, Any]) -> Dict[str, Any]:
 
     cache = _get_cache()
     results = dict(rejected_results)
+    usage_tracker = args.get("summarization_tracker")
 
     for url in urls:
         cached, adapter_error = _ensure_adapter_cached(
-            cache=cache, url=url, require_content=True
+            cache=cache, url=url, require_content=True, usage_tracker=usage_tracker
         )
         if adapter_error and not cached:
             results[url] = {"error": f"Adapter fetch failed: {adapter_error}"}

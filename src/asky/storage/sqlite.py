@@ -61,7 +61,8 @@ class SQLiteHistoryRepository(HistoryRepository):
                 created_at TEXT,
                 ended_at TEXT,
                 is_active INTEGER DEFAULT 1,
-                compacted_summary TEXT
+                compacted_summary TEXT,
+                max_turns INTEGER
             )
         """
         )
@@ -71,6 +72,12 @@ class SQLiteHistoryRepository(HistoryRepository):
             c.execute(
                 "ALTER TABLE sessions ADD COLUMN memory_auto_extract INTEGER DEFAULT 0"
             )
+        except sqlite3.OperationalError:
+            pass  # column already exists
+
+        # Schema migration: add max_turns column to existing sessions tables
+        try:
+            c.execute("ALTER TABLE sessions ADD COLUMN max_turns INTEGER")
         except sqlite3.OperationalError:
             pass  # column already exists
 
@@ -282,32 +289,60 @@ class SQLiteHistoryRepository(HistoryRepository):
 
         placeholders = ",".join(["?"] * len(final_ids))
 
-        # We always fetch content now, as summaries are less structured or might be single-message
+        # Fetch content and summary
         c.execute(
-            f"SELECT role, content, summary FROM messages WHERE id IN ({placeholders}) ORDER BY id ASC",
+            f"SELECT id, role, content, summary FROM messages WHERE id IN ({placeholders}) ORDER BY id ASC",
             tuple(final_ids),
         )
         rows = c.fetchall()
-        conn.close()
 
         context_parts = []
+        updates = []  # To hold IDs and their newly generated summaries
+
         for r in rows:
-            role = r[0]
-            content = r[1]
-            summary = r[2]
+            msg_id = r[0]
+            role = r[1]
+            content = r[2]
+            summary = r[3]
 
             if full:
                 context_parts.append(content if content else "...")
             else:
-                # Use summary if available, else truncate content
-                text = (
-                    summary
-                    if summary
-                    else (content[:200] + "..." if len(content) > 200 else content)
-                )
+                text = summary
+                if not text:
+                    # Lazy Summarization: Only if the text is longer than the configured threshold
+                    from asky.config import SUMMARIZATION_LAZY_THRESHOLD_CHARS
+
+                    if content and len(content) > SUMMARIZATION_LAZY_THRESHOLD_CHARS:
+                        from asky.summarization import generate_summaries
+                        from asky.core.api_client import get_llm_msg
+
+                        # Generate the missing summary based on role
+                        if role == "user":
+                            sum_query, _ = generate_summaries(
+                                content, "", usage_tracker=None
+                            )
+                            text = sum_query
+                        else:
+                            _, sum_answer = generate_summaries(
+                                "", content, usage_tracker=None
+                            )
+                            text = sum_answer
+
+                        if text:
+                            updates.append((text, msg_id))
+                    else:
+                        text = content
+
                 prefix = "Query: " if role == "user" else "Answer: "
                 context_parts.append(f"{prefix}{text}")
 
+        # Batch update any newly generated summaries back into the database
+        if updates:
+            c.executemany("UPDATE messages SET summary = ? WHERE id = ?", updates)
+            conn.commit()
+
+        conn.close()
         return "\n\n".join(context_parts)
 
     def delete_messages(
@@ -518,14 +553,15 @@ class SQLiteHistoryRepository(HistoryRepository):
         model: str,
         name: Optional[str] = None,
         memory_auto_extract: bool = False,
+        max_turns: Optional[int] = None,
     ) -> int:
         """Create a new session and return its ID."""
         conn = self._get_conn()
         c = conn.cursor()
         timestamp = datetime.now().isoformat()
         c.execute(
-            "INSERT INTO sessions (name, model, created_at, memory_auto_extract) VALUES (?, ?, ?, ?)",
-            (name, model, timestamp, int(memory_auto_extract)),
+            "INSERT INTO sessions (name, model, created_at, memory_auto_extract, max_turns) VALUES (?, ?, ?, ?, ?)",
+            (name, model, timestamp, int(memory_auto_extract), max_turns),
         )
         session_id = c.lastrowid
         conn.commit()
@@ -549,7 +585,7 @@ class SQLiteHistoryRepository(HistoryRepository):
         conn.row_factory = sqlite3.Row
         c = conn.cursor()
         c.execute(
-            "SELECT id, name, model, created_at, compacted_summary, memory_auto_extract FROM sessions WHERE name = ? ORDER BY created_at DESC",
+            "SELECT id, name, model, created_at, compacted_summary, memory_auto_extract, max_turns FROM sessions WHERE name = ? ORDER BY created_at DESC",
             (name,),
         )
         rows = c.fetchall()
@@ -562,6 +598,7 @@ class SQLiteHistoryRepository(HistoryRepository):
                 created_at=r["created_at"],
                 compacted_summary=r["compacted_summary"],
                 memory_auto_extract=bool(r["memory_auto_extract"]),
+                max_turns=r["max_turns"],
             )
             for r in rows
         ]
@@ -572,7 +609,7 @@ class SQLiteHistoryRepository(HistoryRepository):
         conn.row_factory = sqlite3.Row
         c = conn.cursor()
         c.execute(
-            "SELECT id, name, model, created_at, compacted_summary, memory_auto_extract FROM sessions WHERE id = ?",
+            "SELECT id, name, model, created_at, compacted_summary, memory_auto_extract, max_turns FROM sessions WHERE id = ?",
             (session_id,),
         )
         row = c.fetchone()
@@ -585,6 +622,7 @@ class SQLiteHistoryRepository(HistoryRepository):
                 created_at=row["created_at"],
                 compacted_summary=row["compacted_summary"],
                 memory_auto_extract=bool(row["memory_auto_extract"]),
+                max_turns=row["max_turns"],
             )
         return None
 
@@ -594,7 +632,7 @@ class SQLiteHistoryRepository(HistoryRepository):
         conn.row_factory = sqlite3.Row
         c = conn.cursor()
         c.execute(
-            "SELECT id, name, model, created_at, compacted_summary, memory_auto_extract FROM sessions WHERE name = ? ORDER BY created_at DESC LIMIT 1",
+            "SELECT id, name, model, created_at, compacted_summary, memory_auto_extract, max_turns FROM sessions WHERE name = ? ORDER BY created_at DESC LIMIT 1",
             (name,),
         )
         row = c.fetchone()
@@ -607,6 +645,7 @@ class SQLiteHistoryRepository(HistoryRepository):
                 created_at=row["created_at"],
                 compacted_summary=row["compacted_summary"],
                 memory_auto_extract=bool(row["memory_auto_extract"]),
+                max_turns=row["max_turns"],
             )
         return None
 
@@ -671,7 +710,7 @@ class SQLiteHistoryRepository(HistoryRepository):
         conn.row_factory = sqlite3.Row
         c = conn.cursor()
         c.execute(
-            "SELECT id, name, model, created_at, compacted_summary, memory_auto_extract FROM sessions ORDER BY created_at DESC LIMIT ?",
+            "SELECT id, name, model, created_at, compacted_summary, memory_auto_extract, max_turns FROM sessions ORDER BY created_at DESC LIMIT ?",
             (limit,),
         )
         rows = c.fetchall()
@@ -684,9 +723,21 @@ class SQLiteHistoryRepository(HistoryRepository):
                 created_at=r["created_at"],
                 compacted_summary=r["compacted_summary"],
                 memory_auto_extract=bool(r["memory_auto_extract"]),
+                max_turns=r["max_turns"],
             )
             for r in rows
         ]
+
+    def update_session_max_turns(self, session_id: int, max_turns: int) -> None:
+        """Update the maximum turns explicitly set for a session."""
+        conn = self._get_conn()
+        c = conn.cursor()
+        c.execute(
+            "UPDATE sessions SET max_turns = ? WHERE id = ?",
+            (max_turns, session_id),
+        )
+        conn.commit()
+        conn.close()
 
     def get_first_message_preview(self, session_id: int, max_chars: int = 50) -> str:
         """Get the first user message from a session for display purposes."""

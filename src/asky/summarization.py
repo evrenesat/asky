@@ -12,6 +12,11 @@ from asky.config import (
     MODELS,
     QUERY_SUMMARY_MAX_CHARS,
     SUMMARIZATION_INPUT_LIMIT,
+    SUMMARIZATION_HIERARCHICAL_TRIGGER_CHARS,
+    SUMMARIZATION_HIERARCHICAL_MAX_INPUT_CHARS,
+    SUMMARIZATION_HIERARCHICAL_CHUNK_TARGET_CHARS,
+    SUMMARIZATION_HIERARCHICAL_CHUNK_OVERLAP_CHARS,
+    SUMMARIZATION_HIERARCHICAL_MAP_MAX_OUTPUT_CHARS,
     SUMMARIZATION_MODEL,
     SUMMARIZE_ANSWER_PROMPT_TEMPLATE,
     SUMMARIZE_QUERY_PROMPT_TEMPLATE,
@@ -21,24 +26,9 @@ from asky.html import strip_think_tags
 
 logger = logging.getLogger(__name__)
 
-# Long inputs are summarized hierarchically to improve small-model quality.
-HIERARCHICAL_TRIGGER_CHARS = (
-    3200  # Minimum content length to trigger hierarchical strategy
-)
-HIERARCHICAL_MAX_INPUT_CHARS = (
-    32000  # Hard cap on input length; content beyond this is truncated
-)
-HIERARCHICAL_CHUNK_TARGET_CHARS = (
-    2800  # Target size for semantic chunks in splitting phase
-)
-HIERARCHICAL_CHUNK_OVERLAP_CHARS = (
-    220  # Overlap between chunks to preserve context at boundaries
-)
+# Constants that are not user configurable
 HIERARCHICAL_MAX_CHUNKS = (
     12  # Maximum number of map-stage calls (merges groups if exceeded)
-)
-HIERARCHICAL_MAP_MAX_OUTPUT_CHARS = (
-    750  # Max chars for initial chunk summaries (bullets focus)
 )
 HIERARCHICAL_MIN_MAP_OUTPUT_CHARS = 160  # Keep each map summary informative.
 REDUCE_SECTION_OVERHEAD_CHARS = 20  # "Section N:\n" + separators in reduce input.
@@ -58,6 +48,7 @@ Extract concise bullet points and preserve:
 - Causal or comparative statements
 
 Output only bullet points."""
+
 
 def _summarize_single_pass(
     content: str,
@@ -136,8 +127,8 @@ def _summarize_content(
     started = time.perf_counter()
 
     try:
-        content_for_summary = content[:HIERARCHICAL_MAX_INPUT_CHARS]
-        if len(content_for_summary) < HIERARCHICAL_TRIGGER_CHARS:
+        content_for_summary = content[:SUMMARIZATION_HIERARCHICAL_MAX_INPUT_CHARS]
+        if len(content_for_summary) < SUMMARIZATION_HIERARCHICAL_TRIGGER_CHARS:
             return _summarize_single_pass(
                 content=content_for_summary,
                 prompt_template=prompt_template,
@@ -154,8 +145,8 @@ def _summarize_content(
 
         chunks = _semantic_chunk_text(
             content_for_summary,
-            target_chars=HIERARCHICAL_CHUNK_TARGET_CHARS,
-            overlap_chars=HIERARCHICAL_CHUNK_OVERLAP_CHARS,
+            target_chars=SUMMARIZATION_HIERARCHICAL_CHUNK_TARGET_CHARS,
+            overlap_chars=SUMMARIZATION_HIERARCHICAL_CHUNK_OVERLAP_CHARS,
             max_chunks=HIERARCHICAL_MAX_CHUNKS,
         )
         if len(chunks) <= 1:
@@ -177,7 +168,7 @@ def _summarize_content(
             "summarization hierarchical start input_len=%d chunks=%d target_chunk=%d",
             len(content_for_summary),
             len(chunks),
-            HIERARCHICAL_CHUNK_TARGET_CHARS,
+            SUMMARIZATION_HIERARCHICAL_CHUNK_TARGET_CHARS,
         )
 
         map_summaries: List[str] = []
@@ -306,12 +297,14 @@ def _truncate_text(text: str, max_output_chars: int) -> str:
 def _compute_map_output_limit(chunk_count: int) -> int:
     """Compute per-chunk output cap so all map summaries fit one final reduce call."""
     if chunk_count <= 0:
-        return HIERARCHICAL_MAP_MAX_OUTPUT_CHARS
+        return SUMMARIZATION_HIERARCHICAL_MAP_MAX_OUTPUT_CHARS
     available_chars = SUMMARIZATION_INPUT_LIMIT - (
         chunk_count * REDUCE_SECTION_OVERHEAD_CHARS
     )
-    per_chunk_budget = max(HIERARCHICAL_MIN_MAP_OUTPUT_CHARS, available_chars // chunk_count)
-    return min(HIERARCHICAL_MAP_MAX_OUTPUT_CHARS, per_chunk_budget)
+    per_chunk_budget = max(
+        HIERARCHICAL_MIN_MAP_OUTPUT_CHARS, available_chars // chunk_count
+    )
+    return min(SUMMARIZATION_HIERARCHICAL_MAP_MAX_OUTPUT_CHARS, per_chunk_budget)
 
 
 def _build_reduce_input(map_summaries: List[str]) -> str:
