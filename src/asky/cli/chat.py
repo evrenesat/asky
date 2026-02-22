@@ -599,8 +599,14 @@ def run_chat(args: argparse.Namespace, query_text: str) -> None:
             # Extract title explicitly from the new answer to fix "untitled" archives
             filename_hint = extract_markdown_title(final_answer)
 
+            session_name = ""
+            if turn_result.session_id and renderer.session_manager:
+                session = renderer.session_manager.current_session
+                if session:
+                    session_name = session.name or ""
+
             report_path, sidebar_url = save_html_report(
-                html_source, filename_hint=filename_hint
+                html_source, filename_hint=filename_hint, session_name=session_name
             )
             if report_path:
                 console.print(f"Open in browser: [bold cyan]file://{report_path}[/]")

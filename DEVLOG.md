@@ -4,6 +4,74 @@ For older logs, see [DEVLOG_ARCHIVE.md](DEVLOG_ARCHIVE.md).
 
 ## 2026-02-22
 
+### API Library Test Hardening: Remove `mini` Alias Usage + Assert Mocked Turn Path
+
+**Summary**: Hardened `tests/test_api_library.py` so the suspected tests cannot accidentally be interpreted as `mini` model usage and now explicitly assert mocked execution for `run_turn`.
+
+- **Changed**:
+  - `tests/test_api_library.py`:
+    - Updated retrieval-guidance `build_messages` tests to use `model_alias="gf"` instead of `model_alias="mini"`.
+    - Updated two `run_turn` tests to return `"Final"` from mocked `AskyClient.run_messages` and assert `run_messages` was called, guaranteeing the mocked path was used.
+    - Added an assertion on returned `final_answer` in the explicit-path hint test to verify mocked return propagation.
+- **Why**:
+  - Remove residual `mini` alias references from these unit tests to eliminate confusion about local model activity attribution.
+  - Make mock usage explicit so these tests fail immediately if they ever stop using the mocked `run_messages` path.
+- **Gotchas**:
+  - These tests are message-construction/orchestration checks; they do not exercise real LLM calls by design.
+
+### Configurable Built-In Prompt Text Overrides (Research Guidance + Tool Descriptions)
+
+**Summary**: Made built-in research guidance and built-in tool prompt text user-overridable via config, and added commented template examples so users can tune behavior without forking.
+
+- **Changed**:
+  - `src/asky/config/__init__.py`: Added `RESEARCH_RETRIEVAL_ONLY_GUIDANCE_PROMPT` and `TOOL_PROMPT_OVERRIDES` constants sourced from `[prompts]`.
+  - `src/asky/core/prompts.py`: `append_research_guidance()` now reads retrieval-only guidance from config instead of hardcoded text.
+  - `src/asky/core/tool_registry_factory.py`: Added `_apply_tool_prompt_overrides(...)` and applied it to built-in default/research tool schemas (`description` and `system_prompt_guideline`), including `save_memory`.
+  - `src/asky/data/config/prompts.toml`: Added default `research_retrieval_only_guidance` prompt key.
+  - `src/asky/data/config/user.toml`: Added commented examples for prompt and per-tool override knobs (`prompts.tool_overrides.<tool_name>...`).
+  - `docs/configuration.md`: Added section documenting prompt/tool text override keys.
+  - `ARCHITECTURE.md`: Updated standard query flow to note config-driven built-in tool prompt override application.
+  - `tests/test_api_library.py`: Added coverage for retrieval-guidance override in system prompt assembly.
+  - `tests/test_tools.py`: Added coverage for default and research registry tool prompt override behavior.
+- **Why**:
+  - Users should be able to tune operational prompt behavior (including built-in tool guidance text) from config files, rather than editing source.
+  - This enables model-specific prompt tuning, especially for smaller models that need tighter procedural guidance.
+- **Gotchas**:
+  - These overrides change prompt/tool text only; they do not alter tool execution semantics or availability rules.
+  - Preload shortlist can still perform web retrieval unless separately disabled by existing shortlist settings.
+
+### Standard vs Research Documentation Clarification + Research-Memory Prompt Tightening
+
+**Summary**: Added a direct, non-marketing comparison of standard mode vs research mode in docs, and tightened research prompt guidance so models are explicitly steered to use `save_finding`/`query_research_memory` more reliably.
+
+- **Changed**:
+  - `docs/research_mode.md`: Added a side-by-side mode comparison table, explicit "when research mode helps vs hurts" guidance, documented session-scoped research-memory behavior vs `save_memory`, and added a candid section on current workflow gaps (including weaker-model underuse of research memory tools).
+  - `src/asky/core/prompts.py`: Expanded retrieval-only guidance to explicitly distinguish `save_finding` vs `save_memory`, and added a pre-final-answer `query_research_memory` loop.
+  - `src/asky/data/config/prompts.toml`: Updated default research system prompt workflow with a dedicated "VERIFY MEMORY LOOP" step before synthesis and clarified memory tool intent boundaries.
+- **Why**:
+  - Users needed a realistic explanation of the two modes and their tradeoffs, especially around latency/quality balance and model-dependent behavior.
+  - Smaller models can skip research-memory tool calls unless the workflow instructions are explicit and operational.
+- **Gotchas**:
+  - Prompt changes increase guidance pressure but do not guarantee tool usage; actual behavior remains model-dependent.
+  - This update changes default prompt behavior only; no retrieval/storage architecture was altered.
+
+### Sidebar Index UX Improvements: Sorting and Smart Grouping
+
+**Summary**: Upgraded the `sidebar_index.html` navigation app with client-side sorting (Date/A-Z), smart grouping (Session/Prefix), and JSON-based index storage.
+
+- **Changed**:
+  - `src/asky/rendering.py`:
+    - Reworked `sidebar_index.html` generation to use a JSON-in-HTML storage model (`ENTRIES` JSON array).
+    - Implemented client-side sorting (Date, Alphabetical) and smart grouping (Session Name or 3-word Slug Prefix) in the sidebar app.
+    - Updated `save_html_report` and `_save_to_archive` to accept and persist `session_name`.
+  - `src/asky/cli/chat.py`: Updated `save_html_report` call site to pass the active session name for improved metadata.
+  - `tests/test_html_report.py`: Enhanced unit tests to cover JSON storage, prefix logic, and grouping.
+- **Why**:
+  - The previous sidebar was a static list that grew uncontrollably. Users needed a way to organize reports by session or topic and sort them for easier retrieval.
+- **Gotchas**:
+  - The grouping logic uses exact prefix/session matching; it does not perform fuzzy clustering.
+  - The index file is fully rewritten on each save to maintain the integrity of the JSON and JS app logic.
+
 ### Final-Answer-First Banner Fix + Research Summary Drain
 
 **Summary**: Restored final-answer-first CLI behavior and fixed the stale final banner snapshot by draining pending `ResearchCache` background summaries before the last live-banner stop.

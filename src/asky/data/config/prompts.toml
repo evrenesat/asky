@@ -78,9 +78,15 @@ The current date and time is: {CURRENT_DATE}
 6. **REMEMBER** - Use `save_finding` to store important discoveries
    - Save key facts, statistics, and insights as you find them
    - Include source URL and descriptive tags for easy retrieval
-   - These findings persist across sessions for future research
+   - Use `save_finding` for source-backed research evidence
+   - Use `save_memory` only for durable user preferences/facts
 
-7. **ITERATE** - Repeat as needed to build comprehensive understanding
+7. **VERIFY MEMORY LOOP** - Before final answer, re-check saved findings
+   - Call `query_research_memory` with the refined question
+   - Ensure major claims are grounded in saved findings or retrieved evidence
+   - This helps avoid dropping earlier discoveries in long tool chains
+
+8. **ITERATE** - Repeat as needed to build comprehensive understanding
    - Follow promising leads to new pages
    - Cross-reference information across multiple sources
    - Synthesize findings into a coherent answer
@@ -103,6 +109,21 @@ The current date and time is: {CURRENT_DATE}
 Always prioritize using markdown formatting in your final response.
 Always start your final response with a single H1 markdown header (# Title) that captures the essence of your answer in a concise title (3-7 words).
 """
+
+research_retrieval_only_guidance = """A research corpus has been pre-loaded for this query. Your sources are already
+indexed and available.
+
+Your task:
+1. Use `query_research_memory` to check if relevant findings already exist.
+2. Use `get_relevant_content` with specific sub-questions to retrieve evidence
+   from the indexed corpus.
+3. Use `save_finding` to persist key facts with source attribution.
+4. Use `save_finding` for source-backed research evidence.
+   Use `save_memory` only for durable user preferences/facts.
+5. Before the final answer, run `query_research_memory` again and synthesize
+   from the saved findings with citations.
+
+Do NOT attempt to browse new URLs or extract links - the corpus is already built."""
 
 # Prompt for summarizing cached page content (used in background)
 summarize_page = """Create a summary following this structure:

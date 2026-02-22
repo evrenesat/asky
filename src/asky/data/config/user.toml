@@ -20,9 +20,6 @@ First visit the news source, then read the comments to understand what people th
 Then create a daily news report enriched with people's reactions.
 """
 
-ttttt = """
-
-"""
 
 dd = """
 You are in DEEP DIVE mode. Follow these instructions:
@@ -34,7 +31,6 @@ You are in DEEP DIVE mode. Follow these instructions:
 5. Request all the links you need in one get_url_content call, no need to make seperate calls 
 6. Base your answer strictly on the retrieved content, not internal knowledge.
 """
-foo="file:///tmp/foo.txt"
 
 [tool.list_dir]
 command = "ls {flags} {path}"
@@ -69,3 +65,33 @@ description = "The regex pattern to search for."
 type = "string"
 description = "The directory path to search in."
 default = "."
+
+# -----------------------------------------------------------------------------
+# Optional prompt/tool override knobs (examples, commented out by default).
+# Copy these into your own ~/.config/asky/*.toml and adjust as needed.
+# -----------------------------------------------------------------------------
+#
+# [prompts]
+# research_retrieval_only_guidance = """A research corpus has already been preloaded.
+# Prioritize query_research_memory + get_relevant_content.
+# Do not discover new URLs unless the user explicitly asks."""
+#
+# [prompts.tool_overrides.web_search]
+# description = "Search for candidate sources when local corpus is insufficient."
+# system_prompt_guideline = "Use only when retrieval from preloaded sources is insufficient."
+#
+# [prompts.tool_overrides.get_url_content]
+# description = "Fetch one or more HTTP(S) pages and extract main content."
+# system_prompt_guideline = "Prefer batching multiple URLs in one call."
+#
+# [prompts.tool_overrides.get_relevant_content]
+# description = "Retrieve top relevant chunks from cached/indexed pages."
+# system_prompt_guideline = "Use with narrow sub-queries before any full-content request."
+#
+# [prompts.tool_overrides.save_finding]
+# description = "Save source-backed research evidence for later recall."
+# system_prompt_guideline = "Persist validated claims with source_url and tags."
+#
+# [prompts.tool_overrides.save_memory]
+# description = "Save durable user preferences/facts (not research evidence)."
+# system_prompt_guideline = "Only call for long-term user profile facts."

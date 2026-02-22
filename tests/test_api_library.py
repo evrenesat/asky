@@ -266,10 +266,11 @@ def test_asky_client_run_turn_propagates_local_corpus_paths(
     request = AskyTurnRequest(query_text="Q", local_corpus_paths=["/a/b"])
 
     # Mock run_messages to avoid actual LLM call/hang
-    mock_run.return_value = ([], [])
+    mock_run.return_value = "Final"
 
     client.run_turn(request)
 
+    mock_run.assert_called_once()
     mock_preload.assert_called_once()
     call_kwargs = mock_preload.call_args[1]
     assert call_kwargs["local_corpus_paths"] == ["/a/b"]
@@ -287,7 +288,7 @@ def test_asky_client_run_turn_enables_hint_with_only_explicit_paths(
     # Setup preload to return NO discovered targets
     mock_preload.return_value = PreloadResolution(local_payload={"targets": []})
 
-    mock_run.return_value = ([], [])
+    mock_run.return_value = "Final"
 
     client = AskyClient(AskyConfig(model_alias="gf", research_mode=True))
     # Provide explicit paths but query has no targets
@@ -296,6 +297,8 @@ def test_asky_client_run_turn_enables_hint_with_only_explicit_paths(
     )
 
     result = client.run_turn(request)
+    assert result.final_answer == "Final"
+    mock_run.assert_called_once()
 
     # Verify hint was injected despite empty local_payload targets
     # (The hint is usually "Local Knowledge Base Guidance" in system prompt or similar)
@@ -314,7 +317,7 @@ def test_asky_client_run_turn_enables_hint_with_only_explicit_paths(
 
 
 def test_asky_client_build_messages_adds_retrieval_only_guidance():
-    config = AskyConfig(model_alias="mini", research_mode=True)
+    config = AskyConfig(model_alias="gf", research_mode=True)
     client = AskyClient(config)
 
     messages = client.build_messages(
@@ -331,7 +334,7 @@ def test_asky_client_build_messages_adds_retrieval_only_guidance():
 
 
 def test_asky_client_build_messages_no_retrieval_guidance_when_not_preloaded():
-    config = AskyConfig(model_alias="mini", research_mode=True)
+    config = AskyConfig(model_alias="gf", research_mode=True)
     client = AskyClient(config)
 
     messages = client.build_messages(
@@ -342,6 +345,26 @@ def test_asky_client_build_messages_no_retrieval_guidance_when_not_preloaded():
     )
 
     system_msg = next(m["content"] for m in messages if m["role"] == "system")
+    assert "A research corpus has been pre-loaded" not in system_msg
+
+
+def test_asky_client_build_messages_uses_configured_retrieval_guidance_override():
+    client = AskyClient(AskyConfig(model_alias="gf", research_mode=True))
+
+    with patch(
+        "asky.config.RESEARCH_RETRIEVAL_ONLY_GUIDANCE_PROMPT",
+        "CUSTOM RETRIEVAL GUIDANCE",
+    ):
+        messages = client.build_messages(
+            query_text="foo",
+            preload=PreloadResolution(
+                local_payload={"stats": {"indexed_chunks": 1}},
+                combined_context="preloaded context",
+            ),
+        )
+
+    system_msg = next(m["content"] for m in messages if m["role"] == "system")
+    assert "CUSTOM RETRIEVAL GUIDANCE" in system_msg
     assert "A research corpus has been pre-loaded" not in system_msg
 
 

@@ -113,6 +113,28 @@ SUMMARIZE_SESSION_PROMPT = _prompts.get(
     "Summarize this conversation history into a concise context summary.",
 )
 GRACEFUL_EXIT_SYSTEM = _prompts.get("graceful_exit", "")
+RESEARCH_RETRIEVAL_ONLY_GUIDANCE_PROMPT = _prompts.get(
+    "research_retrieval_only_guidance",
+    (
+        "A research corpus has been pre-loaded for this query. Your sources are already\n"
+        "indexed and available.\n\n"
+        "Your task:\n"
+        "1. Use `query_research_memory` to check if relevant findings already exist.\n"
+        "2. Use `get_relevant_content` with specific sub-questions to retrieve evidence\n"
+        "   from the indexed corpus.\n"
+        "3. Use `save_finding` to persist key facts with source attribution.\n"
+        "4. Use `save_finding` for source-backed research evidence.\n"
+        "   Use `save_memory` only for durable user preferences/facts.\n"
+        "5. Before the final answer, run `query_research_memory` again and synthesize\n"
+        "   from the saved findings with citations.\n\n"
+        "Do NOT attempt to browse new URLs or extract links - the corpus is already built."
+    ),
+)
+TOOL_PROMPT_OVERRIDES = (
+    _prompts.get("tool_overrides", {})
+    if isinstance(_prompts.get("tool_overrides", {}), dict)
+    else {}
+)
 
 # Session
 _session = _CONFIG.get("session", {})

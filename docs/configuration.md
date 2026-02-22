@@ -145,3 +145,27 @@ source ~/.bashrc
 asky --completion-script zsh >> ~/.zshrc
 source ~/.zshrc
 ```
+
+## 10. Prompt and Tool Text Overrides
+
+You can override built-in prompt text without forking the project.
+
+- Global/research prompts live under `[prompts]` in `prompts.toml`.
+- Retrieval-only research guidance is configurable via:
+  - `prompts.research_retrieval_only_guidance`
+- Built-in tool descriptions/guidelines can be overridden via:
+  - `prompts.tool_overrides.<tool_name>.description`
+  - `prompts.tool_overrides.<tool_name>.system_prompt_guideline`
+
+Example:
+
+```toml
+[prompts]
+research_retrieval_only_guidance = """Use preloaded corpus first. Query memory, then retrieve evidence."""
+
+[prompts.tool_overrides.web_search]
+description = "Search the web only when local/retrieval corpus is insufficient."
+system_prompt_guideline = "Avoid web search unless preloaded evidence is insufficient."
+```
+
+The default `user.toml` includes commented examples for these knobs so new installs can discover and copy them quickly.

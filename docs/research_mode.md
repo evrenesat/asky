@@ -1,6 +1,6 @@
 # Deep Research Mode
 
-**asky** features a powerful Deep Research Mode (`-r`) that breaks away from simple question-and-answer interactions. When enabled, asky utilizes a specialized prompt and a dynamic toolset to conduct multi-step, RAG-backed investigations. It can formulate its own sub-queries, search the web, ingest local directories, read contents, and summarize findings before generating a final answer.
+Deep Research Mode (`-r`) is asky's workflow for multi-step retrieval-heavy questions. It is not "always better" than normal mode. It adds more preprocessing, more tools, and more latency in exchange for stronger source-grounded answers when the question needs it.
 
 ## Enabling Research Mode
 
@@ -12,11 +12,41 @@ asky -r "Compare the latest iPhone vs Samsung flagship specs and reviews"
 
 _Note: Passing local corpus paths with `-lc` implicitly enables research mode._
 
+## Standard Mode vs Research Mode
+
+Both modes use the same `AskyClient.run_turn()` orchestration path, but they diverge in prompting, tool exposure, and session behavior.
+
+| Area | Standard mode (default) | Research mode (`-r`) |
+| --- | --- | --- |
+| System prompt | General assistant prompt | Research workflow prompt with retrieval/memory guidance |
+| Toolset focus | Generic discovery + fetch (`web_search`, `get_url_content`, `get_url_details`) | Research RAG loop (`extract_links`, `get_relevant_content`, `save_finding`, `query_research_memory`, etc.) |
+| Session behavior | Session optional | Session auto-created if missing (for research-memory isolation) |
+| Memory behavior | User memory (`save_memory`) for preferences/facts about user | Session-scoped research findings (`save_finding`) + semantic recall (`query_research_memory`) |
+| Pre-LLM preload | Optional shortlist can still run | Same shortlist pipeline plus optional local corpus ingestion and retrieval-only guidance |
+| Typical output shape | Faster, shorter direct answers; fewer intermediate citations | Slower, more evidence-heavy, often citation-rich synthesis |
+| Failure mode on weaker models | May under-search and answer from priors | May underuse `save_finding` / `query_research_memory` unless prompted tightly |
+
+## Is Research Mode Actually Better?
+
+Short answer: sometimes.
+
+- Better fit:
+  - Multi-source comparisons.
+  - Long documents where targeted chunk retrieval beats full-page reads.
+  - Local corpus + web cross-checking.
+  - Work that benefits from session-scoped research memory across follow-up turns.
+- Worse fit:
+  - Simple factual questions answerable from one source.
+  - Cases where tool overhead dominates answer time.
+  - Small models that struggle with long, procedural prompts and skip memory-saving calls.
+
+If you are evaluating value, run the same dataset in both modes using the eval harness (`docs/research_eval.md`) and compare pass rate, tool mix, and latency. Don't assume the mode is helping without this A/B check.
+
 ## The Research Workflow
 
 Research mode fundamentally changes how asky approaches a query:
 
-1. **Query Expansion:** If your query is complex, asky decompositions it into smaller, more focused sub-queries (e.g., separating "iPhone specs" from "Samsung reviews").
+1. **Query Expansion:** If your query is complex, asky decomposes it into smaller, more focused sub-queries (e.g., separating "iPhone specs" from "Samsung reviews").
 2. **Source Discovery:**
    - **Local Corpus:** If you provided local documents (via `-lc`), it indexes them.
    - **Web Search:** asky searches the web for the sub-queries.
@@ -24,6 +54,8 @@ Research mode fundamentally changes how asky approaches a query:
 4. **Content Ingestion & RAG:** The top-ranked pages are fetched, stripped of HTML noise, and chunked into a local vector database.
 5. **Investigation Loop:** The agent uses an iterative loop, utilizing its toolset to search within the vector database (`get_relevant_content`), extract specific evidence, or even discover more links from the pages it read (`extract_links`).
 6. **Synthesis:** Once it has gathered enough evidence, it synthesizes a comprehensive final answer.
+
+In retrieval-only runs (when corpus is already preloaded), asky hides acquisition tools so the model focuses on `query_research_memory` + `get_relevant_content` instead of re-discovering sources.
 
 ### Evidence Extraction
 
@@ -84,6 +116,7 @@ Research mode automatically creates a session for each run. Any findings the age
 - **Isolation:** Research findings are scoped strictly to the session they were created in.
 - **Persistence:** Findings remain available until the session research data is explicitly deleted.
 - **Usage:** This allows you to build knowledge incrementally. You can run one research query, let it save findings, and then ask follow-up questions in the same session, relying on the already-established research memory.
+- **Not global by default:** Research findings are session-scoped; this is intentionally different from user memory (`save_memory`), which is about persistent user preferences/facts.
 
 ```bash
 # Start a research session (auto-creates a session if none specified)
@@ -105,6 +138,28 @@ In standard mode, asky uses generic tools. In research mode, the toolset is swap
 - `query_research_memory`: Searches over previously saved findings using natural language.
 
 _Note: To optimize token usage, if asky has already ingested a local corpus or shortlisted web links for a query, it dynamically hides "acquisition" tools (like web search) from the model to force it to focus on reading the data already collected._
+
+## Current Gaps and Inefficiencies
+
+- Prompt/tool mismatch can happen:
+  - The base research prompt describes full discovery workflow, while some runs expose retrieval-only tools after preload. This can confuse weaker models.
+- Research-memory calls are model-sensitive:
+  - On smaller models, `save_finding` and `query_research_memory` may be skipped unless instructions are explicit and short.
+- Research vs normal comparison is easy to assume and hard to prove:
+  - Without dual-mode eval runs, it is difficult to know if complexity improved quality or only increased latency.
+
+## Prompt Tuning Notes (For Smaller Models)
+
+If research-memory usage is low in your runs, tune `src/asky/data/config/prompts.toml`:
+
+- Keep memory instructions concrete:
+  - "Use `save_finding` for source-backed claims."
+  - "Before final answer, run `query_research_memory` and synthesize from saved findings."
+- Clarify tool intent:
+  - `save_finding` is research evidence memory.
+  - `save_memory` is user-profile memory.
+- Keep steps short and procedural:
+  - Smaller models tend to follow short operational checklists better than long narrative prompts.
 
 ## Architecture Overview
 

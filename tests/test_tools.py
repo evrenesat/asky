@@ -247,6 +247,37 @@ def test_default_registry_respects_disabled_tools_and_custom_guidelines():
     )
 
 
+def test_default_registry_applies_config_tool_prompt_overrides():
+    from asky.core.tool_registry_factory import create_tool_registry
+
+    with patch(
+        "asky.core.tool_registry_factory.TOOL_PROMPT_OVERRIDES",
+        {
+            "web_search": {
+                "description": "Overridden web search description.",
+                "system_prompt_guideline": "Overridden web search guideline.",
+            }
+        },
+    ):
+        registry = create_tool_registry(
+            execute_web_search_fn=lambda _args: {},
+            execute_get_url_content_fn=lambda _args: {},
+            execute_get_url_details_fn=lambda _args: {},
+            execute_custom_tool_fn=lambda _name, _args: {},
+            custom_tools={},
+            disabled_tools={"get_url_content", "get_url_details", "save_memory"},
+        )
+
+    schemas = registry.get_schemas()
+    web_search_schema = next(
+        item["function"] for item in schemas if item["function"]["name"] == "web_search"
+    )
+    assert web_search_schema["description"] == "Overridden web search description."
+    assert registry.get_system_prompt_guidelines() == [
+        "`web_search`: Overridden web search guideline."
+    ]
+
+
 def test_research_registry_injects_session_id_for_memory_tools():
     from asky.core.tool_registry_factory import create_research_tool_registry
 
@@ -309,6 +340,53 @@ def test_research_registry_injects_session_id_for_memory_tools():
 
     assert save_calls[-1]["session_id"] == "session-123"
     assert query_calls[-1]["session_id"] == "explicit"
+
+
+def test_research_registry_applies_config_tool_prompt_overrides():
+    from asky.core.tool_registry_factory import create_research_tool_registry
+
+    bindings = {
+        "schemas": [
+            {
+                "name": "save_finding",
+                "description": "Save finding default",
+                "system_prompt_guideline": "Save finding default guideline",
+                "parameters": {"type": "object", "properties": {}},
+            }
+        ],
+        "extract_links": lambda _args: {},
+        "get_link_summaries": lambda _args: {},
+        "get_relevant_content": lambda _args: {},
+        "get_full_content": lambda _args: {},
+        "save_finding": lambda _args: {"ok": True},
+        "query_research_memory": lambda _args: {"ok": True},
+    }
+
+    with patch(
+        "asky.core.tool_registry_factory.TOOL_PROMPT_OVERRIDES",
+        {
+            "save_finding": {
+                "description": "Overridden save_finding description.",
+                "system_prompt_guideline": "Overridden save_finding guideline.",
+            }
+        },
+    ):
+        registry = create_research_tool_registry(
+            load_research_tool_bindings_fn=lambda: bindings,
+            execute_web_search_fn=lambda _args: {},
+            execute_custom_tool_fn=lambda _name, _args: {},
+            custom_tools={},
+            disabled_tools={"web_search", "save_memory"},
+        )
+
+    schemas = registry.get_schemas()
+    save_schema = next(
+        item["function"] for item in schemas if item["function"]["name"] == "save_finding"
+    )
+    assert save_schema["description"] == "Overridden save_finding description."
+    assert registry.get_system_prompt_guidelines() == [
+        "`save_finding`: Overridden save_finding guideline."
+    ]
 
 
 def test_tool_name_sets_cover_all_schemas():

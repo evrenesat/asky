@@ -162,6 +162,8 @@ build_messages() (inside AskyClient)
     ↓
 create ToolRegistry (mode-aware + runtime tool exclusions)
     ↓
+apply optional config-driven prompt text overrides for built-in tools
+    ↓
 append enabled tool guidelines to system prompt
     ↓
 ConversationEngine.run()

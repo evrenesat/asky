@@ -46,11 +46,17 @@ def test_save_html_report():
         ):
             # Mock datetime.now()
             mock_now = MagicMock()
-            mock_now.strftime.return_value = "20230101_120000"
+            mock_now.strftime.side_effect = [
+                "20230101_120000",  # for filename
+                "2023-01-01 12:00",  # for timestamp_str
+            ]
+            mock_now.isoformat.return_value = "2023-01-01T12:00:00"
             mock_datetime.now.return_value = mock_now
 
             # Call
-            path_str, sidebar_url = save_html_report(content, "Test Slug Input")
+            path_str, sidebar_url = save_html_report(
+                content, "Test Slug Input", session_name="Test Session"
+            )
 
             # Verify
             expected_filename = "test_slug_20230101_120000.html"
@@ -59,6 +65,15 @@ def test_save_html_report():
             assert path_str == str(expected_path)
             assert expected_path.exists()
             assert expected_path.read_text() == "<htmled># Test Content</htmled>"
+
+            # Verify sidebar index
+            index_path = archive_dir / "sidebar_index.html"
+            assert index_path.exists()
+            index_content = index_path.read_text()
+            assert "test_slug_20230101_120000.html" in index_content
+            assert "Test Slug Input" in index_content
+            assert '"session_name": "Test Session"' in index_content
+            assert '"prefix": "test slug"' in index_content
 
 
 def test_save_html_report_no_hint():
@@ -84,7 +99,8 @@ def test_save_html_report_no_hint():
             patch("asky.rendering.datetime") as mock_datetime,
         ):
             mock_now = MagicMock()
-            mock_now.strftime.return_value = "20230101_120000"
+            mock_now.strftime.side_effect = ["20230101_120000", "2023-01-01 12:00"]
+            mock_now.isoformat.return_value = "2023-01-01T12:00:00"
             mock_datetime.now.return_value = mock_now
 
             path_str, sidebar_url = save_html_report(content)
@@ -93,37 +109,53 @@ def test_save_html_report_no_hint():
             expected_filename = "test_content_20230101_120000.html"
             assert Path(path_str).name == expected_filename
 
+            # Verify prefix in sidebar
+            index_path = archive_dir / "sidebar_index.html"
+            index_content = index_path.read_text()
+            assert '"prefix": "test content"' in index_content
 
-def test_save_html_report_no_hint_no_h1():
-    """Test saving without a hint and no H1 falls back to untitled."""
-    # Content without H1 header - should use "untitled"
-    content = "Some plain text without a header"
+
+def test_sidebar_groups_and_sorting():
+    """Test that updating the sidebar accumulates entries correctly."""
+    from asky.rendering import _update_sidebar_index
+    import json
 
     with tempfile.TemporaryDirectory() as temp_dir:
         archive_dir = Path(temp_dir)
+        index_path = archive_dir / "sidebar_index.html"
 
-        with (
-            patch("asky.rendering.ARCHIVE_DIR", archive_dir),
-            patch(
-                "asky.rendering._create_html_content",
-                return_value="<htmled>Some plain text</htmled>",
-            ),
-            patch(
-                "asky.rendering.generate_slug",
-                side_effect=lambda t, max_words: (
-                    "untitled" if t == "untitled" else "slug"
-                ),
-            ),
-            patch("asky.rendering.datetime") as mock_datetime,
-        ):
-            mock_now = MagicMock()
-            mock_now.strftime.return_value = "20230101_120000"
-            mock_datetime.now.return_value = mock_now
+        with patch("asky.rendering.ARCHIVE_DIR", archive_dir):
+            # First entry
+            _update_sidebar_index(
+                "slug_one_20230101_120000.html", "Title One", "Session A"
+            )
+            # Second entry (same session)
+            _update_sidebar_index(
+                "slug_two_20230101_130000.html", "Title Two", "Session A"
+            )
+            # Third entry (same prefix, different session)
+            _update_sidebar_index(
+                "slug_one_more_20230101_140000.html", "Title Three", "Session B"
+            )
 
-            path_str, sidebar_url = save_html_report(content)
+            content = index_path.read_text()
+            marker_start = "/* ENTRIES_JSON_START */"
+            marker_end = "/* ENTRIES_JSON_END */"
+            json_str = content.split(marker_start)[1].split(marker_end)[0].strip()
+            entries = json.loads(json_str)
 
-            expected_filename = "untitled_20230101_120000.html"
-            assert Path(path_str).name == expected_filename
+            assert len(entries) == 3
+            # Most recent first
+            assert entries[0]["filename"] == "slug_one_more_20230101_140000.html"
+            assert entries[0]["session_name"] == "Session B"
+            assert entries[0]["prefix"] == "slug one more"
+
+            assert entries[1]["filename"] == "slug_two_20230101_130000.html"
+            assert entries[1]["prefix"] == "slug two"
+
+            assert entries[2]["filename"] == "slug_one_20230101_120000.html"
+            assert entries[2]["session_name"] == "Session A"
+            assert entries[2]["prefix"] == "slug one"
 
 
 def test_extract_markdown_title():

@@ -11,6 +11,7 @@ from asky.config import (
     ANSWER_SUMMARY_MAX_CHARS,
     CUSTOM_TOOLS,
     SUMMARIZE_ANSWER_PROMPT_TEMPLATE,
+    TOOL_PROMPT_OVERRIDES,
 )
 from asky.core.api_client import UsageTracker, get_llm_msg
 from asky.core.registry import ToolRegistry
@@ -56,6 +57,27 @@ def _is_tool_enabled(tool_name: str, disabled_tools: Set[str]) -> bool:
     return tool_name not in disabled_tools
 
 
+def _apply_tool_prompt_overrides(
+    tool_name: str,
+    schema: Dict[str, Any],
+) -> Dict[str, Any]:
+    """Apply optional description/guideline overrides from config."""
+    overrides = TOOL_PROMPT_OVERRIDES.get(tool_name, {})
+    if not isinstance(overrides, dict):
+        return schema
+
+    patched = dict(schema)
+    description = overrides.get("description")
+    if isinstance(description, str) and description.strip():
+        patched["description"] = description.strip()
+
+    guideline = overrides.get("system_prompt_guideline")
+    if isinstance(guideline, str) and guideline.strip():
+        patched["system_prompt_guideline"] = guideline.strip()
+
+    return patched
+
+
 def create_tool_registry(
     usage_tracker: Optional[UsageTracker] = None,
     summarization_tracker: Optional[UsageTracker] = None,
@@ -78,7 +100,7 @@ def create_tool_registry(
     excluded_tools = disabled_tools or set()
 
     if _is_tool_enabled("web_search", excluded_tools):
-        registry.register(
+        web_search_schema = _apply_tool_prompt_overrides(
             "web_search",
             {
                 "name": "web_search",
@@ -93,6 +115,10 @@ def create_tool_registry(
                     "required": ["q"],
                 },
             },
+        )
+        registry.register(
+            "web_search",
+            web_search_schema,
             web_search_executor,
         )
 
@@ -157,7 +183,7 @@ def create_tool_registry(
         return result
 
     if _is_tool_enabled("get_url_content", excluded_tools):
-        registry.register(
+        get_url_content_schema = _apply_tool_prompt_overrides(
             "get_url_content",
             {
                 "name": "get_url_content",
@@ -183,11 +209,15 @@ def create_tool_registry(
                     "required": [],
                 },
             },
+        )
+        registry.register(
+            "get_url_content",
+            get_url_content_schema,
             url_content_executor,
         )
 
     if _is_tool_enabled("get_url_details", excluded_tools):
-        registry.register(
+        get_url_details_schema = _apply_tool_prompt_overrides(
             "get_url_details",
             {
                 "name": "get_url_details",
@@ -199,6 +229,10 @@ def create_tool_registry(
                     "required": ["url"],
                 },
             },
+        )
+        registry.register(
+            "get_url_details",
+            get_url_details_schema,
             get_url_details_executor,
         )
 
@@ -227,7 +261,7 @@ def create_tool_registry(
 
         registry.register(
             "save_memory",
-            MEMORY_TOOL_SCHEMA,
+            _apply_tool_prompt_overrides("save_memory", MEMORY_TOOL_SCHEMA),
             lambda args: call_attr("asky.memory.tools", "execute_save_memory", args),
         )
 
@@ -310,7 +344,7 @@ def create_research_tool_registry(
     )
 
     if _is_tool_enabled("web_search", excluded_tools):
-        registry.register(
+        web_search_schema = _apply_tool_prompt_overrides(
             "web_search",
             {
                 "name": "web_search",
@@ -329,6 +363,10 @@ def create_research_tool_registry(
                     "required": ["q"],
                 },
             },
+        )
+        registry.register(
+            "web_search",
+            web_search_schema,
             web_search_executor,
         )
 
@@ -361,40 +399,41 @@ def create_research_tool_registry(
         tool_name = schema["name"]
         if not _is_tool_enabled(tool_name, excluded_tools):
             continue
+        schema_with_overrides = _apply_tool_prompt_overrides(tool_name, schema)
         if tool_name == "extract_links":
             registry.register(
                 tool_name,
-                schema,
+                schema_with_overrides,
                 _execute_with_context(research_bindings["extract_links"]),
             )
         elif tool_name == "get_link_summaries":
             registry.register(
                 tool_name,
-                schema,
+                schema_with_overrides,
                 _execute_with_context(research_bindings["get_link_summaries"]),
             )
         elif tool_name == "get_relevant_content":
             registry.register(
                 tool_name,
-                schema,
+                schema_with_overrides,
                 _execute_with_context(research_bindings["get_relevant_content"]),
             )
         elif tool_name == "get_full_content":
             registry.register(
                 tool_name,
-                schema,
+                schema_with_overrides,
                 _execute_with_context(research_bindings["get_full_content"]),
             )
         elif tool_name == "save_finding":
             registry.register(
                 tool_name,
-                schema,
+                schema_with_overrides,
                 _execute_with_context(research_bindings["save_finding"]),
             )
         elif tool_name == "query_research_memory":
             registry.register(
                 tool_name,
-                schema,
+                schema_with_overrides,
                 _execute_with_context(research_bindings["query_research_memory"]),
             )
 
@@ -423,7 +462,7 @@ def create_research_tool_registry(
 
         registry.register(
             "save_memory",
-            MEMORY_TOOL_SCHEMA,
+            _apply_tool_prompt_overrides("save_memory", MEMORY_TOOL_SCHEMA),
             lambda args: call_attr("asky.memory.tools", "execute_save_memory", args),
         )
 
