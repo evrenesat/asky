@@ -6,7 +6,7 @@ import tempfile
 import webbrowser
 from datetime import datetime
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Tuple
 
 from asky.config import ARCHIVE_DIR
 from asky.core.utils import generate_slug
@@ -70,18 +70,24 @@ def render_to_browser(content: str, filename_hint: Optional[str] = None) -> None
         logger.error(f"Error rendering to browser: {e}")
 
 
-def save_html_report(content: str, filename_hint: Optional[str] = None) -> str:
+def save_html_report(
+    content: str, filename_hint: Optional[str] = None
+) -> Tuple[str, str]:
     """
     Save markdown content as an HTML report in the archive directory.
-    Returns the absolute path to the saved file.
+    Returns a tuple of (absolute_path_to_file, absolute_path_to_sidebar_wrapped_file).
     """
     try:
         html_content = _create_html_content(content)
         file_path = _save_to_archive(html_content, content, filename_hint)
-        return str(file_path)
+
+        index_path = ARCHIVE_DIR / "sidebar_index.html"
+        sidebar_url = f"file://{index_path}#{file_path.name}"
+
+        return str(file_path), sidebar_url
     except Exception as e:
         logger.error(f"Error saving HTML report: {e}")
-        return ""
+        return "", ""
 
 
 def _update_sidebar_index(filename: str, display_title: str) -> None:
@@ -97,7 +103,7 @@ def _update_sidebar_index(filename: str, display_title: str) -> None:
     index_path = ARCHIVE_DIR / "sidebar_index.html"
     timestamp_str = datetime.now().strftime("%Y-%m-%d %H:%M")
 
-    link_html = f'      <li class="index-item"><a href="{filename}" target="_parent">{display_title} <span class="time">{timestamp_str}</span></a></li>'
+    link_html = f'      <li class="index-item"><a href="#{filename}">{display_title} <span class="time">{timestamp_str}</span></a></li>'
 
     if not index_path.exists():
         # Create base index file
@@ -112,16 +118,35 @@ def _update_sidebar_index(filename: str, display_title: str) -> None:
         font-size: 14px;
         line-height: 1.5;
         margin: 0;
-        padding: 20px;
+        padding: 0;
         color: #333;
-        background-color: transparent;
+        background-color: #f6f8fa;
+        display: flex;
+        height: 100vh;
+        overflow: hidden;
       }}
-      h2 {{
-        font-size: 1.2em;
-        margin-top: 0;
-        margin-bottom: 15px;
+      .sidebar {{
+        width: 320px;
+        flex-shrink: 0;
+        background-color: #fff;
+        border-right: 1px solid #eaecef;
+        display: flex;
+        flex-direction: column;
+        height: 100%;
+      }}
+      .sidebar-header {{
+        padding: 20px;
         border-bottom: 1px solid #eaecef;
-        padding-bottom: 10px;
+        background: #fff;
+      }}
+      .sidebar-header h2 {{
+        font-size: 1.25em;
+        margin: 0;
+      }}
+      .index-list-container {{
+        flex-grow: 1;
+        overflow-y: auto;
+        padding: 10px 0;
       }}
       ul {{
         list-style: none;
@@ -129,37 +154,103 @@ def _update_sidebar_index(filename: str, display_title: str) -> None:
         margin: 0;
       }}
       li.index-item {{
-        margin-bottom: 8px;
-        padding-bottom: 8px;
         border-bottom: 1px solid #f6f8fa;
       }}
       li.index-item a {{
         color: #0056b3;
         text-decoration: none;
         display: block;
+        padding: 12px 20px;
+        transition: background 0.1s;
       }}
       li.index-item a:hover {{
-        text-decoration: underline;
+        background-color: #f6f8fa;
+        text-decoration: none;
+      }}
+      li.index-item a.active {{
+        background-color: #eaf5ff;
+        border-right: 3px solid #0366d6;
+        font-weight: 500;
       }}
       .time {{
         display: block;
         font-size: 0.85em;
         color: #6a737d;
-        margin-top: 2px;
+        margin-top: 4px;
+      }}
+      .content-area {{
+        flex-grow: 1;
+        height: 100%;
+        background: #fff;
+      }}
+      #content-frame {{
+        width: 100%;
+        height: 100%;
+        border: none;
       }}
       @media (prefers-color-scheme: dark) {{
-        body {{ color: #e0e0e0; }}
-        h2, li.index-item {{ border-color: #30363d; }}
+        body {{ background-color: #0d1117; color: #e0e0e0; }}
+        .sidebar, .sidebar-header, .content-area {{ background-color: #161b22; }}
+        .sidebar, .sidebar-header, li.index-item, li.index-item a.active {{ border-color: #30363d; }}
         li.index-item a {{ color: #58a6ff; }}
+        li.index-item a:hover {{ background-color: #21262d; }}
+        li.index-item a.active {{ background-color: #1c2128; }}
         .time {{ color: #8b949e; }}
+      }}
+      @media (max-width: 800px) {{
+        body {{ flex-direction: column; }}
+        .sidebar {{ width: 100%; height: 35%; border-right: none; border-bottom: 1px solid #eaecef; }}
+        .content-area {{ height: 65%; }}
       }}
     </style>
   </head>
   <body>
-    <h2>History Index</h2>
-    <ul id="index-list">
+    <div class="sidebar">
+      <div class="sidebar-header">
+        <h2>asky History</h2>
+      </div>
+      <div class="index-list-container">
+        <ul id="index-list">
 {link_html}
-    </ul>
+        </ul>
+      </div>
+    </div>
+    <div class="content-area">
+      <iframe id="content-frame" name="content-frame"></iframe>
+    </div>
+
+    <script>
+      const frame = document.getElementById('content-frame');
+      const list = document.getElementById('index-list');
+
+      function loadFromHash() {{
+        const hash = window.location.hash.substring(1);
+        if (hash) {{
+          frame.src = hash;
+          updateActiveLink(hash);
+        }} else {{
+          const firstLink = list.querySelector('a');
+          if (firstLink) {{
+             const firstFile = firstLink.getAttribute('href').substring(1);
+             frame.src = firstFile;
+             updateActiveLink(firstFile);
+          }}
+        }}
+      }}
+
+      function updateActiveLink(filename) {{
+        list.querySelectorAll('a').forEach(a => {{
+          if (a.getAttribute('href') === '#' + filename) {{
+            a.classList.add('active');
+          }} else {{
+            a.classList.remove('active');
+          }}
+        }});
+      }}
+
+      window.addEventListener('hashchange', loadFromHash);
+      window.addEventListener('load', loadFromHash);
+    </script>
   </body>
 </html>
 """

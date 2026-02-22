@@ -218,6 +218,11 @@ Evidence Extraction (optional)
 Structured facts injected into context
 ```
 
+Research cache summarization for cached pages runs in a background thread pool.
+CLI research turns now perform an explicit post-answer drain
+(`wait_for_background_summaries`) before final banner teardown so late
+summarization token usage appears in the final live snapshot.
+
 Local-file targets can still be preloaded/indexed through research adapters:
 
 - built-in adapter fallback is gated by `research.local_document_roots`,
@@ -386,16 +391,16 @@ Imports deferred until needed:
 
 ## Supporting Modules
 
-| Module             | Purpose                                                  |
-| ------------------ | -------------------------------------------------------- |
-| `summarization.py` | Bounded hierarchical summarization (map + single reduce) |
-| `retrieval.py`     | Shared URL retrieval via Trafilatura                     |
-| `html.py`          | HTML stripping, link extraction                          |
-| `push_data.py`     | HTTP data push to endpoints                              |
-| `email_sender.py`  | SMTP email sending                                       |
-| `rendering.py`     | Browser markdown rendering + Sidebar Index Generation    |
-| `banner.py`        | CLI banner display                                       |
-| `logger.py`        | Rotating file-based logging                              |
+| Module             | Purpose                                                   |
+| ------------------ | --------------------------------------------------------- |
+| `summarization.py` | Bounded hierarchical summarization (map + single reduce)  |
+| `retrieval.py`     | Shared URL retrieval via Trafilatura                      |
+| `html.py`          | HTML stripping, link extraction                           |
+| `push_data.py`     | HTTP data push to endpoints                               |
+| `email_sender.py`  | SMTP email sending                                        |
+| `rendering.py`     | Browser markdown rendering + Sidebar Index App Generation |
+| `banner.py`        | CLI banner display                                        |
+| `logger.py`        | Rotating file-based logging                               |
 
 ---
 

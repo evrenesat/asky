@@ -172,6 +172,88 @@ def test_run_chat_local_corpus_implies_research_mode():
         assert request_arg.local_corpus_paths == ["/tmp/corpus"]
 
 
+def test_run_chat_renders_answer_before_final_history_finalize():
+    from asky.cli.chat import run_chat
+
+    mock_args = argparse.Namespace(
+        model="gf",
+        research=True,
+        local_corpus=None,
+        summarize=False,
+        open=False,
+        continue_ids=None,
+        sticky_session=None,
+        resume_session=None,
+        lean=False,
+        tool_off=[],
+        terminal_lines=None,
+        save_history=True,
+        verbose=False,
+        system_prompt=None,
+        elephant_mode=False,
+        turns=None,
+        mail_recipients=None,
+        subject=None,
+        push_data_endpoint=None,
+        push_params=None,
+    )
+
+    turn_result = MagicMock()
+    turn_result.final_answer = "Final answer"
+    turn_result.halted = False
+    turn_result.notices = []
+    turn_result.session_id = None
+    turn_result.preload = MagicMock(shortlist_stats={}, shortlist_payload=None)
+    turn_result.session = MagicMock(matched_sessions=[])
+
+    call_order = []
+
+    with (
+        patch("asky.cli.chat.MODELS", {"gf": {"id": "gemini-flash"}}),
+        patch("asky.cli.chat.get_shell_session_id", return_value=None),
+        patch("asky.cli.chat.InterfaceRenderer") as mock_renderer_cls,
+        patch("asky.cli.chat.LIVE_BANNER", True),
+        patch("asky.cli.chat.AskyClient") as mock_client_cls,
+        patch("asky.rendering.extract_markdown_title", return_value="title"),
+        patch("asky.rendering.save_html_report", return_value=(None, None)),
+        patch(
+            "asky.research.cache.ResearchCache.wait_for_background_summaries",
+            return_value=True,
+        ) as mock_wait_for_summaries,
+    ):
+        renderer = MagicMock()
+        renderer.live = None
+        renderer.current_turn = 1
+        renderer.console = MagicMock()
+        renderer.print_final_answer.side_effect = lambda _answer: call_order.append(
+            "printed"
+        )
+        mock_renderer_cls.return_value = renderer
+
+        mock_client = MagicMock()
+
+        def run_turn_side_effect(_request, **kwargs):
+            kwargs["display_callback"](
+                1,
+                is_final=True,
+                final_answer=turn_result.final_answer,
+            )
+            return turn_result
+
+        def finalize_side_effect(*_args, **_kwargs):
+            call_order.append("finalize")
+            return []
+
+        mock_client.run_turn.side_effect = run_turn_side_effect
+        mock_client.finalize_turn_history.side_effect = finalize_side_effect
+        mock_client_cls.return_value = mock_client
+
+        run_chat(mock_args, "query")
+
+    assert call_order == ["printed", "finalize"]
+    mock_wait_for_summaries.assert_called_once()
+
+
 def test_parse_args_terminal_lines_explicit():
     """Test -tl with explicit integer."""
     with patch("sys.argv", ["asky", "-tl", "20", "query"]):

@@ -2,6 +2,7 @@
 
 import json
 import sqlite3
+import threading
 import time
 from datetime import datetime, timedelta
 from unittest.mock import patch, MagicMock
@@ -397,6 +398,35 @@ class TestResearchCache:
         cached = cache.get_cached("http://example.com")
         # Summary might be completed or still processing depending on timing
         assert cached["summary_status"] in ["processing", "completed", "failed"]
+
+    @patch("asky.summarization._summarize_content")
+    def test_wait_for_background_summaries_drains_pending_tasks(
+        self, mock_summarize, cache
+    ):
+        """Test that pending background summaries can be explicitly drained."""
+        release_event = threading.Event()
+        started_event = threading.Event()
+
+        def delayed_summary(**_kwargs):
+            started_event.set()
+            release_event.wait(timeout=1.0)
+            return "Delayed summary"
+
+        mock_summarize.side_effect = delayed_summary
+
+        cache.cache_url(
+            url="http://drain.example.com",
+            content="Content to summarize slowly",
+            title="Drain test",
+            links=[],
+            trigger_summarization=True,
+        )
+
+        assert started_event.wait(timeout=1.0) is True
+        assert cache.wait_for_background_summaries(timeout=0.01) is False
+
+        release_event.set()
+        assert cache.wait_for_background_summaries(timeout=1.0) is True
 
     def test_url_hash_consistency(self, cache):
         """Test that URL hashing is consistent."""

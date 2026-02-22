@@ -5,9 +5,9 @@ import json
 import logging
 import sqlite3
 import threading
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import Future, ThreadPoolExecutor, wait
 from datetime import datetime, timedelta
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Set
 
 from asky.config import (
     DB_PATH,
@@ -53,6 +53,8 @@ class ResearchCache:
             summarization_workers or RESEARCH_SUMMARIZATION_WORKERS
         )
         self._executor: Optional[ThreadPoolExecutor] = None
+        self._pending_summary_futures: Set[Future[Any]] = set()
+        self._pending_futures_lock = threading.Lock()
         self._db_lock = threading.Lock()
         self._initialized = True
         self.init_db()
@@ -502,8 +504,34 @@ class ResearchCache:
                 self._update_summary_status(cache_id, "failed")
 
         executor = self._get_executor()
-        executor.submit(summarize_task)
+        future = executor.submit(summarize_task)
+        self._track_summary_future(future)
         logger.debug(f"Scheduled background summarization for {url}")
+
+    def _track_summary_future(self, future: Future[Any]) -> None:
+        """Track active background summary futures for optional final draining."""
+        with self._pending_futures_lock:
+            self._pending_summary_futures.add(future)
+
+        def _on_done(completed_future: Future[Any]) -> None:
+            with self._pending_futures_lock:
+                self._pending_summary_futures.discard(completed_future)
+
+        future.add_done_callback(_on_done)
+
+    def wait_for_background_summaries(self, timeout: Optional[float] = None) -> bool:
+        """Wait for currently pending background summary tasks.
+
+        Returns True when all known tasks completed before the timeout.
+        """
+        with self._pending_futures_lock:
+            pending_futures = list(self._pending_summary_futures)
+
+        if not pending_futures:
+            return True
+
+        _, not_done = wait(pending_futures, timeout=timeout)
+        return len(not_done) == 0
 
     def _update_summary_status(self, cache_id: int, status: str) -> None:
         """Update summary status in database."""
@@ -824,8 +852,12 @@ class ResearchCache:
 
     def shutdown(self) -> None:
         """Shutdown the background executor gracefully."""
+        executor_was_active = self._executor is not None
         if self._executor:
             logger.debug("Shutting down research cache executor...")
             self._executor.shutdown(wait=True)
             self._executor = None
+        with self._pending_futures_lock:
+            self._pending_summary_futures.clear()
+        if executor_was_active:
             logger.debug("Research cache executor shutdown complete")

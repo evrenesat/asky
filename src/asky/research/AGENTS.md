@@ -77,6 +77,9 @@ Caches fetched URL content and extracted links with TTL.
 - **Startup cleanup**: Expired entries purged on init (daemon thread)
 - **Content + links**: Both cached together per URL
 - **Invalidation**: Clears related vectors when content changes
+- **Background summary drain support**: Tracks pending thread-pool summary futures
+  and exposes `wait_for_background_summaries()` so callers can perform a final
+  synchronized banner refresh before UI teardown.
 
 ### Schema (SQLite)
 

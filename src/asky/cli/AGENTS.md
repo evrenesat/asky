@@ -67,6 +67,9 @@ Main conversation entry point via `run_chat()`:
 - `InterfaceRenderer` manages Rich Live console
 - Status callbacks update during shortlist/tool execution
 - Verbose output routed through live console to avoid redraw issues
+- After final answer rendering, research-mode chat keeps Live active during deferred
+  history finalization and drains pending background research summaries before the
+  last banner refresh/stop so summary-token usage is reflected in the final banner.
 
 ## Shell Completion (`completion.py`)
 

@@ -45,6 +45,7 @@ from asky.lazy_imports import call_attr
 from asky.core.session_manager import generate_session_name
 
 logger = logging.getLogger(__name__)
+BACKGROUND_SUMMARY_DRAIN_STATUS = "Finalizing background page summaries..."
 
 
 def shortlist_prompt_sources(*args: Any, **kwargs: Any) -> Dict[str, Any]:
@@ -326,6 +327,16 @@ def _combine_preloaded_source_context(
     return api_combine_preloaded_source_context(*context_blocks)
 
 
+def _drain_research_background_summaries() -> None:
+    """Wait for pending research cache background summaries."""
+    try:
+        from asky.research.cache import ResearchCache
+
+        ResearchCache().wait_for_background_summaries()
+    except Exception as exc:
+        logger.debug("Skipping background summary drain: %s", exc)
+
+
 def run_chat(args: argparse.Namespace, query_text: str) -> None:
     """Run the chat conversation flow."""
     from asky.core import clear_shell_session
@@ -588,9 +599,12 @@ def run_chat(args: argparse.Namespace, query_text: str) -> None:
             # Extract title explicitly from the new answer to fix "untitled" archives
             filename_hint = extract_markdown_title(final_answer)
 
-            report_path = save_html_report(html_source, filename_hint=filename_hint)
+            report_path, sidebar_url = save_html_report(
+                html_source, filename_hint=filename_hint
+            )
             if report_path:
                 console.print(f"Open in browser: [bold cyan]file://{report_path}[/]")
+                console.print(f"Open with index: [bold cyan]{sidebar_url}[/]")
 
         # NOW save history synchronously with a live status banner
         if final_answer and not is_lean:
@@ -609,6 +623,12 @@ def run_chat(args: argparse.Namespace, query_text: str) -> None:
                 )
                 for notice in extra_notices:
                     console.print(f"\n[{notice}]")
+                if use_banner and research_mode:
+                    renderer.update_banner(
+                        renderer.current_turn,
+                        status_message=BACKGROUND_SUMMARY_DRAIN_STATUS,
+                    )
+                    _drain_research_background_summaries()
             finally:
                 if use_banner:
                     renderer.update_banner(renderer.current_turn, status_message=None)

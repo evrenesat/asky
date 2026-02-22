@@ -50,7 +50,7 @@ def test_save_html_report():
             mock_datetime.now.return_value = mock_now
 
             # Call
-            path_str = save_html_report(content, "Test Slug Input")
+            path_str, sidebar_url = save_html_report(content, "Test Slug Input")
 
             # Verify
             expected_filename = "test_slug_20230101_120000.html"
@@ -87,7 +87,7 @@ def test_save_html_report_no_hint():
             mock_now.strftime.return_value = "20230101_120000"
             mock_datetime.now.return_value = mock_now
 
-            path_str = save_html_report(content)
+            path_str, sidebar_url = save_html_report(content)
 
             # Now extracts "Test Content" from H1 header
             expected_filename = "test_content_20230101_120000.html"
@@ -120,7 +120,7 @@ def test_save_html_report_no_hint_no_h1():
             mock_now.strftime.return_value = "20230101_120000"
             mock_datetime.now.return_value = mock_now
 
-            path_str = save_html_report(content)
+            path_str, sidebar_url = save_html_report(content)
 
             expected_filename = "untitled_20230101_120000.html"
             assert Path(path_str).name == expected_filename

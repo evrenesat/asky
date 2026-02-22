@@ -2,6 +2,24 @@
 
 For older logs, see [DEVLOG_ARCHIVE.md](DEVLOG_ARCHIVE.md).
 
+## 2026-02-22
+
+### Final-Answer-First Banner Fix + Research Summary Drain
+
+**Summary**: Restored final-answer-first CLI behavior and fixed the stale final banner snapshot by draining pending `ResearchCache` background summaries before the last live-banner stop.
+
+- **Changed**:
+  - `src/asky/research/cache.py`: Added pending-future tracking for background summarization jobs and introduced `wait_for_background_summaries(timeout=None)` to synchronously wait for all currently queued summary work without shutting down the executor.
+  - `src/asky/cli/chat.py`: Added a post-answer research-mode drain step (`_drain_research_background_summaries`) during deferred history finalization while Live is active, with explicit banner status messaging and a final refresh before stop.
+  - `tests/test_research_cache.py`: Added coverage that `wait_for_background_summaries()` reports incomplete work under tight timeout and completes after background summarization is released.
+  - `tests/test_cli.py`: Added coverage asserting final answer rendering happens before deferred history finalization and that research background summary drain is invoked.
+- **Why**:
+  - The previous banner lifecycle could stop Live before fire-and-forget research summarizers finished, freezing the final snapshot with stale summarizer token counts.
+  - A regression in finalization ordering made it possible for users to feel blocked by post-answer summarization tasks before seeing the final answer clearly.
+- **Gotchas**:
+  - The drain step is scoped to research-mode CLI post-answer finalization; non-research turns skip it.
+  - `wait_for_background_summaries()` waits only on futures known at call time, which matches CLI teardown expectations after tool execution has finished.
+
 ## 2026-02-21
 
 ### On-Demand Summarization Replacing Truncation in Smart Compaction
@@ -36,17 +54,18 @@ For older logs, see [DEVLOG_ARCHIVE.md](DEVLOG_ARCHIVE.md).
 - **Why**:
   - Users needed a way to control the longevity of complex multi-turn research or coding sessions without modifying global configuration files. Persisting this per-session ensures resumption respects the user's intent.
 
-### Sidebar Index and New HTML Layout
+### Sidebar Index App and Pure-Content Reports
 
-**Summary**: Added a dynamically updated sidebar index to generated HTML reports, allowing users to navigate between all archived reports from a single view.
+**Summary**: Redesigned the sidebar navigation to decouple individual reports from the navigation chrome. Reports are now pure HTML files, while `sidebar_index.html` acts as a navigation app that loads reports within an iframe.
 
 - **Added**:
-  - `src/asky/rendering.py`: Implemented `_update_sidebar_index` which maintains a `sidebar_index.html` file in the archive directory. Each new report is prepended as a link to this index.
+  - `src/asky/rendering.py`: `_update_sidebar_index` now generates a sophisticated two-pane HTML application with JavaScript hash-based navigation and active link highlighting.
 - **Changed**:
-  - `src/asky/template.html`: Reworked the report template to include a responsive sidebar layout. The sidebar loads `sidebar_index.html` via an `iframe`, ensuring all reports always show the latest index.
-  - `src/asky/rendering.py`: `_save_to_archive` now triggers the sidebar index update after saving a new report.
+  - `src/asky/template.html`: Reverted to a simple, centered, pure-content layout (no more embedded sidebar iframe).
+  - `src/asky/rendering.py`: `save_html_report` now returns a tuple containing both the direct file path and a sidebar-wrapped URL (using a hash fragment).
+  - `src/asky/cli/chat.py`: Updated to display two links after each generation: one for the clean report and one for the indexed view.
 - **Why**:
-  - Previously, generated HTML reports were isolated files. Users had to manually find and open other reports from the filesystem. The new sidebar provides a central navigation hub that stays updated across all archives.
+  - Embedding navigation in every file was redundant and made generated files harder to share as standalone documents. By making `sidebar_index.html` a standalone "app", we preserve the navigation history while keeping individual reports clean and portable.
 
 ### Tool Usage Initialization Configuration
 

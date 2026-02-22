@@ -11,60 +11,11 @@
           Arial, sans-serif;
         font-size: 16px;
         line-height: 1.6;
-        margin: 0;
-        padding: 0;
-        color: #333;
-        background-color: #f6f8fa;
-        display: flex;
-        min-height: 100vh;
-      }
-      
-      .sidebar {
-        width: 300px;
-        flex-shrink: 0;
-        background-color: #fff;
-        border-right: 1px solid #eaecef;
-        height: 100vh;
-        position: sticky;
-        top: 0;
-        overflow: hidden;
-      }
-      
-      .sidebar iframe {
-        width: 100%;
-        height: 100%;
-        border: none;
-      }
-
-      .main-content {
-        flex-grow: 1;
         max-width: 800px;
         margin: 40px auto;
-        padding: 0 40px;
+        padding: 0 20px;
+        color: #333;
         background-color: #fff;
-        border: 1px solid #eaecef;
-        border-radius: 6px;
-        min-height: calc(100vh - 80px);
-        box-shadow: 0 1px 3px rgba(0,0,0,0.04);
-      }
-
-      @media (max-width: 1000px) {
-        body {
-          flex-direction: column;
-        }
-        .sidebar {
-          width: 100%;
-          height: 250px;
-          border-right: none;
-          border-bottom: 1px solid #eaecef;
-          position: static;
-        }
-        .main-content {
-          margin: 20px auto;
-          box-shadow: none;
-          border: none;
-          border-radius: 0;
-        }
       }
 
       a {
@@ -162,24 +113,8 @@
 
       @media (prefers-color-scheme: dark) {
         body {
-          background-color: #0d1117;
+          background-color: #1a1a1a;
           color: #e0e0e0;
-        }
-
-        .sidebar {
-          background-color: #161b22;
-          border-right-color: #30363d;
-        }
-
-        @media (max-width: 1000px) {
-          .sidebar {
-            border-bottom-color: #30363d;
-          }
-        }
-
-        .main-content {
-          background-color: #0d1117;
-          border-color: #30363d;
         }
 
         .markdown code {
@@ -223,12 +158,7 @@
   </head>
 
   <body>
-    <div class="sidebar">
-      <iframe src="sidebar_index.html" title="History Index"></iframe>
-    </div>
-    <div class="main-content">
-      <div id="content"></div>
-    </div>
+    <div id="content"></div>
 
     <script>
       /*****************************************************************************
