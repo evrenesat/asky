@@ -59,6 +59,11 @@ def get_db_record_count() -> int:
     return _repo.get_db_record_count()
 
 
+def get_total_session_count() -> int:
+    """Get total session count using the default repository."""
+    return _repo.count_sessions()
+
+
 def create_session(model: str, name: Optional[str] = None) -> int:
     return _repo.create_session(model, name)
 

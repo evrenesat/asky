@@ -258,7 +258,7 @@ def get_banner(state: BannerState) -> Panel:
     # Add session-wide token usage if available in the tracker for the current session alias?
     # For now, just show the context message count
 
-    grid.add_row("[bold cyan]Session    :[/]", session_details)
+    grid.add_row("[bold cyan]Conversation:[/]", session_details)
 
     # --- Main Layout ---
     layout_table = Table.grid(padding=(0, 2))

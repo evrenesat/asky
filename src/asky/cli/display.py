@@ -15,7 +15,7 @@ from asky.config import (
     SUMMARIZATION_MODEL,
     COMPACT_BANNER,
 )
-from asky.storage import get_db_record_count
+from asky.storage import get_db_record_count, get_total_session_count
 
 
 class InterfaceRenderer:
@@ -102,20 +102,18 @@ class InterfaceRenderer:
         # Session info
         s_name = None
         s_msg_count = 0
-        total_sessions = 0
+        try:
+            total_sessions = get_total_session_count()
+        except Exception:
+            total_sessions = 0
 
-        if self.session_manager:
-            try:
-                total_sessions = self.session_manager.repo.count_sessions()
-            except Exception:
-                pass
-            if self.session_manager.current_session:
-                s_name = self.session_manager.current_session.name
-                s_msg_count = len(
-                    self.session_manager.repo.get_session_messages(
-                        self.session_manager.current_session.id
-                    )
+        if self.session_manager and self.session_manager.current_session:
+            s_name = self.session_manager.current_session.name
+            s_msg_count = len(
+                self.session_manager.repo.get_session_messages(
+                    self.session_manager.current_session.id
                 )
+            )
 
         # Embedding stats (research mode only)
         embedding_model = None

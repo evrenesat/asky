@@ -84,6 +84,7 @@ Main conversation entry point via `run_chat()`:
 - Compact vs full banner modes (configurable)
 - Transient status line for tool/shortlist progress
 - Token usage display with embedding stats
+- Banner totals row always reflects database-wide message/session counts, even when no active session is attached
 
 ## Dependencies
 

@@ -4,6 +4,62 @@ For older logs, see [DEVLOG_ARCHIVE.md](DEVLOG_ARCHIVE.md).
 
 ## 2026-02-22
 
+### Continue Flag Improvements (No-ID Default + Auto-Session Conversion)
+
+**Summary**: Improved the `-c`/`--continue-chat` flag to default to the last message when used without an ID, and to automatically convert history-based continuations into active sessions.
+
+- **Added**:
+  - `tests/test_cli_continue.py`: New unit tests for sentinel resolution and auto-conversion.
+- **Changed**:
+  - `src/asky/cli/main.py`:
+    - Updated `-c` to use `nargs="?"` with a `__last__` sentinel.
+    - Added logic to resolve the sentinel to `"~1"`.
+    - Implemented automatic session conversion via `convert_history_to_session` when continuing from history without an active session.
+    - Switched `get_shell_session_id` to a direct import for simplified logic.
+- **Why**:
+  - Users wanted a faster way to continue the last conversation without looking up IDs.
+  - Converting to sessions ensures that follow-up turns are stored together and the conversation remains resumable.
+- **Gotchas**:
+  - Because `-c` now takes an optional value, queries must be placed before the flag if the flag is used at the end of the command line, or use `--` to disambiguate.
+
+### Banner Totals Fix (Non-Session Runs) + Clearer Totals Label
+
+**Summary**: Fixed banner session totals showing `0` outside active sessions and renamed the totals row label from `Session` to `Conversation` for clarity.
+
+- **Changed**:
+  - `src/asky/storage/__init__.py`: Added `get_total_session_count()` wrapper for DB-wide session totals.
+  - `src/asky/cli/display.py`: Banner state now fetches total session count directly from storage regardless of active session manager state.
+  - `src/asky/cli/main.py`: Initial banner (`show_banner`) now includes the real total session count instead of hardcoded `0`.
+  - `src/asky/banner.py`: Renamed the full-banner totals row label from `Session    :` to `Conversation:`.
+  - `tests/test_banner_embedding.py`: Added regression coverage to assert total sessions are populated when no session is active.
+  - `tests/test_banner_compact.py`: Added coverage for the full-banner `Conversation` label.
+  - `src/asky/cli/AGENTS.md`: Documented that banner totals are DB-wide, even without an active session.
+- **Why**:
+  - Users need reliable global counts even in single-turn/non-session runs.
+  - The previous row label suggested a single active session, while the row actually mixes global totals plus optional current-session details.
+- **Gotchas**:
+  - `Messages` remains the non-session history message count (`session_id IS NULL`), while `Sessions` is total rows in `sessions`.
+
+### Report HTML and Sidebar Refinements
+
+**Summary**: Full externalization of CSS and JS assets for archive files and sidebar index.
+
+- **Externalized Report Assets**: Extracted styles to `asky-report.css` and logic to `asky-report.js`.
+- **Externalized Sidebar Assets**: Extracted sidebar styles to `asky-sidebar.css` and logic to `asky-sidebar.js`.
+- **Single-Copy Asset Management**: A new `_ensure_archive_assets()` helper copies all shared assets (JS, CSS, and Favicon) to the archive directory on first use. Assets are never overwritten, ensuring the archive directory is self-contained and efficient.
+- **Favicon**: Added `asky-icon.png` to the sidebar index.
+- **Correct HTML title**: individual report files now use their display title in the `<title>` tag.
+- **Archive Directory Restructure**: Organized generated reports into a more structured layout:
+  - `index.html`: The main entry point (renamed from `sidebar_index.html`).
+  - `results/`: Contains all individual report HTML files.
+  - `assets/` and `results/assets/`: Shared CSS/JS/Icons are organized into logical asset folders.
+- **Smart Asset Versioning**:
+  - JS files now include a version suffix (e.g., `asky-report_v0.1.7.js`).
+  - When the installed Asky version changes, stale versioned assets are automatically replaced.
+  - Unversioned assets (CSS, icons) are never overwritten, allowing for user customization.
+- **Improved Sidebar Defaults**: Grouping is now enabled by default. Multiple reports from the same session or with similar names are collapsed into groups automatically, while solo reports are rendered flat.
+- **Improved Maintainability**: The HTML templates are now clean and focused solely on structure and data injection, with all presentation and behavior logic living in external files.
+
 ### API Library Test Hardening: Remove `mini` Alias Usage + Assert Mocked Turn Path
 
 **Summary**: Hardened `tests/test_api_library.py` so the suspected tests cannot accidentally be interpreted as `mini` model usage and now explicitly assert mocked execution for `run_turn`.

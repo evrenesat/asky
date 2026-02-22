@@ -334,3 +334,32 @@ class TestInterfaceRendererEmbeddingIntegration:
         assert state.shortlist_processed == 5
         assert state.shortlist_selected == 3
         assert state.shortlist_warnings == 1
+
+    @patch("asky.cli.display.get_total_session_count")
+    @patch("asky.cli.display.get_db_record_count")
+    @patch("asky.cli.display.get_banner")
+    def test_renderer_uses_global_session_count_without_active_session(
+        self, mock_get_banner, mock_db_count, mock_total_session_count
+    ):
+        """Session totals should be shown even when no session is active."""
+        from rich.panel import Panel
+        from asky.cli.display import InterfaceRenderer
+        from asky.core import UsageTracker
+
+        mock_db_count.return_value = 10
+        mock_total_session_count.return_value = 7
+        mock_get_banner.return_value = Panel("ok")
+
+        renderer = InterfaceRenderer(
+            model_config={"id": "test-model", "context_size": 4096},
+            model_alias="test",
+            usage_tracker=UsageTracker(),
+            research_mode=False,
+            session_manager=None,
+        )
+
+        _ = renderer._build_banner(current_turn=1)
+        state = mock_get_banner.call_args.args[0]
+        assert state.total_sessions == 7
+        assert state.session_name is None
+        assert state.session_msg_count == 0

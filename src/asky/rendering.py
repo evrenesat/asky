@@ -1,10 +1,10 @@
-"""Browser rendering utilities for asky."""
-
+import json
 import logging
 import re
-import tempfile
+import shutil
 import webbrowser
 from datetime import datetime
+from importlib.metadata import version as _pkg_version
 from pathlib import Path
 from typing import Optional, Tuple
 
@@ -12,6 +12,92 @@ from asky.config import ARCHIVE_DIR
 from asky.core.utils import generate_slug
 
 logger = logging.getLogger(__name__)
+
+# Source directory for static archive assets (JS, icons)
+_DATA_DIR = Path(__file__).parent / "data"
+_ICON_SRC = Path(__file__).parent.parent.parent / "assets" / "asky_icon_small.png"
+
+
+# Helper functions to get dynamic archive paths (ensures reactivity to config changes/mocking)
+def _get_assets_dir() -> Path:
+    return ARCHIVE_DIR / "assets"
+
+
+def _get_results_dir() -> Path:
+    return ARCHIVE_DIR / "results"
+
+
+def _get_results_assets_dir() -> Path:
+    return _get_results_dir() / "assets"
+
+
+def _asky_version() -> str:
+    """Get the current version of the asky-cli package."""
+    try:
+        return _pkg_version("asky-cli")
+    except Exception:
+        return "0.0.0"
+
+
+def _ensure_archive_assets() -> None:
+    """Copy shared static assets to the archive directory if not already present.
+
+    - Unversioned assets (CSS, icons) are copied only if missing (never overwritten).
+    - Versioned assets (JS) are updated if a file with a different version exists.
+    """
+    if not ARCHIVE_DIR.exists():
+        ARCHIVE_DIR.mkdir(parents=True, exist_ok=True)
+
+    current_ver = _asky_version()
+
+    # Asset specifications: (src_name, dst_dir, dst_stem, is_versioned)
+    specs = [
+        ("asky-report.js", _get_results_assets_dir(), "asky-report", True),
+        ("asky-report.css", _get_results_assets_dir(), "asky-report", False),
+        ("asky-sidebar.js", _get_assets_dir(), "asky-sidebar", True),
+        ("asky-sidebar.css", _get_assets_dir(), "asky-sidebar", False),
+    ]
+
+    for src_name, dst_dir, dst_stem, is_versioned in specs:
+        if not dst_dir.exists():
+            dst_dir.mkdir(parents=True, exist_ok=True)
+
+        src_path = _DATA_DIR / src_name
+        if not src_path.exists():
+            continue
+
+        ext = src_path.suffix  # e.g., .js or .css
+
+        if is_versioned:
+            # Look for any existing version of this asset in the destination dir
+            pattern = f"{dst_stem}_v*{ext}"
+            existing_files = list(dst_dir.glob(pattern))
+            target_filename = f"{dst_stem}_v{current_ver}{ext}"
+            target_path = dst_dir / target_filename
+
+            # If no version of this file exists, or if the current version is missing
+            if not target_path.exists():
+                # Remove any OLD versions first
+                for old_file in existing_files:
+                    logger.debug(f"Removing stale asset: {old_file.name}")
+                    old_file.unlink()
+                # Copy current version
+                shutil.copy2(src_path, target_path)
+                logger.debug(f"Installed versioned asset: {target_filename}")
+        else:
+            # Unversioned: just check if <stem>.<ext> exists
+            target_path = dst_dir / f"{dst_stem}{ext}"
+            if not target_path.exists():
+                shutil.copy2(src_path, target_path)
+                logger.debug(f"Installed unversioned asset: {target_path.name}")
+
+    # Special handling for icon (always unversioned, in sidebar assets)
+    assets_dir = _get_assets_dir()
+    icon_dst = assets_dir / "asky-icon.png"
+    if _ICON_SRC.exists() and not icon_dst.exists():
+        if not assets_dir.exists():
+            assets_dir.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(_ICON_SRC, icon_dst)
 
 
 # Regex pattern to extract H1 markdown header (# Title)
@@ -36,8 +122,13 @@ def extract_markdown_title(content: str) -> Optional[str]:
     return None
 
 
-def _create_html_content(content: str) -> str:
-    """Wrap content in HTML template."""
+def _create_html_content(content: str, title: str = "asky Output") -> str:
+    """Wrap content in HTML template.
+
+    Args:
+        content: The markdown content to render.
+        title: The page title shown in the browser tab.
+    """
     from asky.config import TEMPLATE_PATH
 
     if not TEMPLATE_PATH.exists():
@@ -49,7 +140,11 @@ def _create_html_content(content: str) -> str:
 
     # Escape backticks for JS template literal
     safe_content = content.replace("`", "\\`").replace("${", "\\${")
-    return template.replace("{{CONTENT}}", safe_content)
+    return (
+        template.replace("{{TITLE}}", title)
+        .replace("{{CONTENT}}", safe_content)
+        .replace("{{ASSET_VERSION}}", _asky_version())
+    )
 
 
 def render_to_browser(content: str, filename_hint: Optional[str] = None) -> None:
@@ -61,8 +156,7 @@ def render_to_browser(content: str, filename_hint: Optional[str] = None) -> None
                        If not provided, attempts to extract H1 title from content.
     """
     try:
-        html_content = _create_html_content(content)
-        file_path = _save_to_archive(html_content, content, filename_hint)
+        file_path = _save_to_archive(content, filename_hint)
 
         logger.info(f"[Opening browser: {file_path}]")
         webbrowser.open(f"file://{file_path}")
@@ -78,13 +172,11 @@ def save_html_report(
     Returns a tuple of (absolute_path_to_file, absolute_path_to_sidebar_wrapped_file).
     """
     try:
-        html_content = _create_html_content(content)
-        file_path = _save_to_archive(
-            html_content, content, filename_hint, session_name=session_name
-        )
+        file_path = _save_to_archive(content, filename_hint, session_name=session_name)
 
-        index_path = ARCHIVE_DIR / "sidebar_index.html"
-        sidebar_url = f"file://{index_path}#{file_path.name}"
+        index_path = ARCHIVE_DIR / "index.html"
+        # The URL should fragment should contain the results/ subtree path
+        sidebar_url = f"file://{index_path}#results/{file_path.name}"
 
         return str(file_path), sidebar_url
     except Exception as e:
@@ -105,18 +197,18 @@ def _update_sidebar_index(
     if not ARCHIVE_DIR.exists():
         ARCHIVE_DIR.mkdir(parents=True, exist_ok=True)
 
-    index_path = ARCHIVE_DIR / "sidebar_index.html"
     now = datetime.now()
     timestamp_str = now.strftime("%Y-%m-%d %H:%M")
     iso_timestamp = now.isoformat()
 
     # Create prefix (first 3 words of filename slug)
     # Filename format: {slug}_{timestamp}.html
+    # Note: filename here is just the basename, not with results/ prefix yet
     slug_part = filename.rsplit("_", 2)[0]
     prefix = " ".join(slug_part.replace("_", " ").split()[:3]).lower()
 
     new_entry = {
-        "filename": filename,
+        "filename": f"results/{filename}",
         "title": display_title,
         "timestamp": timestamp_str,
         "iso_timestamp": iso_timestamp,
@@ -124,9 +216,10 @@ def _update_sidebar_index(
         "prefix": prefix,
     }
 
-    import json
-
+    current_ver = _asky_version()
+    index_path = ARCHIVE_DIR / "index.html"
     entries = []
+
     if index_path.exists():
         try:
             with open(index_path, "r") as f:
@@ -140,10 +233,10 @@ def _update_sidebar_index(
                     )
                     entries = json.loads(json_str)
         except Exception as e:
-            logger.warning(f"Could not parse existing sidebar_index.html: {e}")
+            logger.warning(f"Could not parse existing index.html: {e}")
 
     # Add new entry (avoid duplicates)
-    if not any(e.get("filename") == filename for e in entries):
+    if not any(e.get("filename") == new_entry["filename"] for e in entries):
         entries.insert(0, new_entry)
 
     # Clean up entries (keep them unique and sorted by date by default)
@@ -155,116 +248,8 @@ def _update_sidebar_index(
   <head>
     <meta charset="UTF-8" />
     <title>asky History</title>
-    <style>
-      body {{
-        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-        font-size: 14px;
-        line-height: 1.5;
-        margin: 0;
-        padding: 0;
-        color: #333;
-        background-color: #f6f8fa;
-        display: flex;
-        height: 100vh;
-        overflow: hidden;
-      }}
-      .sidebar {{
-        width: 320px;
-        flex-shrink: 0;
-        background-color: #fff;
-        border-right: 1px solid #eaecef;
-        display: flex;
-        flex-direction: column;
-        height: 100%;
-      }}
-      .sidebar-header {{
-        padding: 15px;
-        border-bottom: 1px solid #eaecef;
-        background: #fff;
-      }}
-      .sidebar-header h2 {{
-        font-size: 1.1em;
-        margin: 0 0 10px 0;
-      }}
-      .controls {{
-        display: flex;
-        gap: 5px;
-        margin-bottom: 5px;
-      }}
-      .btn {{
-        background: #f3f4f6;
-        border: 1px solid #d1d5db;
-        border-radius: 4px;
-        padding: 4px 8px;
-        font-size: 11px;
-        cursor: pointer;
-        color: #374151;
-      }}
-      .btn:hover {{ background: #e5e7eb; }}
-      .btn.active {{ background: #0366d6; color: #fff; border-color: #0366d6; }}
-
-      .index-list-container {{
-        flex-grow: 1;
-        overflow-y: auto;
-        padding: 0;
-      }}
-      ul {{
-        list-style: none;
-        padding: 0;
-        margin: 0;
-      }}
-      .index-item {{
-        border-bottom: 1px solid #f6f8fa;
-      }}
-      .index-item a {{
-        color: #0056b3;
-        text-decoration: none;
-        display: block;
-        padding: 10px 15px;
-        transition: background 0.1s;
-      }}
-      .index-item a:hover {{ background-color: #f6f8fa; }}
-      .index-item a.active {{ background-color: #eaf5ff; border-left: 3px solid #0366d6; font-weight: 500; }}
-      .time {{ display: block; font-size: 0.8em; color: #6a737d; margin-top: 2px; }}
-      .session-tag {{ font-size: 0.75em; color: #0366d6; background: #eaf5ff; padding: 1px 4px; border-radius: 3px; display: inline-block; margin-top: 3px; }}
-
-      .group-header {{
-        background: #f1f5f9;
-        padding: 6px 15px;
-        font-weight: 600;
-        font-size: 0.85em;
-        cursor: pointer;
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        border-bottom: 1px solid #e2e8f0;
-      }}
-      .group-header:hover {{ background: #e2e8f0; }}
-      .badge {{ background: #64748b; color: white; border-radius: 10px; padding: 1px 6px; font-size: 0.75em; }}
-
-      .content-area {{
-        flex-grow: 1;
-        height: 100%;
-        background: #fff;
-      }}
-      #content-frame {{
-        width: 100%;
-        height: 100%;
-        border: none;
-      }}
-      @media (prefers-color-scheme: dark) {{
-        body {{ background-color: #0d1117; color: #e0e0e0; }}
-        .sidebar, .sidebar-header, .content-area, .group-header {{ background-color: #161b22; color: #c9d1d9; }}
-        .sidebar, .sidebar-header, .index-item, .btn, .group-header {{ border-color: #30363d; }}
-        .btn {{ background: #21262d; color: #c9d1d9; }}
-        .index-item a {{ color: #58a6ff; }}
-        .index-item a:hover {{ background-color: #21262d; }}
-        .index-item a.active {{ background-color: #172a3a; }}
-        .time {{ color: #8b949e; }}
-        .session-tag {{ background: #11263d; color: #58a6ff; }}
-        .group-header:hover {{ background: #21262d; }}
-      }}
-    </style>
+    <link rel="icon" type="image/png" href="assets/asky-icon.png">
+    <link rel="stylesheet" href="assets/asky-sidebar.css">
   </head>
   <body>
     <div class="sidebar">
@@ -286,120 +271,8 @@ def _update_sidebar_index(
 
     <script>
       const ENTRIES = /* ENTRIES_JSON_START */ {entries_json} /* ENTRIES_JSON_END */;
-
-      const list = document.getElementById('index-list');
-      const frame = document.getElementById('content-frame');
-      const state = {{
-        sort: 'date',
-        group: false,
-        collapsedGroups: new Set()
-      }};
-
-      function render() {{
-        let items = [...ENTRIES];
-
-        if (state.sort === 'alpha') {{
-          items.sort((a, b) => a.title.localeCompare(b.title));
-        }} else {{
-          items.sort((a, b) => b.iso_timestamp.localeCompare(a.iso_timestamp));
-        }}
-
-        list.innerHTML = '';
-
-        if (state.group) {{
-          const groups = [];
-          items.forEach(item => {{
-            const groupId = item.session_name || item.prefix || 'Other';
-            let group = groups.find(g => g.id === groupId);
-            if (!group) {{
-               group = {{ id: groupId, name: groupId, items: [] }};
-               groups.push(group);
-            }}
-            group.items.push(item);
-          }});
-
-          groups.forEach(group => {{
-            const groupEl = document.createElement('div');
-            const isCollapsed = state.collapsedGroups.has(group.id);
-
-            groupEl.innerHTML = `
-              <div class="group-header" onclick="toggleGroup('${{group.id}}')">
-                <span>${{group.name}}</span>
-                <span class="badge">${{group.items.length}}</span>
-              </div>
-            `;
-            if (!isCollapsed) {{
-              const ul = document.createElement('ul');
-              group.items.forEach(item => ul.appendChild(createItemEl(item)));
-              groupEl.appendChild(ul);
-            }}
-            list.appendChild(groupEl);
-          }});
-        }} else {{
-          items.forEach(item => list.appendChild(createItemEl(item)));
-        }}
-        highlightActive();
-      }}
-
-      function createItemEl(item) {{
-        const li = document.createElement('li');
-        li.className = 'index-item';
-        const sessionHtml = item.session_name ? `<span class="session-tag">${{item.session_name}}</span>` : '';
-        li.innerHTML = `
-          <a href="#${{item.filename}}" onclick="window.location.hash='${{item.filename}}'; return false;">
-            ${{item.title}}
-            ${{sessionHtml}}
-            <span class="time">${{item.timestamp}}</span>
-          </a>
-        `;
-        return li;
-      }}
-
-      function toggleGroup(id) {{
-        if (state.collapsedGroups.has(id)) state.collapsedGroups.delete(id);
-        else state.collapsedGroups.add(id);
-        render();
-      }}
-
-      function highlightActive() {{
-        const hash = window.location.hash.substring(1);
-        list.querySelectorAll('a').forEach(a => {{
-          if (a.getAttribute('href') === '#' + hash) a.classList.add('active');
-          else a.classList.remove('active');
-        }});
-      }}
-
-      document.getElementById('sort-date').onclick = (e) => {{
-        state.sort = 'date';
-        e.target.classList.add('active');
-        document.getElementById('sort-alpha').classList.remove('active');
-        render();
-      }};
-      document.getElementById('sort-alpha').onclick = (e) => {{
-        state.sort = 'alpha';
-        e.target.classList.add('active');
-        document.getElementById('sort-date').classList.remove('active');
-        render();
-      }};
-      document.getElementById('toggle-group').onclick = (e) => {{
-        state.group = !state.group;
-        e.target.classList.toggle('active', state.group);
-        render();
-      }};
-
-      function loadFromHash() {{
-        const hash = window.location.hash.substring(1);
-        if (hash) {{
-          frame.src = hash;
-          highlightActive();
-        }} else if (ENTRIES.length > 0) {{
-          window.location.hash = ENTRIES[0].filename;
-        }}
-      }}
-
-      window.addEventListener('hashchange', loadFromHash);
-      window.onload = () => {{ loadFromHash(); render(); }};
     </script>
+    <script src="assets/asky-sidebar_v{current_ver}.js"></script>
   </body>
 </html>
 """
@@ -408,45 +281,42 @@ def _update_sidebar_index(
 
 
 def _save_to_archive(
-    html_content: str,
-    markdown_content: Optional[str] = None,
+    markdown_content: str,
     filename_hint: Optional[str] = None,
     session_name: str = "",
 ) -> Path:
-    """Save HTML content to the archive directory with a unique name.
+    """Save markdown content as an HTML report in the archive directory.
 
     Args:
-        html_content: The HTML content to save.
-        markdown_content: Original markdown content for title extraction.
-        filename_hint: Explicit hint for filename (overrides title extraction).
+        markdown_content: The raw markdown to render and save.
+        filename_hint: Explicit hint for the display title and filename.
         session_name: The name of the session this report belongs to.
     """
-    if not ARCHIVE_DIR.exists():
-        ARCHIVE_DIR.mkdir(parents=True, exist_ok=True)
+    _ensure_archive_assets()
 
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
     # Priority: 1. Explicit hint, 2. Extracted H1 title, 3. "untitled"
     slug_source = filename_hint
-    if not slug_source and markdown_content:
+    if not slug_source:
         extracted_title = extract_markdown_title(markdown_content)
         if extracted_title:
             slug_source = extracted_title
             logger.debug(f"Extracted title for filename: {extracted_title}")
 
     slug = generate_slug(slug_source or "untitled", max_words=5)
+    display_title = (
+        slug_source if slug_source and slug_source != "untitled" else "Query Result"
+    )
+
+    html_content = _create_html_content(markdown_content, title=display_title)
 
     filename = f"{slug}_{timestamp}.html"
-    file_path = ARCHIVE_DIR / filename
+    file_path = _get_results_dir() / filename
 
     with open(file_path, "w") as f:
         f.write(html_content)
 
-    # Update the sidebar index
-    # Note: slug_source should be the human-readable title without the timestamp suffix
-    display_title = (
-        slug_source if slug_source and slug_source != "untitled" else "Query Result"
-    )
     _update_sidebar_index(filename, display_title, session_name=session_name)
 
     return file_path

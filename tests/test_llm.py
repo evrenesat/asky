@@ -325,21 +325,14 @@ def test_generate_summaries_short_answer(mock_get_msg):
 
 @patch("asky.rendering.webbrowser.open")
 @patch("asky.rendering._save_to_archive")
-@patch("asky.rendering._create_html_content")
-def test_render_to_browser(mock_create_html, mock_save_to_archive, mock_browser_open):
-    # Setup mocks
-    mock_create_html.return_value = "<html>Content</html>"
-    mock_save_to_archive.return_value = "/path/to/archive/file.html"
+def test_render_to_browser(mock_save_to_archive, mock_browser_open):
+    fake_path = MagicMock()
+    fake_path.__str__ = lambda self: "/path/to/archive/file.html"
+    mock_save_to_archive.return_value = fake_path
 
-    # Call the function
     render_to_browser("Test Markdown", filename_hint="my_hint")
 
-    # Assertions
-    mock_create_html.assert_called_with("Test Markdown")
-    # Now passes markdown_content for title extraction
-    mock_save_to_archive.assert_called_with(
-        "<html>Content</html>", "Test Markdown", "my_hint"
-    )
+    mock_save_to_archive.assert_called_once_with("Test Markdown", "my_hint")
     mock_browser_open.assert_called_with("file:///path/to/archive/file.html")
 
 

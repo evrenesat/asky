@@ -60,17 +60,17 @@ def test_save_html_report():
 
             # Verify
             expected_filename = "test_slug_20230101_120000.html"
-            expected_path = archive_dir / expected_filename
+            expected_path = archive_dir / "results" / expected_filename
 
             assert path_str == str(expected_path)
             assert expected_path.exists()
             assert expected_path.read_text() == "<htmled># Test Content</htmled>"
 
             # Verify sidebar index
-            index_path = archive_dir / "sidebar_index.html"
+            index_path = archive_dir / "index.html"
             assert index_path.exists()
             index_content = index_path.read_text()
-            assert "test_slug_20230101_120000.html" in index_content
+            assert "results/test_slug_20230101_120000.html" in index_content
             assert "Test Slug Input" in index_content
             assert '"session_name": "Test Session"' in index_content
             assert '"prefix": "test slug"' in index_content
@@ -110,7 +110,7 @@ def test_save_html_report_no_hint():
             assert Path(path_str).name == expected_filename
 
             # Verify prefix in sidebar
-            index_path = archive_dir / "sidebar_index.html"
+            index_path = archive_dir / "index.html"
             index_content = index_path.read_text()
             assert '"prefix": "test content"' in index_content
 
@@ -122,7 +122,6 @@ def test_sidebar_groups_and_sorting():
 
     with tempfile.TemporaryDirectory() as temp_dir:
         archive_dir = Path(temp_dir)
-        index_path = archive_dir / "sidebar_index.html"
 
         with patch("asky.rendering.ARCHIVE_DIR", archive_dir):
             # First entry
@@ -138,6 +137,8 @@ def test_sidebar_groups_and_sorting():
                 "slug_one_more_20230101_140000.html", "Title Three", "Session B"
             )
 
+            index_path = archive_dir / "index.html"
+
             content = index_path.read_text()
             marker_start = "/* ENTRIES_JSON_START */"
             marker_end = "/* ENTRIES_JSON_END */"
@@ -146,14 +147,16 @@ def test_sidebar_groups_and_sorting():
 
             assert len(entries) == 3
             # Most recent first
-            assert entries[0]["filename"] == "slug_one_more_20230101_140000.html"
+            assert (
+                entries[0]["filename"] == "results/slug_one_more_20230101_140000.html"
+            )
             assert entries[0]["session_name"] == "Session B"
             assert entries[0]["prefix"] == "slug one more"
 
-            assert entries[1]["filename"] == "slug_two_20230101_130000.html"
+            assert entries[1]["filename"] == "results/slug_two_20230101_130000.html"
             assert entries[1]["prefix"] == "slug two"
 
-            assert entries[2]["filename"] == "slug_one_20230101_120000.html"
+            assert entries[2]["filename"] == "results/slug_one_20230101_120000.html"
             assert entries[2]["session_name"] == "Session A"
             assert entries[2]["prefix"] == "slug one"
 

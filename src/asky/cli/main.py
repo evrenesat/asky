@@ -23,9 +23,10 @@ from asky.config import (
 )
 from asky.banner import get_banner, BannerState
 from asky.logger import setup_logging, generate_timestamped_log_path
-from asky.storage import init_db, get_db_record_count
+from asky.storage import init_db, get_db_record_count, get_total_session_count
 from asky.storage.sqlite import SQLiteHistoryRepository
 from asky.cli.completion import parse_session_selector_token
+from asky.core import get_shell_session_id
 
 
 class _LazyModuleProxy:
@@ -79,12 +80,15 @@ def parse_args() -> argparse.Namespace:
         choices=MODELS.keys(),
         help="Select the model alias",
     )
+    CONTINUE_LAST_SENTINEL = "__last__"
     continue_chat_action = parser.add_argument(
         "-c",
         "--continue-chat",
         dest="continue_ids",
+        nargs="?",
+        const=CONTINUE_LAST_SENTINEL,
         metavar="HISTORY_IDS",
-        help="Continue conversation with context from specific history IDs (comma-separated, e.g. '1,2').",
+        help="Continue conversation from specific history IDs (comma-separated). Omit value to continue from the last message.",
     )
     parser.add_argument(
         "-s",
@@ -222,6 +226,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "-se",
+        "-es",
         "--session-end",
         action="store_true",
         help="End the current active session",
@@ -356,6 +361,11 @@ def show_banner(args) -> None:
     sum_ctx = MODELS[sum_alias].get("context_size", DEFAULT_CONTEXT_SIZE)
     db_count = get_db_record_count()
 
+    try:
+        total_sessions = get_total_session_count()
+    except Exception:
+        total_sessions = 0
+
     state = BannerState(
         model_alias=model_alias,
         model_id=model_id,
@@ -369,7 +379,7 @@ def show_banner(args) -> None:
         # session details (initial state)
         session_name=None,
         session_msg_count=0,
-        total_sessions=0,
+        total_sessions=total_sessions,
     )
 
     banner = get_banner(state)
@@ -447,6 +457,56 @@ def main() -> None:
             else:
                 normalized_resume_tokens.append(str(parsed_session_id))
         args.resume_session = normalized_resume_tokens
+
+    # Resolve continue sentinel
+    if getattr(args, "continue_ids", None) == "__last__":
+        args.continue_ids = "~1"
+
+    # Guard: if continue_ids was given a plaintext value instead of a valid selector
+    # (e.g. `asky -c Tell me more` gives continue_ids="Tell"), recover gracefully.
+    # A valid value is a digit, a ~N relative selector, or a __hid_N token.
+    _cids = getattr(args, "continue_ids", None)
+    if _cids and not re.match(r"^(\d+|~\d+|__hid_\d+)(,(\d+|~\d+|__hid_\d+))*$", _cids):
+        args.query = [_cids] + (args.query or [])
+        args.continue_ids = "~1"
+
+    # Automatically convert history-continuation to a session if no session is active.
+    # This makes the continuation part of a resumable conversation.
+    if getattr(args, "continue_ids", None) and not any(
+        [
+            getattr(args, "sticky_session", None),
+            getattr(args, "resume_session", None),
+            getattr(args, "session_from_message", None),
+            get_shell_session_id(),
+        ]
+    ):
+        init_db()
+        repo = SQLiteHistoryRepository()
+        try:
+            from asky.api.context import load_context_from_history
+            from asky.storage import get_history, get_interaction_context
+
+            # Resolve the selector (direct ID or ~N) to actual interaction IDs
+            res = load_context_from_history(
+                args.continue_ids,
+                summarize=False,
+                get_history_fn=get_history,
+                get_interaction_context_fn=get_interaction_context,
+            )
+            if res.resolved_ids:
+                # Pick the most recent ID as the pivot for session conversion
+                target_id = max(res.resolved_ids)
+                new_sid = repo.convert_history_to_session(target_id)
+                args.resume_session = [str(new_sid)]
+                # Note: args.continue_ids is PRESERVED so AskyClient.run_turn still
+                # uses it for context injection if needed (though session resumption
+                # will also bring in the converted messages).
+        except Exception as e:
+            import logging
+
+            logging.getLogger(__name__).debug(
+                f"Failed to auto-convert continue to session: {e}"
+            )
 
     # Configure logging based on verbose flag
     if args.verbose:

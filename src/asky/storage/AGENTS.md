@@ -98,13 +98,16 @@ For history, the "interaction ID" refers to the **assistant message row ID**, as
 ## Usage
 
 ```python
-from asky.storage import get_history, save_interaction
+from asky.storage import get_history, save_interaction, get_total_session_count
 
 # Save a Q&A exchange
 save_interaction(query="Hello", answer="Hi there!", model="gpt-4")
 
 # Get recent history
 interactions = get_history(limit=10)
+
+# Get global session count (used by banner totals)
+total_sessions = get_total_session_count()
 ```
 
 ## Dependencies

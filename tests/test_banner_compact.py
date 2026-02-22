@@ -70,3 +70,29 @@ def test_compact_banner_research_mode(mock_state):
 
     assert "🧠" in output
     assert "10 txt" in output
+
+
+def test_full_banner_uses_conversation_label():
+    """Full banner should label totals row as Conversation."""
+    state = BannerState(
+        model_alias="test-model",
+        model_id="tm-123",
+        sum_alias="sum-model",
+        sum_id="sm-123",
+        model_ctx=4096,
+        sum_ctx=4096,
+        max_turns=20,
+        current_turn=1,
+        db_count=100,
+        total_sessions=10,
+        main_token_usage={"test-model": {"input": 100, "output": 200}},
+    )
+
+    panel = get_banner(state)
+
+    console = Console()
+    with console.capture() as capture:
+        console.print(panel)
+    output = capture.get()
+
+    assert "Conversation" in output
