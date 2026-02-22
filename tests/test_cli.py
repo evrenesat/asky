@@ -129,10 +129,26 @@ def test_parse_args_tool_off_aliases():
         assert args.query == ["query"]
 
 
-def test_parse_args_local_corpus():
-    with patch("sys.argv", ["asky", "-lc", "/a/b", "/c/d", "--", "query"]):
+def test_parse_args_research_flag_no_pointer():
+    # Note: argparse with nargs='?' greedily consumes the next token if it doesn't look like a flag.
+    # main() resolves this later via _resolve_research_corpus.
+    with patch("sys.argv", ["asky", "-r", "query"]):
         args = parse_args()
-        assert args.local_corpus == ["/a/b", "/c/d"]
+        assert args.research == "query"
+        assert args.query == []
+
+
+def test_parse_args_research_flag_with_pointer():
+    with patch("sys.argv", ["asky", "-r", "corpus.pdf", "query"]):
+        args = parse_args()
+        assert args.research == "corpus.pdf"
+        assert args.query == ["query"]
+
+
+def test_parse_args_research_flag_quoted_pointer():
+    with patch("sys.argv", ["asky", "-r", "my book.pdf", "query"]):
+        args = parse_args()
+        assert args.research == "my book.pdf"
         assert args.query == ["query"]
 
 
@@ -141,7 +157,7 @@ def test_run_chat_local_corpus_implies_research_mode():
 
     mock_args = argparse.Namespace(
         model="gf",
-        research=False,
+        research=True,
         local_corpus=["/tmp/corpus"],
         summarize=False,
         open=False,

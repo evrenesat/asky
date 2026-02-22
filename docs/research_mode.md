@@ -10,21 +10,23 @@ You can enable research mode by passing the `-r` or `--research` flag:
 asky -r "Compare the latest iPhone vs Samsung flagship specs and reviews"
 ```
 
-_Note: Passing local corpus paths with `-lc` implicitly enables research mode._
+```bash
+asky -r "Compare the latest iPhone vs Samsung flagship specs and reviews"
+```
 
 ## Standard Mode vs Research Mode
 
 Both modes use the same `AskyClient.run_turn()` orchestration path, but they diverge in prompting, tool exposure, and session behavior.
 
-| Area | Standard mode (default) | Research mode (`-r`) |
-| --- | --- | --- |
-| System prompt | General assistant prompt | Research workflow prompt with retrieval/memory guidance |
-| Toolset focus | Generic discovery + fetch (`web_search`, `get_url_content`, `get_url_details`) | Research RAG loop (`extract_links`, `get_relevant_content`, `save_finding`, `query_research_memory`, etc.) |
-| Session behavior | Session optional | Session auto-created if missing (for research-memory isolation) |
-| Memory behavior | User memory (`save_memory`) for preferences/facts about user | Session-scoped research findings (`save_finding`) + semantic recall (`query_research_memory`) |
-| Pre-LLM preload | Optional shortlist can still run | Same shortlist pipeline plus optional local corpus ingestion and retrieval-only guidance |
-| Typical output shape | Faster, shorter direct answers; fewer intermediate citations | Slower, more evidence-heavy, often citation-rich synthesis |
-| Failure mode on weaker models | May under-search and answer from priors | May underuse `save_finding` / `query_research_memory` unless prompted tightly |
+| Area                          | Standard mode (default)                                                        | Research mode (`-r`)                                                                                       |
+| ----------------------------- | ------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------- |
+| System prompt                 | General assistant prompt                                                       | Research workflow prompt with retrieval/memory guidance                                                    |
+| Toolset focus                 | Generic discovery + fetch (`web_search`, `get_url_content`, `get_url_details`) | Research RAG loop (`extract_links`, `get_relevant_content`, `save_finding`, `query_research_memory`, etc.) |
+| Session behavior              | Session optional                                                               | Session auto-created if missing (for research-memory isolation)                                            |
+| Memory behavior               | User memory (`save_memory`) for preferences/facts about user                   | Session-scoped research findings (`save_finding`) + semantic recall (`query_research_memory`)              |
+| Pre-LLM preload               | Optional shortlist can still run                                               | Same shortlist pipeline plus optional local corpus ingestion and retrieval-only guidance                   |
+| Typical output shape          | Faster, shorter direct answers; fewer intermediate citations                   | Slower, more evidence-heavy, often citation-rich synthesis                                                 |
+| Failure mode on weaker models | May under-search and answer from priors                                        | May underuse `save_finding` / `query_research_memory` unless prompted tightly                              |
 
 ## Is Research Mode Actually Better?
 
@@ -85,26 +87,30 @@ local_document_roots = [
 ]
 ```
 
-Then, use the `-lc` (or `--local-corpus`) flag, or reference the files directly in your query:
+Then, use the `-r` flag followed by a corpus pointer. A corpus pointer can be a filename, a directory name, or a comma-separated list of names (resolved against your `local_document_roots`). Absolute paths are also supported.
 
 ```bash
-asky -lc /Users/you/docs/security/passwords.md "Summarize the password requirements"
+# Reference a file under your corpus root
+asky -r passwords.md "Summarize the password requirements"
+
+# Reference multiple files
+asky -r "passwords.md,mfa_policy.pdf" "List all authentication requirements"
+
+# Reference a subdirectory
+asky -r security/policies "Are there any gaps in our MFA coverage?"
+
+# Use an absolute path
+asky -r /Users/you/docs/engineering/specs.pdf "What are the specs?"
 ```
 
-Or reference them in the query (paths must be relative to your configured `local_document_roots`):
-
-```bash
-asky -r "Use /passwords.md and list MFA requirements"
-```
-
-_Note: asky processes local files (.txt, .md, .pdf, .csv, etc.) similar to web pages. It chunks them, embeds them, and the model uses RAG tools to query the content._
+_Note: asky processes local files (.txt, .md, .pdf, .csv, EPUB, etc.) similar to web pages. It chunks them, embeds them, and uses RAG tools to query the content._
 
 ### Mixed Web & Local Research
 
 You can combine both sources in a single query:
 
 ```bash
-asky -r "Use /passwords.md and verify whether NIST 800-63B guidance has changed on the web"
+asky -r passwords.md "Verify whether NIST 800-63B guidance has changed on the web"
 ```
 
 Asky will ingest your local policy document, then use web search to find current NIST guidance, and compare the two.

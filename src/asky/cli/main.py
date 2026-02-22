@@ -4,6 +4,8 @@ import argparse
 import importlib
 import re
 import threading
+import os
+from asky.config import RESEARCH_LOCAL_DOCUMENT_ROOTS
 from types import ModuleType
 from typing import Optional
 
@@ -248,20 +250,17 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "-r",
         "--research",
-        action="store_true",
-        help="Enable deep research mode with link extraction and RAG-based content retrieval.\n"
-        "In this mode, the LLM uses specialized tools:\n"
+        nargs="?",
+        const=True,
+        default=False,
+        metavar="CORPUS_POINTER",
+        help="Enable deep research mode with optional local corpus pointer (file, directory, or comma-separated names).\n"
+        "If pointer provided, it is resolved against local_document_roots. The rest of arguments are the query.\n"
+        "Special tools available in this mode:\n"
         "  - extract_links: Discover links (content cached, only links returned)\n"
         "  - get_link_summaries: Get AI summaries of cached pages\n"
         "  - get_relevant_content: RAG-based retrieval of relevant sections\n"
         "  - get_full_content: Get complete cached content",
-    )
-    parser.add_argument(
-        "-lc",
-        "--local-corpus",
-        nargs="+",
-        metavar="PATH",
-        help="Local file or directory paths to ingest as research corpus. Implies --research.",
     )
     session_from_message_action = parser.add_argument(
         "-sfm",
@@ -443,9 +442,83 @@ def _start_research_cache_cleanup_thread() -> threading.Thread:
     return thread
 
 
+def _resolve_research_corpus(
+    research_arg: str | bool,
+) -> tuple[bool, list[str] | None, str | None]:
+    """Resolve raw research flag value to (enabled, paths_or_none, leftover_query_token)."""
+    if research_arg is False or research_arg is None:
+        return False, None, None
+
+    if research_arg is True:
+        # Flag used without value (-r -- "query")
+        return True, None, None
+
+    # Flag used with optional corpus pointer (-r "token" "query")
+    raw_pointer = str(research_arg).strip()
+    if not raw_pointer:
+        return True, None, None
+
+    tokens = [t.strip() for t in raw_pointer.split(",") if t.strip()]
+    if not tokens:
+        return True, None, None
+
+    is_explicit_list = "," in raw_pointer
+    resolved_paths = []
+
+    for token in tokens:
+        # 1. Direct absolute path existence check
+        if os.path.isabs(token) and (os.path.isfile(token) or os.path.isdir(token)):
+            resolved_paths.append(token)
+            continue
+
+        # 2. Look up under corpus roots
+        found = False
+        for root in RESEARCH_LOCAL_DOCUMENT_ROOTS:
+            # Absolute root required
+            full_path = os.path.join(os.path.abspath(root), token.lstrip("/"))
+            if os.path.isfile(full_path) or os.path.isdir(full_path):
+                resolved_paths.append(full_path)
+                found = True
+                break
+
+        if not found:
+            # If it was a list (a,b) or looked like a path (/...), we fail fast.
+            # If it's a single token that doesn't exist, we treat it as query start.
+            if is_explicit_list or token.startswith(("/", "./", "../", "~/")):
+                raise ValueError(
+                    f"Corpus pointer '{token}' could not be resolved. "
+                    f"Check your local_document_roots in research.toml."
+                )
+            else:
+                # Treat as query start
+                return True, None, raw_pointer
+
+    return True, resolved_paths, None
+
+
 def main() -> None:
     """Main entry point."""
     args = parse_args()
+
+    # Resolve research flag and local corpus paths
+    try:
+        # Use getattr to safely handle partially-mocked args in legacy tests
+        research_arg = getattr(args, "research", False)
+        research_enabled, corpus_paths, leftover = _resolve_research_corpus(
+            research_arg
+        )
+        args.research = research_enabled
+        args.local_corpus = corpus_paths
+        if leftover:
+            # Re-insert the token into query list if argparse consumed it but it wasn't a pointer
+            if not getattr(args, "query", None):
+                args.query = [leftover]
+            else:
+                args.query.insert(0, leftover)
+    except ValueError as e:
+        print(f"Error: {e}")
+        return
+
     legacy_from_message = getattr(args, "from_message", None)
     if getattr(args, "session_from_message", None) is None and isinstance(
         legacy_from_message, int

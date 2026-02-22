@@ -1,5 +1,28 @@
 # DEVLOG
 
+## 2026-02-22 - Smart Research Flag (`-r`) + Deprecated `-lc`
+
+Refactored the research mode flag to be more intelligent and handle local corpus pointers directly, eliminating the need for the separate `-lc` flag and fixing broken in-query path referencing.
+
+- **Changed**:
+  - `src/asky/cli/main.py`:
+    - Changed `-r`/`--research` to `nargs="?"` to accept an optional corpus pointer.
+    - Removed `-lc`/`--local-corpus` flag entirely.
+    - Implemented `_resolve_research_corpus()` to resolve pointers against `local_document_roots`.
+    - Integrated resolution into `main()`, with fallback logic to treat non-pointer tokens as query starts.
+  - `docs/research_mode.md`:
+    - Removed all `-lc` references and syntax examples.
+    - Removed in-query implicit path referencing documentation.
+    - Added examples for the new `-r corpus_pointer query` syntax.
+- **Tests**:
+  - Added `tests/test_research_corpus_resolution.py` for comprehensive resolution logic verification.
+  - Updated `tests/test_cli.py` for new flag parsing and mock namespace parity.
+  - Full suite: `uv run pytest` -> passed.
+- **Why**:
+  - The `-lc` flag was redundant and its implementation was greedily consuming query tokens.
+  - In-query path referencing (`/path`) was fragile and conflicted with shell aliases.
+  - A unified `-r` flag with smart resolution provides a cleaner, more predictable UX.
+
 ## 2026-02-22 - `-vv` Redesign: Full Main-Model I/O + Live Streaming + Transport Metadata
 
 Aligned double-verbose behavior with CLI expectations: show complete main-model communication live, and keep tool/summarizer internals metadata-only.
