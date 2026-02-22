@@ -174,6 +174,8 @@ class ConversationEngine:
                     turn=turn,
                     use_tools=use_tools,
                     phase="main_loop",
+                    tool_schemas=tool_schemas,
+                    tool_guidelines=self.tool_registry.get_system_prompt_guidelines(),
                 )
 
                 msg = get_llm_msg(
@@ -388,6 +390,8 @@ class ConversationEngine:
         turn: int,
         use_tools: bool,
         phase: str,
+        tool_schemas: Optional[List[Dict[str, Any]]] = None,
+        tool_guidelines: Optional[List[str]] = None,
     ) -> None:
         """Emit full outbound message payload in double-verbose mode."""
         if not self.double_verbose:
@@ -401,6 +405,8 @@ class ConversationEngine:
             "model_id": self.model_config.get("id"),
             "use_tools": use_tools,
             "messages": copy.deepcopy(messages),
+            "tool_schemas": copy.deepcopy(tool_schemas or []),
+            "tool_guidelines": list(tool_guidelines or []),
         }
         if self.verbose_output_callback:
             self.verbose_output_callback(payload)
@@ -669,6 +675,8 @@ class ConversationEngine:
             turn=self.max_turns + 1,
             use_tools=False,
             phase="graceful_exit",
+            tool_schemas=[],
+            tool_guidelines=[],
         )
         final_msg = get_llm_msg(
             self.model_config["id"],

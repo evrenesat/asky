@@ -46,8 +46,8 @@ def test_idle_timeout_fresh_session(mock_repo, mock_console):
         assert result == "continue"
 
 
-@patch("asky.cli.chat.input")
-def test_idle_timeout_stale_session_continue(mock_input, mock_repo, mock_console):
+@patch("rich.prompt.Prompt.ask")
+def test_idle_timeout_stale_session_continue(mock_ask, mock_repo, mock_console):
     with patch("asky.cli.chat.SESSION_IDLE_TIMEOUT_MINUTES", 5):
         # 10 minutes ago
         last_used = datetime.now() - timedelta(minutes=10)
@@ -61,17 +61,14 @@ def test_idle_timeout_stale_session_continue(mock_input, mock_repo, mock_console
         )
         mock_repo.get_session_by_id.return_value = session
 
-        # Simulate user choice 'c' (or default)
-        # Mocking sys.stdin for raw mode failure to reach input()
-        with patch("sys.stdin.fileno", side_effect=Exception):
-            mock_input.return_value = "c"
-            result = _check_idle_session_timeout(1, mock_console)
-            assert result == "continue"
-            assert mock_console.print.called
+        mock_ask.return_value = "c"
+        result = _check_idle_session_timeout(1, mock_console)
+        assert result == "continue"
+        assert mock_console.print.called
 
 
-@patch("asky.cli.chat.input")
-def test_idle_timeout_stale_session_new(mock_input, mock_repo, mock_console):
+@patch("rich.prompt.Prompt.ask")
+def test_idle_timeout_stale_session_new(mock_ask, mock_repo, mock_console):
     with patch("asky.cli.chat.SESSION_IDLE_TIMEOUT_MINUTES", 5):
         last_used = datetime.now() - timedelta(minutes=10)
         session = Session(
@@ -84,14 +81,13 @@ def test_idle_timeout_stale_session_new(mock_input, mock_repo, mock_console):
         )
         mock_repo.get_session_by_id.return_value = session
 
-        with patch("sys.stdin.fileno", side_effect=Exception):
-            mock_input.return_value = "n"
-            result = _check_idle_session_timeout(1, mock_console)
-            assert result == "new"
+        mock_ask.return_value = "n"
+        result = _check_idle_session_timeout(1, mock_console)
+        assert result == "new"
 
 
-@patch("asky.cli.chat.input")
-def test_idle_timeout_stale_session_oneoff(mock_input, mock_repo, mock_console):
+@patch("rich.prompt.Prompt.ask")
+def test_idle_timeout_stale_session_oneoff(mock_ask, mock_repo, mock_console):
     with patch("asky.cli.chat.SESSION_IDLE_TIMEOUT_MINUTES", 5):
         last_used = datetime.now() - timedelta(minutes=10)
         session = Session(
@@ -104,7 +100,6 @@ def test_idle_timeout_stale_session_oneoff(mock_input, mock_repo, mock_console):
         )
         mock_repo.get_session_by_id.return_value = session
 
-        with patch("sys.stdin.fileno", side_effect=Exception):
-            mock_input.return_value = "o"
-            result = _check_idle_session_timeout(1, mock_console)
-            assert result == "oneoff"
+        mock_ask.return_value = "o"
+        result = _check_idle_session_timeout(1, mock_console)
+        assert result == "oneoff"

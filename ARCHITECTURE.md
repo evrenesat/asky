@@ -193,6 +193,11 @@ Verbose tracing has two levels:
   In Live-banner mode these traces stream immediately through the live console
   (no end-of-turn deferral). Tool/summarization internals are shown as transport
   metadata (target endpoint, response status/type, and response size), not full bodies.
+  Main-model transport request/response metadata is merged into the main request/response
+  boxes (not duplicated as separate transport panels), outbound request payload traces
+  include structured enabled-tool schemas/guidelines, and preload stage emits a
+  structured `Preloaded Context Sent To Main Model` provenance panel before the first
+  model call.
 
 Programmatic consumers can bypass CLI by instantiating `AskyClient` directly and
 calling `run_turn(...)` for full CLI-equivalent orchestration.

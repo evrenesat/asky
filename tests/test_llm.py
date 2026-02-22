@@ -200,7 +200,23 @@ def test_conversation_engine_compacts_large_tool_payloads_before_append(
 
     very_large_content = "x" * 5000
     registry = MagicMock()
-    registry.get_schemas.return_value = []
+    registry.get_schemas.return_value = [
+        {
+            "type": "function",
+            "function": {
+                "name": "web_search",
+                "description": "Search web",
+                "parameters": {
+                    "type": "object",
+                    "properties": {"q": {"type": "string"}},
+                    "required": ["q"],
+                },
+            },
+        }
+    ]
+    registry.get_system_prompt_guidelines.return_value = [
+        "`web_search`: Use for discovery."
+    ]
     registry.dispatch.return_value = {
         "https://example.com/huge": {
             "content": very_large_content,
@@ -290,7 +306,23 @@ def test_conversation_engine_double_verbose_emits_main_model_messages(mock_get_m
     model_config = {"id": "test_model", "alias": "test_alias", "max_chars": 1000}
 
     registry = MagicMock()
-    registry.get_schemas.return_value = []
+    registry.get_schemas.return_value = [
+        {
+            "type": "function",
+            "function": {
+                "name": "web_search",
+                "description": "Search web",
+                "parameters": {
+                    "type": "object",
+                    "properties": {"q": {"type": "string"}},
+                    "required": ["q"],
+                },
+            },
+        }
+    ]
+    registry.get_system_prompt_guidelines.return_value = [
+        "`web_search`: Use for discovery."
+    ]
 
     verbose_payloads = []
     engine = ConversationEngine(
@@ -324,6 +356,8 @@ def test_conversation_engine_double_verbose_emits_main_model_messages(mock_get_m
     assert request_payload["model_alias"] == "test_alias"
     assert request_payload["messages"][0]["role"] == "system"
     assert request_payload["messages"][1]["role"] == "user"
+    assert request_payload["tool_schemas"][0]["function"]["name"] == "web_search"
+    assert request_payload["tool_guidelines"] == ["`web_search`: Use for discovery."]
 
     assert len(response_payloads) == 1
     response_payload = response_payloads[0]

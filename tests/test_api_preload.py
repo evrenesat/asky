@@ -174,3 +174,37 @@ def test_seed_url_context_allows_direct_answer_false_on_errors():
         research_mode=False,
     )
     assert ready is False
+
+
+def test_run_preload_pipeline_forwards_trace_callback_to_shortlist_executor():
+    observed = {"trace_forwarded": False}
+
+    def shortlist_executor(**kwargs: Any) -> Dict[str, Any]:
+        observed["trace_forwarded"] = kwargs.get("trace_callback") is not None
+        return {
+            "enabled": True,
+            "seed_url_documents": [],
+            "candidates": [],
+            "warnings": [],
+            "stats": {},
+            "trace": {"processed_candidates": [], "selected_candidates": []},
+        }
+
+    preload = run_preload_pipeline(
+        query_text="test query",
+        research_mode=False,
+        model_config={"source_shortlist_enabled": True, "context_size": 100},
+        lean=False,
+        preload_local_sources=False,
+        preload_shortlist=True,
+        shortlist_executor=shortlist_executor,
+        shortlist_formatter=lambda _payload: "",
+        shortlist_stats_builder=lambda payload, elapsed_ms: {
+            "enabled": payload.get("enabled"),
+            "elapsed_ms": elapsed_ms,
+        },
+        trace_callback=lambda _event: None,
+    )
+
+    assert preload.shortlist_enabled is True
+    assert observed["trace_forwarded"] is True

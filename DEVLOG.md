@@ -1,5 +1,48 @@
 # DEVLOG
 
+## 2026-02-22 - Fix: Session Idle Timeout UI Conflict
+
+Fixed a UI conflict where the session idle timeout prompt was hidden by the live banner and caused display corruption.
+
+- **Changed**:
+  - `src/asky/cli/chat.py`:
+    - Moved session resolution (`sticky_session_name`, `resume_session_term`, `shell_session_id`) and `_check_idle_session_timeout()` call to before the `try` block that starts the live banner.
+    - Moved `elephant_mode` session validation before the banner start to ensure warnings are visible.
+- **Why**:
+  - `renderer.start_live()` captures the console and hides standard `console.print()` output behind the banner. Moving the interactive check before the banner ensures the user can see and respond to the prompt correctly.
+- **Validation**:
+  - Verified that `tests/test_idle_timeout.py` and the full test suite pass.
+  - Corrected the ordering so banner content accurately reflects the chosen session action.
+
+## 2026-02-22 - `-vv` Follow-up: Preload/Shortlist Trace Coverage + Main-Model Panel Consolidation
+
+Refined the prior `-vv` redesign to address trace usability issues surfaced in real CLI runs.
+
+- **Changed**:
+  - `src/asky/core/engine.py`:
+    - `llm_request_messages` now includes structured `tool_schemas` and `tool_guidelines` metadata for the exact main-model call.
+  - `src/asky/api/preload.py` and `src/asky/api/client.py`:
+    - Added optional preload-stage trace propagation into shortlist execution.
+    - Added structured `preload_provenance` verbose event emitted before main-model execution.
+  - `src/asky/research/source_shortlist.py` and `src/asky/research/shortlist_types.py`:
+    - Added optional `trace_callback` support for shortlist search/fetch/seed-link stages.
+    - Default shortlist fetch now forwards retrieval transport metadata with `source=shortlist`.
+    - Seed-link extractor now emits transport request/response/error metadata.
+    - Trace callback forwarding now supports both explicit `trace_callback` signatures and `**kwargs` executors.
+  - `src/asky/cli/chat.py`:
+    - Added `Preloaded Context Sent To Main Model` panel (seed-doc statuses, selected shortlist URLs, warnings, context sizes).
+    - Consolidated main-model transport metadata into main outbound/inbound panels.
+    - Suppressed standalone transport panels for `source=main_model` to reduce duplication.
+    - Added structured enabled-tool schema table and tool-guideline panel to outbound main-model traces.
+- **Tests**:
+  - `tests/test_cli.py`: added coverage for merged main-model transport rendering and preload provenance panel.
+  - `tests/test_llm.py`: added coverage for tool schema/guideline fields in request trace payload.
+  - `tests/test_source_shortlist.py`: added trace-callback propagation and shortlist fetch transport-error coverage.
+  - `tests/test_api_preload.py`: added trace-callback forwarding coverage in preload pipeline.
+  - `tests/test_api_library.py`: added preload provenance event emission coverage.
+- **Validation**:
+  - Targeted: `uv run pytest tests/test_cli.py tests/test_llm.py tests/test_source_shortlist.py tests/test_api_preload.py tests/test_api_library.py tests/test_tools.py tests/test_api_client_status.py` -> passed.
+
 ## 2026-02-22 - Smart Research Flag (`-r`) + Deprecated `-lc`
 
 Refactored the research mode flag to be more intelligent and handle local corpus pointers directly, eliminating the need for the separate `-lc` flag and fixing broken in-query path referencing.

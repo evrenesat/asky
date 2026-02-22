@@ -9,6 +9,7 @@ SearchExecutor = Callable[[Dict[str, Any]], Dict[str, Any]]
 FetchExecutor = Callable[[str], Dict[str, Any]]
 SeedLinkExtractor = Callable[[str], Dict[str, Any]]
 StatusCallback = Callable[[str], None]
+TraceCallback = Callable[[Dict[str, Any]], None]
 ShortlistMetrics = Dict[str, Any]
 
 

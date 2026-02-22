@@ -168,6 +168,11 @@ Pre-LLM source ranking to improve prompt relevance.
 5. Score with embeddings + heuristics
 6. Select top-k diverse sources
 
+`shortlist_prompt_sources(...)` now accepts an optional `trace_callback` and
+forwards it across search/fetch/seed-link transport paths when supported. This
+enables verbose metadata traces for shortlist-stage HTTP calls (including
+request failures such as 401/403).
+
 Seed URL extraction accepts both explicit `http(s)://...` links and bare-domain
 targets (e.g., `example.com/path`), normalizing bare targets to `https://...`
 for deterministic fetch behavior.

@@ -401,11 +401,59 @@ def _format_message_payload(message: Dict[str, Any]) -> str:
     return "\n\n".join(blocks) if blocks else "(empty message payload)"
 
 
-def _print_main_model_request_payload(console: Console, payload: Dict[str, Any]) -> None:
-    """Print full outbound main-model request payload in boxed format."""
+def _render_tool_schema_table(tool_schemas: List[Dict[str, Any]]) -> Optional[Table]:
+    """Render enabled tool schema metadata as a compact table."""
+    if not tool_schemas:
+        return None
+    table = Table(show_header=True, header_style="bold magenta")
+    table.add_column("Tool", style="bold")
+    table.add_column("Required Params")
+    table.add_column("Optional Params")
+    table.add_column("Description")
+
+    for schema in tool_schemas:
+        function_schema = schema.get("function", {}) if isinstance(schema, dict) else {}
+        name = str(function_schema.get("name", "unknown"))
+        description = str(function_schema.get("description", "") or "")
+        parameters = function_schema.get("parameters", {}) or {}
+        if not isinstance(parameters, dict):
+            parameters = {}
+        properties = parameters.get("properties", {}) or {}
+        if not isinstance(properties, dict):
+            properties = {}
+        required = parameters.get("required", []) or []
+        required_set = {str(item) for item in required if isinstance(item, str)}
+        required_params = ", ".join(sorted(required_set)) if required_set else "-"
+        optional_params = sorted(
+            [
+                str(param)
+                for param in properties.keys()
+                if str(param) not in required_set
+            ]
+        )
+        optional_summary = ", ".join(optional_params) if optional_params else "-"
+        table.add_row(name, required_params, optional_summary, description)
+    return table
+
+
+def _print_main_model_request_payload(
+    console: Console, payload: Dict[str, Any]
+) -> None:
+    """Print one outbound main-model request block with payload and transport metadata."""
     messages = payload.get("messages") or []
     if not isinstance(messages, list):
         messages = []
+
+    tool_schemas = payload.get("tool_schemas") or []
+    if not isinstance(tool_schemas, list):
+        tool_schemas = []
+    tool_guidelines = payload.get("tool_guidelines") or []
+    if not isinstance(tool_guidelines, list):
+        tool_guidelines = []
+
+    transport_request = payload.get("transport_request") or {}
+    if not isinstance(transport_request, dict):
+        transport_request = {}
 
     turn = int(payload.get("turn", 0) or 0)
     phase = str(payload.get("phase", "main_loop"))
@@ -414,19 +462,25 @@ def _print_main_model_request_payload(console: Console, payload: Dict[str, Any])
     model_display = str(model_alias) if model_alias else model_id
     use_tools = bool(payload.get("use_tools", False))
 
-    metadata = "\n".join(
-        [
-            f"Model: {model_display}",
-            f"Turn: {turn}",
-            f"Phase: {phase}",
-            f"Tools enabled: {'yes' if use_tools else 'no'}",
-            f"Direction: Outbound Request",
-            f"Messages: {len(messages)}",
-        ]
-    )
+    metadata_lines = [
+        f"Model: {model_display}",
+        f"Turn: {turn}",
+        f"Phase: {phase}",
+        f"Tools enabled: {'yes' if use_tools else 'no'}",
+        f"Direction: Outbound Request",
+        f"Messages: {len(messages)}",
+    ]
+    if transport_request.get("url"):
+        metadata_lines.append(f"Target: {transport_request.get('url')}")
+    if transport_request.get("method"):
+        metadata_lines.append(f"Method: {transport_request.get('method')}")
+    attempt = transport_request.get("attempt")
+    if attempt is not None:
+        metadata_lines.append(f"Attempt: {attempt}")
+
     console.print(
         Panel(
-            metadata,
+            "\n".join(metadata_lines),
             title="Main Model Outbound Request",
             border_style="bright_blue",
             expand=False,
@@ -458,6 +512,20 @@ def _print_main_model_request_payload(console: Console, payload: Dict[str, Any])
         )
     console.print(summary_table)
 
+    tool_table = _render_tool_schema_table(tool_schemas)
+    if tool_table is not None:
+        console.print(tool_table)
+    if tool_guidelines:
+        guidelines_text = "\n".join(f"- {str(item)}" for item in tool_guidelines)
+        console.print(
+            Panel(
+                guidelines_text,
+                title=f"Tool Guidelines ({len(tool_guidelines)})",
+                border_style="magenta",
+                expand=False,
+            )
+        )
+
     for index, message in enumerate(messages, start=1):
         message_dict = message if isinstance(message, dict) else {"content": message}
         role = str(message_dict.get("role", "unknown"))
@@ -476,8 +544,10 @@ def _print_main_model_request_payload(console: Console, payload: Dict[str, Any])
         )
 
 
-def _print_main_model_response_payload(console: Console, payload: Dict[str, Any]) -> None:
-    """Print full inbound main-model response payload in boxed format."""
+def _print_main_model_response_payload(
+    console: Console, payload: Dict[str, Any]
+) -> None:
+    """Print one inbound main-model response block with merged transport metadata."""
     turn = int(payload.get("turn", 0) or 0)
     phase = str(payload.get("phase", "main_loop"))
     model_alias = payload.get("model_alias")
@@ -487,24 +557,78 @@ def _print_main_model_response_payload(console: Console, payload: Dict[str, Any]
     if not isinstance(message, dict):
         message = {"content": message}
 
+    transport_response = payload.get("transport_response") or {}
+    if not isinstance(transport_response, dict):
+        transport_response = {}
+    transport_errors = payload.get("transport_errors") or []
+    if not isinstance(transport_errors, list):
+        transport_errors = []
+
     role = str(message.get("role", "assistant"))
-    metadata = "\n".join(
-        [
-            f"Model: {model_display}",
-            f"Turn: {turn}",
-            f"Phase: {phase}",
-            "Direction: Inbound Response",
-            f"Role: {role}",
-        ]
-    )
+    metadata_lines = [
+        f"Model: {model_display}",
+        f"Turn: {turn}",
+        f"Phase: {phase}",
+        "Direction: Inbound Response",
+        f"Role: {role}",
+    ]
+    if transport_response:
+        if transport_response.get("status_code") is not None:
+            metadata_lines.append(f"Status: {transport_response.get('status_code')}")
+        if transport_response.get("response_type"):
+            metadata_lines.append(
+                f"Response type: {transport_response.get('response_type')}"
+            )
+        if transport_response.get("content_type"):
+            metadata_lines.append(
+                f"Content-Type: {transport_response.get('content_type')}"
+            )
+        if transport_response.get("response_bytes") is not None:
+            metadata_lines.append(
+                f"Response bytes: {transport_response.get('response_bytes')}"
+            )
+        if transport_response.get("elapsed_ms") is not None:
+            metadata_lines.append(
+                f"Elapsed ms: {float(transport_response.get('elapsed_ms')):.1f}"
+            )
+    if transport_errors:
+        metadata_lines.append(
+            f"Transport errors before success: {len(transport_errors)}"
+        )
+
     console.print(
         Panel(
-            metadata,
+            "\n".join(metadata_lines),
             title="Main Model Inbound Response",
             border_style="bright_cyan",
             expand=False,
         )
     )
+    if transport_errors:
+        error_lines = []
+        for index, item in enumerate(transport_errors, start=1):
+            if not isinstance(item, dict):
+                continue
+            status = item.get("status_code")
+            error = item.get("error")
+            elapsed_ms = item.get("elapsed_ms")
+            details = [f"{index}."]
+            if status is not None:
+                details.append(f"status={status}")
+            if elapsed_ms is not None:
+                details.append(f"elapsed_ms={float(elapsed_ms):.1f}")
+            if error:
+                details.append(f"error={error}")
+            error_lines.append(" ".join(details))
+        if error_lines:
+            console.print(
+                Panel(
+                    "\n".join(error_lines),
+                    title="Main Model Transport Errors",
+                    border_style="yellow",
+                    expand=False,
+                )
+            )
     console.print(
         Panel(
             _format_message_payload(message),
@@ -513,6 +637,92 @@ def _print_main_model_response_payload(console: Console, payload: Dict[str, Any]
             expand=False,
         )
     )
+
+
+def _print_preload_provenance(console: Console, payload: Dict[str, Any]) -> None:
+    """Print structured preloaded-source provenance before main model call."""
+    seed_documents = payload.get("seed_documents") or []
+    if not isinstance(seed_documents, list):
+        seed_documents = []
+    shortlist_selected = payload.get("shortlist_selected") or []
+    if not isinstance(shortlist_selected, list):
+        shortlist_selected = []
+    warnings = payload.get("shortlist_warnings") or []
+    if not isinstance(warnings, list):
+        warnings = []
+
+    lines = [
+        f"Query: {payload.get('query_text', '')}",
+        f"Seed direct-answer ready: {bool(payload.get('seed_url_direct_answer_ready', False))}",
+        f"Seed context chars: {int(payload.get('seed_url_context_chars', 0) or 0)}",
+        f"Shortlist context chars: {int(payload.get('shortlist_context_chars', 0) or 0)}",
+        f"Combined context chars: {int(payload.get('combined_context_chars', 0) or 0)}",
+        f"Selected shortlist sources: {len(shortlist_selected)}",
+        f"Shortlist warnings: {len(warnings)}",
+    ]
+    console.print(
+        Panel(
+            "\n".join(lines),
+            title="Preloaded Context Sent To Main Model",
+            border_style="green",
+            expand=False,
+        )
+    )
+
+    if seed_documents:
+        seed_table = Table(show_header=True, header_style="bold green")
+        seed_table.add_column("Seed URL")
+        seed_table.add_column("Chars", justify="right")
+        seed_table.add_column("Status")
+        seed_table.add_column("Error")
+        for item in seed_documents:
+            if not isinstance(item, dict):
+                continue
+            chars = int(item.get("content_chars", 0) or 0)
+            error = str(item.get("error", "") or "")
+            warning = str(item.get("warning", "") or "")
+            status = "ok"
+            if error:
+                status = "fetch_error"
+            elif warning:
+                status = "warning"
+            seed_table.add_row(
+                str(item.get("url", "")),
+                str(chars),
+                status,
+                error[:120],
+            )
+        console.print(seed_table)
+
+    if shortlist_selected:
+        shortlist_table = Table(show_header=True, header_style="bold green")
+        shortlist_table.add_column("Rank", justify="right")
+        shortlist_table.add_column("Score", justify="right")
+        shortlist_table.add_column("Source")
+        shortlist_table.add_column("Snippet chars", justify="right")
+        shortlist_table.add_column("URL")
+        for item in shortlist_selected[:15]:
+            if not isinstance(item, dict):
+                continue
+            shortlist_table.add_row(
+                str(int(item.get("rank", 0) or 0)),
+                f"{float(item.get('score', 0.0) or 0.0):.3f}",
+                str(item.get("source_type", "")),
+                str(int(item.get("snippet_chars", 0) or 0)),
+                str(item.get("url", "")),
+            )
+        console.print(shortlist_table)
+
+    if warnings:
+        warning_text = "\n".join(f"- {str(item)}" for item in warnings[:10])
+        console.print(
+            Panel(
+                warning_text,
+                title=f"Preload Warnings ({len(warnings)})",
+                border_style="yellow",
+                expand=False,
+            )
+        )
 
 
 def _print_transport_metadata(console: Console, payload: Dict[str, Any]) -> None:
@@ -611,38 +821,24 @@ def _check_idle_session_timeout(session_id: int, console: Console) -> str:
     console.print(
         f"\n[yellow]Session '{session.name or session.id}' has been idle for {int(elapsed)} minutes.[/]"
     )
-    console.print("[white]Choose action:[/] [c]ontinue, [n]ew session, [o]ne-off query")
+    from rich.prompt import Prompt
 
-    try:
-        import sys
-        import termios
-        import tty
+    choice = Prompt.ask(
+        "[white]Choose action:[/] [bold cyan]\\[c][/][white]ontinue, [bold cyan]\\[n][/][white]ew session, [bold cyan]\\[o][/][white]ne-off query",
+        choices=["c", "n", "o"],
+        default="c",
+        console=console,
+        show_choices=False,
+    ).lower()
 
-        # Read a single character from stdin
-        fd = sys.stdin.fileno()
-        old_settings = termios.tcgetattr(fd)
-        try:
-            tty.setraw(sys.stdin.fileno())
-            ch = sys.stdin.read(1).lower()
-        finally:
-            termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
-
-        if ch == "n":
-            console.print("[bold cyan]Action: New session[/]")
-            return "new"
-        elif ch == "o":
-            console.print("[bold cyan]Action: One-off query[/]")
-            return "oneoff"
-        else:
-            console.print("[bold cyan]Action: Continue[/]")
-            return "continue"
-    except Exception:
-        # Fallback to input() if raw mode fails
-        choice = input("Choice [c]: ").strip().lower()
-        if choice == "n":
-            return "new"
-        elif choice == "o":
-            return "oneoff"
+    if choice == "n":
+        console.print("[bold cyan]Action: New session[/]")
+        return "new"
+    elif choice == "o":
+        console.print("[bold cyan]Action: One-off query[/]")
+        return "oneoff"
+    else:
+        console.print("[bold cyan]Action: Continue[/]")
         return "continue"
 
 
@@ -684,6 +880,12 @@ def run_chat(args: argparse.Namespace, query_text: str) -> None:
     )
 
     use_banner = False
+    main_model_traces: Dict[str, Dict[str, Any]] = {}
+
+    def _trace_key(payload: Dict[str, Any]) -> str:
+        turn = int(payload.get("turn", 0) or 0)
+        phase = str(payload.get("phase", "main_loop"))
+        return f"{turn}:{phase}"
 
     # Create display callback for live banner mode
     def display_callback(
@@ -715,13 +917,64 @@ def run_chat(args: argparse.Namespace, query_text: str) -> None:
         )
         if isinstance(renderable, dict):
             kind = str(renderable.get("kind", ""))
+            source = str(renderable.get("source", "") or "")
+            trace_key = _trace_key(renderable)
+
+            if kind == "preload_provenance":
+                _print_preload_provenance(output_console, renderable)
+                return
             if kind == "llm_request_messages":
-                _print_main_model_request_payload(output_console, renderable)
+                trace_state = main_model_traces.setdefault(trace_key, {})
+                trace_state["request_payload"] = renderable
+                trace_state.setdefault("transport_errors", [])
                 return
             if kind == "llm_response_message":
-                _print_main_model_response_payload(output_console, renderable)
+                trace_state = main_model_traces.setdefault(trace_key, {})
+                request_payload = trace_state.get("request_payload")
+                if isinstance(request_payload, dict) and not trace_state.get(
+                    "request_printed"
+                ):
+                    request_for_print = dict(request_payload)
+                    request_transport = trace_state.get("transport_request")
+                    if isinstance(request_transport, dict):
+                        request_for_print["transport_request"] = request_transport
+                    _print_main_model_request_payload(output_console, request_for_print)
+                    trace_state["request_printed"] = True
+
+                response_for_print = dict(renderable)
+                response_transport = trace_state.get("transport_response")
+                if isinstance(response_transport, dict):
+                    response_for_print["transport_response"] = response_transport
+                response_errors = trace_state.get("transport_errors", [])
+                if isinstance(response_errors, list):
+                    response_for_print["transport_errors"] = response_errors
+                _print_main_model_response_payload(output_console, response_for_print)
+                main_model_traces.pop(trace_key, None)
                 return
             if kind in {"transport_request", "transport_response", "transport_error"}:
+                if source == "main_model":
+                    trace_state = main_model_traces.setdefault(trace_key, {})
+                    if kind == "transport_request":
+                        trace_state["transport_request"] = renderable
+                        request_payload = trace_state.get("request_payload")
+                        if isinstance(request_payload, dict) and not trace_state.get(
+                            "request_printed"
+                        ):
+                            request_for_print = dict(request_payload)
+                            request_for_print["transport_request"] = renderable
+                            _print_main_model_request_payload(
+                                output_console, request_for_print
+                            )
+                            trace_state["request_printed"] = True
+                    elif kind == "transport_response":
+                        trace_state["transport_response"] = renderable
+                    else:
+                        transport_errors = trace_state.setdefault(
+                            "transport_errors", []
+                        )
+                        if isinstance(transport_errors, list):
+                            transport_errors.append(renderable)
+                    return
                 _print_transport_metadata(output_console, renderable)
                 return
             if kind == "tool_call" or "tool_name" in renderable:
@@ -746,6 +999,40 @@ def run_chat(args: argparse.Namespace, query_text: str) -> None:
         if not use_banner:
             return
         renderer.update_banner(renderer.current_turn, status_message=message)
+
+    # Resolve session and handle idle timeout BEFORE starting the live banner
+    sticky_session_name = (
+        " ".join(args.sticky_session) if getattr(args, "sticky_session", None) else None
+    )
+    resume_session_term = (
+        " ".join(args.resume_session) if getattr(args, "resume_session", None) else None
+    )
+    shell_session_id = get_shell_session_id()
+
+    elephant_mode = bool(getattr(args, "elephant_mode", False))
+
+    if not sticky_session_name and not resume_session_term and shell_session_id:
+        action = _check_idle_session_timeout(shell_session_id, console)
+        if action == "new":
+            from asky.core import clear_shell_session
+
+            clear_shell_session()
+            shell_session_id = None
+            sticky_session_name = generate_session_name(query_text)
+        elif action == "oneoff":
+            from asky.core import clear_shell_session
+
+            clear_shell_session()
+            shell_session_id = None
+
+    if elephant_mode and not bool(
+        sticky_session_name or resume_session_term or shell_session_id
+    ):
+        console.print(
+            "[yellow]Warning:[/] --elephant-mode requires an active session "
+            "(-ss or -rs). Flag ignored."
+        )
+        elephant_mode = False
 
     # Wrap in try/finally to ensure renderer.stop_live() is called.
     try:
@@ -794,31 +1081,6 @@ def run_chat(args: argparse.Namespace, query_text: str) -> None:
             usage_tracker=usage_tracker,
             summarization_tracker=summarization_tracker,
         )
-
-        elephant_mode = bool(getattr(args, "elephant_mode", False))
-
-        sticky_session_name = (
-            " ".join(args.sticky_session)
-            if getattr(args, "sticky_session", None)
-            else None
-        )
-        resume_session_term = (
-            " ".join(args.resume_session)
-            if getattr(args, "resume_session", None)
-            else None
-        )
-        shell_session_id = get_shell_session_id()
-
-        # Handle stale session prompt
-        if not sticky_session_name and not resume_session_term and shell_session_id:
-            action = _check_idle_session_timeout(shell_session_id, console)
-            if action == "new":
-                clear_shell_session()
-                shell_session_id = None
-                sticky_session_name = generate_session_name(effective_query_text)
-            elif action == "oneoff":
-                clear_shell_session()
-                shell_session_id = None
 
         has_session = bool(
             sticky_session_name or resume_session_term or shell_session_id
@@ -1044,5 +1306,27 @@ def run_chat(args: argparse.Namespace, query_text: str) -> None:
 
             traceback.print_exc()
     finally:
+        if main_model_traces:
+            flush_console = (
+                renderer.live.console
+                if use_banner and renderer.live
+                else renderer.console
+            )
+            for trace_state in main_model_traces.values():
+                request_payload = trace_state.get("request_payload")
+                if isinstance(request_payload, dict) and not trace_state.get(
+                    "request_printed"
+                ):
+                    request_for_print = dict(request_payload)
+                    request_transport = trace_state.get("transport_request")
+                    if isinstance(request_transport, dict):
+                        request_for_print["transport_request"] = request_transport
+                    _print_main_model_request_payload(flush_console, request_for_print)
+
+                transport_errors = trace_state.get("transport_errors", [])
+                if transport_errors:
+                    for item in transport_errors:
+                        if isinstance(item, dict):
+                            _print_transport_metadata(flush_console, item)
         # Ensure Live is stopped on any exit path
         renderer.stop_live()

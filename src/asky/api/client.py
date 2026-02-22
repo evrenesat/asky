@@ -199,6 +199,67 @@ class AskyClient:
 
         return None, False
 
+    def _emit_preload_provenance(
+        self,
+        *,
+        preload: PreloadResolution,
+        query_text: str,
+        callback: Optional[Callable[[Any], None]],
+    ) -> None:
+        """Emit structured preload provenance for verbose CLI tracing."""
+        if callback is None or not self.config.verbose:
+            return
+
+        shortlist_payload = preload.shortlist_payload or {}
+        seed_docs = shortlist_payload.get("seed_url_documents", []) or []
+        seed_doc_summaries = []
+        for item in seed_docs:
+            if not isinstance(item, dict):
+                continue
+            content = str(item.get("content", "") or "")
+            seed_doc_summaries.append(
+                {
+                    "url": str(item.get("url", "") or ""),
+                    "resolved_url": str(item.get("resolved_url", "") or ""),
+                    "title": str(item.get("title", "") or ""),
+                    "content_chars": len(content),
+                    "error": str(item.get("error", "") or ""),
+                    "warning": str(item.get("warning", "") or ""),
+                }
+            )
+
+        selected_candidates = shortlist_payload.get("candidates", []) or []
+        shortlist_selected = []
+        for item in selected_candidates:
+            if not isinstance(item, dict):
+                continue
+            snippet = str(item.get("snippet", "") or "")
+            shortlist_selected.append(
+                {
+                    "rank": int(item.get("rank", 0) or 0),
+                    "url": str(item.get("url", "") or ""),
+                    "source_type": str(item.get("source_type", "") or ""),
+                    "score": float(item.get("final_score", 0.0) or 0.0),
+                    "snippet_chars": len(snippet),
+                    "why_selected": list(item.get("why_selected", []) or []),
+                }
+            )
+
+        callback(
+            {
+                "kind": "preload_provenance",
+                "query_text": query_text,
+                "seed_url_direct_answer_ready": preload.seed_url_direct_answer_ready,
+                "seed_url_context_chars": len(preload.seed_url_context or ""),
+                "shortlist_context_chars": len(preload.shortlist_context or ""),
+                "combined_context_chars": len(preload.combined_context or ""),
+                "shortlist_selected_count": len(shortlist_selected),
+                "shortlist_warnings": list(shortlist_payload.get("warnings", []) or []),
+                "seed_documents": seed_doc_summaries,
+                "shortlist_selected": shortlist_selected,
+            }
+        )
+
     def run_messages(
         self,
         messages: List[Dict[str, Any]],
@@ -441,6 +502,9 @@ class AskyClient:
             local_ingestion_formatter=(
                 local_ingestion_formatter or format_local_ingestion_context
             ),
+            trace_callback=(
+                verbose_output_callback if self.config.verbose else None
+            ),
         )
 
         local_targets = preload.local_payload.get("targets") or []
@@ -464,6 +528,11 @@ class AskyClient:
             session_manager=session_manager,
             preload=preload,
             local_kb_hint_enabled=local_kb_hint_enabled,
+        )
+        self._emit_preload_provenance(
+            preload=preload,
+            query_text=effective_query_text,
+            callback=verbose_output_callback,
         )
         if messages_prepared_callback:
             messages_prepared_callback(messages)

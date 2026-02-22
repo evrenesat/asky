@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import inspect
 import logging
 import re
 import time
@@ -58,6 +59,7 @@ from asky.research.shortlist_types import (
     SeedLinkExtractor,
     ShortlistMetrics,
     StatusCallback,
+    TraceCallback,
 )
 from asky.url_utils import normalize_url
 
@@ -233,6 +235,7 @@ def shortlist_prompt_sources(
     seed_link_extractor: Optional[SeedLinkExtractor] = None,
     status_callback: Optional[StatusCallback] = None,
     queries: Optional[List[str]] = None,
+    trace_callback: Optional[TraceCallback] = None,
 ) -> Dict[str, Any]:
     """Build a ranked shortlist of relevant sources without using an LLM."""
     total_start = time.perf_counter()
@@ -308,14 +311,27 @@ def shortlist_prompt_sources(
     active_fetch_executor = fetch_executor or _default_fetch_executor
     active_seed_link_extractor = seed_link_extractor or _default_seed_link_extractor
 
+    search_executor_with_trace = _with_optional_trace_callback(
+        executor=active_search_executor,
+        trace_callback=trace_callback,
+    )
+    fetch_executor_with_trace = _with_optional_trace_callback(
+        executor=active_fetch_executor,
+        trace_callback=trace_callback,
+    )
+    seed_link_extractor_with_trace = _with_optional_trace_callback(
+        executor=active_seed_link_extractor,
+        trace_callback=trace_callback,
+    )
+
     warnings: List[str] = []
     _notify_status(status_callback, "Shortlist: collecting candidates")
     collect_start = time.perf_counter()
     candidates = collect_candidates(
         seed_urls=seed_urls,
         search_queries=search_queries,
-        search_executor=active_search_executor,
-        seed_link_extractor=active_seed_link_extractor,
+        search_executor=search_executor_with_trace,
+        seed_link_extractor=seed_link_extractor_with_trace,
         warnings=warnings,
         metrics=metrics,
         seed_link_expansion_enabled=SOURCE_SHORTLIST_SEED_LINK_EXPANSION_ENABLED,
@@ -387,7 +403,7 @@ def shortlist_prompt_sources(
     fetched_candidates = _fetch_candidate_content(
         candidates=candidates,
         seed_urls=seed_urls,
-        fetch_executor=active_fetch_executor,
+        fetch_executor=fetch_executor_with_trace,
         warnings=warnings,
         metrics=metrics,
     )
@@ -778,11 +794,65 @@ def _build_seed_url_documents(
     return documents
 
 
-def _default_fetch_executor(url: str) -> Dict[str, Any]:
+def _emit_trace_event(
+    trace_callback: Optional[TraceCallback],
+    payload: Dict[str, Any],
+) -> None:
+    """Emit a shortlist transport trace event without interrupting execution."""
+    if trace_callback is None:
+        return
+    try:
+        trace_callback(payload)
+    except Exception:
+        logger.debug(
+            "source_shortlist trace callback failed for kind=%s",
+            payload.get("kind"),
+        )
+
+
+def _with_optional_trace_callback(
+    executor: Any,
+    trace_callback: Optional[TraceCallback],
+) -> Any:
+    """Wrap an executor so trace_callback is passed when supported."""
+    if trace_callback is None:
+        return executor
+    try:
+        signature = inspect.signature(executor)
+        supports_trace = "trace_callback" in signature.parameters or any(
+            param.kind is inspect.Parameter.VAR_KEYWORD
+            for param in signature.parameters.values()
+        )
+    except (TypeError, ValueError):
+        supports_trace = False
+    if not supports_trace:
+        return executor
+
+    def _wrapped(*args: Any, **kwargs: Any) -> Any:
+        if "trace_callback" not in kwargs:
+            kwargs["trace_callback"] = trace_callback
+        return executor(*args, **kwargs)
+
+    return _wrapped
+
+
+def _default_fetch_executor(
+    url: str,
+    trace_callback: Optional[TraceCallback] = None,
+) -> Dict[str, Any]:
     """Fetch and extract URL content using the shared retrieval pipeline."""
     fetch_start = time.perf_counter()
     redirect_target = _resolve_redirect_target_if_needed(url)
-    payload = fetch_url_document(url=url, output_format="txt", include_links=False)
+    payload = fetch_url_document(
+        url=url,
+        output_format="txt",
+        include_links=False,
+        trace_callback=trace_callback,
+        trace_context={
+            "source": "shortlist",
+            "operation": "shortlist_fetch",
+        },
+    )
     if payload.get("error"):
         logger.debug(
             "source_shortlist fetch executor error url=%s elapsed=%.2fms error=%s",
@@ -818,9 +888,23 @@ def _default_fetch_executor(url: str) -> Dict[str, Any]:
     return result
 
 
-def _default_seed_link_extractor(url: str) -> Dict[str, Any]:
+def _default_seed_link_extractor(
+    url: str,
+    trace_callback: Optional[TraceCallback] = None,
+) -> Dict[str, Any]:
     """Fetch one seed page and extract outbound links for shortlist expansion."""
     extract_start = time.perf_counter()
+    _emit_trace_event(
+        trace_callback,
+        {
+            "kind": "transport_request",
+            "transport": "http",
+            "source": "shortlist",
+            "operation": "seed_link_extract",
+            "method": "GET",
+            "url": url,
+        },
+    )
     try:
         response = requests.get(
             url,
@@ -828,6 +912,23 @@ def _default_seed_link_extractor(url: str) -> Dict[str, Any]:
             timeout=FETCH_TIMEOUT,
         )
         response.raise_for_status()
+        _emit_trace_event(
+            trace_callback,
+            {
+                "kind": "transport_response",
+                "transport": "http",
+                "source": "shortlist",
+                "operation": "seed_link_extract",
+                "method": "GET",
+                "url": url,
+                "status_code": response.status_code,
+                "content_type": response.headers.get("Content-Type", ""),
+                "response_type": "html",
+                "response_bytes": len(response.content or b""),
+                "response_chars": len(response.text or ""),
+                "elapsed_ms": _elapsed_ms(extract_start),
+            },
+        )
 
         stripper = HTMLStripper(
             base_url=url,
@@ -845,6 +946,24 @@ def _default_seed_link_extractor(url: str) -> Dict[str, Any]:
         )
         return {"links": links}
     except Exception as exc:
+        status_code = None
+        if isinstance(exc, requests.exceptions.HTTPError) and exc.response is not None:
+            status_code = exc.response.status_code
+        _emit_trace_event(
+            trace_callback,
+            {
+                "kind": "transport_error",
+                "transport": "http",
+                "source": "shortlist",
+                "operation": "seed_link_extract",
+                "method": "GET",
+                "url": url,
+                "error_type": "request_exception",
+                "error": str(exc),
+                "status_code": status_code,
+                "elapsed_ms": _elapsed_ms(extract_start),
+            },
+        )
         logger.debug(
             "source_shortlist seed link extractor failed url=%s elapsed=%.2fms error=%s",
             url,
@@ -854,11 +973,14 @@ def _default_seed_link_extractor(url: str) -> Dict[str, Any]:
         return {"links": [], "warning": f"seed_link_extract_error:{exc}"}
 
 
-def _default_search_executor(args: Dict[str, Any]) -> Dict[str, Any]:
+def _default_search_executor(
+    args: Dict[str, Any],
+    trace_callback: Optional[TraceCallback] = None,
+) -> Dict[str, Any]:
     """Lazy-load web search executor to avoid shortlist import overhead."""
     from asky.tools import execute_web_search as execute_web_search_impl
 
-    return execute_web_search_impl(args)
+    return execute_web_search_impl(args, trace_callback=trace_callback)
 
 
 def _get_embedding_client() -> "EmbeddingClient":

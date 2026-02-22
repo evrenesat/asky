@@ -342,6 +342,32 @@ def test_run_chat_double_verbose_payload_streams_via_live_console():
         "model_id": "model-id",
         "message": {"role": "assistant", "content": "Answer"},
     }
+    transport_request_payload = {
+        "kind": "transport_request",
+        "transport": "llm",
+        "phase": "main_loop",
+        "turn": 1,
+        "source": "main_model",
+        "model_alias": "gf",
+        "url": "https://example.com/llm",
+        "method": "POST",
+        "attempt": 1,
+    }
+    transport_response_payload = {
+        "kind": "transport_response",
+        "transport": "llm",
+        "phase": "main_loop",
+        "turn": 1,
+        "source": "main_model",
+        "model_alias": "gf",
+        "url": "https://example.com/llm",
+        "method": "POST",
+        "status_code": 200,
+        "response_type": "text",
+        "content_type": "application/json",
+        "response_bytes": 123,
+        "elapsed_ms": 42.0,
+    }
 
     with (
         patch("asky.cli.chat.MODELS", {"gf": {"id": "gemini-flash"}}),
@@ -360,6 +386,8 @@ def test_run_chat_double_verbose_payload_streams_via_live_console():
 
         def run_turn_side_effect(_request, **kwargs):
             kwargs["verbose_output_callback"](payload)
+            kwargs["verbose_output_callback"](transport_request_payload)
+            kwargs["verbose_output_callback"](transport_response_payload)
             kwargs["verbose_output_callback"](response_payload)
             return turn_result
 
@@ -376,6 +404,98 @@ def test_run_chat_double_verbose_payload_streams_via_live_console():
         ]
         assert "Main Model Outbound Request" in printed_titles
         assert "Main Model Inbound Response" in printed_titles
+        assert not any(
+            isinstance(title, str)
+            and title.startswith("Transport | Request | source=main_model")
+            for title in printed_titles
+        )
+
+
+def test_run_chat_prints_preload_provenance_panel():
+    from asky.cli.chat import run_chat
+
+    mock_args = argparse.Namespace(
+        model="gf",
+        research=False,
+        local_corpus=None,
+        summarize=False,
+        open=False,
+        continue_ids=None,
+        sticky_session=None,
+        resume_session=None,
+        lean=False,
+        tool_off=[],
+        terminal_lines=None,
+        save_history=True,
+        verbose=True,
+        double_verbose=True,
+        system_prompt=None,
+        elephant_mode=False,
+        turns=None,
+        mail_recipients=None,
+        subject=None,
+        push_data_endpoint=None,
+        push_params=None,
+    )
+
+    turn_result = MagicMock()
+    turn_result.final_answer = ""
+    turn_result.halted = True
+    turn_result.notices = []
+    turn_result.session_id = None
+    turn_result.preload = MagicMock(shortlist_stats={}, shortlist_payload=None)
+    turn_result.session = MagicMock(matched_sessions=[])
+
+    preload_payload = {
+        "kind": "preload_provenance",
+        "query_text": "q",
+        "seed_url_direct_answer_ready": False,
+        "seed_url_context_chars": 12,
+        "shortlist_context_chars": 34,
+        "combined_context_chars": 46,
+        "shortlist_selected": [
+            {
+                "rank": 1,
+                "score": 0.9,
+                "source_type": "search",
+                "snippet_chars": 120,
+                "url": "https://example.com",
+            }
+        ],
+        "shortlist_warnings": ["fetch_error:403"],
+        "seed_documents": [],
+    }
+
+    with (
+        patch("asky.cli.chat.MODELS", {"gf": {"id": "gemini-flash"}}),
+        patch("asky.cli.chat.get_shell_session_id", return_value=None),
+        patch("asky.cli.chat.InterfaceRenderer") as mock_renderer_cls,
+        patch("asky.cli.chat.LIVE_BANNER", True),
+        patch("asky.cli.chat.AskyClient") as mock_client_cls,
+    ):
+        renderer = MagicMock()
+        renderer.console = MagicMock()
+        renderer.live = MagicMock(console=MagicMock())
+        renderer.current_turn = 0
+        mock_renderer_cls.return_value = renderer
+
+        mock_client = MagicMock()
+
+        def run_turn_side_effect(_request, **kwargs):
+            kwargs["verbose_output_callback"](preload_payload)
+            return turn_result
+
+        mock_client.run_turn.side_effect = run_turn_side_effect
+        mock_client_cls.return_value = mock_client
+
+        run_chat(mock_args, "query")
+
+        printed_titles = [
+            getattr(call.args[0], "title", "")
+            for call in renderer.live.console.print.call_args_list
+            if call.args
+        ]
+        assert "Preloaded Context Sent To Main Model" in printed_titles
 
 
 def test_parse_args_terminal_lines_explicit():

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import time
+import inspect
 from dataclasses import asdict
 from typing import Any, Callable, Dict, List, Optional
 
@@ -352,6 +353,7 @@ def run_preload_pipeline(
     ] = format_local_ingestion_context,
     llm_client: Any = None,
     expansion_executor: Callable[..., List[str]] = expand_query,
+    trace_callback: Optional[Callable[[Dict[str, Any]], None]] = None,
 ) -> PreloadResolution:
     """Run local+shortlist preloads and return their combined context payload."""
     preload = PreloadResolution()
@@ -434,12 +436,23 @@ def run_preload_pipeline(
         if status_callback:
             status_callback("Shortlist: starting pre-LLM retrieval")
         shortlist_start = time.perf_counter()
-        shortlist_payload = shortlist_executor(
-            user_prompt=query_text,
-            research_mode=research_mode,
-            status_callback=status_callback,
-            queries=sub_queries if len(sub_queries) > 1 else None,
-        )
+        shortlist_kwargs: Dict[str, Any] = {
+            "user_prompt": query_text,
+            "research_mode": research_mode,
+            "status_callback": status_callback,
+            "queries": sub_queries if len(sub_queries) > 1 else None,
+        }
+        try:
+            signature = inspect.signature(shortlist_executor)
+            supports_trace = "trace_callback" in signature.parameters or any(
+                param.kind is inspect.Parameter.VAR_KEYWORD
+                for param in signature.parameters.values()
+            )
+        except (TypeError, ValueError):
+            supports_trace = False
+        if supports_trace:
+            shortlist_kwargs["trace_callback"] = trace_callback
+        shortlist_payload = shortlist_executor(**shortlist_kwargs)
         shortlist_elapsed_ms = (time.perf_counter() - shortlist_start) * 1000
         if shortlist_payload.get("enabled"):
             shortlist_context = shortlist_formatter(shortlist_payload)

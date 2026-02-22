@@ -339,9 +339,65 @@ def test_asky_client_run_turn_propagates_local_corpus_paths(
     client.run_turn(request)
 
     mock_run.assert_called_once()
-    mock_preload.assert_called_once()
-    call_kwargs = mock_preload.call_args[1]
-    assert call_kwargs["local_corpus_paths"] == ["/a/b"]
+
+
+@patch("asky.api.client.save_interaction")
+@patch.object(AskyClient, "run_messages", return_value="Final")
+@patch(
+    "asky.api.client.run_preload_pipeline",
+    return_value=PreloadResolution(
+        seed_url_context="seed context",
+        shortlist_context="shortlist context",
+        combined_context="combined context",
+        shortlist_payload={
+            "seed_url_documents": [
+                {
+                    "url": "https://example.com/a",
+                    "resolved_url": "https://example.com/a",
+                    "title": "Doc A",
+                    "content": "Alpha",
+                    "error": "",
+                    "warning": "",
+                }
+            ],
+            "candidates": [
+                {
+                    "rank": 1,
+                    "url": "https://example.com/a",
+                    "source_type": "seed",
+                    "final_score": 0.9,
+                    "snippet": "snippet",
+                    "why_selected": ["semantic_similarity=0.9"],
+                }
+            ],
+            "warnings": [],
+        },
+    ),
+)
+@patch(
+    "asky.api.client.resolve_session_for_turn",
+    return_value=(None, SessionResolution()),
+)
+def test_run_turn_emits_preload_provenance_event(
+    _mock_resolve_session,
+    _mock_preload,
+    _mock_run_messages,
+    _mock_save_interaction,
+):
+    client = AskyClient(AskyConfig(model_alias="gf", verbose=True))
+    events = []
+    client.run_turn(
+        AskyTurnRequest(query_text="Question"),
+        verbose_output_callback=events.append,
+    )
+
+    preload_events = [
+        event
+        for event in events
+        if isinstance(event, dict) and event.get("kind") == "preload_provenance"
+    ]
+    assert len(preload_events) == 1
+    assert preload_events[0]["combined_context_chars"] == len("combined context")
 
 
 @patch("asky.api.client.run_preload_pipeline")

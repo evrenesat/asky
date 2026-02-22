@@ -33,30 +33,31 @@ Command-line interface layer handling argument parsing, command routing, and use
 
 ### Key CLI Flags
 
-| Flag                           | Handler                                            |
-| ------------------------------ | -------------------------------------------------- |
-| `-m, --model`                  | Model selection                                    |
-| `-c, --continue-chat`          | Context loading from previous IDs                  |
-| `-H, --history`                | `history.py`                                       |
-| `-pa, --print-answer`          | `history.py`                                       |
+| Flag                           | Handler                                                        |
+| ------------------------------ | -------------------------------------------------------------- |
+| `-m, --model`                  | Model selection                                                |
+| `-c, --continue-chat`          | Context loading from previous IDs                              |
+| `-H, --history`                | `history.py`                                                   |
+| `-pa, --print-answer`          | `history.py`                                                   |
 | `-v, --verbose` / `-vv`        | `chat.py` + `core/engine.py` (verbose / double-verbose traces) |
-| `-ss, --sticky-session`        | `sessions.py`                                      |
-| `-rs, --resume-session`        | `sessions.py`                                      |
-| `-off, -tool-off, --tool-off`  | `chat.py` (runtime tool exclusion, supports `all`) |
-| `--list-tools`                 | `main.py` (list all LLM tools and exit)            |
-| `-r, --research`               | Enable deep research mode                          |
-| `-lc, --local-corpus`          | Explicit local research corpus (implies `-r`)      |
-| `-sfm, --session-from-message` | `history.py`                                       |
-| `--clean-session-research`     | `sessions.py`                                      |
+| `-ss, --sticky-session`        | `sessions.py`                                                  |
+| `-rs, --resume-session`        | `sessions.py`                                                  |
+| `-off, -tool-off, --tool-off`  | `chat.py` (runtime tool exclusion, supports `all`)             |
+| `--list-tools`                 | `main.py` (list all LLM tools and exit)                        |
+| `-r, --research`               | Enable deep research mode                                      |
+| `-lc, --local-corpus`          | Explicit local research corpus (implies `-r`)                  |
+| `-sfm, --session-from-message` | `history.py`                                                   |
+| `--clean-session-research`     | `sessions.py`                                                  |
 
-## Chat Flow (`chat.py`)
+### Chat Flow (`chat.py`)
 
 Main conversation entry point via `run_chat()`:
 
-1. **CLI Adaptation**: Parse args into `AskyTurnRequest` + UI callbacks.
-2. **API Orchestration**: `AskyClient.run_turn()` performs context/session/preload/model/persist flow.
-3. **UI Rendering**: `chat.py` maps API notices/events into Rich output + banner updates.
-4. **Interface Side Effects**: optional browser/email/push/report handling (including dynamic sidebar index updates).
+1. **Session Identification**: Resolve session variables (`SS`, `RS`, shell-id) and run `_check_idle_session_timeout()` **before** starting the banner.
+2. **CLI Adaptation**: Parse args into `AskyTurnRequest` + UI callbacks.
+3. **API Orchestration**: `AskyClient.run_turn()` performs context/session/preload/model/persist flow.
+4. **UI Rendering**: `chat.py` maps API notices/events into Rich output + banner updates.
+5. **Interface Side Effects**: optional browser/email/push/report handling (including dynamic sidebar index updates).
 
 ### Error Handling
 
@@ -71,7 +72,10 @@ Main conversation entry point via `run_chat()`:
 - Double-verbose (`-vv`) streams boxed main-model request/response payloads live through the active console:
   - outbound request messages (all roles, full payload bodies),
   - inbound response message payloads (including tool-call structures).
-- Tool/summarization internals in verbose mode are rendered as transport metadata panels (endpoint, status, response type/size) rather than full payload bodies.
+- Main-model HTTP transport metadata is merged into those main request/response boxes (no standalone duplicate transport boxes for source=`main_model`).
+- Outbound main-model request traces include structured enabled-tool definitions (`name`, required/optional params, description) and enabled tool-guideline lines.
+- Preload stage emits a `Preloaded Context Sent To Main Model` panel summarizing seed-document status, selected shortlist URLs, and warnings before the first model call.
+- Tool/summarization/shortlist internals in verbose mode are rendered as transport metadata panels (endpoint, status, response type/size) rather than full payload bodies.
 - After final answer rendering, research-mode chat keeps Live active during deferred
   history finalization and drains pending background research summaries before the
   last banner refresh/stop so summary-token usage is reflected in the final banner.

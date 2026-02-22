@@ -1,6 +1,8 @@
 """Tests for pre-LLM source shortlisting."""
 
+from unittest.mock import MagicMock
 from typing import Any, Dict, List
+import requests
 
 from asky.research.source_shortlist import (
     build_search_query,
@@ -555,3 +557,88 @@ def test_shortlist_fetches_all_seed_urls_even_beyond_scoring_cap(monkeypatch):
     assert "https://example.com/seed-two" in seen_urls
     assert len(payload["seed_url_documents"]) == 2
     assert payload["fetched_count"] == len(payload["candidates"])
+
+
+def test_shortlist_trace_callback_propagates_to_custom_executors(monkeypatch):
+    from asky.research import source_shortlist as shortlist_mod
+
+    monkeypatch.setattr(shortlist_mod, "SOURCE_SHORTLIST_ENABLED", True)
+    monkeypatch.setattr(shortlist_mod, "SOURCE_SHORTLIST_ENABLE_RESEARCH_MODE", True)
+    monkeypatch.setattr(shortlist_mod, "SOURCE_SHORTLIST_ENABLE_STANDARD_MODE", True)
+    monkeypatch.setattr(shortlist_mod, "SOURCE_SHORTLIST_MIN_CONTENT_CHARS", 20)
+    monkeypatch.setattr(
+        shortlist_mod, "SOURCE_SHORTLIST_SEED_LINK_EXPANSION_ENABLED", False
+    )
+    observed = {"search": False, "fetch": False}
+
+    def fake_search_executor(
+        _args: Dict[str, Any],
+        trace_callback=None,
+    ) -> Dict[str, Any]:
+        observed["search"] = trace_callback is not None
+        return {
+            "results": [
+                {
+                    "title": "A",
+                    "url": "https://example.com/a",
+                    "snippet": "snippet",
+                }
+            ]
+        }
+
+    def fake_fetch_executor(
+        _url: str,
+        trace_callback=None,
+    ) -> Dict[str, Any]:
+        observed["fetch"] = trace_callback is not None
+        return {
+            "title": "A",
+            "text": "Enough shortlist content to be included in scoring.",
+            "date": None,
+        }
+
+    payload = shortlist_prompt_sources(
+        user_prompt="Find sources about AI safety",
+        research_mode=True,
+        search_executor=fake_search_executor,
+        fetch_executor=fake_fetch_executor,
+        trace_callback=lambda _event: None,
+    )
+
+    assert payload["enabled"] is True
+    assert observed["search"] is True
+    assert observed["fetch"] is True
+
+
+def test_shortlist_default_fetch_emits_transport_error_metadata(monkeypatch):
+    from asky.research import source_shortlist as shortlist_mod
+    from asky import retrieval as retrieval_mod
+
+    monkeypatch.setattr(shortlist_mod, "SOURCE_SHORTLIST_ENABLED", True)
+    monkeypatch.setattr(shortlist_mod, "SOURCE_SHORTLIST_ENABLE_RESEARCH_MODE", True)
+    monkeypatch.setattr(shortlist_mod, "SOURCE_SHORTLIST_ENABLE_STANDARD_MODE", True)
+    monkeypatch.setattr(shortlist_mod, "SOURCE_SHORTLIST_MIN_CONTENT_CHARS", 20)
+    monkeypatch.setattr(
+        shortlist_mod, "SOURCE_SHORTLIST_SEED_LINK_EXPANSION_ENABLED", False
+    )
+
+    mock_response = MagicMock()
+    mock_response.status_code = 403
+    http_error = requests.exceptions.HTTPError(response=mock_response)
+    monkeypatch.setattr(retrieval_mod.requests, "get", MagicMock(side_effect=http_error))
+
+    trace_events: List[Dict[str, Any]] = []
+    payload = shortlist_prompt_sources(
+        user_prompt="Summarize https://example.com/blocked",
+        research_mode=True,
+        trace_callback=trace_events.append,
+    )
+
+    assert payload["enabled"] is True
+    assert any(
+        event.get("kind") == "transport_error"
+        and event.get("source") == "shortlist"
+        and event.get("operation") == "shortlist_fetch"
+        and event.get("status_code") == 403
+        for event in trace_events
+    )

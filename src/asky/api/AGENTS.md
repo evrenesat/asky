@@ -51,5 +51,8 @@ Use `AskyClient.run_turn(request)` for CLI-equivalent orchestration:
   configured verbose output callback.
 - Verbose mode also propagates structured transport metadata events from LLM and
   tool/summarization HTTP paths (`transport_request`, `transport_response`, `transport_error`).
+- During full turn orchestration, verbose mode emits a structured
+  `preload_provenance` event before the first model call, summarizing which seed
+  and shortlist sources were preloaded into model-visible context.
 - `AskyConfig.model_parameters_override` can override/extend configured model
   generation parameters for a specific client instance (for evaluation sweeps).
