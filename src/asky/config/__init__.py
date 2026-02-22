@@ -140,6 +140,7 @@ TOOL_PROMPT_OVERRIDES = (
 _session = _CONFIG.get("session", {})
 SESSION_COMPACTION_THRESHOLD = _session.get("compaction_threshold", 80)
 SESSION_COMPACTION_STRATEGY = _session.get("compaction_strategy", "summary_concat")
+SESSION_IDLE_TIMEOUT_MINUTES = _session.get("idle_timeout_minutes", 5)
 
 USER_PROMPTS = _CONFIG.get("user_prompts", {})
 

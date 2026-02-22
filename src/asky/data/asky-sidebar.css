@@ -84,16 +84,64 @@ ul {
 .group-header:hover { background: #e2e8f0; }
 .badge { background: #64748b; color: white; border-radius: 10px; padding: 1px 6px; font-size: 0.75em; }
 
-.content-area {
-  flex-grow: 1;
-  height: 100%;
-  background: #fff;
-}
-#content-frame {
-  width: 100%;
-  height: 100%;
+/* Copy button styles */
+.copy-btn {
+  background: transparent;
   border: none;
+  cursor: pointer;
+  padding: 4px;
+  color: #6a737d;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  transition: all 0.2s;
+  opacity: 0;
 }
+.group-header .copy-btn {
+  margin-right: 8px;
+  opacity: 0.4;
+}
+.group-header:hover .copy-btn {
+  opacity: 1;
+}
+.index-item:hover .copy-btn {
+  opacity: 0.6;
+}
+.copy-btn:hover {
+  background: #e1e4e8 !important;
+  color: #24292e;
+  opacity: 1 !important;
+}
+.item-wrapper {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.item-wrapper a {
+  flex-grow: 1;
+  padding-right: 5px;
+}
+.item-wrapper .copy-btn {
+  margin-right: 10px;
+}
+.icon-copy, .icon-check {
+  width: 14px;
+  height: 14px;
+}
+.copy-btn.copied {
+  color: #28a745 !important;
+  opacity: 1 !important;
+}
+
+.group-title {
+  flex-grow: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.spacer { flex-grow: 0; width: 4px; }
+
 @media (prefers-color-scheme: dark) {
   body { background-color: #0d1117; color: #e0e0e0; }
   .sidebar, .sidebar-header, .content-area, .group-header { background-color: #161b22; color: #c9d1d9; }
@@ -105,4 +153,6 @@ ul {
   .time { color: #8b949e; }
   .session-tag { background: #11263d; color: #58a6ff; }
   .group-header:hover { background: #21262d; }
+  .copy-btn { color: #8b949e; }
+  .copy-btn:hover { background: #30363d !important; color: #c9d1d9; }
 }

@@ -79,7 +79,7 @@ class Session:
 | `compact_session()` | Replace history with summary |
 | `list_sessions()` | Recent sessions listing |
 | `delete_sessions()` | Delete sessions and messages |
-| `convert_history_to_session()` | Convert interaction to session |
+| `convert_history_to_session()` | Convert interaction to session (session names strip terminal-context wrapper prefixes) |
 
 ## Design Decisions
 

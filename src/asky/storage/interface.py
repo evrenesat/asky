@@ -74,6 +74,7 @@ class Session:
     compacted_summary: Optional[str]
     memory_auto_extract: bool = False
     max_turns: Optional[int] = None
+    last_used_at: Optional[str] = None
 
 
 class HistoryRepository(ABC):
@@ -187,4 +188,9 @@ class HistoryRepository(ABC):
     @abstractmethod
     def update_session_max_turns(self, session_id: int, max_turns: int) -> None:
         """Update the maximum turns explicitly set for a session."""
+        pass
+
+    @abstractmethod
+    def update_session_last_used(self, session_id: int) -> None:
+        """Update the last used timestamp for a session."""
         pass

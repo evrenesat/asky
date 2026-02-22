@@ -115,3 +115,8 @@ compaction_threshold = 80
 
 # Compaction strategy: "summary_concat" or "llm_summary"
 compaction_strategy = "summary_concat"
+
+# If a shell-sticky session has been idle longer than this many minutes,
+# the user is prompted to choose: continue, new session, or one-off query.
+# Set to 0 to disable the check (always resume automatically).
+idle_timeout_minutes = 1

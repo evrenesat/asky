@@ -20,9 +20,32 @@ def save_interaction(
     model: str,
     query_summary: str = "",
     answer_summary: str = "",
+) -> int:
+    """Save an interaction using the default repository. Returns the assistant message ID."""
+    return _repo.save_interaction(query, answer, model, query_summary, answer_summary)
+
+
+def reserve_interaction(model: str) -> tuple[int, int]:
+    """Pre-insert placeholder user and assistant messages to get stable IDs.
+
+    Returns (user_id, assistant_id).
+    """
+    return _repo.reserve_interaction(model)
+
+
+def update_interaction(
+    user_id: int,
+    assistant_id: int,
+    query: str,
+    answer: str,
+    model: str,
+    query_summary: str = "",
+    answer_summary: str = "",
 ) -> None:
-    """Save an interaction using the default repository."""
-    _repo.save_interaction(query, answer, model, query_summary, answer_summary)
+    """Update previously reserved placeholder messages with real content."""
+    _repo.update_interaction(
+        user_id, assistant_id, query, answer, model, query_summary, answer_summary
+    )
 
 
 def get_history(limit: int):
@@ -83,8 +106,8 @@ def get_session_by_name(name: str) -> Optional[Session]:
 
 def save_message(
     session_id: int, role: str, content: str, summary: str, token_count: int
-) -> None:
-    _repo.save_message(session_id, role, content, summary, token_count)
+) -> int:
+    return _repo.save_message(session_id, role, content, summary, token_count)
 
 
 def get_session_messages(session_id: int) -> list[Interaction]:

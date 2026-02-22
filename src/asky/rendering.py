@@ -185,7 +185,11 @@ def save_html_report(
 
 
 def _update_sidebar_index(
-    filename: str, display_title: str, session_name: str = ""
+    filename: str,
+    display_title: str,
+    session_name: str = "",
+    message_id: Optional[int] = None,
+    session_id: Optional[int] = None,
 ) -> None:
     """Update the sidebar index HTML file with the latest generated report.
 
@@ -201,11 +205,10 @@ def _update_sidebar_index(
     timestamp_str = now.strftime("%Y-%m-%d %H:%M")
     iso_timestamp = now.isoformat()
 
-    # Create prefix (first 3 words of filename slug)
-    # Filename format: {slug}_{timestamp}.html
-    # Note: filename here is just the basename, not with results/ prefix yet
-    slug_part = filename.rsplit("_", 2)[0]
-    prefix = " ".join(slug_part.replace("_", " ").split()[:3]).lower()
+    # Derive prefix from the display title (first 3 words), preserving original casing
+    # of words so that the JS side can compute longest common prefix against full titles.
+    title_words = display_title.split()
+    prefix = " ".join(title_words[:3]).lower()
 
     new_entry = {
         "filename": f"results/{filename}",
@@ -214,6 +217,8 @@ def _update_sidebar_index(
         "iso_timestamp": iso_timestamp,
         "session_name": session_name,
         "prefix": prefix,
+        "message_id": message_id,
+        "session_id": session_id,
     }
 
     current_ver = _asky_version()
@@ -284,6 +289,8 @@ def _save_to_archive(
     markdown_content: str,
     filename_hint: Optional[str] = None,
     session_name: str = "",
+    message_id: Optional[int] = None,
+    session_id: Optional[int] = None,
 ) -> Path:
     """Save markdown content as an HTML report in the archive directory.
 
@@ -317,6 +324,12 @@ def _save_to_archive(
     with open(file_path, "w") as f:
         f.write(html_content)
 
-    _update_sidebar_index(filename, display_title, session_name=session_name)
+    _update_sidebar_index(
+        filename,
+        display_title,
+        session_name=session_name,
+        message_id=message_id,
+        session_id=session_id,
+    )
 
     return file_path

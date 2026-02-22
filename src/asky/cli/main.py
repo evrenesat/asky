@@ -160,8 +160,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "-v",
         "--verbose",
-        action="store_true",
-        help="Enable verbose output (prints config and LLM inputs).",
+        action="count",
+        default=0,
+        dest="verbose_level",
+        help="Enable verbose output. Use -vv for double-verbose request payload tracing.",
     )
     parser.add_argument(
         "-o",
@@ -210,6 +212,7 @@ def parse_args() -> argparse.Namespace:
     )
 
     parser.add_argument(
+        "-me",
         "--edit-model",
         nargs="?",
         const="",
@@ -347,7 +350,11 @@ def parse_args() -> argparse.Namespace:
     parser._option_string_actions["--tool-off"].completer = complete_tool_names
 
     enable_argcomplete(parser)
-    return parser.parse_args()
+    parsed_args = parser.parse_args()
+    parsed_args.verbose_level = int(getattr(parsed_args, "verbose_level", 0) or 0)
+    parsed_args.verbose = parsed_args.verbose_level >= 1
+    parsed_args.double_verbose = parsed_args.verbose_level >= 2
+    return parsed_args
 
 
 def show_banner(args) -> None:

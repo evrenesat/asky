@@ -91,6 +91,20 @@ def test_parse_args_options():
         assert args.summarize is True
 
 
+def test_parse_args_verbose_levels():
+    with patch("sys.argv", ["asky", "-v", "query"]):
+        args = parse_args()
+        assert args.verbose is True
+        assert args.double_verbose is False
+        assert args.verbose_level == 1
+
+    with patch("sys.argv", ["asky", "-vv", "query"]):
+        args = parse_args()
+        assert args.verbose is True
+        assert args.double_verbose is True
+        assert args.verbose_level == 2
+
+
 def test_parse_args_lean_flag():
     with patch("sys.argv", ["asky", "-L", "query"]):
         args = parse_args()
@@ -242,7 +256,10 @@ def test_run_chat_renders_answer_before_final_history_finalize():
 
         def finalize_side_effect(*_args, **_kwargs):
             call_order.append("finalize")
-            return []
+            res = MagicMock()
+            res.notices = []
+            res.saved_message_id = None
+            return res
 
         mock_client.run_turn.side_effect = run_turn_side_effect
         mock_client.finalize_turn_history.side_effect = finalize_side_effect
@@ -252,6 +269,87 @@ def test_run_chat_renders_answer_before_final_history_finalize():
 
     assert call_order == ["printed", "finalize"]
     mock_wait_for_summaries.assert_called_once()
+
+
+def test_run_chat_double_verbose_payload_prints_after_live_stops():
+    from asky.cli.chat import run_chat
+
+    mock_args = argparse.Namespace(
+        model="gf",
+        research=False,
+        local_corpus=None,
+        summarize=False,
+        open=False,
+        continue_ids=None,
+        sticky_session=None,
+        resume_session=None,
+        lean=False,
+        tool_off=[],
+        terminal_lines=None,
+        save_history=True,
+        verbose=True,
+        double_verbose=True,
+        system_prompt=None,
+        elephant_mode=False,
+        turns=None,
+        mail_recipients=None,
+        subject=None,
+        push_data_endpoint=None,
+        push_params=None,
+    )
+
+    turn_result = MagicMock()
+    turn_result.final_answer = ""
+    turn_result.halted = True
+    turn_result.notices = []
+    turn_result.session_id = None
+    turn_result.preload = MagicMock(shortlist_stats={}, shortlist_payload=None)
+    turn_result.session = MagicMock(matched_sessions=[])
+
+    payload = {
+        "kind": "llm_request_messages",
+        "phase": "main_loop",
+        "turn": 1,
+        "model_alias": "gf",
+        "model_id": "model-id",
+        "use_tools": True,
+        "messages": [
+            {"role": "system", "content": "System Prompt"},
+            {"role": "user", "content": "Query"},
+        ],
+    }
+
+    with (
+        patch("asky.cli.chat.MODELS", {"gf": {"id": "gemini-flash"}}),
+        patch("asky.cli.chat.get_shell_session_id", return_value=None),
+        patch("asky.cli.chat.InterfaceRenderer") as mock_renderer_cls,
+        patch("asky.cli.chat.LIVE_BANNER", True),
+        patch("asky.cli.chat.AskyClient") as mock_client_cls,
+    ):
+        renderer = MagicMock()
+        renderer.console = MagicMock()
+        renderer.live = MagicMock(console=MagicMock())
+        renderer.current_turn = 0
+        mock_renderer_cls.return_value = renderer
+
+        mock_client = MagicMock()
+
+        def run_turn_side_effect(_request, **kwargs):
+            kwargs["verbose_output_callback"](payload)
+            return turn_result
+
+        mock_client.run_turn.side_effect = run_turn_side_effect
+        mock_client_cls.return_value = mock_client
+
+        run_chat(mock_args, "query")
+
+        renderer.live.console.print.assert_not_called()
+        printed_titles = [
+            getattr(call.args[0], "title", "")
+            for call in renderer.console.print.call_args_list
+            if call.args
+        ]
+        assert "Main Model Request" in printed_titles
 
 
 def test_parse_args_terminal_lines_explicit():

@@ -214,6 +214,7 @@ class TestLeanModeAPI:
             tool_registry=ANY,
             summarize=ANY,
             verbose=ANY,
+            double_verbose=ANY,
             usage_tracker=ANY,
             open_browser=ANY,
             session_manager=ANY,

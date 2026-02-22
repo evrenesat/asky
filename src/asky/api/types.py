@@ -13,6 +13,7 @@ class AskyConfig:
     model_alias: str
     summarize: bool = False
     verbose: bool = False
+    double_verbose: bool = False
     open_browser: bool = False
     research_mode: bool = False
     disabled_tools: Set[str] = field(default_factory=set)

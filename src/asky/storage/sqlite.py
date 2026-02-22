@@ -10,6 +10,48 @@ from asky.storage.interface import HistoryRepository, Interaction, Session
 
 
 # Session dataclass (kept from session.py)
+SESSION_NAME_PREVIEW_MAX_CHARS = 30
+TERMINAL_CONTEXT_PREFIX = "terminal context (last "
+TERMINAL_CONTEXT_QUERY_MARKER = "\n\nQuery:\n"
+
+
+def _extract_session_name_source(user_content: str) -> str:
+    """Return user query text suitable for session naming."""
+    normalized = (user_content or "").replace("\r\n", "\n").strip()
+    if not normalized:
+        return ""
+    if not normalized.lower().startswith(TERMINAL_CONTEXT_PREFIX):
+        return normalized
+
+    marker_index = normalized.find(TERMINAL_CONTEXT_QUERY_MARKER)
+    if marker_index < 0:
+        return normalized
+
+    extracted_query = normalized[
+        marker_index + len(TERMINAL_CONTEXT_QUERY_MARKER) :
+    ].strip()
+    return extracted_query or normalized
+
+
+def _build_session_name_from_user_content(user_content: str) -> str:
+    """Create a human-readable session name from user message text."""
+    source_text = _extract_session_name_source(user_content)
+    if not source_text:
+        return "New Session"
+
+    first_non_empty_line = ""
+    for line in source_text.splitlines():
+        stripped = line.strip()
+        if stripped:
+            first_non_empty_line = stripped
+            break
+
+    if not first_non_empty_line:
+        return "New Session"
+
+    if len(first_non_empty_line) <= SESSION_NAME_PREVIEW_MAX_CHARS:
+        return first_non_empty_line
+    return first_non_empty_line[:SESSION_NAME_PREVIEW_MAX_CHARS] + "..."
 
 
 class SQLiteHistoryRepository(HistoryRepository):
@@ -51,7 +93,7 @@ class SQLiteHistoryRepository(HistoryRepository):
         """
         )
 
-        # Sessions table (unchanged)
+        # Sessions table
         c.execute(
             """
             CREATE TABLE IF NOT EXISTS sessions (
@@ -59,10 +101,9 @@ class SQLiteHistoryRepository(HistoryRepository):
                 name TEXT,
                 model TEXT,
                 created_at TEXT,
-                ended_at TEXT,
-                is_active INTEGER DEFAULT 1,
                 compacted_summary TEXT,
-                max_turns INTEGER
+                max_turns INTEGER,
+                last_used_at TEXT
             )
         """
         )
@@ -78,6 +119,12 @@ class SQLiteHistoryRepository(HistoryRepository):
         # Schema migration: add max_turns column to existing sessions tables
         try:
             c.execute("ALTER TABLE sessions ADD COLUMN max_turns INTEGER")
+        except sqlite3.OperationalError:
+            pass  # column already exists
+
+        # Schema migration: add last_used_at column to existing sessions tables
+        try:
+            c.execute("ALTER TABLE sessions ADD COLUMN last_used_at TEXT")
         except sqlite3.OperationalError:
             pass  # column already exists
 
@@ -103,8 +150,11 @@ class SQLiteHistoryRepository(HistoryRepository):
         model: str,
         query_summary: str = "",
         answer_summary: str = "",
-    ) -> None:
-        """Save a query and its answer as two separate message rows (User + Assistant)."""
+    ) -> int:
+        """Save a query and its answer as two separate message rows (User + Assistant).
+
+        Returns the ID of the assistant message.
+        """
         self.init_db()
         conn = self._get_conn()
         c = conn.cursor()
@@ -125,6 +175,70 @@ class SQLiteHistoryRepository(HistoryRepository):
             (timestamp, session_id, role, content, summary, model, token_count) 
             VALUES (?, NULL, 'assistant', ?, ?, ?, NULL)""",
             (timestamp, answer, answer_summary, model),
+        )
+        assistant_id = c.lastrowid
+
+        conn.commit()
+        conn.close()
+        return assistant_id
+
+    def reserve_interaction(self, model: str) -> tuple[int, int]:
+        """Insert placeholder empty messages to reserve IDs before rendering.
+
+        Returns (user_id, assistant_id).
+        """
+        self.init_db()
+        conn = self._get_conn()
+        c = conn.cursor()
+
+        timestamp = datetime.now().isoformat()
+
+        # Insert placeholder user message
+        c.execute(
+            """INSERT INTO messages 
+            (timestamp, session_id, role, content, summary, model, token_count) 
+            VALUES (?, NULL, 'user', '', '', ?, NULL)""",
+            (timestamp, model),
+        )
+        user_id = c.lastrowid
+
+        # Insert placeholder assistant message
+        c.execute(
+            """INSERT INTO messages 
+            (timestamp, session_id, role, content, summary, model, token_count) 
+            VALUES (?, NULL, 'assistant', '', '', ?, NULL)""",
+            (timestamp, model),
+        )
+        assistant_id = c.lastrowid
+
+        conn.commit()
+        conn.close()
+        return user_id, assistant_id
+
+    def update_interaction(
+        self,
+        user_id: int,
+        assistant_id: int,
+        query: str,
+        answer: str,
+        model: str,
+        query_summary: str = "",
+        answer_summary: str = "",
+    ) -> None:
+        """Update placeholder messages with real content."""
+        conn = self._get_conn()
+        c = conn.cursor()
+
+        # Update User Message
+        c.execute(
+            "UPDATE messages SET content=?, summary=?, model=? WHERE id=?",
+            (query, query_summary, model, user_id),
+        )
+
+        # Update Assistant Message
+        c.execute(
+            "UPDATE messages SET content=?, summary=?, model=? WHERE id=?",
+            (answer, answer_summary, model, assistant_id),
         )
 
         conn.commit()
@@ -560,8 +674,8 @@ class SQLiteHistoryRepository(HistoryRepository):
         c = conn.cursor()
         timestamp = datetime.now().isoformat()
         c.execute(
-            "INSERT INTO sessions (name, model, created_at, memory_auto_extract, max_turns) VALUES (?, ?, ?, ?, ?)",
-            (name, model, timestamp, int(memory_auto_extract), max_turns),
+            "INSERT INTO sessions (name, model, created_at, memory_auto_extract, max_turns, last_used_at) VALUES (?, ?, ?, ?, ?, ?)",
+            (name, model, timestamp, int(memory_auto_extract), max_turns, timestamp),
         )
         session_id = c.lastrowid
         conn.commit()
@@ -585,7 +699,7 @@ class SQLiteHistoryRepository(HistoryRepository):
         conn.row_factory = sqlite3.Row
         c = conn.cursor()
         c.execute(
-            "SELECT id, name, model, created_at, compacted_summary, memory_auto_extract, max_turns FROM sessions WHERE name = ? ORDER BY created_at DESC",
+            "SELECT id, name, model, created_at, compacted_summary, memory_auto_extract, max_turns, last_used_at FROM sessions WHERE name = ? ORDER BY created_at DESC",
             (name,),
         )
         rows = c.fetchall()
@@ -599,6 +713,7 @@ class SQLiteHistoryRepository(HistoryRepository):
                 compacted_summary=r["compacted_summary"],
                 memory_auto_extract=bool(r["memory_auto_extract"]),
                 max_turns=r["max_turns"],
+                last_used_at=r["last_used_at"],
             )
             for r in rows
         ]
@@ -609,7 +724,7 @@ class SQLiteHistoryRepository(HistoryRepository):
         conn.row_factory = sqlite3.Row
         c = conn.cursor()
         c.execute(
-            "SELECT id, name, model, created_at, compacted_summary, memory_auto_extract, max_turns FROM sessions WHERE id = ?",
+            "SELECT id, name, model, created_at, compacted_summary, memory_auto_extract, max_turns, last_used_at FROM sessions WHERE id = ?",
             (session_id,),
         )
         row = c.fetchone()
@@ -623,6 +738,7 @@ class SQLiteHistoryRepository(HistoryRepository):
                 compacted_summary=row["compacted_summary"],
                 memory_auto_extract=bool(row["memory_auto_extract"]),
                 max_turns=row["max_turns"],
+                last_used_at=row["last_used_at"],
             )
         return None
 
@@ -632,7 +748,7 @@ class SQLiteHistoryRepository(HistoryRepository):
         conn.row_factory = sqlite3.Row
         c = conn.cursor()
         c.execute(
-            "SELECT id, name, model, created_at, compacted_summary, memory_auto_extract, max_turns FROM sessions WHERE name = ? ORDER BY created_at DESC LIMIT 1",
+            "SELECT id, name, model, created_at, compacted_summary, memory_auto_extract, max_turns, last_used_at FROM sessions WHERE name = ? ORDER BY created_at DESC LIMIT 1",
             (name,),
         )
         row = c.fetchone()
@@ -646,13 +762,14 @@ class SQLiteHistoryRepository(HistoryRepository):
                 compacted_summary=row["compacted_summary"],
                 memory_auto_extract=bool(row["memory_auto_extract"]),
                 max_turns=row["max_turns"],
+                last_used_at=row["last_used_at"],
             )
         return None
 
     def save_message(
         self, session_id: int, role: str, content: str, summary: str, token_count: int
-    ) -> None:
-        """Save a message to a session."""
+    ) -> int:
+        """Save a message to a session. Returns the message ID."""
         conn = self._get_conn()
         c = conn.cursor()
         timestamp = datetime.now().isoformat()
@@ -662,8 +779,13 @@ class SQLiteHistoryRepository(HistoryRepository):
             VALUES (?, ?, ?, ?, ?, '', ?)""",
             (timestamp, session_id, role, content, summary, token_count),
         )
+        msg_id = c.lastrowid
+        c.execute(
+            "UPDATE sessions SET last_used_at = ? WHERE id = ?", (timestamp, session_id)
+        )
         conn.commit()
         conn.close()
+        return msg_id
 
     def get_session_messages(self, session_id: int) -> List[Interaction]:
         """Retrieve all messages for a session."""
@@ -710,7 +832,7 @@ class SQLiteHistoryRepository(HistoryRepository):
         conn.row_factory = sqlite3.Row
         c = conn.cursor()
         c.execute(
-            "SELECT id, name, model, created_at, compacted_summary, memory_auto_extract, max_turns FROM sessions ORDER BY created_at DESC LIMIT ?",
+            "SELECT id, name, model, created_at, compacted_summary, memory_auto_extract, max_turns, last_used_at FROM sessions ORDER BY created_at DESC LIMIT ?",
             (limit,),
         )
         rows = c.fetchall()
@@ -724,6 +846,7 @@ class SQLiteHistoryRepository(HistoryRepository):
                 compacted_summary=r["compacted_summary"],
                 memory_auto_extract=bool(r["memory_auto_extract"]),
                 max_turns=r["max_turns"],
+                last_used_at=r["last_used_at"],
             )
             for r in rows
         ]
@@ -735,6 +858,18 @@ class SQLiteHistoryRepository(HistoryRepository):
         c.execute(
             "UPDATE sessions SET max_turns = ? WHERE id = ?",
             (max_turns, session_id),
+        )
+        conn.commit()
+        conn.close()
+
+    def update_session_last_used(self, session_id: int) -> None:
+        """Update the last used timestamp for a session."""
+        conn = self._get_conn()
+        c = conn.cursor()
+        timestamp = datetime.now().isoformat()
+        c.execute(
+            "UPDATE sessions SET last_used_at = ? WHERE id = ?",
+            (timestamp, session_id),
         )
         conn.commit()
         conn.close()
@@ -900,13 +1035,7 @@ class SQLiteHistoryRepository(HistoryRepository):
         conn.close()
 
         # Create Session Name
-        session_name = "New Session"
-        if user_content:
-            lines = user_content.split("\\n")
-            first_line = lines[0].strip()
-            session_name = (
-                (first_line[:30] + "...") if len(first_line) > 30 else first_line
-            )
+        session_name = _build_session_name_from_user_content(user_content)
 
         # Create Session
         new_session_id = self.create_session(model=interaction.model, name=session_name)

@@ -182,6 +182,14 @@ generate_summaries() → persist (session/history)
 (Optional) render_to_browser() / send_email()
 ```
 
+Verbose tracing has two levels:
+
+- `-v`: existing verbose diagnostics (tool-call traces, shortlist traces, debug-friendly status output).
+- `-vv`: includes `-v` behavior and additionally prints fully expanded outbound
+  main-model request messages (including system prompts) in boxed console output.
+  In Live-banner mode, these payloads are buffered and printed after Live stops to
+  avoid banner redraw corruption.
+
 Programmatic consumers can bypass CLI by instantiating `AskyClient` directly and
 calling `run_turn(...)` for full CLI-equivalent orchestration.
 

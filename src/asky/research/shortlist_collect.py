@@ -74,6 +74,7 @@ def collect_seed_link_candidates(
             output.append(
                 CandidateRecord(
                     url=href,
+                    requested_url=href,
                     source_type="seed_link",
                     title=anchor_text[:max_title_chars],
                     search_snippet=anchor_text,
@@ -127,7 +128,9 @@ def collect_candidates(
     import time
 
     collected: List[CandidateRecord] = [
-        CandidateRecord(url=url, source_type="seed") for url in seed_urls if url
+        CandidateRecord(url=url, requested_url=url, source_type="seed")
+        for url in seed_urls
+        if url
     ]
 
     if seed_urls and seed_link_expansion_enabled:
@@ -227,6 +230,7 @@ def collect_candidates(
                     collected.append(
                         CandidateRecord(
                             url=url,
+                            requested_url=url,
                             source_type="search",
                             title=title[:max_title_chars],
                             search_snippet=snippet,

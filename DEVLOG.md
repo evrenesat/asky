@@ -1,8 +1,101 @@
 # DEVLOG
 
+## 2026-02-22 - Version 0.2.0: Copy Icons for Archive Sidebar
+
+Bumped minor version to 0.2.0 and added copy-to-clipboard functionality to the HTML archive sidebar.
+
+- **New Feature**:
+  - Added copy icons next to messages and groups in the sidebar.
+  - Clicking a message icon copies `asky --continue <id>`.
+  - Clicking a session group icon copies `asky --resume-session <id>`.
+  - Clicking a prefix group icon copies `asky --continue <id1>,<id2>,...`.
+- **Changed**:
+  - `src/asky/storage`: Added `reserve_interaction` to get IDs before rendering. Fixed `save_message` to return IDs.
+  - `src/asky/api/client.py`: Threaded message/session IDs and added `FinalizeResult`.
+  - `src/asky/rendering.py`: Persisted `message_id` and `session_id` in `asky-sidebar.js`.
+  - `src/asky/data/asky-sidebar.js/css`: Implemented the copy logic and modern UI styles.
+- **Improved**:
+  - Version bump to **0.2.0** reflects major architectural refinement for history tracking.
+
+## 2026-02-22 - Fix `-vv` Live Banner Corruption + Terminal-Context Session Name Leak
+
+Addressed two regressions reported during real CLI usage:
+
+- Fixed `-vv` output interaction with Rich Live banner:
+  - `src/asky/cli/chat.py` now defers `kind="llm_request_messages"` payload rendering while Live is active.
+  - Deferred payloads are flushed after Live stops, preserving readable boxed payload output without repeated stale banner snapshots or redraw drift.
+- Fixed session names incorrectly becoming `"Terminal Context (Last N lines)..."`:
+  - `src/asky/core/session_manager.py`: `generate_session_name()` now strips terminal-context wrapper prefixes before keyword extraction.
+  - `src/asky/storage/sqlite.py`: `convert_history_to_session()` now derives names from extracted query text (and no longer uses the broken `split("\\n")` path), with wrapper-aware parsing.
+- Added regression tests:
+  - `tests/test_cli.py`: verifies double-verbose payloads are not printed through live console and are printed after live stop.
+  - `tests/test_sessions.py`: verifies `generate_session_name()` ignores terminal-context wrapper.
+  - `tests/test_feature_reply.py`: verifies history-to-session conversion names strip terminal-context wrapper.
+- Validation:
+  - Targeted: `uv run pytest tests/test_cli.py tests/test_feature_reply.py tests/test_sessions.py` -> passed.
+  - Full suite: `uv run pytest` -> 562 passed.
+
+## 2026-02-22 - Title-Based Grouping Algorithm Fix
+
+Improved the grouping and naming logic for HTML archive reports in the sidebar.
+
+- **Changed**:
+  - `src/asky/rendering.py`: Derived `prefix` for grouping from the first 3 words of the **display title** (lowercased) instead of the filename slug. This prevents filtering of numbers (like "A16z") and improves prefix reliability.
+  - `src/asky/data/asky-sidebar.js`: Added `longestCommonTitlePrefix` algorithm to the sidebar. The UI now dynamically computes the longest common word-prefix among items in a group to use as the displayed group name.
+  - `tests/test_html_report.py`: Updated unit tests to reflect title-based prefix derivation.
+- **Why**:
+  - The previous slug-based derivation often dropped important context (numbers, stopwords), leading to mismatched or confusing group names.
+  - Using the longest common prefix ensures that identical titles produce a group named exactly after that title, and slightly diverging titles (e.g., "Part 1" vs "Part 2") produce an intuitive common header.
+- **Validation**:
+  - Successfully ran `uv run pytest tests/test_html_report.py` and the full test suite (45 tests passed).
+
+## 2026-02-22 - Double-Verbose Outbound Main-Model Payload Trace (`-vv`)
+
+Added a second verbosity level for targeted prompt/debug inspection without digging through noisy log files.
+
+- Added `-v` level parsing via count mode in `src/asky/cli/main.py`:
+  - `-v` keeps existing verbose behavior.
+  - `-vv` enables new double-verbose mode.
+  - Normalized parsed args to `args.verbose` (bool), `args.double_verbose` (bool), and `args.verbose_level` (int) for backward compatibility.
+- Added `double_verbose` to `AskyConfig` (`src/asky/api/types.py`) and propagated it through:
+  - `src/asky/cli/chat.py` (CLI config construction),
+  - `src/asky/api/client.py` (engine construction),
+  - `src/asky/core/engine.py` (runtime behavior).
+- `ConversationEngine` now emits full outbound main-model request payload events (`kind="llm_request_messages"`) in double-verbose mode before each main-loop LLM call and graceful-exit LLM call.
+- CLI verbose renderer now recognizes and prints those payloads as readable boxed output (Rich panels + summary table + per-message panels), including all system/user/tool messages passed to the main model.
+- Kept existing verbose tool-call rendering intact and made payload kinds explicit (`kind="tool_call"`).
+- Added/updated tests:
+  - `tests/test_cli.py`: parser coverage for `-v` vs `-vv` level normalization.
+  - `tests/test_llm.py`: engine coverage for double-verbose outbound payload emission.
+  - `tests/test_lean_mode.py`: updated engine-constructor expectation for the new `double_verbose` argument.
+- Validation:
+  - Targeted run: `uv run pytest tests/test_cli.py tests/test_llm.py tests/test_lean_mode.py` -> passed.
+
+## 2026-02-22 - Session Idle Timeout Prompt
+
+Added a configurable inactivity timeout for shell sessions.
+
+- Added `last_used_at` to `sessions` table in SQLite.
+- Added `idle_timeout_minutes` setting (default 5).
+- Implemented interactive CLI prompt (Continue / New Session / One-off) when resuming a stale session.
+- Cleaned up unused legacy columns `is_active` and `ended_at` from sessions table DDL.
+- Verified with unit tests in `tests/test_idle_timeout.py`.
+
 For older logs, see [DEVLOG_ARCHIVE.md](DEVLOG_ARCHIVE.md).
 
 ## 2026-02-22
+
+### --edit-model Upfront Role Assignment Prompt
+
+**Summary**: Moved main/summarization model assignment to the start of the `--edit-model` flow so the most common operations (change which model is main or summarization) no longer require going through the full parameter edit wizard.
+
+- **Changed**:
+  - `src/asky/cli/models.py`: After the user selects a model to edit, a new action prompt appears immediately with three choices: `m` (set as main model and exit), `s` (set as summarization model and exit), or `e` (enter the full parameter edit flow). The post-save "Set as default main model?" / "Set as summarization model?" prompts that previously appeared after saving are removed.
+  - `tests/test_models_cli.py`: Added `test_edit_model_action_m_sets_main_model`, `test_edit_model_action_s_sets_summarization_model`, and `test_edit_model_action_e_saves_changes` covering all three action paths.
+- **Why**:
+  - Most users open `--edit-model` to change which model is used for main chat or summarization. Before this change, they had to step through the entire parameter edit wizard first, with role assignment only appearing at the very end after a save confirmation.
+- **Gotchas**:
+  - Choosing `m` or `s` updates `general.toml` only - model parameters are not modified. To both change parameters and reassign a role, run `--edit-model` twice (once with `e`, once with `m` or `s`).
 
 ### Continue Flag Improvements (No-ID Default + Auto-Session Conversion)
 

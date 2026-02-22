@@ -73,7 +73,7 @@ def test_save_html_report():
             assert "results/test_slug_20230101_120000.html" in index_content
             assert "Test Slug Input" in index_content
             assert '"session_name": "Test Session"' in index_content
-            assert '"prefix": "test slug"' in index_content
+            assert '"prefix": "test slug input"' in index_content
 
 
 def test_save_html_report_no_hint():
@@ -151,14 +151,14 @@ def test_sidebar_groups_and_sorting():
                 entries[0]["filename"] == "results/slug_one_more_20230101_140000.html"
             )
             assert entries[0]["session_name"] == "Session B"
-            assert entries[0]["prefix"] == "slug one more"
+            assert entries[0]["prefix"] == "title three"
 
             assert entries[1]["filename"] == "results/slug_two_20230101_130000.html"
-            assert entries[1]["prefix"] == "slug two"
+            assert entries[1]["prefix"] == "title two"
 
             assert entries[2]["filename"] == "results/slug_one_20230101_120000.html"
             assert entries[2]["session_name"] == "Session A"
-            assert entries[2]["prefix"] == "slug one"
+            assert entries[2]["prefix"] == "title one"
 
 
 def test_extract_markdown_title():

@@ -298,15 +298,48 @@ def edit_model_command(model_alias: Optional[str] = None):
         return
 
     current_config = MODELS[model_alias]
-    console.print(f"\n[bold]Editing Model: {model_alias}[/bold]")
-    console.print(f"Current ID: {current_config.get('id')}")
-    console.print(f"Current API: {current_config.get('api')}")
-    console.print(f"Current Context Size: {current_config.get('context_size')}")
+
+    config = load_config()
+    general = config.get("general", {})
+    def_model = general.get("default_model")
+    sum_model = general.get("summarization_model")
+
+    role_tags = []
+    if model_alias == def_model:
+        role_tags.append("[green]main[/green]")
+    if model_alias == sum_model:
+        role_tags.append("[blue]summarization[/blue]")
+    role_str = ", ".join(role_tags) if role_tags else "none"
+
+    console.print(f"\n[bold]Model: {model_alias}[/bold]  (current role: {role_str})")
+    console.print(f"  ID:             {current_config.get('id')}")
+    console.print(f"  API:            {current_config.get('api')}")
+    console.print(f"  Context size:   {current_config.get('context_size')}")
     console.print(
-        "Current Source Shortlist: "
+        f"  Source shortlist: "
         f"{_shortlist_mode_from_value(current_config.get('source_shortlist_enabled'))}"
     )
 
+    console.print("\n[bold]Perform action:[/bold]")
+    console.print("  [green]m[/green] - set as [bold]main[/bold] model")
+    console.print("  [blue]s[/blue] - set as [bold]summarization[/bold] model")
+    console.print("  [yellow]e[/yellow] - edit parameters")
+
+    action = Prompt.ask(
+        "\nSelect action",
+        choices=["m", "s", "e"],
+        default="e",
+    )
+
+    if action == "m":
+        update_general_config("default_model", model_alias)
+        return
+
+    if action == "s":
+        update_general_config("summarization_model", model_alias)
+        return
+
+    # action == "e": proceed to full parameter edit
     context_size = IntPrompt.ask(
         "Context size",
         default=int(current_config.get("context_size", 4096)),
@@ -323,13 +356,9 @@ def edit_model_command(model_alias: Optional[str] = None):
 
     console.print("\n[bold]Configure Parameters[/bold]")
 
-    # Merge existing parameters
     parameters = current_config.get("parameters", {}).copy()
-
-    # Offer options
     options = list(openrouter.KNOWN_PARAMETERS.keys())
 
-    # Sequential parameter editing
     console.print(
         "\n[bold]Configuration (Press Enter to keep current, type 'none' to unset)[/bold]"
     )
@@ -339,24 +368,6 @@ def edit_model_command(model_alias: Optional[str] = None):
         default_val = param_info.get("default")
         curr_val = parameters.get(param_to_edit)
 
-        # Display current state interaction
-        # If currently set, that's the default. If not set, check default?
-        # User said: "traverse all parameters with their set values if they set."
-        # If not set, maybe show default from OpenRouter but mark it as (default)?
-        # Or leave it empty?
-        # Let's use the 'current effective value' as default prompt if set,
-        # or the system default if not set?
-        # If not set in parameters, it is effectively the system default or None.
-
-        # Implementation: Default prompt is standard default, unless overridden.
-        # But if user didn't override, we shouldn't force an override.
-        # So prompts should show "Current: [value]" or default to "" if not set?
-        # User: "hit enter if they don't want to change the existing value."
-        # If I map Enter -> "Keep as is", then I need to know "what is is".
-
-        # Let's show current value in the prompt text, but prompt default is empty string means 'keep'?
-        # Or better: Prompt default IS the current value.
-
         prompt_default = str(curr_val) if curr_val is not None else ""
 
         param_type = param_info.get("type")
@@ -365,13 +376,10 @@ def edit_model_command(model_alias: Optional[str] = None):
             hint += f", min={param_info['min']}"
         if "max" in param_info:
             hint += f", max={param_info['max']}"
-        if default_val is not None:
-            # If current value is NOT set, show default info
-            if curr_val is None:
-                hint += f", default={default_val}"
+        if default_val is not None and curr_val is None:
+            hint += f", default={default_val}"
         hint += ")"
 
-        # Special visual for set values
         label = param_to_edit
         if curr_val is not None:
             label = f"[green]{param_to_edit}[/green]"
@@ -379,20 +387,13 @@ def edit_model_command(model_alias: Optional[str] = None):
         val_input = Prompt.ask(f"  {label} {hint}", default=prompt_default)
 
         if val_input == prompt_default:
-            # No change
             continue
 
         if val_input.lower() in ["none", "unset", "null", ""]:
-            # Explicit unset if they typed 'none' or cleared it (if default was not empty)
-            # If prompt_default was empty (unset) and they entered empty, we hit 'no change' above.
-            # If prompt_default was SET and they entered empty -> Prompt returns default!
-            # So Prompt.ask(default="foo") returns "foo" on empty input.
-            # To UNSET, they MUST type "none" etc.
             if param_to_edit in parameters:
                 del parameters[param_to_edit]
                 console.print(f"    [yellow]Unset {param_to_edit}[/yellow]")
         else:
-            # Try to set
             try:
                 if param_type == "float":
                     parameters[param_to_edit] = float(val_input)
@@ -406,29 +407,13 @@ def edit_model_command(model_alias: Optional[str] = None):
     if Confirm.ask("\nSave changes?", default=True):
         new_config = {
             "id": current_config.get("id"),
-            "api": current_config.get(
-                "api"
-            ),  # Note: api might be resolved in MODELS, prefer 'api_ref' if kept?
-            # Actually, MODELS is hydrated, so 'api' key might be the full dict or just string depending on hydration?
-            # Hydration copies keys, checks 'api' key exists in CONFIG['api'].
-            # 'api' field in model is the string ref.
+            "api": current_config.get("api"),
             "context_size": context_size,
             "source_shortlist_enabled": shortlist_enabled,
             "parameters": parameters if parameters else None,
         }
-        # Re-using the api string key is tricky if hydration replaced/augmented it.
-        # Check original config or trust that 'api' string key is preserved.
-        # In `loader.py`, `_hydrate_models` preserves `api` field (string) and adds `base_url`, `api_key`.
-
         save_model_config(model_alias, new_config)
-
         console.print(f"\n[green]Model '{model_alias}' updated successfully![/green]")
-
-        if Confirm.ask("\nSet as default main model?", default=False):
-            update_general_config("default_model", model_alias)
-
-        if Confirm.ask("Set as summarization model?", default=False):
-            update_general_config("summarization_model", model_alias)
 
 
 def save_model_config(nickname: str, config: Dict[str, Any]):

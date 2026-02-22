@@ -18,11 +18,16 @@ class CandidateRecord:
 
     url: str
     source_type: str
+    requested_url: str = ""
     normalized_url: str = ""
     hostname: str = ""
     title: str = ""
     text: str = ""
     snippet: str = ""
+    fetched_content: str = ""
+    fetch_warning: str = ""
+    fetch_error: str = ""
+    final_url: str = ""
     date: Optional[str] = None
     search_snippet: str = ""
     path_tokens: str = ""

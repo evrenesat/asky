@@ -1,5 +1,6 @@
 """Main conversation orchestration engine."""
 
+import copy
 import json
 import logging
 import requests
@@ -63,6 +64,7 @@ class ConversationEngine:
         tool_registry: ToolRegistry,
         summarize: bool = False,
         verbose: bool = False,
+        double_verbose: bool = False,
         usage_tracker: Optional[UsageTracker] = None,
         open_browser: bool = False,
         session_manager: Optional[Any] = None,
@@ -75,6 +77,7 @@ class ConversationEngine:
         self.tool_registry = tool_registry
         self.summarize = summarize
         self.verbose = verbose
+        self.double_verbose = double_verbose
         self.usage_tracker = usage_tracker
         self.open_browser = open_browser
         self.session_manager = session_manager
@@ -165,6 +168,12 @@ class ConversationEngine:
                     turn=turn,
                     use_tools=use_tools,
                     message_count=len(messages),
+                )
+                self._print_verbose_llm_request(
+                    messages=messages,
+                    turn=turn,
+                    use_tools=use_tools,
+                    phase="main_loop",
                 )
 
                 msg = get_llm_msg(
@@ -339,6 +348,7 @@ class ConversationEngine:
             parsed_args = {"_raw_arguments": args_str}
 
         payload = {
+            "kind": "tool_call",
             "turn": turn,
             "call_index": call_index,
             "total_calls": total_calls,
@@ -356,6 +366,31 @@ class ConversationEngine:
             tool_name,
             parsed_args,
         )
+
+    def _print_verbose_llm_request(
+        self,
+        messages: List[Dict[str, Any]],
+        turn: int,
+        use_tools: bool,
+        phase: str,
+    ) -> None:
+        """Emit full outbound message payload in double-verbose mode."""
+        if not self.double_verbose:
+            return
+
+        payload = {
+            "kind": "llm_request_messages",
+            "phase": phase,
+            "turn": turn,
+            "model_alias": self.model_config.get("alias"),
+            "model_id": self.model_config.get("id"),
+            "use_tools": use_tools,
+            "messages": copy.deepcopy(messages),
+        }
+        if self.verbose_output_callback:
+            self.verbose_output_callback(payload)
+            return
+        logger.info("Main model request payload: %s", json.dumps(payload))
 
     def _compact_tool_message(self, msg: Dict[str, Any]) -> Dict[str, Any]:
         """Replace full URL content with summaries in a tool message.
@@ -591,6 +626,12 @@ class ConversationEngine:
         )
 
         # Make final call without tools AND without tool-mentioning system prompt
+        self._print_verbose_llm_request(
+            messages=exit_messages,
+            turn=self.max_turns + 1,
+            use_tools=False,
+            phase="graceful_exit",
+        )
         final_msg = get_llm_msg(
             self.model_config["id"],
             exit_messages,

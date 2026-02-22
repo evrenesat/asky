@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "asky-cli"
-version = "0.1.7"
+version = "0.2.0"
 description = "AI-powered web search CLI with LLM tool-calling capabilities"
 readme = "README.md"
 license = "MIT"

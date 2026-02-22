@@ -47,6 +47,7 @@ def resolve_session_for_turn(
         created_session = session_manager.create_session(
             sticky_session_name, memory_auto_extract=elephant_mode, max_turns=max_turns
         )
+        session_manager.repo.update_session_last_used(int(created_session.id))
         if set_shell_session_id_fn:
             set_shell_session_id_fn(int(created_session.id))
         resolution.session_id = int(created_session.id)
@@ -85,6 +86,7 @@ def resolve_session_for_turn(
 
         resumed = matches[0]
         session_manager.current_session = resumed
+        session_manager.repo.update_session_last_used(int(resumed.id))
         if set_shell_session_id_fn:
             set_shell_session_id_fn(int(resumed.id))
         resolution.session_id = int(resumed.id)
@@ -119,6 +121,7 @@ def resolve_session_for_turn(
         session = session_manager.repo.get_session_by_id(shell_session_id)
         if session:
             session_manager.current_session = session
+            session_manager.repo.update_session_last_used(int(session.id))
             resolution.session_id = int(session.id)
             resolution.event = "session_auto_resumed"
             resolution.memory_auto_extract = bool(session.memory_auto_extract)
@@ -182,8 +185,12 @@ def resolve_session_for_turn(
                 )
                 session_manager.current_session.max_turns = max_turns
                 resolution.max_turns = max_turns
-            else:
-                resolution.max_turns = session_manager.current_session.max_turns
+
+            session_manager.repo.update_session_last_used(
+                int(session_manager.current_session.id)
+            )
+        else:
+            resolution.max_turns = session_manager.current_session.max_turns
 
     return session_manager, resolution
 

@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import copy
-from typing import Any, Callable, Dict, List, Optional
+from dataclasses import dataclass
+from typing import Any, Callable, Dict, List, Optional, Set, TYPE_CHECKING
 
 from asky.config import MODELS
 from asky.core import (
@@ -41,6 +42,14 @@ from .types import (
     PreloadResolution,
     SessionResolution,
 )
+
+
+@dataclass
+class FinalizeResult:
+    """Result of history finalization."""
+
+    notices: List[str]
+    saved_message_id: Optional[int] = None
 
 
 class AskyClient:
@@ -192,6 +201,7 @@ class AskyClient:
             tool_registry=registry,
             summarize=self.config.summarize,
             verbose=self.config.verbose,
+            double_verbose=self.config.double_verbose,
             usage_tracker=self.usage_tracker,
             open_browser=self.config.open_browser,
             session_manager=session_manager,
@@ -530,17 +540,19 @@ class AskyClient:
         request: "AskyTurnRequest",
         result: "AskyTurnResult",
         summarization_status_callback: Optional[Callable[[str], None]] = None,
-    ) -> List[str]:
+        pre_reserved_message_ids: Optional[tuple[int, int]] = None,
+    ) -> FinalizeResult:
         """Save interaction/session history and perform compaction if needed.
 
         This can be called manually by clients who set request.save_history = False
         to defer saving until after rendering operations.
         """
         notices = []
+        saved_message_id = None
         if not result.final_answer:
-            return notices
+            return FinalizeResult(notices=notices)
 
-        from asky.storage import save_interaction
+        from asky.storage import save_interaction, update_interaction
         from asky.core.session_manager import SessionManager
 
         if result.session_id:
@@ -558,7 +570,7 @@ class AskyClient:
             if summarization_status_callback:
                 summarization_status_callback("Saving session message...")
 
-            session_manager.save_turn(
+            saved_message_id = session_manager.save_turn(
                 request.query_text,
                 result.final_answer,
                 result.query_summary,
@@ -570,17 +582,32 @@ class AskyClient:
                 if session_manager.check_and_compact():
                     notices.append("Session context compacted")
         else:
-            if summarization_status_callback:
-                summarization_status_callback("Saving interaction...")
-            save_interaction(
-                request.query_text,
-                result.final_answer,
-                self.config.model_alias,
-                result.query_summary,
-                result.answer_summary,
-            )
+            if pre_reserved_message_ids:
+                if summarization_status_callback:
+                    summarization_status_callback("Updating reserved interaction...")
+                user_id, assistant_id = pre_reserved_message_ids
+                update_interaction(
+                    user_id,
+                    assistant_id,
+                    request.query_text,
+                    result.final_answer,
+                    self.config.model_alias,
+                    result.query_summary,
+                    result.answer_summary,
+                )
+                saved_message_id = assistant_id
+            else:
+                if summarization_status_callback:
+                    summarization_status_callback("Saving interaction...")
+                saved_message_id = save_interaction(
+                    request.query_text,
+                    result.final_answer,
+                    self.config.model_alias,
+                    result.query_summary,
+                    result.answer_summary,
+                )
 
-        return notices
+        return FinalizeResult(notices=notices, saved_message_id=saved_message_id)
 
     def cleanup_session_research_data(self, session_id: str) -> dict:
         """Delete research findings and vectors for a session.

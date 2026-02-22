@@ -35,6 +35,7 @@ class ConversationEngine:
 - **Tool Dispatch**: Via `ToolRegistry.dispatch()`
 - **Context Compaction**: Via `check_and_compact()` when threshold exceeded
 - **Graceful Exit**: `_execute_graceful_exit()` handles max-turns without answer
+- **Double-Verbose Payload Trace**: emits full outbound main-model message payloads through the verbose callback when enabled
 - **Error Handling**: Raises `ContextOverflowError` for HTTP 400 context overflow
 - **Event Hooks**: Optional structured `event_callback(name, payload)` emissions
   - `tool_start` payload includes `tool_name` and raw `tool_arguments` for downstream instrumentation.
@@ -125,7 +126,7 @@ Initializes tool usage tracking for all available tools with a default of 0 at t
 
 - **Sessions are Persistent**: Conversation threads resumable anytime
 - **Shell-Sticky**: Lock files in `/tmp/asky_session_{PID}` tie to terminal
-- **Auto-Naming**: Names generated from query keywords (stopword filtering)
+- **Auto-Naming**: Names generated from query keywords (stopword filtering), with terminal-context wrappers stripped before extraction
 
 ### Compaction Strategies
 

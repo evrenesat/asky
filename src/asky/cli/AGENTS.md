@@ -39,6 +39,7 @@ Command-line interface layer handling argument parsing, command routing, and use
 | `-c, --continue-chat`          | Context loading from previous IDs                  |
 | `-H, --history`                | `history.py`                                       |
 | `-pa, --print-answer`          | `history.py`                                       |
+| `-v, --verbose` / `-vv`        | `chat.py` + `core/engine.py` (verbose / double-verbose traces) |
 | `-ss, --sticky-session`        | `sessions.py`                                      |
 | `-rs, --resume-session`        | `sessions.py`                                      |
 | `-off, -tool-off, --tool-off`  | `chat.py` (runtime tool exclusion, supports `all`) |
@@ -67,6 +68,7 @@ Main conversation entry point via `run_chat()`:
 - `InterfaceRenderer` manages Rich Live console
 - Status callbacks update during shortlist/tool execution
 - Verbose output routed through live console to avoid redraw issues
+- Double-verbose (`-vv`) captures boxed outbound main-model message payloads (including system messages) and flushes them after Live is stopped, preventing banner redraw corruption during active turns
 - After final answer rendering, research-mode chat keeps Live active during deferred
   history finalization and drains pending background research summaries before the
   last banner refresh/stop so summary-token usage is reflected in the final banner.

@@ -79,3 +79,25 @@ def test_reply_to_existing_session(repo):
 def test_convert_invalid_id(repo):
     with pytest.raises(ValueError):
         repo.convert_history_to_session(99999)
+
+
+def test_convert_history_to_session_strips_terminal_context_name(repo):
+    wrapped_query = (
+        "Terminal Context (Last 5 lines):\n"
+        "```\n"
+        "git status\n"
+        "pytest -q\n"
+        "```\n\n"
+        "Query:\n"
+        "fix failing parser tests"
+    )
+    repo.save_interaction(wrapped_query, "Assistant Answer", "gpt-4")
+
+    last = repo.get_last_interaction()
+    assert last is not None
+
+    new_sid = repo.convert_history_to_session(last.id)
+    session = repo.get_session_by_id(new_sid)
+
+    assert session is not None
+    assert session.name == "fix failing parser tests"

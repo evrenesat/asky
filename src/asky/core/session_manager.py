@@ -161,6 +161,26 @@ STOPWORDS = frozenset(
         "no",
     }
 )
+TERMINAL_CONTEXT_PREFIX = "terminal context (last "
+TERMINAL_CONTEXT_QUERY_MARKER = "\n\nQuery:\n"
+
+
+def _strip_terminal_context_wrapper(query: str) -> str:
+    """Extract the actual user query when terminal-context wrapper is present."""
+    normalized = (query or "").replace("\r\n", "\n").strip()
+    if not normalized:
+        return ""
+    if not normalized.lower().startswith(TERMINAL_CONTEXT_PREFIX):
+        return normalized
+
+    marker_index = normalized.find(TERMINAL_CONTEXT_QUERY_MARKER)
+    if marker_index < 0:
+        return normalized
+
+    extracted_query = normalized[
+        marker_index + len(TERMINAL_CONTEXT_QUERY_MARKER) :
+    ].strip()
+    return extracted_query or normalized
 
 
 def generate_session_name(query: str, max_words: int = 2) -> str:
@@ -169,8 +189,10 @@ def generate_session_name(query: str, max_words: int = 2) -> str:
     Filters stopwords and joins with underscores.
     Example: "what is the meaning of life" -> "meaning_life"
     """
+    normalized_query = _strip_terminal_context_wrapper(query)
+
     # Extract words (alphanumeric only)
-    words = re.findall(r"[a-zA-Z]+", query.lower())
+    words = re.findall(r"[a-zA-Z]+", normalized_query.lower())
 
     # Filter stopwords and short words
     key_words = [w for w in words if w not in STOPWORDS and len(w) > 2]
@@ -335,10 +357,10 @@ class SessionManager:
 
     def save_turn(
         self, query: str, answer: str, query_summary: str = "", answer_summary: str = ""
-    ) -> None:
-        """Save a conversation turn to the session."""
+    ) -> int:
+        """Save a conversation turn to the session. Returns the assistant message ID."""
         if not self.current_session:
-            return
+            return 0
 
         # Calculate tokens (naive for now, improved later if needed)
         q_tokens = count_tokens([{"role": "user", "content": query}])
@@ -347,9 +369,10 @@ class SessionManager:
         self.repo.save_message(
             self.current_session.id, "user", query, query_summary, q_tokens
         )
-        self.repo.save_message(
+        msg_id = self.repo.save_message(
             self.current_session.id, "assistant", answer, answer_summary, a_tokens
         )
+        return msg_id
 
     def check_and_compact(self) -> bool:
         """Check if compaction is needed and trigger it."""

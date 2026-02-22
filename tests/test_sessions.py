@@ -4,7 +4,7 @@ from pathlib import Path
 from unittest.mock import patch, MagicMock
 
 from asky.storage.sqlite import SQLiteHistoryRepository
-from asky.core.session_manager import SessionManager
+from asky.core.session_manager import SessionManager, generate_session_name
 from asky.core.api_client import UsageTracker
 
 
@@ -169,3 +169,19 @@ def test_count_sessions(temp_repo):
     assert temp_repo.count_sessions() == 1
     temp_repo.create_session("model", "s2")
     assert temp_repo.count_sessions() == 2
+
+
+def test_generate_session_name_strips_terminal_context_wrapper():
+    query = (
+        "Terminal Context (Last 5 lines):\n"
+        "```\n"
+        "line1\n"
+        "line2\n"
+        "```\n\n"
+        "Query:\n"
+        "debug pytest fixture import failure"
+    )
+
+    session_name = generate_session_name(query, max_words=3)
+
+    assert session_name == "debug_pytest_fixture"

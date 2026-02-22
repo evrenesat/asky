@@ -280,6 +280,47 @@ def test_conversation_engine_verbose_tool_trace_and_status(mock_get_msg):
 
 
 @patch("asky.core.engine.get_llm_msg")
+def test_conversation_engine_double_verbose_emits_main_model_messages(mock_get_msg):
+    mock_get_msg.return_value = {"content": "Final Answer"}
+
+    messages = [
+        {"role": "system", "content": "System Prompt"},
+        {"role": "user", "content": "User Question"},
+    ]
+    model_config = {"id": "test_model", "alias": "test_alias", "max_chars": 1000}
+
+    registry = MagicMock()
+    registry.get_schemas.return_value = []
+
+    verbose_payloads = []
+    engine = ConversationEngine(
+        model_config=model_config,
+        tool_registry=registry,
+        summarize=False,
+        verbose=True,
+        double_verbose=True,
+        verbose_output_callback=verbose_payloads.append,
+    )
+
+    final_answer = engine.run(messages)
+
+    assert final_answer == "Final Answer"
+    llm_payloads = [
+        payload
+        for payload in verbose_payloads
+        if isinstance(payload, dict)
+        and payload.get("kind") == "llm_request_messages"
+    ]
+    assert len(llm_payloads) == 1
+    payload = llm_payloads[0]
+    assert payload["phase"] == "main_loop"
+    assert payload["turn"] == 1
+    assert payload["model_alias"] == "test_alias"
+    assert payload["messages"][0]["role"] == "system"
+    assert payload["messages"][1]["role"] == "user"
+
+
+@patch("asky.core.engine.get_llm_msg")
 def test_generate_summaries(mock_get_msg):
     # Mock responses for query summary and answer summary
     # 1. Query summary

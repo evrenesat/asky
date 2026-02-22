@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 import argparse
+import json
 import logging
 import time
+from datetime import datetime
 from typing import Any, List, Dict, Optional, Set, TYPE_CHECKING
 
 from rich.console import Console
@@ -16,6 +18,7 @@ from rich.table import Table
 from asky.config import (
     MODELS,
     LIVE_BANNER,
+    SESSION_IDLE_TIMEOUT_MINUTES,
 )
 from asky.api import AskyClient, AskyConfig, AskyTurnRequest, ContextOverflowError
 from asky.api.context import load_context_from_history
@@ -46,6 +49,12 @@ from asky.core.session_manager import generate_session_name
 
 logger = logging.getLogger(__name__)
 BACKGROUND_SUMMARY_DRAIN_STATUS = "Finalizing background page summaries..."
+VERBOSE_BORDER_STYLE_BY_ROLE = {
+    "system": "blue",
+    "user": "green",
+    "assistant": "cyan",
+    "tool": "magenta",
+}
 
 
 def shortlist_prompt_sources(*args: Any, **kwargs: Any) -> Dict[str, Any]:
@@ -337,6 +346,186 @@ def _drain_research_background_summaries() -> None:
         logger.debug("Skipping background summary drain: %s", exc)
 
 
+def _to_pretty_json(value: Any) -> str:
+    """Render arbitrary payload values as indented JSON when possible."""
+    try:
+        return json.dumps(value, indent=2, sort_keys=True, ensure_ascii=False)
+    except (TypeError, ValueError):
+        return str(value)
+
+
+def _estimate_message_content_chars(message: Dict[str, Any]) -> int:
+    """Estimate readable content size for outbound-message summaries."""
+    content = message.get("content")
+    if content is None:
+        return 0
+    if isinstance(content, str):
+        return len(content)
+    return len(_to_pretty_json(content))
+
+
+def _format_outbound_message(message: Dict[str, Any]) -> str:
+    """Build a readable multiline representation of one outbound message."""
+    blocks: List[str] = []
+
+    content = message.get("content")
+    if content is None:
+        blocks.append("content:\n(none)")
+    elif isinstance(content, str):
+        blocks.append(f"content:\n{content}" if content else "content:\n(empty string)")
+    else:
+        blocks.append(f"content:\n{_to_pretty_json(content)}")
+
+    tool_calls = message.get("tool_calls")
+    if tool_calls:
+        blocks.append(f"tool_calls:\n{_to_pretty_json(tool_calls)}")
+
+    tool_call_id = message.get("tool_call_id")
+    if tool_call_id:
+        blocks.append(f"tool_call_id:\n{tool_call_id}")
+
+    extra_keys = sorted(
+        key
+        for key in message.keys()
+        if key not in {"role", "content", "tool_calls", "tool_call_id"}
+    )
+    if extra_keys:
+        extra_fields = {key: message.get(key) for key in extra_keys}
+        blocks.append(f"extra_fields:\n{_to_pretty_json(extra_fields)}")
+
+    return "\n\n".join(blocks) if blocks else "(empty message payload)"
+
+
+def _print_main_model_request_payload(
+    console: Console, payload: Dict[str, Any]
+) -> None:
+    """Print full outbound main-model messages in readable boxed format."""
+    messages = payload.get("messages") or []
+    if not isinstance(messages, list):
+        messages = []
+
+    turn = int(payload.get("turn", 0) or 0)
+    phase = str(payload.get("phase", "main_loop"))
+    model_alias = payload.get("model_alias")
+    model_id = str(payload.get("model_id", "unknown"))
+    model_display = str(model_alias) if model_alias else model_id
+    use_tools = bool(payload.get("use_tools", False))
+
+    metadata = "\n".join(
+        [
+            f"Model: {model_display}",
+            f"Turn: {turn}",
+            f"Phase: {phase}",
+            f"Tools enabled: {'yes' if use_tools else 'no'}",
+            f"Outbound messages: {len(messages)}",
+        ]
+    )
+    console.print(
+        Panel(
+            metadata,
+            title="Main Model Request",
+            border_style="bright_blue",
+            expand=False,
+        )
+    )
+
+    summary_table = Table(show_header=True, header_style="bold blue")
+    summary_table.add_column("#", justify="right", style="dim")
+    summary_table.add_column("Role", style="bold")
+    summary_table.add_column("Chars", justify="right")
+    summary_table.add_column("Fields")
+
+    for index, message in enumerate(messages, start=1):
+        message_dict = message if isinstance(message, dict) else {"content": message}
+        role = str(message_dict.get("role", "unknown"))
+        extra_fields = sorted(
+            key
+            for key in message_dict.keys()
+            if key not in {"role", "content", "tool_calls", "tool_call_id"}
+        )
+        fields_summary = ", ".join(extra_fields) if extra_fields else "-"
+        summary_table.add_row(
+            str(index),
+            role,
+            str(_estimate_message_content_chars(message_dict)),
+            fields_summary,
+        )
+    console.print(summary_table)
+
+    for index, message in enumerate(messages, start=1):
+        message_dict = message if isinstance(message, dict) else {"content": message}
+        role = str(message_dict.get("role", "unknown"))
+        panel_title = f"Outbound Message {index}/{len(messages)} | role={role}"
+        border_style = VERBOSE_BORDER_STYLE_BY_ROLE.get(role, "white")
+        console.print(
+            Panel(
+                _format_outbound_message(message_dict),
+                title=panel_title,
+                border_style=border_style,
+                expand=False,
+            )
+        )
+
+
+def _check_idle_session_timeout(session_id: int, console: Console) -> str:
+    """Check if session is idle and prompt user if threshold exceeded."""
+    from asky.storage.sqlite import SQLiteHistoryRepository
+
+    if SESSION_IDLE_TIMEOUT_MINUTES <= 0:
+        return "continue"
+
+    repo = SQLiteHistoryRepository()
+    session = repo.get_session_by_id(session_id)
+    if not session or not session.last_used_at:
+        return "continue"
+
+    try:
+        last_used = datetime.fromisoformat(session.last_used_at)
+        elapsed = (datetime.now() - last_used).total_seconds() / 60
+    except ValueError:
+        return "continue"
+
+    if elapsed < SESSION_IDLE_TIMEOUT_MINUTES:
+        return "continue"
+
+    console.print(
+        f"\n[yellow]Session '{session.name or session.id}' has been idle for {int(elapsed)} minutes.[/]"
+    )
+    console.print("[white]Choose action:[/] [c]ontinue, [n]ew session, [o]ne-off query")
+
+    try:
+        import sys
+        import termios
+        import tty
+
+        # Read a single character from stdin
+        fd = sys.stdin.fileno()
+        old_settings = termios.tcgetattr(fd)
+        try:
+            tty.setraw(sys.stdin.fileno())
+            ch = sys.stdin.read(1).lower()
+        finally:
+            termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
+
+        if ch == "n":
+            console.print("[bold cyan]Action: New session[/]")
+            return "new"
+        elif ch == "o":
+            console.print("[bold cyan]Action: One-off query[/]")
+            return "oneoff"
+        else:
+            console.print("[bold cyan]Action: Continue[/]")
+            return "continue"
+    except Exception:
+        # Fallback to input() if raw mode fails
+        choice = input("Choice [c]: ").strip().lower()
+        if choice == "n":
+            return "new"
+        elif choice == "o":
+            return "oneoff"
+        return "continue"
+
+
 def run_chat(args: argparse.Namespace, query_text: str) -> None:
     """Run the chat conversation flow."""
     from asky.core import clear_shell_session
@@ -374,6 +563,9 @@ def run_chat(args: argparse.Namespace, query_text: str) -> None:
         max_turns=getattr(args, "turns", None),
     )
 
+    use_banner = False
+    deferred_main_model_payloads: List[Dict[str, Any]] = []
+
     # Create display callback for live banner mode
     def display_callback(
         current_turn: int,
@@ -399,22 +591,43 @@ def run_chat(args: argparse.Namespace, query_text: str) -> None:
 
     def verbose_output_callback(renderable: Any) -> None:
         """Route verbose output through the active live console when present."""
+        output_console = (
+            renderer.live.console if use_banner and renderer.live else renderer.console
+        )
         if isinstance(renderable, dict):
-            tool_name = str(renderable.get("tool_name", "unknown_tool"))
-            call_index = int(renderable.get("call_index", 0) or 0)
-            total_calls = int(renderable.get("total_calls", 0) or 0)
-            turn = int(renderable.get("turn", 0) or 0)
-            args_value = renderable.get("arguments", {})
-            renderable = Panel(
-                str(args_value),
-                title=f"Tool {call_index}/{total_calls} | Turn {turn} | {tool_name}",
-                border_style="cyan",
-                expand=False,
-            )
+            kind = str(renderable.get("kind", ""))
+            if kind == "llm_request_messages":
+                if use_banner and renderer.live:
+                    deferred_main_model_payloads.append(renderable)
+                    return
+                _print_main_model_request_payload(output_console, renderable)
+                return
+            if kind == "tool_call" or "tool_name" in renderable:
+                tool_name = str(renderable.get("tool_name", "unknown_tool"))
+                call_index = int(renderable.get("call_index", 0) or 0)
+                total_calls = int(renderable.get("total_calls", 0) or 0)
+                turn = int(renderable.get("turn", 0) or 0)
+                args_value = renderable.get("arguments", {})
+                renderable = Panel(
+                    _to_pretty_json(args_value),
+                    title=f"Tool {call_index}/{total_calls} | Turn {turn} | {tool_name}",
+                    border_style="cyan",
+                    expand=False,
+                )
         if use_banner and renderer.live:
             renderer.live.console.print(renderable)
             return
         renderer.console.print(renderable)
+
+    def _flush_deferred_main_model_payloads() -> None:
+        """Print deferred -vv payloads after Live banner is stopped."""
+        if not deferred_main_model_payloads:
+            return
+        if use_banner and renderer.live:
+            renderer.stop_live()
+        while deferred_main_model_payloads:
+            payload = deferred_main_model_payloads.pop(0)
+            _print_main_model_request_payload(renderer.console, payload)
 
     def summarization_status_callback(message: Optional[str]) -> None:
         """Refresh banner during internal summarization calls."""
@@ -460,6 +673,7 @@ def run_chat(args: argparse.Namespace, query_text: str) -> None:
                 model_alias=args.model,
                 summarize=args.summarize,
                 verbose=args.verbose,
+                double_verbose=bool(getattr(args, "double_verbose", False)),
                 open_browser=args.open,
                 research_mode=research_mode,
                 disabled_tools=disabled_tools,
@@ -470,10 +684,32 @@ def run_chat(args: argparse.Namespace, query_text: str) -> None:
         )
 
         elephant_mode = bool(getattr(args, "elephant_mode", False))
+
+        sticky_session_name = (
+            " ".join(args.sticky_session)
+            if getattr(args, "sticky_session", None)
+            else None
+        )
+        resume_session_term = (
+            " ".join(args.resume_session)
+            if getattr(args, "resume_session", None)
+            else None
+        )
+        shell_session_id = get_shell_session_id()
+
+        # Handle stale session prompt
+        if not sticky_session_name and not resume_session_term and shell_session_id:
+            action = _check_idle_session_timeout(shell_session_id, console)
+            if action == "new":
+                clear_shell_session()
+                shell_session_id = None
+                sticky_session_name = generate_session_name(effective_query_text)
+            elif action == "oneoff":
+                clear_shell_session()
+                shell_session_id = None
+
         has_session = bool(
-            getattr(args, "sticky_session", None)
-            or getattr(args, "resume_session", None)
-            or get_shell_session_id()
+            sticky_session_name or resume_session_term or shell_session_id
         )
         if elephant_mode and not has_session:
             console.print(
@@ -486,17 +722,9 @@ def run_chat(args: argparse.Namespace, query_text: str) -> None:
             query_text=effective_query_text,
             continue_ids=args.continue_ids,
             summarize_context=args.summarize,
-            sticky_session_name=(
-                " ".join(args.sticky_session)
-                if getattr(args, "sticky_session", None)
-                else None
-            ),
-            resume_session_term=(
-                " ".join(args.resume_session)
-                if getattr(args, "resume_session", None)
-                else None
-            ),
-            shell_session_id=get_shell_session_id(),
+            sticky_session_name=sticky_session_name,
+            resume_session_term=resume_session_term,
+            shell_session_id=shell_session_id,
             lean=bool(getattr(args, "lean", False)),
             preload_local_sources=True,
             preload_shortlist=True,
@@ -538,6 +766,7 @@ def run_chat(args: argparse.Namespace, query_text: str) -> None:
         final_answer = turn_result.final_answer
 
         renderer.set_shortlist_stats(turn_result.preload.shortlist_stats)
+        _flush_deferred_main_model_payloads()
 
         if args.verbose and turn_result.preload.shortlist_payload:
             verbose_console = (
@@ -566,6 +795,9 @@ def run_chat(args: argparse.Namespace, query_text: str) -> None:
             return
 
         # Auto-generate HTML Report FIRST, before saving history (so the CLI responds faster)
+        pre_reserved_ids = None
+        saved_message_id_for_archive = None
+
         if final_answer and not is_lean:
             from asky.rendering import save_html_report, extract_markdown_title
 
@@ -595,18 +827,33 @@ def run_chat(args: argparse.Namespace, query_text: str) -> None:
                 html_source = (
                     f"## Query\n{effective_query_text}\n\n## Assistant\n{final_answer}"
                 )
+                # Pre-reserve interaction IDs so we have a message ID for the archive immediately
+                try:
+                    from asky.storage import reserve_interaction
+
+                    pre_reserved_ids = reserve_interaction(args.model)
+                    saved_message_id_for_archive = pre_reserved_ids[1]  # assistant_id
+                except Exception as e:
+                    logger.debug(f"Failed to pre-reserve history IDs: {e}")
 
             # Extract title explicitly from the new answer to fix "untitled" archives
             filename_hint = extract_markdown_title(final_answer)
 
             session_name = ""
-            if turn_result.session_id and renderer.session_manager:
-                session = renderer.session_manager.current_session
-                if session:
-                    session_name = session.name or ""
+            session_id_int = None
+            if turn_result.session_id:
+                session_id_int = int(turn_result.session_id)
+                if renderer.session_manager:
+                    session = renderer.session_manager.current_session
+                    if session:
+                        session_name = session.name or ""
 
             report_path, sidebar_url = save_html_report(
-                html_source, filename_hint=filename_hint, session_name=session_name
+                html_source,
+                filename_hint=filename_hint,
+                session_name=session_name,
+                message_id=saved_message_id_for_archive,
+                session_id=session_id_int,
             )
             if report_path:
                 console.print(f"Open in browser: [bold cyan]file://{report_path}[/]")
@@ -622,12 +869,13 @@ def run_chat(args: argparse.Namespace, query_text: str) -> None:
                     if use_banner:
                         renderer.update_banner(0, status_message=msg)
 
-                extra_notices = asky_client.finalize_turn_history(
+                finalize_result = asky_client.finalize_turn_history(
                     turn_request,
                     turn_result,
                     summarization_status_callback=on_history_status,
+                    pre_reserved_message_ids=pre_reserved_ids,
                 )
-                for notice in extra_notices:
+                for notice in finalize_result.notices:
                     console.print(f"\n[{notice}]")
                 if use_banner and research_mode:
                     renderer.update_banner(
@@ -685,5 +933,6 @@ def run_chat(args: argparse.Namespace, query_text: str) -> None:
 
             traceback.print_exc()
     finally:
+        _flush_deferred_main_model_payloads()
         # Ensure Live is stopped on any exit path
         renderer.stop_live()
