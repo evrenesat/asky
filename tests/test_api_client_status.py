@@ -53,3 +53,37 @@ class TestApiClientStatus(unittest.TestCase):
 
         # 2. Check if callback was called with None (clearing status)
         mock_callback.assert_called_with(None)
+
+    @patch("asky.core.api_client.requests.post")
+    def test_trace_callback_emits_transport_request_and_response(self, mock_post):
+        """Trace callback should receive request/response transport metadata."""
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.headers = {"Content-Type": "application/json"}
+        mock_response.content = b'{"ok":true}'
+        mock_response.text = '{"ok":true}'
+        mock_response.json.return_value = {
+            "choices": [{"message": {"role": "assistant", "content": "Success"}}],
+            "usage": {"prompt_tokens": 10, "completion_tokens": 5},
+        }
+        mock_post.return_value = mock_response
+
+        trace_callback = MagicMock()
+        result = get_llm_msg(
+            model_id="test-model",
+            messages=[{"role": "user", "content": "Hello"}],
+            model_alias="test-alias",
+            trace_callback=trace_callback,
+            trace_context={"source": "main_model"},
+        )
+
+        self.assertEqual(result["content"], "Success")
+        events = [call.args[0] for call in trace_callback.call_args_list]
+        kinds = {event.get("kind") for event in events}
+        self.assertIn("transport_request", kinds)
+        self.assertIn("transport_response", kinds)
+        response_events = [
+            event for event in events if event.get("kind") == "transport_response"
+        ]
+        self.assertEqual(response_events[0]["status_code"], 200)
+        self.assertEqual(response_events[0]["response_type"], "text")

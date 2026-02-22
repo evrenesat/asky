@@ -206,6 +206,7 @@ class TestLeanModeAPI:
             summarization_status_callback=ANY,
             summarization_verbose_callback=ANY,
             disabled_tools=override_tools,
+            tool_trace_callback=ANY,
         )
 
         # Verify engine Init receives lean=True

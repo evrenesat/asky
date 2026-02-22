@@ -281,7 +281,7 @@ def test_conversation_engine_verbose_tool_trace_and_status(mock_get_msg):
 
 @patch("asky.core.engine.get_llm_msg")
 def test_conversation_engine_double_verbose_emits_main_model_messages(mock_get_msg):
-    mock_get_msg.return_value = {"content": "Final Answer"}
+    mock_get_msg.return_value = {"role": "assistant", "content": "Final Answer"}
 
     messages = [
         {"role": "system", "content": "System Prompt"},
@@ -305,19 +305,33 @@ def test_conversation_engine_double_verbose_emits_main_model_messages(mock_get_m
     final_answer = engine.run(messages)
 
     assert final_answer == "Final Answer"
-    llm_payloads = [
+    request_payloads = [
         payload
         for payload in verbose_payloads
         if isinstance(payload, dict)
         and payload.get("kind") == "llm_request_messages"
     ]
-    assert len(llm_payloads) == 1
-    payload = llm_payloads[0]
-    assert payload["phase"] == "main_loop"
-    assert payload["turn"] == 1
-    assert payload["model_alias"] == "test_alias"
-    assert payload["messages"][0]["role"] == "system"
-    assert payload["messages"][1]["role"] == "user"
+    response_payloads = [
+        payload
+        for payload in verbose_payloads
+        if isinstance(payload, dict)
+        and payload.get("kind") == "llm_response_message"
+    ]
+    assert len(request_payloads) == 1
+    request_payload = request_payloads[0]
+    assert request_payload["phase"] == "main_loop"
+    assert request_payload["turn"] == 1
+    assert request_payload["model_alias"] == "test_alias"
+    assert request_payload["messages"][0]["role"] == "system"
+    assert request_payload["messages"][1]["role"] == "user"
+
+    assert len(response_payloads) == 1
+    response_payload = response_payloads[0]
+    assert response_payload["phase"] == "main_loop"
+    assert response_payload["turn"] == 1
+    assert response_payload["model_alias"] == "test_alias"
+    assert response_payload["message"]["role"] == "assistant"
+    assert response_payload["message"]["content"] == "Final Answer"
 
 
 @patch("asky.core.engine.get_llm_msg")
@@ -337,6 +351,53 @@ def test_generate_summaries(mock_get_msg):
     assert q_sum == "Short query"
     assert a_sum == "Short answer summary"
     assert mock_get_msg.call_count == 2
+
+
+@patch("asky.core.engine.get_llm_msg")
+def test_conversation_engine_double_verbose_emits_graceful_exit_response(mock_get_msg):
+    tool_call_message = {
+        "role": "assistant",
+        "content": None,
+        "tool_calls": [
+            {"id": "call_1", "function": {"name": "test_tool", "arguments": "{}"}}
+        ],
+    }
+    forced_final_message = {"role": "assistant", "content": "Forced Final Answer"}
+    mock_get_msg.side_effect = [tool_call_message, forced_final_message]
+
+    model_config = {"id": "test_model", "alias": "test_alias", "max_chars": 1000}
+    registry = MagicMock()
+    registry.get_schemas.return_value = []
+    registry.dispatch.return_value = {"result": "ok"}
+
+    verbose_payloads = []
+    engine = ConversationEngine(
+        model_config=model_config,
+        tool_registry=registry,
+        summarize=False,
+        verbose=True,
+        double_verbose=True,
+        verbose_output_callback=verbose_payloads.append,
+        max_turns=1,
+    )
+
+    final_answer = engine.run(
+        [
+            {"role": "system", "content": "System Prompt"},
+            {"role": "user", "content": "User Question"},
+        ]
+    )
+
+    assert final_answer == "Forced Final Answer"
+    graceful_payloads = [
+        payload
+        for payload in verbose_payloads
+        if isinstance(payload, dict)
+        and payload.get("kind") == "llm_response_message"
+        and payload.get("phase") == "graceful_exit"
+    ]
+    assert len(graceful_payloads) == 1
+    assert graceful_payloads[0]["message"]["content"] == "Forced Final Answer"
 
 
 @patch("asky.core.engine.get_llm_msg")

@@ -271,7 +271,7 @@ def test_run_chat_renders_answer_before_final_history_finalize():
     mock_wait_for_summaries.assert_called_once()
 
 
-def test_run_chat_double_verbose_payload_prints_after_live_stops():
+def test_run_chat_double_verbose_payload_streams_via_live_console():
     from asky.cli.chat import run_chat
 
     mock_args = argparse.Namespace(
@@ -318,6 +318,14 @@ def test_run_chat_double_verbose_payload_prints_after_live_stops():
             {"role": "user", "content": "Query"},
         ],
     }
+    response_payload = {
+        "kind": "llm_response_message",
+        "phase": "main_loop",
+        "turn": 1,
+        "model_alias": "gf",
+        "model_id": "model-id",
+        "message": {"role": "assistant", "content": "Answer"},
+    }
 
     with (
         patch("asky.cli.chat.MODELS", {"gf": {"id": "gemini-flash"}}),
@@ -336,6 +344,7 @@ def test_run_chat_double_verbose_payload_prints_after_live_stops():
 
         def run_turn_side_effect(_request, **kwargs):
             kwargs["verbose_output_callback"](payload)
+            kwargs["verbose_output_callback"](response_payload)
             return turn_result
 
         mock_client.run_turn.side_effect = run_turn_side_effect
@@ -343,13 +352,14 @@ def test_run_chat_double_verbose_payload_prints_after_live_stops():
 
         run_chat(mock_args, "query")
 
-        renderer.live.console.print.assert_not_called()
+        renderer.live.console.print.assert_called()
         printed_titles = [
             getattr(call.args[0], "title", "")
-            for call in renderer.console.print.call_args_list
+            for call in renderer.live.console.print.call_args_list
             if call.args
         ]
-        assert "Main Model Request" in printed_titles
+        assert "Main Model Outbound Request" in printed_titles
+        assert "Main Model Inbound Response" in printed_titles
 
 
 def test_parse_args_terminal_lines_explicit():

@@ -50,6 +50,50 @@ def test_asky_client_build_messages_contains_seed_url_context_block():
     assert "Delivery status: full_content" in messages[-1]["content"]
 
 
+def test_asky_client_build_messages_seed_direct_answer_instruction():
+    client = AskyClient(
+        AskyConfig(
+            model_alias="gf",
+            research_mode=False,
+        )
+    )
+    messages = client.build_messages(
+        query_text="Summarize",
+        preload=PreloadResolution(
+            seed_url_direct_answer_ready=True,
+            combined_context=(
+                "Seed URL Content from Query:\n"
+                "1. URL: https://example.com\n"
+                "   Delivery status: full_content\n"
+                "   Content:\nExample content"
+            ),
+        ),
+    )
+    assert "do NOT call get_url_content/get_url_details for the same URL" in messages[-1][
+        "content"
+    ]
+
+
+def test_asky_client_build_messages_keeps_verify_instruction_when_seed_not_ready():
+    client = AskyClient(
+        AskyConfig(
+            model_alias="gf",
+            research_mode=False,
+        )
+    )
+    messages = client.build_messages(
+        query_text="Summarize",
+        preload=PreloadResolution(
+            seed_url_direct_answer_ready=False,
+            combined_context="Shortlist context",
+        ),
+    )
+    assert (
+        "Use this preloaded corpus as a starting point, then verify with tools before citing."
+        in messages[-1]["content"]
+    )
+
+
 def test_asky_client_build_messages_adds_local_kb_guidance():
     client = AskyClient(
         AskyConfig(
@@ -131,6 +175,7 @@ def test_asky_client_run_messages_uses_research_registry(
         session_id="42",
         corpus_preloaded=False,
         summarization_tracker=client.summarization_tracker,
+        tool_trace_callback=None,
     )
 
 
@@ -337,6 +382,58 @@ def test_asky_client_run_turn_enables_hint_with_only_explicit_paths(
     # Verify local_corpus_paths reached the pipeline
     _, kwargs = mock_preload.call_args
     assert kwargs["local_corpus_paths"] == ["/opt/explicit"]
+
+
+@patch("asky.api.client.save_interaction")
+@patch.object(AskyClient, "run_messages", return_value="Final")
+@patch(
+    "asky.api.client.run_preload_pipeline",
+    return_value=PreloadResolution(
+        seed_url_direct_answer_ready=True,
+        combined_context="Seed URL Content from Query",
+    ),
+)
+@patch(
+    "asky.api.client.resolve_session_for_turn",
+    return_value=(None, SessionResolution()),
+)
+def test_run_turn_disables_retrieval_tools_when_seed_direct_mode_ready(
+    _mock_resolve_session,
+    _mock_preload,
+    mock_run_messages,
+    _mock_save_interaction,
+):
+    client = AskyClient(AskyConfig(model_alias="gf", research_mode=False))
+    client.run_turn(AskyTurnRequest(query_text="Summarize https://example.com"))
+
+    kwargs = mock_run_messages.call_args.kwargs
+    assert kwargs["disabled_tools"] == {"web_search", "get_url_content", "get_url_details"}
+
+
+@patch("asky.api.client.save_interaction")
+@patch.object(AskyClient, "run_messages", return_value="Final")
+@patch(
+    "asky.api.client.run_preload_pipeline",
+    return_value=PreloadResolution(
+        seed_url_direct_answer_ready=True,
+        combined_context="Seed URL Content from Query",
+    ),
+)
+@patch(
+    "asky.api.client.resolve_session_for_turn",
+    return_value=(None, SessionResolution()),
+)
+def test_run_turn_does_not_disable_retrieval_tools_in_research_mode(
+    _mock_resolve_session,
+    _mock_preload,
+    mock_run_messages,
+    _mock_save_interaction,
+):
+    client = AskyClient(AskyConfig(model_alias="gf", research_mode=True))
+    client.run_turn(AskyTurnRequest(query_text="Summarize https://example.com"))
+
+    kwargs = mock_run_messages.call_args.kwargs
+    assert kwargs["disabled_tools"] is None
 
 
 def test_asky_client_build_messages_adds_retrieval_only_guidance():

@@ -355,7 +355,7 @@ def _to_pretty_json(value: Any) -> str:
 
 
 def _estimate_message_content_chars(message: Dict[str, Any]) -> int:
-    """Estimate readable content size for outbound-message summaries."""
+    """Estimate readable content size for main-model payload summaries."""
     content = message.get("content")
     if content is None:
         return 0
@@ -364,8 +364,13 @@ def _estimate_message_content_chars(message: Dict[str, Any]) -> int:
     return len(_to_pretty_json(content))
 
 
-def _format_outbound_message(message: Dict[str, Any]) -> str:
-    """Build a readable multiline representation of one outbound message."""
+def _origin_direction_for_role(role: str) -> str:
+    """Classify a role by where it originally came from."""
+    return "inbound-origin" if role == "assistant" else "outbound-origin"
+
+
+def _format_message_payload(message: Dict[str, Any]) -> str:
+    """Build a readable multiline representation of one message payload."""
     blocks: List[str] = []
 
     content = message.get("content")
@@ -396,10 +401,8 @@ def _format_outbound_message(message: Dict[str, Any]) -> str:
     return "\n\n".join(blocks) if blocks else "(empty message payload)"
 
 
-def _print_main_model_request_payload(
-    console: Console, payload: Dict[str, Any]
-) -> None:
-    """Print full outbound main-model messages in readable boxed format."""
+def _print_main_model_request_payload(console: Console, payload: Dict[str, Any]) -> None:
+    """Print full outbound main-model request payload in boxed format."""
     messages = payload.get("messages") or []
     if not isinstance(messages, list):
         messages = []
@@ -417,13 +420,14 @@ def _print_main_model_request_payload(
             f"Turn: {turn}",
             f"Phase: {phase}",
             f"Tools enabled: {'yes' if use_tools else 'no'}",
-            f"Outbound messages: {len(messages)}",
+            f"Direction: Outbound Request",
+            f"Messages: {len(messages)}",
         ]
     )
     console.print(
         Panel(
             metadata,
-            title="Main Model Request",
+            title="Main Model Outbound Request",
             border_style="bright_blue",
             expand=False,
         )
@@ -432,6 +436,7 @@ def _print_main_model_request_payload(
     summary_table = Table(show_header=True, header_style="bold blue")
     summary_table.add_column("#", justify="right", style="dim")
     summary_table.add_column("Role", style="bold")
+    summary_table.add_column("Origin")
     summary_table.add_column("Chars", justify="right")
     summary_table.add_column("Fields")
 
@@ -447,6 +452,7 @@ def _print_main_model_request_payload(
         summary_table.add_row(
             str(index),
             role,
+            _origin_direction_for_role(role),
             str(_estimate_message_content_chars(message_dict)),
             fields_summary,
         )
@@ -455,16 +461,130 @@ def _print_main_model_request_payload(
     for index, message in enumerate(messages, start=1):
         message_dict = message if isinstance(message, dict) else {"content": message}
         role = str(message_dict.get("role", "unknown"))
-        panel_title = f"Outbound Message {index}/{len(messages)} | role={role}"
+        panel_title = (
+            f"Request Message {index}/{len(messages)} | role={role} "
+            f"| origin={_origin_direction_for_role(role)}"
+        )
         border_style = VERBOSE_BORDER_STYLE_BY_ROLE.get(role, "white")
         console.print(
             Panel(
-                _format_outbound_message(message_dict),
+                _format_message_payload(message_dict),
                 title=panel_title,
                 border_style=border_style,
                 expand=False,
             )
         )
+
+
+def _print_main_model_response_payload(console: Console, payload: Dict[str, Any]) -> None:
+    """Print full inbound main-model response payload in boxed format."""
+    turn = int(payload.get("turn", 0) or 0)
+    phase = str(payload.get("phase", "main_loop"))
+    model_alias = payload.get("model_alias")
+    model_id = str(payload.get("model_id", "unknown"))
+    model_display = str(model_alias) if model_alias else model_id
+    message = payload.get("message")
+    if not isinstance(message, dict):
+        message = {"content": message}
+
+    role = str(message.get("role", "assistant"))
+    metadata = "\n".join(
+        [
+            f"Model: {model_display}",
+            f"Turn: {turn}",
+            f"Phase: {phase}",
+            "Direction: Inbound Response",
+            f"Role: {role}",
+        ]
+    )
+    console.print(
+        Panel(
+            metadata,
+            title="Main Model Inbound Response",
+            border_style="bright_cyan",
+            expand=False,
+        )
+    )
+    console.print(
+        Panel(
+            _format_message_payload(message),
+            title=f"Inbound Response Message | role={role}",
+            border_style=VERBOSE_BORDER_STYLE_BY_ROLE.get(role, "cyan"),
+            expand=False,
+        )
+    )
+
+
+def _print_transport_metadata(console: Console, payload: Dict[str, Any]) -> None:
+    """Print request/response transport metadata for tool/summarizer internals."""
+    kind = str(payload.get("kind", "transport"))
+    source = str(payload.get("source", payload.get("transport", "unknown")))
+    tool_name = str(payload.get("tool_name", "") or "")
+    provider = str(payload.get("provider", "") or "")
+    model_alias = str(payload.get("model_alias", "") or "")
+
+    lines: List[str] = []
+    phase = str(payload.get("phase", "") or "")
+    if phase:
+        lines.append(f"Phase: {phase}")
+    url = payload.get("url")
+    if url:
+        lines.append(f"Target: {url}")
+    method = payload.get("method")
+    if method:
+        lines.append(f"Method: {method}")
+    status_code = payload.get("status_code")
+    if status_code is not None:
+        lines.append(f"Status: {status_code}")
+    response_type = payload.get("response_type")
+    if response_type:
+        lines.append(f"Response type: {response_type}")
+    content_type = payload.get("content_type")
+    if content_type:
+        lines.append(f"Content-Type: {content_type}")
+    response_bytes = payload.get("response_bytes")
+    if response_bytes is not None:
+        lines.append(f"Response bytes: {response_bytes}")
+    response_chars = payload.get("response_chars")
+    if response_chars is not None:
+        lines.append(f"Response chars: {response_chars}")
+    elapsed_ms = payload.get("elapsed_ms")
+    if elapsed_ms is not None:
+        lines.append(f"Elapsed ms: {float(elapsed_ms):.1f}")
+    error = payload.get("error")
+    if error:
+        lines.append(f"Error: {error}")
+
+    title_parts = ["Transport"]
+    if kind == "transport_request":
+        title_parts.append("Request")
+    elif kind == "transport_response":
+        title_parts.append("Response")
+    elif kind == "transport_error":
+        title_parts.append("Error")
+    if source:
+        title_parts.append(f"source={source}")
+    if model_alias:
+        title_parts.append(f"model={model_alias}")
+    if tool_name:
+        title_parts.append(f"tool={tool_name}")
+    if provider:
+        title_parts.append(f"provider={provider}")
+
+    border_style = "cyan"
+    if kind == "transport_error":
+        border_style = "red"
+    elif kind == "transport_request":
+        border_style = "yellow"
+
+    console.print(
+        Panel(
+            "\n".join(lines) if lines else "(no metadata)",
+            title=" | ".join(title_parts),
+            border_style=border_style,
+            expand=False,
+        )
+    )
 
 
 def _check_idle_session_timeout(session_id: int, console: Console) -> str:
@@ -564,7 +684,6 @@ def run_chat(args: argparse.Namespace, query_text: str) -> None:
     )
 
     use_banner = False
-    deferred_main_model_payloads: List[Dict[str, Any]] = []
 
     # Create display callback for live banner mode
     def display_callback(
@@ -597,10 +716,13 @@ def run_chat(args: argparse.Namespace, query_text: str) -> None:
         if isinstance(renderable, dict):
             kind = str(renderable.get("kind", ""))
             if kind == "llm_request_messages":
-                if use_banner and renderer.live:
-                    deferred_main_model_payloads.append(renderable)
-                    return
                 _print_main_model_request_payload(output_console, renderable)
+                return
+            if kind == "llm_response_message":
+                _print_main_model_response_payload(output_console, renderable)
+                return
+            if kind in {"transport_request", "transport_response", "transport_error"}:
+                _print_transport_metadata(output_console, renderable)
                 return
             if kind == "tool_call" or "tool_name" in renderable:
                 tool_name = str(renderable.get("tool_name", "unknown_tool"))
@@ -618,16 +740,6 @@ def run_chat(args: argparse.Namespace, query_text: str) -> None:
             renderer.live.console.print(renderable)
             return
         renderer.console.print(renderable)
-
-    def _flush_deferred_main_model_payloads() -> None:
-        """Print deferred -vv payloads after Live banner is stopped."""
-        if not deferred_main_model_payloads:
-            return
-        if use_banner and renderer.live:
-            renderer.stop_live()
-        while deferred_main_model_payloads:
-            payload = deferred_main_model_payloads.pop(0)
-            _print_main_model_request_payload(renderer.console, payload)
 
     def summarization_status_callback(message: Optional[str]) -> None:
         """Refresh banner during internal summarization calls."""
@@ -766,7 +878,6 @@ def run_chat(args: argparse.Namespace, query_text: str) -> None:
         final_answer = turn_result.final_answer
 
         renderer.set_shortlist_stats(turn_result.preload.shortlist_stats)
-        _flush_deferred_main_model_payloads()
 
         if args.verbose and turn_result.preload.shortlist_payload:
             verbose_console = (
@@ -933,6 +1044,5 @@ def run_chat(args: argparse.Namespace, query_text: str) -> None:
 
             traceback.print_exc()
     finally:
-        _flush_deferred_main_model_payloads()
         # Ensure Live is stopped on any exit path
         renderer.stop_live()

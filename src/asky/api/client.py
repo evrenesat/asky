@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import copy
 from dataclasses import dataclass
-from typing import Any, Callable, Dict, List, Optional, Set, TYPE_CHECKING
+from typing import Any, Callable, Dict, FrozenSet, List, Optional, Set, TYPE_CHECKING
 
 from asky.config import MODELS
 from asky.core import (
@@ -50,6 +50,11 @@ class FinalizeResult:
 
     notices: List[str]
     saved_message_id: Optional[int] = None
+
+
+STANDARD_SEED_DIRECT_ANSWER_DISABLED_TOOLS: FrozenSet[str] = frozenset(
+    {"web_search", "get_url_content", "get_url_details"}
+)
 
 
 class AskyClient:
@@ -123,11 +128,21 @@ class AskyClient:
 
         user_content = query_text
         if preload and preload.combined_context:
+            preload_instruction = (
+                "Use this preloaded corpus as a starting point, then verify with tools before citing."
+            )
+            if preload.seed_url_direct_answer_ready:
+                preload_instruction = (
+                    "Seed URL content is already preloaded with full_content status. "
+                    "Answer directly from that content and do NOT call get_url_content/"
+                    "get_url_details for the same URL unless the user explicitly asks "
+                    "for a fresh fetch or the provided content is clearly incomplete."
+                )
             user_content = (
                 f"{query_text}\n\n"
                 f"Preloaded sources gathered before tool calls:\n"
                 f"{preload.combined_context}\n\n"
-                "Use this preloaded corpus as a starting point, then verify with tools before citing."
+                f"{preload_instruction}"
             )
 
         messages.append({"role": "user", "content": user_content})
@@ -149,6 +164,40 @@ class AskyClient:
         messages[0]["content"] = f"{messages[0].get('content', '')}\n" + "\n".join(
             guideline_lines
         )
+
+    def _should_use_seed_direct_answer_mode(
+        self,
+        *,
+        request: AskyTurnRequest,
+        preload: PreloadResolution,
+    ) -> bool:
+        """Return whether this turn should answer directly from preloaded seed content."""
+        return (
+            not self.config.research_mode
+            and not request.lean
+            and preload.seed_url_direct_answer_ready
+        )
+
+    def _resolve_run_turn_disabled_tools(
+        self,
+        *,
+        request: AskyTurnRequest,
+        preload: PreloadResolution,
+    ) -> tuple[Optional[Set[str]], bool]:
+        """Resolve turn-scoped tool disablement policy for run_turn."""
+        if request.lean:
+            from asky.core.tool_registry_factory import get_all_available_tool_names
+
+            disabled = set(self.config.disabled_tools)
+            disabled.update(get_all_available_tool_names())
+            return disabled, False
+
+        if self._should_use_seed_direct_answer_mode(request=request, preload=preload):
+            disabled = set(self.config.disabled_tools)
+            disabled.update(STANDARD_SEED_DIRECT_ANSWER_DISABLED_TOOLS)
+            return disabled, True
+
+        return None, False
 
     def run_messages(
         self,
@@ -179,6 +228,9 @@ class AskyClient:
                 session_id=research_session_id,
                 corpus_preloaded=preload.is_corpus_preloaded if preload else False,
                 summarization_tracker=self.summarization_tracker,
+                tool_trace_callback=(
+                    verbose_output_callback if self.config.verbose else None
+                ),
             )
         else:
             registry = create_tool_registry(
@@ -189,6 +241,9 @@ class AskyClient:
                     verbose_output_callback if self.config.verbose else None
                 ),
                 disabled_tools=effective_disabled_tools,
+                tool_trace_callback=(
+                    verbose_output_callback if self.config.verbose else None
+                ),
             )
 
         self._append_enabled_tool_guidelines(
@@ -413,14 +468,21 @@ class AskyClient:
         if messages_prepared_callback:
             messages_prepared_callback(messages)
 
-        # Calculate effective disabled tools
-        effective_disabled_tools = None
-        if request.lean:
-            from asky.core.tool_registry_factory import get_all_available_tool_names
-
-            # In lean mode, disable ALL tools
-            effective_disabled_tools = set(self.config.disabled_tools)
-            effective_disabled_tools.update(get_all_available_tool_names())
+        effective_disabled_tools, seed_direct_mode_enabled = (
+            self._resolve_run_turn_disabled_tools(
+                request=request,
+                preload=preload,
+            )
+        )
+        if seed_direct_mode_enabled:
+            direct_mode_notice = (
+                "Direct-answer preload mode enabled: disabled web_search, "
+                "get_url_content, and get_url_details for this turn."
+            )
+            if initial_notice_callback:
+                initial_notice_callback(direct_mode_notice)
+            else:
+                notices.append(direct_mode_notice)
 
         import threading
         from asky.config import DB_PATH, RESEARCH_CHROMA_PERSIST_DIRECTORY, MAX_TURNS

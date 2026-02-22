@@ -2,7 +2,11 @@
 
 from typing import Any, Dict
 
-from asky.api.preload import format_seed_url_context, run_preload_pipeline
+from asky.api.preload import (
+    format_seed_url_context,
+    run_preload_pipeline,
+    seed_url_context_allows_direct_answer,
+)
 
 
 def test_format_seed_url_context_full_content_within_budget():
@@ -148,7 +152,25 @@ def test_run_preload_pipeline_includes_seed_context_before_shortlist(monkeypatch
     )
 
     assert preload.seed_url_context is not None
+    assert preload.seed_url_direct_answer_ready is True
     assert preload.combined_context is not None
     assert preload.combined_context.index("Seed URL Content from Query:") < preload.combined_context.index(
         "SHORTLIST_CONTEXT"
     )
+
+
+def test_seed_url_context_allows_direct_answer_false_on_errors():
+    ready = seed_url_context_allows_direct_answer(
+        shortlist_payload={
+            "seed_url_documents": [
+                {
+                    "url": "https://example.com/a",
+                    "content": "",
+                    "error": "fetch failed",
+                }
+            ]
+        },
+        model_config={"context_size": 100},
+        research_mode=False,
+    )
+    assert ready is False

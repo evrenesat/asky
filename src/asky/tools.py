@@ -4,7 +4,8 @@ import json
 import logging
 import os
 import subprocess
-from typing import Any, Dict, List
+import time
+from typing import Any, Callable, Dict, List, Optional
 
 import requests
 
@@ -29,22 +30,88 @@ LOCAL_TARGET_UNSUPPORTED_ERROR = (
     "Use an explicit local-source tool instead."
 )
 HTTP_URL_REQUIRED_ERROR = "Only HTTP(S) URLs are supported by this tool."
+TraceCallback = Callable[[Dict[str, Any]], None]
 
 
-def _execute_searxng_search(q: str, count: int) -> Dict[str, Any]:
+def _emit_trace_event(
+    trace_callback: Optional[TraceCallback],
+    event: Dict[str, Any],
+) -> None:
+    """Best-effort metadata trace emission for tool transport calls."""
+    if trace_callback is None:
+        return
+    try:
+        trace_callback(event)
+    except Exception:
+        logger.debug("Tool trace callback failed for event kind=%s", event.get("kind"))
+
+
+def _infer_response_type(content_type: str) -> str:
+    """Infer high-level HTTP response category from content type."""
+    normalized = content_type.lower()
+    if "json" in normalized:
+        return "json"
+    if "html" in normalized:
+        return "html"
+    if "text/" in normalized:
+        return "text"
+    if normalized:
+        return "binary"
+    return "unknown"
+
+
+def _execute_searxng_search(
+    q: str,
+    count: int,
+    trace_callback: Optional[TraceCallback] = None,
+) -> Dict[str, Any]:
     """Execute a web search using SearXNG."""
     # Ensure no trailing slash on SEARXNG_URL
     base_url = SEARXNG_URL.rstrip("/")
+    request_url = f"{base_url}/search"
+    started = time.perf_counter()
+    _emit_trace_event(
+        trace_callback,
+        {
+            "kind": "transport_request",
+            "transport": "http",
+            "source": "tool",
+            "tool_name": "web_search",
+            "provider": "searxng",
+            "method": "GET",
+            "url": request_url,
+        },
+    )
     try:
         headers = {
             "User-Agent": USER_AGENT,
             "Accept": "application/json",
         }
         resp = requests.get(
-            f"{base_url}/search",
+            request_url,
             params={"q": q, "format": "json"},
             headers=headers,
             timeout=SEARCH_TIMEOUT,
+        )
+        _emit_trace_event(
+            trace_callback,
+            {
+                "kind": "transport_response",
+                "transport": "http",
+                "source": "tool",
+                "tool_name": "web_search",
+                "provider": "searxng",
+                "method": "GET",
+                "url": request_url,
+                "status_code": resp.status_code,
+                "content_type": resp.headers.get("Content-Type", ""),
+                "response_type": _infer_response_type(
+                    resp.headers.get("Content-Type", "")
+                ),
+                "response_bytes": len(resp.content or b""),
+                "response_chars": len(resp.text or ""),
+                "elapsed_ms": (time.perf_counter() - started) * 1000,
+            },
         )
         if resp.status_code != 200:
             return {"error": f"SearXNG error {resp.status_code}: {resp.text[:200]}"}
@@ -64,10 +131,29 @@ def _execute_searxng_search(q: str, count: int) -> Dict[str, Any]:
             )
         return {"results": results}
     except Exception as e:
+        _emit_trace_event(
+            trace_callback,
+            {
+                "kind": "transport_error",
+                "transport": "http",
+                "source": "tool",
+                "tool_name": "web_search",
+                "provider": "searxng",
+                "method": "GET",
+                "url": request_url,
+                "error_type": "request_exception",
+                "error": str(e),
+                "elapsed_ms": (time.perf_counter() - started) * 1000,
+            },
+        )
         return {"error": f"SearXNG search failed: {str(e)}"}
 
 
-def _execute_serper_search(q: str, count: int) -> Dict[str, Any]:
+def _execute_serper_search(
+    q: str,
+    count: int,
+    trace_callback: Optional[TraceCallback] = None,
+) -> Dict[str, Any]:
     """Execute a web search using Serper API."""
     api_key = os.environ.get(SERPER_API_KEY_ENV)
     if not api_key:
@@ -75,6 +161,19 @@ def _execute_serper_search(q: str, count: int) -> Dict[str, Any]:
             "error": f"Serper API key not found in environment variable {SERPER_API_KEY_ENV}"
         }
 
+    started = time.perf_counter()
+    _emit_trace_event(
+        trace_callback,
+        {
+            "kind": "transport_request",
+            "transport": "http",
+            "source": "tool",
+            "tool_name": "web_search",
+            "provider": "serper",
+            "method": "POST",
+            "url": SERPER_API_URL,
+        },
+    )
     try:
         headers = {
             "X-API-KEY": api_key,
@@ -86,6 +185,26 @@ def _execute_serper_search(q: str, count: int) -> Dict[str, Any]:
             headers=headers,
             data=payload,
             timeout=SEARCH_TIMEOUT,
+        )
+        _emit_trace_event(
+            trace_callback,
+            {
+                "kind": "transport_response",
+                "transport": "http",
+                "source": "tool",
+                "tool_name": "web_search",
+                "provider": "serper",
+                "method": "POST",
+                "url": SERPER_API_URL,
+                "status_code": resp.status_code,
+                "content_type": resp.headers.get("Content-Type", ""),
+                "response_type": _infer_response_type(
+                    resp.headers.get("Content-Type", "")
+                ),
+                "response_bytes": len(resp.content or b""),
+                "response_chars": len(resp.text or ""),
+                "elapsed_ms": (time.perf_counter() - started) * 1000,
+            },
         )
         resp.raise_for_status()
         data = resp.json()
@@ -104,18 +223,36 @@ def _execute_serper_search(q: str, count: int) -> Dict[str, Any]:
             )
         return {"results": results}
     except Exception as e:
+        _emit_trace_event(
+            trace_callback,
+            {
+                "kind": "transport_error",
+                "transport": "http",
+                "source": "tool",
+                "tool_name": "web_search",
+                "provider": "serper",
+                "method": "POST",
+                "url": SERPER_API_URL,
+                "error_type": "request_exception",
+                "error": str(e),
+                "elapsed_ms": (time.perf_counter() - started) * 1000,
+            },
+        )
         return {"error": f"Serper search failed: {str(e)}"}
 
 
-def execute_web_search(args: Dict[str, Any]) -> Dict[str, Any]:
+def execute_web_search(
+    args: Dict[str, Any],
+    trace_callback: Optional[TraceCallback] = None,
+) -> Dict[str, Any]:
     """Execute a web search using the configured provider."""
     q = args.get("q", "")
     count = args.get("count", 5)
 
     if SEARCH_PROVIDER == "serper":
-        return _execute_serper_search(q, count)
+        return _execute_serper_search(q, count, trace_callback=trace_callback)
     else:
-        return _execute_searxng_search(q, count)
+        return _execute_searxng_search(q, count, trace_callback=trace_callback)
 
 
 def _sanitize_url(url: str) -> str:
@@ -123,20 +260,34 @@ def _sanitize_url(url: str) -> str:
     return sanitize_url(url)
 
 
-def fetch_single_url(url: str) -> Dict[str, str]:
+def fetch_single_url(
+    url: str,
+    trace_callback: Optional[TraceCallback] = None,
+) -> Dict[str, str]:
     """Fetch content from a single URL."""
     sanitized_url = _sanitize_url(url)
     if is_local_filesystem_target(sanitized_url):
         return {sanitized_url: f"Error: {LOCAL_TARGET_UNSUPPORTED_ERROR}"}
     if not is_http_url(sanitized_url):
         return {sanitized_url: f"Error: {HTTP_URL_REQUIRED_ERROR}"}
-    payload = fetch_url_document(sanitized_url, output_format="markdown")
+    payload = fetch_url_document(
+        sanitized_url,
+        output_format="markdown",
+        trace_callback=trace_callback,
+        trace_context={
+            "tool_name": "get_url_content",
+            "provider": "retrieval",
+        },
+    )
     if payload.get("error"):
         return {sanitized_url: f"Error: {payload['error']}"}
     return {sanitized_url: str(payload.get("content", ""))}
 
 
-def execute_get_url_content(args: Dict[str, Any]) -> Dict[str, Any]:
+def execute_get_url_content(
+    args: Dict[str, Any],
+    trace_callback: Optional[TraceCallback] = None,
+) -> Dict[str, Any]:
     """Fetch content from one or more URLs."""
     header_url = args.get("url")
     urls: List[str] = args.get("urls", [])
@@ -163,11 +314,14 @@ def execute_get_url_content(args: Dict[str, Any]) -> Dict[str, Any]:
         return {"error": "No URLs provided."}
     results = {}
     for url in urls:
-        results.update(fetch_single_url(url))
+        results.update(fetch_single_url(url, trace_callback=trace_callback))
     return results
 
 
-def execute_get_url_details(args: Dict[str, Any]) -> Dict[str, Any]:
+def execute_get_url_details(
+    args: Dict[str, Any],
+    trace_callback: Optional[TraceCallback] = None,
+) -> Dict[str, Any]:
     """Fetch content and extract links from a URL."""
     url = _sanitize_url(args.get("url", ""))
     if not url:
@@ -182,6 +336,11 @@ def execute_get_url_details(args: Dict[str, Any]) -> Dict[str, Any]:
         output_format="markdown",
         include_links=True,
         max_links=MAX_URL_DETAIL_LINKS,
+        trace_callback=trace_callback,
+        trace_context={
+            "tool_name": "get_url_details",
+            "provider": "retrieval",
+        },
     )
     if payload.get("error"):
         return {"error": f"Failed to fetch details: {payload['error']}"}

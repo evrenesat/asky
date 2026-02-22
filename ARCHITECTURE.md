@@ -186,10 +186,13 @@ generate_summaries() → persist (session/history)
 Verbose tracing has two levels:
 
 - `-v`: existing verbose diagnostics (tool-call traces, shortlist traces, debug-friendly status output).
-- `-vv`: includes `-v` behavior and additionally prints fully expanded outbound
-  main-model request messages (including system prompts) in boxed console output.
-  In Live-banner mode, these payloads are buffered and printed after Live stops to
-  avoid banner redraw corruption.
+- `-vv`: includes `-v` behavior and additionally prints fully expanded main-model
+  I/O payloads in boxed console output:
+  - outbound request messages sent to the main model (all roles, full bodies),
+  - inbound response messages returned by the main model (including tool-call payloads).
+  In Live-banner mode these traces stream immediately through the live console
+  (no end-of-turn deferral). Tool/summarization internals are shown as transport
+  metadata (target endpoint, response status/type, and response size), not full bodies.
 
 Programmatic consumers can bypass CLI by instantiating `AskyClient` directly and
 calling `run_turn(...)` for full CLI-equivalent orchestration.
@@ -201,7 +204,12 @@ as `full_content`, `summarized_due_budget`, `summary_truncated_due_budget`, or
 `fetch_error`. Prompt URL extraction supports both explicit `http(s)://...` and
 bare-domain forms (`example.com/path`), and explicit prompt URLs are always
 included in the shortlist context section even when ranked below the normal
-top-k snippet cutoff.
+top-k snippet cutoff. When seed URL content is complete (`full_content` and
+within budget), message assembly switches to direct-answer guidance instructing
+the model not to refetch the same URL unless freshness/completeness checks are
+explicitly needed. In this direct-answer mode, standard retrieval tools
+(`web_search`, `get_url_content`, `get_url_details`) are also disabled for that
+turn to enforce single-pass answering from preloaded seed content.
 
 ### Session Flow
 

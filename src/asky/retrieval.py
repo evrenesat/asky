@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 import time
-from typing import Any, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional
 
 import requests
 
@@ -21,6 +21,34 @@ except ImportError:
 
 SUPPORTED_OUTPUT_FORMATS = {"markdown", "txt"}
 MAX_TITLE_CHARS = 220
+TraceCallback = Callable[[Dict[str, Any]], None]
+
+
+def _emit_trace_event(
+    trace_callback: Optional[TraceCallback],
+    event: Dict[str, Any],
+) -> None:
+    """Best-effort metadata trace emission for retrieval transport calls."""
+    if trace_callback is None:
+        return
+    try:
+        trace_callback(event)
+    except Exception:
+        logger.debug("Retrieval trace callback failed for event kind=%s", event.get("kind"))
+
+
+def _infer_response_type(content_type: str) -> str:
+    """Infer high-level response type from HTTP content-type."""
+    normalized = content_type.lower()
+    if "json" in normalized:
+        return "json"
+    if "html" in normalized:
+        return "html"
+    if "text/" in normalized:
+        return "text"
+    if normalized:
+        return "binary"
+    return "unknown"
 
 
 def fetch_url_document(
@@ -28,6 +56,8 @@ def fetch_url_document(
     output_format: str = "markdown",
     include_links: bool = False,
     max_links: Optional[int] = None,
+    trace_callback: Optional[TraceCallback] = None,
+    trace_context: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     """Fetch URL and extract structured main content.
 
@@ -51,6 +81,18 @@ def fetch_url_document(
     link_limit = max_links if isinstance(max_links, int) and max_links > 0 else MAX_URL_DETAIL_LINKS
 
     try:
+        request_trace = {
+            "kind": "transport_request",
+            "transport": "http",
+            "source": "retrieval",
+            "operation": "fetch_url_document",
+            "method": "GET",
+            "url": requested_url,
+        }
+        if trace_context:
+            request_trace.update(trace_context)
+        _emit_trace_event(trace_callback, request_trace)
+
         response = requests.get(
             requested_url,
             headers={"User-Agent": USER_AGENT},
@@ -58,6 +100,20 @@ def fetch_url_document(
         )
         response.raise_for_status()
     except requests.exceptions.Timeout:
+        timeout_trace = {
+            "kind": "transport_error",
+            "transport": "http",
+            "source": "retrieval",
+            "operation": "fetch_url_document",
+            "method": "GET",
+            "url": requested_url,
+            "error_type": "timeout",
+            "error": f"Request timed out after {FETCH_TIMEOUT}s",
+            "elapsed_ms": (time.perf_counter() - started) * 1000,
+        }
+        if trace_context:
+            timeout_trace.update(trace_context)
+        _emit_trace_event(trace_callback, timeout_trace)
         return {
             "error": f"Request timed out after {FETCH_TIMEOUT}s",
             "content": "",
@@ -67,6 +123,22 @@ def fetch_url_document(
             "links": [],
         }
     except requests.exceptions.RequestException as exc:
+        error_trace = {
+            "kind": "transport_error",
+            "transport": "http",
+            "source": "retrieval",
+            "operation": "fetch_url_document",
+            "method": "GET",
+            "url": requested_url,
+            "error_type": "request_exception",
+            "error": str(exc),
+            "elapsed_ms": (time.perf_counter() - started) * 1000,
+        }
+        if trace_context:
+            error_trace.update(trace_context)
+        if getattr(exc, "response", None) is not None:
+            error_trace["status_code"] = exc.response.status_code
+        _emit_trace_event(trace_callback, error_trace)
         return {
             "error": str(exc),
             "content": "",
@@ -121,6 +193,24 @@ def fetch_url_document(
     }
     if warning:
         payload["warning"] = warning
+
+    response_trace = {
+        "kind": "transport_response",
+        "transport": "http",
+        "source": "retrieval",
+        "operation": "fetch_url_document",
+        "method": "GET",
+        "url": requested_url,
+        "status_code": response.status_code,
+        "content_type": response.headers.get("Content-Type", ""),
+        "response_type": _infer_response_type(response.headers.get("Content-Type", "")),
+        "response_bytes": len(response.content or b""),
+        "response_chars": len(response.text or ""),
+        "elapsed_ms": elapsed_ms,
+    }
+    if trace_context:
+        response_trace.update(trace_context)
+    _emit_trace_event(trace_callback, response_trace)
     return payload
 
 

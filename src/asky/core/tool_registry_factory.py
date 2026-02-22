@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import inspect
 from typing import Any, Callable, Dict, Optional, Set
 
 from rich.panel import Panel
@@ -21,18 +22,43 @@ from asky.research.tools import ACQUISITION_TOOL_NAMES
 ToolExecutor = Callable[[Dict[str, Any]], Dict[str, Any]]
 CustomToolExecutor = Callable[[str, Dict[str, Any]], Dict[str, Any]]
 ResearchBindingsLoader = Callable[[], Dict[str, Any]]
+TraceCallback = Callable[[Dict[str, Any]], None]
 
 
-def _execute_web_search(args: Dict[str, Any]) -> Dict[str, Any]:
-    return call_attr("asky.tools", "execute_web_search", args)
+def _execute_web_search(
+    args: Dict[str, Any],
+    trace_callback: Optional[TraceCallback] = None,
+) -> Dict[str, Any]:
+    return call_attr(
+        "asky.tools",
+        "execute_web_search",
+        args,
+        trace_callback=trace_callback,
+    )
 
 
-def _execute_get_url_content(args: Dict[str, Any]) -> Dict[str, Any]:
-    return call_attr("asky.tools", "execute_get_url_content", args)
+def _execute_get_url_content(
+    args: Dict[str, Any],
+    trace_callback: Optional[TraceCallback] = None,
+) -> Dict[str, Any]:
+    return call_attr(
+        "asky.tools",
+        "execute_get_url_content",
+        args,
+        trace_callback=trace_callback,
+    )
 
 
-def _execute_get_url_details(args: Dict[str, Any]) -> Dict[str, Any]:
-    return call_attr("asky.tools", "execute_get_url_details", args)
+def _execute_get_url_details(
+    args: Dict[str, Any],
+    trace_callback: Optional[TraceCallback] = None,
+) -> Dict[str, Any]:
+    return call_attr(
+        "asky.tools",
+        "execute_get_url_details",
+        args,
+        trace_callback=trace_callback,
+    )
 
 
 def _execute_custom_tool(name: str, args: Dict[str, Any]) -> Dict[str, Any]:
@@ -55,6 +81,14 @@ def _default_research_bindings_loader() -> Dict[str, Any]:
 def _is_tool_enabled(tool_name: str, disabled_tools: Set[str]) -> bool:
     """Return True when a tool is not excluded by runtime CLI options."""
     return tool_name not in disabled_tools
+
+
+def _executor_supports_trace_callback(executor: Callable[..., Any]) -> bool:
+    """Return True when executor signature accepts trace_callback."""
+    try:
+        return "trace_callback" in inspect.signature(executor).parameters
+    except (TypeError, ValueError):
+        return False
 
 
 def _apply_tool_prompt_overrides(
@@ -89,6 +123,7 @@ def create_tool_registry(
     execute_custom_tool_fn: Optional[CustomToolExecutor] = None,
     custom_tools: Optional[Dict[str, Any]] = None,
     disabled_tools: Optional[Set[str]] = None,
+    tool_trace_callback: Optional[TraceCallback] = None,
 ) -> ToolRegistry:
     """Create a ToolRegistry with all default and custom tools."""
     registry = ToolRegistry()
@@ -119,14 +154,31 @@ def create_tool_registry(
         registry.register(
             "web_search",
             web_search_schema,
-            web_search_executor,
+            (
+                lambda args: web_search_executor(
+                    args,
+                    trace_callback=tool_trace_callback,
+                )
+                if tool_trace_callback
+                and _executor_supports_trace_callback(web_search_executor)
+                else web_search_executor(args)
+            ),
         )
 
     def url_content_executor(
         args: Dict[str, Any],
         summarize: bool = False,
     ) -> Dict[str, Any]:
-        result = get_url_content_executor(args)
+        if (
+            tool_trace_callback
+            and _executor_supports_trace_callback(get_url_content_executor)
+        ):
+            result = get_url_content_executor(
+                args,
+                trace_callback=tool_trace_callback,
+            )
+        else:
+            result = get_url_content_executor(args)
         effective_summarize = args.get("summarize", summarize)
         if effective_summarize:
             content_items = list(result.items())
@@ -153,7 +205,19 @@ def create_tool_registry(
                         content=content,
                         prompt_template=SUMMARIZE_ANSWER_PROMPT_TEMPLATE,
                         max_output_chars=ANSWER_SUMMARY_MAX_CHARS,
-                        get_llm_msg_func=get_llm_msg,
+                        get_llm_msg_func=(
+                            lambda model_id, msgs, **kwargs: get_llm_msg(
+                                model_id,
+                                msgs,
+                                trace_callback=tool_trace_callback,
+                                trace_context={
+                                    "source": "summarization",
+                                    "tool_name": "get_url_content",
+                                    "url": url,
+                                },
+                                **kwargs,
+                            )
+                        ),
                         usage_tracker=summarization_tracker,
                         progress_callback=summary_progress,
                     )
@@ -233,7 +297,15 @@ def create_tool_registry(
         registry.register(
             "get_url_details",
             get_url_details_schema,
-            get_url_details_executor,
+            (
+                lambda args: get_url_details_executor(
+                    args,
+                    trace_callback=tool_trace_callback,
+                )
+                if tool_trace_callback
+                and _executor_supports_trace_callback(get_url_details_executor)
+                else get_url_details_executor(args)
+            ),
         )
 
     for tool_name, tool_data in active_custom_tools.items():
@@ -329,6 +401,7 @@ def create_research_tool_registry(
     session_id: Optional[str] = None,
     corpus_preloaded: bool = False,
     summarization_tracker: Optional[UsageTracker] = None,
+    tool_trace_callback: Optional[TraceCallback] = None,
 ) -> ToolRegistry:
     """Create a ToolRegistry with research mode tools."""
     registry = ToolRegistry()
@@ -367,7 +440,15 @@ def create_research_tool_registry(
         registry.register(
             "web_search",
             web_search_schema,
-            web_search_executor,
+            (
+                lambda args: web_search_executor(
+                    args,
+                    trace_callback=tool_trace_callback,
+                )
+                if tool_trace_callback
+                and _executor_supports_trace_callback(web_search_executor)
+                else web_search_executor(args)
+            ),
         )
 
     research_bindings = load_research_tool_bindings()

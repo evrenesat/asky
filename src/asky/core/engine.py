@@ -187,6 +187,21 @@ class ConversationEngine:
                     tool_schemas=tool_schemas,
                     status_callback=status_reporter,
                     parameters=self.model_config.get("parameters"),
+                    trace_callback=(
+                        self.verbose_output_callback
+                        if self.verbose_output_callback and self.verbose
+                        else None
+                    ),
+                    trace_context={
+                        "turn": turn,
+                        "phase": "main_loop",
+                        "source": "main_model",
+                    },
+                )
+                self._print_verbose_llm_response(
+                    message=msg,
+                    turn=turn,
+                    phase="main_loop",
                 )
                 self._emit_event(
                     "llm_end",
@@ -391,6 +406,29 @@ class ConversationEngine:
             self.verbose_output_callback(payload)
             return
         logger.info("Main model request payload: %s", json.dumps(payload))
+
+    def _print_verbose_llm_response(
+        self,
+        message: Dict[str, Any],
+        turn: int,
+        phase: str,
+    ) -> None:
+        """Emit full inbound message payload in double-verbose mode."""
+        if not self.double_verbose:
+            return
+
+        payload = {
+            "kind": "llm_response_message",
+            "phase": phase,
+            "turn": turn,
+            "model_alias": self.model_config.get("alias"),
+            "model_id": self.model_config.get("id"),
+            "message": copy.deepcopy(message),
+        }
+        if self.verbose_output_callback:
+            self.verbose_output_callback(payload)
+            return
+        logger.info("Main model response payload: %s", json.dumps(payload))
 
     def _compact_tool_message(self, msg: Dict[str, Any]) -> Dict[str, Any]:
         """Replace full URL content with summaries in a tool message.
@@ -640,6 +678,21 @@ class ConversationEngine:
             model_alias=self.model_config.get("alias"),
             usage_tracker=self.usage_tracker,
             status_callback=status_reporter,
+            trace_callback=(
+                self.verbose_output_callback
+                if self.verbose_output_callback and self.verbose
+                else None
+            ),
+            trace_context={
+                "turn": self.max_turns + 1,
+                "phase": "graceful_exit",
+                "source": "main_model",
+            },
+        )
+        self._print_verbose_llm_response(
+            message=final_msg,
+            turn=self.max_turns + 1,
+            phase="graceful_exit",
         )
 
         final_answer = final_msg.get("content", "")
@@ -676,6 +729,7 @@ def create_tool_registry(
     summarization_status_callback: Optional[Callable[[Optional[str]], None]] = None,
     summarization_verbose_callback: Optional[Callable[[Any], None]] = None,
     disabled_tools: Optional[Set[str]] = None,
+    tool_trace_callback: Optional[Callable[[Dict[str, Any]], None]] = None,
 ) -> ToolRegistry:
     """Create a ToolRegistry with all default and custom tools."""
     return call_attr(
@@ -685,6 +739,7 @@ def create_tool_registry(
         summarization_tracker=summarization_tracker,
         summarization_status_callback=summarization_status_callback,
         summarization_verbose_callback=summarization_verbose_callback,
+        tool_trace_callback=tool_trace_callback,
         execute_web_search_fn=execute_web_search,
         execute_get_url_content_fn=execute_get_url_content,
         execute_get_url_details_fn=execute_get_url_details,
@@ -699,6 +754,7 @@ def create_research_tool_registry(
     disabled_tools: Optional[Set[str]] = None,
     session_id: Optional[str] = None,
     summarization_tracker: Optional[UsageTracker] = None,
+    tool_trace_callback: Optional[Callable[[Dict[str, Any]], None]] = None,
 ) -> ToolRegistry:
     """Create a ToolRegistry with research mode tools."""
     return call_attr(
@@ -711,6 +767,7 @@ def create_research_tool_registry(
         custom_tools=CUSTOM_TOOLS,
         disabled_tools=disabled_tools,
         session_id=session_id,
+        tool_trace_callback=tool_trace_callback,
     )
 
 

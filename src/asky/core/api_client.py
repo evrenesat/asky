@@ -9,6 +9,29 @@ from typing import Any, Callable, Dict, List, Optional
 
 
 logger = logging.getLogger(__name__)
+TraceCallback = Callable[[Dict[str, Any]], None]
+
+
+def _emit_trace_event(
+    trace_callback: Optional[TraceCallback],
+    event: Dict[str, Any],
+) -> None:
+    """Best-effort trace callback emission that never breaks request flow."""
+    if trace_callback is None:
+        return
+    try:
+        trace_callback(event)
+    except Exception:
+        logger.debug("Trace callback failed for event kind=%s", event.get("kind"))
+
+
+def _classify_response_type(response_message: Dict[str, Any]) -> str:
+    """Classify LLM response shape for verbose transport traces."""
+    if response_message.get("tool_calls"):
+        return "tool_calls"
+    if isinstance(response_message.get("content"), str):
+        return "text"
+    return "structured"
 
 
 class UsageTracker:
@@ -67,6 +90,8 @@ def get_llm_msg(
     tool_schemas: Optional[List[Dict[str, Any]]] = None,
     status_callback: Optional[Callable[[Optional[str]], None]] = None,
     parameters: Optional[Dict[str, Any]] = None,
+    trace_callback: Optional[TraceCallback] = None,
+    trace_context: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     """Send messages to the LLM and get a response."""
     # Importing here to avoid circular dependencies during initialization
@@ -149,6 +174,22 @@ def get_llm_msg(
     logger.info(f"[{model_alias or model_id}] Sent: {tokens_sent} tokens")
 
     for attempt in range(MAX_RETRIES):
+        request_started = time.perf_counter()
+        trace_payload = {
+            "kind": "transport_request",
+            "transport": "llm",
+            "phase": "request",
+            "model_id": model_id,
+            "model_alias": model_alias or model_id,
+            "url": url,
+            "method": "POST",
+            "attempt": attempt + 1,
+            "use_tools": use_tools,
+            "message_count": len(messages),
+        }
+        if trace_context:
+            trace_payload.update(trace_context)
+        _emit_trace_event(trace_callback, trace_payload)
         try:
             logger.debug(f"URL: {url}, Headers: {headers}")
             resp = requests.post(
@@ -166,6 +207,27 @@ def get_llm_msg(
             if "completion_tokens" not in usage:
                 completion_tokens = len(json.dumps(response_message)) // 4
 
+            response_body = resp.content or b""
+            elapsed_ms = (time.perf_counter() - request_started) * 1000
+            response_trace = {
+                "kind": "transport_response",
+                "transport": "llm",
+                "phase": "response",
+                "model_id": model_id,
+                "model_alias": model_alias or model_id,
+                "url": url,
+                "method": "POST",
+                "attempt": attempt + 1,
+                "status_code": resp.status_code,
+                "content_type": resp.headers.get("Content-Type", ""),
+                "response_bytes": len(response_body),
+                "response_type": _classify_response_type(response_message),
+                "elapsed_ms": elapsed_ms,
+            }
+            if trace_context:
+                response_trace.update(trace_context)
+            _emit_trace_event(trace_callback, response_trace)
+
             if usage_tracker and model_alias:
                 usage_tracker.add_usage(model_alias, prompt_tokens, completion_tokens)
 
@@ -175,6 +237,25 @@ def get_llm_msg(
 
             return response_message
         except requests.exceptions.HTTPError as e:
+            response = e.response
+            elapsed_ms = (time.perf_counter() - request_started) * 1000
+            error_trace = {
+                "kind": "transport_error",
+                "transport": "llm",
+                "phase": "response",
+                "model_id": model_id,
+                "model_alias": model_alias or model_id,
+                "url": url,
+                "method": "POST",
+                "attempt": attempt + 1,
+                "error_type": "http_error",
+                "error": str(e),
+                "status_code": response.status_code if response is not None else None,
+                "elapsed_ms": elapsed_ms,
+            }
+            if trace_context:
+                error_trace.update(trace_context)
+            _emit_trace_event(trace_callback, error_trace)
             if e.response is not None and e.response.status_code == 429:
                 if attempt < MAX_RETRIES - 1:
                     retry_after = e.response.headers.get("Retry-After")
@@ -200,6 +281,23 @@ def get_llm_msg(
                     continue
             raise e
         except requests.exceptions.RequestException as e:
+            elapsed_ms = (time.perf_counter() - request_started) * 1000
+            error_trace = {
+                "kind": "transport_error",
+                "transport": "llm",
+                "phase": "response",
+                "model_id": model_id,
+                "model_alias": model_alias or model_id,
+                "url": url,
+                "method": "POST",
+                "attempt": attempt + 1,
+                "error_type": "request_exception",
+                "error": str(e),
+                "elapsed_ms": elapsed_ms,
+            }
+            if trace_context:
+                error_trace.update(trace_context)
+            _emit_trace_event(trace_callback, error_trace)
             if attempt < MAX_RETRIES - 1:
                 logger.info(
                     f"Request error: {e}. Retrying in {current_backoff} seconds..."

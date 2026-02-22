@@ -1,5 +1,46 @@
 # DEVLOG
 
+## 2026-02-22 - `-vv` Redesign: Full Main-Model I/O + Live Streaming + Transport Metadata
+
+Aligned double-verbose behavior with CLI expectations: show complete main-model communication live, and keep tool/summarizer internals metadata-only.
+
+- **Changed**:
+  - `src/asky/core/engine.py`:
+    - Added inbound response payload emissions in double-verbose mode (`kind="llm_response_message"`).
+    - Main-loop and graceful-exit LLM calls now forward trace callback context (`turn`, `phase`, `source`).
+  - `src/asky/core/api_client.py`:
+    - Added optional `trace_callback` + `trace_context` to `get_llm_msg()`.
+    - Emits structured transport events for each request lifecycle:
+      `transport_request`, `transport_response`, `transport_error`.
+    - Transport response includes status, content-type, response bytes, elapsed time, and a logical response type (`text`/`tool_calls`/`structured`).
+  - `src/asky/tools.py` and `src/asky/retrieval.py`:
+    - Added optional trace callback plumbing for search and URL fetch calls.
+    - Emits tool/retrieval transport metadata (endpoint, method, status, response type/size, elapsed ms, error details when present).
+  - `src/asky/core/tool_registry_factory.py`:
+    - Added optional `tool_trace_callback` propagation into default and research registries.
+    - `get_url_content` summarization path now forwards trace metadata through `get_llm_msg(trace_callback=...)` with summarization context.
+  - `src/asky/api/client.py`:
+    - Passes verbose callback as `tool_trace_callback` for tool/summarization transport traces.
+  - `src/asky/cli/chat.py`:
+    - Removed deferred `-vv` queueing while Live is active.
+    - Main-model traces now render immediately in Live console.
+    - Added explicit request/response transport direction panels:
+      - `Main Model Outbound Request`
+      - `Main Model Inbound Response`
+    - Replaced per-message hardcoded outbound labeling with role-origin metadata in request summaries.
+    - Added transport metadata panel rendering for tool/summarizer/LLM transport events.
+- **Tests**:
+  - Updated `tests/test_cli.py` to validate live streaming via live console and new request/response panel titles.
+  - Updated `tests/test_llm.py` to validate both request and response payload emissions, including graceful-exit response tracing.
+  - Added transport trace callback coverage in `tests/test_api_client_status.py`.
+  - Added tool transport metadata coverage in `tests/test_tools.py`.
+  - Updated call-signature expectations in `tests/test_api_library.py` and `tests/test_lean_mode.py` for `tool_trace_callback`.
+- **Docs**:
+  - Updated `ARCHITECTURE.md`, `src/asky/cli/AGENTS.md`, `src/asky/core/AGENTS.md`, and `src/asky/api/AGENTS.md` to document live `-vv` streaming, full main-model I/O tracing, and metadata-only tool/summarizer internals.
+- **Validation**:
+  - Targeted: `uv run pytest tests/test_cli.py::test_run_chat_double_verbose_payload_streams_via_live_console tests/test_llm.py::test_conversation_engine_double_verbose_emits_main_model_messages tests/test_llm.py::test_conversation_engine_double_verbose_emits_graceful_exit_response tests/test_api_client_status.py tests/test_tools.py tests/test_api_library.py::test_asky_client_run_messages_uses_research_registry tests/test_lean_mode.py::TestLeanModeAPI::test_run_messages_propagates_lean_and_disabled_tools` -> passed.
+  - Full suite: `uv run pytest` -> `581 passed in 6.27s`.
+
 ## 2026-02-22 - Fix: save_html_report() TypeError Regression
 
 Fixed a regression where `save_html_report()` was missing `message_id` and `session_id` parameters, causing a crash during archive generation. This was a mismatch between `chat.py` call site and `rendering.py` signature.
@@ -33,7 +74,21 @@ is proactively delivered to the model before the first tool loop.
       `summary_truncated_due_budget`, `fetch_error`.
     - Seed URL context is now inserted before shortlist context in
       `combined_context`.
+    - Added `seed_url_direct_answer_ready` resolution to flag when preloaded
+      seed content is complete enough to answer directly without refetch.
+  - `src/asky/api/client.py`:
+    - Message assembly now conditionally replaces the generic
+      "verify with tools" suffix with strict direct-answer guidance when
+      `seed_url_direct_answer_ready=True`, explicitly telling the model not to
+      call `get_url_content`/`get_url_details` for the same seed URL unless
+      freshness/completeness checks are needed.
+    - Added centralized run-turn tool gating policy for maintainability:
+      when `seed_url_direct_answer_ready=True` in standard mode, the turn
+      auto-disables `web_search`, `get_url_content`, and `get_url_details` to
+      deterministically avoid unnecessary retrieval tool loops.
   - `src/asky/api/types.py`: Added `seed_url_context` to `PreloadResolution`.
+  - `src/asky/api/types.py`: Added `seed_url_direct_answer_ready` to
+    `PreloadResolution`.
   - Tests:
     - `tests/test_source_shortlist.py`: added seed-document capture/failure and
       seed-fetch-beyond-cap coverage, plus bare-domain extraction and explicit
@@ -42,7 +97,8 @@ is proactively delivered to the model before the first tool loop.
       summarization/truncation labeling, fetch-error labeling, and standard-mode
       ordering in combined preload context.
     - `tests/test_api_library.py`: added seed URL context presence assertion in
-      message construction.
+      message construction, plus run-turn assertions for direct-answer tool
+      disablement in standard mode and no-disable behavior in research mode.
   - Docs:
     - `src/asky/api/AGENTS.md`, `ARCHITECTURE.md` updated for new preload flow.
 

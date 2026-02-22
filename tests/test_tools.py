@@ -52,6 +52,32 @@ def test_execute_web_search_failure(mock_requests_get):
     assert "Search failed" in result["error"]
 
 
+@patch("asky.tools.SEARCH_PROVIDER", "searxng")
+def test_execute_web_search_emits_transport_metadata(mock_requests_get):
+    mock_response = MagicMock()
+    mock_response.json.return_value = {"results": []}
+    mock_response.status_code = 200
+    mock_response.headers = {"Content-Type": "application/json"}
+    mock_response.content = b'{"results":[]}'
+    mock_response.text = '{"results":[]}'
+    mock_requests_get.return_value = mock_response
+
+    trace_callback = MagicMock()
+    execute_web_search({"q": "trace query"}, trace_callback=trace_callback)
+
+    events = [call.args[0] for call in trace_callback.call_args_list]
+    request_event = next(
+        event for event in events if event.get("kind") == "transport_request"
+    )
+    response_event = next(
+        event for event in events if event.get("kind") == "transport_response"
+    )
+    assert request_event["url"].endswith("/search")
+    assert response_event["status_code"] == 200
+    assert response_event["response_type"] == "json"
+    assert response_event["response_bytes"] > 0
+
+
 def test_fetch_single_url_success(mock_requests_get):
     with patch("asky.tools.fetch_url_document") as mock_fetch:
         mock_fetch.return_value = {
@@ -114,6 +140,27 @@ def test_execute_get_url_details(mock_requests_get):
     assert "links" in result
     assert result["content"] == "Text Link"
     assert result["links"][0]["href"] == "http://link.com"
+
+
+def test_execute_get_url_details_passes_trace_callback_to_retrieval(mock_requests_get):
+    trace_callback = MagicMock()
+    with patch("asky.tools.fetch_url_document") as mock_fetch:
+        mock_fetch.return_value = {
+            "error": None,
+            "content": "Text Link",
+            "links": [],
+            "title": "Main Page",
+            "date": None,
+            "final_url": "http://main.com",
+        }
+        execute_get_url_details(
+            {"url": "http://main.com"},
+            trace_callback=trace_callback,
+        )
+
+    kwargs = mock_fetch.call_args.kwargs
+    assert kwargs["trace_callback"] is trace_callback
+    assert kwargs["trace_context"]["tool_name"] == "get_url_details"
 
 
 def test_execute_get_url_details_rejects_local_target(mock_requests_get):
