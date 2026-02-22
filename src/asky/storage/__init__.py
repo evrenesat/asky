@@ -87,8 +87,24 @@ def get_total_session_count() -> int:
     return _repo.count_sessions()
 
 
-def create_session(model: str, name: Optional[str] = None) -> int:
-    return _repo.create_session(model, name)
+def create_session(
+    model: str,
+    name: Optional[str] = None,
+    memory_auto_extract: bool = False,
+    max_turns: Optional[int] = None,
+    research_mode: bool = False,
+    research_source_mode: Optional[str] = None,
+    research_local_corpus_paths: Optional[list[str]] = None,
+) -> int:
+    return _repo.create_session(
+        model=model,
+        name=name,
+        memory_auto_extract=memory_auto_extract,
+        max_turns=max_turns,
+        research_mode=research_mode,
+        research_source_mode=research_source_mode,
+        research_local_corpus_paths=research_local_corpus_paths,
+    )
 
 
 def get_sessions_by_name(name: str) -> list[Session]:

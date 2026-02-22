@@ -177,6 +177,7 @@ def append_research_guidance(
             "Local Knowledge Base Guidance:\n"
             "- Local corpus sources were preloaded from configured document roots.\n"
             "- Do not ask the user for local filesystem paths.\n"
-            "- Start by calling `query_research_memory` with the user's question to retrieve local knowledge base findings."
+            "- You may call `query_research_memory` first, but if it returns no findings, immediately call "
+            "`get_relevant_content` against the preloaded corpus sources."
         )
     return system_prompt

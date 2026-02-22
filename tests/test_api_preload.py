@@ -3,9 +3,12 @@
 from typing import Any, Dict
 
 from asky.api.preload import (
+    _collect_preloaded_source_urls,
+    _collect_source_handles,
     format_seed_url_context,
     run_preload_pipeline,
     seed_url_context_allows_direct_answer,
+    shortlist_enabled_for_request,
 )
 
 
@@ -208,3 +211,57 @@ def test_run_preload_pipeline_forwards_trace_callback_to_shortlist_executor():
 
     assert preload.shortlist_enabled is True
     assert observed["trace_forwarded"] is True
+
+
+def test_shortlist_enabled_for_request_honors_request_override_on():
+    enabled, reason = shortlist_enabled_for_request(
+        lean=False,
+        model_config={"source_shortlist_enabled": False},
+        research_mode=False,
+        shortlist_override="on",
+    )
+    assert enabled is True
+    assert reason == "request_override_on"
+
+
+def test_shortlist_enabled_for_request_honors_request_override_off():
+    enabled, reason = shortlist_enabled_for_request(
+        lean=False,
+        model_config={"source_shortlist_enabled": True},
+        research_mode=True,
+        shortlist_override="off",
+    )
+    assert enabled is False
+    assert reason == "request_override_off"
+
+
+def test_collect_preloaded_source_urls_prefers_local_source_handles():
+    urls = _collect_preloaded_source_urls(
+        local_payload={
+            "ingested": [
+                {
+                    "target": "local:///tmp/books/book.epub",
+                    "source_handle": "corpus://cache/77",
+                }
+            ]
+        },
+        shortlist_payload={},
+    )
+
+    assert urls == ["corpus://cache/77"]
+
+
+def test_collect_source_handles_maps_handle_and_target():
+    handle_map = _collect_source_handles(
+        {
+            "ingested": [
+                {
+                    "target": "local:///tmp/books/book.epub",
+                    "source_handle": "corpus://cache/88",
+                }
+            ]
+        }
+    )
+
+    assert handle_map["corpus://cache/88"] == "corpus://cache/88"
+    assert handle_map["local:///tmp/books/book.epub"] == "corpus://cache/88"

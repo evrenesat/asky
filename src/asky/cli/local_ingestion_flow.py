@@ -20,6 +20,7 @@ logger = logging.getLogger(__name__)
 DEFAULT_MAX_LOCAL_TARGETS = 20
 DEFAULT_MAX_DISCOVERED_LINKS_PER_TARGET = 40
 LOCAL_CONTENT_INDEXING_MIN_CHARS = 1
+MAX_CONTEXT_SOURCE_HANDLES = 6
 
 StatusCallback = Callable[[str], None]
 
@@ -197,6 +198,8 @@ def preload_local_research_sources(
                 payload["ingested"].append(
                     {
                         "target": cache_key,
+                        "source_id": cache_id,
+                        "source_handle": f"corpus://cache/{cache_id}",
                         "title": title,
                         "source_type": source_type,
                         "content_chars": len(content),
@@ -226,6 +229,16 @@ def format_local_ingestion_context(local_payload: Dict[str, Any]) -> Optional[st
         f"- Chunk embeddings added: {total_chunks}",
         f"- Total indexed characters: {total_chars}",
     ]
+    handles = [
+        str(item.get("source_handle", "")).strip()
+        for item in ingested
+        if str(item.get("source_handle", "")).strip()
+    ]
+    if handles:
+        shown = ", ".join(handles[:MAX_CONTEXT_SOURCE_HANDLES])
+        if len(handles) > MAX_CONTEXT_SOURCE_HANDLES:
+            shown += ", ..."
+        lines.append(f"- Source handles: {shown}")
 
     warnings = local_payload.get("warnings") or []
     if warnings:

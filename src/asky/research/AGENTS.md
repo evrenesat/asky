@@ -20,7 +20,7 @@ RAG-powered research mode with caching, semantic search, and persistent memory.
 | `shortlist_collect.py`           | Candidate/seed-link collection stage            |
 | `shortlist_score.py`             | Semantic + heuristic scoring stage              |
 | `shortlist_types.py`             | Shared shortlist datatypes and callback aliases |
-| `adapters.py`                    | Non-HTTP source adapters                        |
+| `adapters.py`                    | Built-in local-source loading helpers           |
 
 ## Research Tools (`tools.py`)
 
@@ -41,6 +41,11 @@ When a chat session is active, registry plumbing can inject `session_id` into
 memory tool calls so findings are written/read in session scope.
 Research chat flow now guarantees that a session exists (auto-created when needed),
 so session-scoped memory isolation is available by default in research mode.
+
+`get_relevant_content` and `get_full_content` now also accept internal
+`corpus_urls` identifiers and can resolve safe cache handles
+(`corpus://cache/<id>`) to cached entries. This enables local-corpus retrieval
+without exposing filesystem paths to the model.
 
 ### Tool Sets by Stage
 
@@ -85,6 +90,12 @@ Caches fetched URL content and extracted links with TTL.
 
 - `research_cache`: URL, content, links JSON, timestamps, TTL
 - `research_findings`: Persistent research insights with embeddings
+
+`ResearchCache` also exposes helper lookups used by manual/debug retrieval
+workflows:
+
+- `get_cached_by_id(cache_id)`
+- `list_cached_sources(limit)`
 
 ## VectorStore (`vector_store.py`)
 
@@ -196,33 +207,14 @@ context cutoff.
 - Default shortlist budgets are bounded (`max_candidates=40`, `max_fetch_urls=20`)
   and remain configurable in `research.toml`.
 
-## Adapters (`adapters.py`)
+## Local Loader (`adapters.py`)
 
-Route non-HTTP sources to custom tools.
-
-### Configuration
-
-```toml
-[research.source_adapters.local]
-prefix = "local://"
-tool = "read_local"  # or discover_tool + read_tool
-```
-
-### Flow
-
-- Match URL prefix to adapter
-- Execute configured custom tool
-- Parse JSON response (title, content, links)
-- Cache result for reuse
-
-### Built-in Local Fallback
-
-When no configured adapter matches, `adapters.py` can handle local sources directly:
+`adapters.py` is now a built-in local-source loader only (no custom adapter routing).
 
 - Accepted targets: `local://...`, `file://...`, absolute/relative local paths.
-- Builtin local fallback is enabled only when `research.local_document_roots` is configured.
-- Targets are normalized as corpus-relative paths under configured roots (absolute-like
-  targets are still treated as relative inside those roots).
+- Local loading is enabled only when `research.local_document_roots` is configured.
+- Absolute paths are accepted only when they are inside configured roots.
+- Root-relative targets (for example `/nested/doc.txt`) resolve under configured roots.
 - `extract_local_source_targets(...)` provides deterministic token extraction from prompts for pre-LLM local preload.
 - Directory targets (discover): produce file links as `local://...` (non-recursive in v1).
 - File targets (read/discover): normalize to plain text for cache/indexing.
@@ -233,6 +225,8 @@ When no configured adapter matches, `adapters.py` can handle local sources direc
 ### Local Target Guardrails in Research Tools
 
 - Generic research LLM tools (`extract_links`, `get_link_summaries`, `get_relevant_content`, `get_full_content`) reject local filesystem targets.
+- Safe corpus handles (`corpus://cache/<id>`) are allowed for retrieval tools
+  and map to cached entries without revealing local paths.
 - This prevents implicit local-file access via broad URL-oriented tools.
 - Local-file access should be handled through explicit local-source tooling/adapters in dedicated workflows.
 - Query preprocessing can redact local path tokens from model-visible user text when local
@@ -246,5 +240,5 @@ research/
 ├── cache.py → embeddings.py (for summaries)
 ├── vector_store.py → embeddings.py, chunker.py
 ├── source_shortlist.py → retrieval.py, embeddings.py
-└── adapters.py → tools.py (custom tool execution)
+└── adapters.py → builtin local loading helpers
 ```

@@ -191,6 +191,7 @@ def _shortlist_enabled_for_request(
         lean=bool(getattr(args, "lean", False)),
         model_config=model_config,
         research_mode=research_mode,
+        shortlist_override=str(getattr(args, "shortlist", "auto")),
     )
 
 
@@ -1107,6 +1108,14 @@ def run_chat(args: argparse.Namespace, query_text: str) -> None:
             save_history=False,  # We handle saving manually after rendering
             elephant_mode=elephant_mode,
             max_turns=getattr(args, "turns", None),
+            research_flag_provided=bool(
+                getattr(args, "research_flag_provided", False)
+            ),
+            research_source_mode=getattr(args, "research_source_mode", None),
+            replace_research_corpus=bool(
+                getattr(args, "replace_research_corpus", False)
+            ),
+            shortlist_override=str(getattr(args, "shortlist", "auto")),
         )
 
         display_cb = display_callback
@@ -1138,6 +1147,11 @@ def run_chat(args: argparse.Namespace, query_text: str) -> None:
             ),
         )
         final_answer = turn_result.final_answer
+        session_research_value = getattr(turn_result.session, "research_mode", None)
+        if isinstance(session_research_value, bool):
+            effective_research_mode = session_research_value
+        else:
+            effective_research_mode = research_mode
 
         renderer.set_shortlist_stats(turn_result.preload.shortlist_stats)
 
@@ -1250,7 +1264,7 @@ def run_chat(args: argparse.Namespace, query_text: str) -> None:
                 )
                 for notice in finalize_result.notices:
                     console.print(f"\n[{notice}]")
-                if use_banner and research_mode:
+                if use_banner and effective_research_mode:
                     renderer.update_banner(
                         renderer.current_turn,
                         status_message=BACKGROUND_SUMMARY_DRAIN_STATUS,

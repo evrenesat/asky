@@ -51,6 +51,10 @@ class AskyTurnRequest:
     save_history: bool = True
     elephant_mode: bool = False
     max_turns: Optional[int] = None
+    research_flag_provided: bool = False
+    research_source_mode: Optional[str] = None
+    replace_research_corpus: bool = False
+    shortlist_override: Optional[str] = None
 
 
 @dataclass
@@ -72,6 +76,9 @@ class SessionResolution:
     matched_sessions: List[Dict[str, Any]] = field(default_factory=list)
     memory_auto_extract: bool = False
     max_turns: Optional[int] = None
+    research_mode: bool = False
+    research_source_mode: Optional[str] = None
+    research_local_corpus_paths: List[str] = field(default_factory=list)
 
 
 @dataclass
@@ -95,6 +102,8 @@ class PreloadResolution:
     evidence_elapsed_ms: float = 0.0
     combined_context: Optional[str] = None
     memory_context: Optional[str] = None
+    preloaded_source_urls: List[str] = field(default_factory=list)
+    preloaded_source_handles: Dict[str, str] = field(default_factory=dict)
 
     @property
     def is_corpus_preloaded(self) -> bool:

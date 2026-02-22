@@ -268,6 +268,9 @@ class SessionManager:
         name: str,
         memory_auto_extract: bool = False,
         max_turns: Optional[int] = None,
+        research_mode: bool = False,
+        research_source_mode: Optional[str] = None,
+        research_local_corpus_paths: Optional[List[str]] = None,
     ) -> Session:
         """Create a new named session.
 
@@ -281,9 +284,32 @@ class SessionManager:
             name=name,
             memory_auto_extract=memory_auto_extract,
             max_turns=max_turns,
+            research_mode=research_mode,
+            research_source_mode=research_source_mode,
+            research_local_corpus_paths=research_local_corpus_paths,
         )
         self.current_session = self.repo.get_session_by_id(sid)
         return self.current_session
+
+    def update_current_session_research_profile(
+        self,
+        *,
+        research_mode: bool,
+        research_source_mode: Optional[str],
+        research_local_corpus_paths: Optional[List[str]],
+    ) -> None:
+        """Update persisted research metadata for the active session."""
+        if not self.current_session:
+            return
+        self.repo.update_session_research_profile(
+            int(self.current_session.id),
+            research_mode=research_mode,
+            research_source_mode=research_source_mode,
+            research_local_corpus_paths=research_local_corpus_paths,
+        )
+        refreshed = self.repo.get_session_by_id(int(self.current_session.id))
+        if refreshed:
+            self.current_session = refreshed
 
     def find_sessions(self, search_term: str) -> List[Session]:
         """Find sessions matching the search term.

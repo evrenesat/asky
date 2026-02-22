@@ -388,6 +388,45 @@ class TestGetRelevantContent:
         assert "local:///tmp/corpus/doc.txt" in result
         assert "Local filesystem targets are not supported" in result["local:///tmp/corpus/doc.txt"]["error"]
 
+    def test_get_relevant_accepts_corpus_cache_handles(self, mock_cache):
+        """Safe corpus handles should resolve through cache IDs."""
+        from asky.research.tools import execute_get_relevant_content
+
+        mock_cache.get_cached_by_id.return_value = {
+            "id": 7,
+            "content": "Learning has friction even with fast chips.",
+            "title": "Book Section",
+        }
+
+        with patch("asky.research.tools.get_vector_store") as mock_vs:
+            mock_store = MagicMock()
+            mock_store.has_chunk_embeddings.return_value = True
+            mock_store.search_chunks.return_value = [
+                ("Learning remains a slog despite hardware gains", 0.91),
+            ]
+            mock_vs.return_value = mock_store
+
+            result = execute_get_relevant_content(
+                {"corpus_urls": ["corpus://cache/7"], "query": "learning slog"}
+            )
+
+        assert "chunks" in result["corpus://cache/7"]
+        mock_cache.get_cached_by_id.assert_called_once_with(7)
+
+    def test_get_relevant_reports_invalid_corpus_handle(self, mock_cache):
+        """Malformed corpus handles should return actionable errors."""
+        from asky.research.tools import execute_get_relevant_content
+
+        result = execute_get_relevant_content(
+            {"corpus_urls": ["corpus://cache/not-a-number"], "query": "test"}
+        )
+
+        assert "corpus://cache/not-a-number" in result
+        assert "Invalid corpus handle format" in result["corpus://cache/not-a-number"][
+            "error"
+        ]
+        mock_cache.get_cached_by_id.assert_not_called()
+
 
 class TestGetFullContent:
     """Tests for get_full_content tool."""
@@ -455,6 +494,21 @@ class TestGetFullContent:
 
         assert "local:///tmp/corpus/doc.txt" in result
         assert "Local filesystem targets are not supported" in result["local:///tmp/corpus/doc.txt"]["error"]
+
+    def test_get_full_accepts_corpus_cache_handles(self, mock_cache):
+        """Full content retrieval should support corpus cache handles."""
+        from asky.research.tools import execute_get_full_content
+
+        mock_cache.get_cached_by_id.return_value = {
+            "id": 11,
+            "content": "Complete text",
+            "title": "Cached Local Document",
+        }
+
+        result = execute_get_full_content({"corpus_urls": ["corpus://cache/11"]})
+
+        assert result["corpus://cache/11"]["content"] == "Complete text"
+        mock_cache.get_cached_by_id.assert_called_once_with(11)
 
 
 class TestToolSchemas:

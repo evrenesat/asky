@@ -21,6 +21,7 @@ graph TB
         main["main.py<br/>Entry Point"]
         chat["chat.py<br/>Chat Flow"]
         local_ingest["local_ingestion_flow.py<br/>Pre-LLM Local Corpus Ingestion"]
+        research_cmd["research_commands.py<br/>Manual No-LLM Corpus Query"]
         shortlist_flow["shortlist_flow.py<br/>Pre-LLM Shortlist Orchestration"]
         history["history.py<br/>History Commands"]
         sessions_cli["sessions.py<br/>Session Commands"]
@@ -70,6 +71,7 @@ graph TB
     api_preload -.-> local_ingest
     api_preload -.-> shortlist
     main --> chat
+    main --> research_cmd
     chat --> api_client
     main --> history
     main --> sessions_cli
@@ -146,7 +148,7 @@ For test organization, see `tests/AGENTS.md`.
 ```
 User Query
     ↓
-CLI (main.py) → parse_args() (-lc implies -r)
+CLI (main.py) → parse args (`-r` corpus pointers + `--shortlist` override)
     ↓
 chat.py → build AskyTurnRequest + UI callbacks
     ↓
@@ -157,6 +159,7 @@ context.py → resolve history selectors + context payload
 session.py → resolve create/resume/auto/research session state
     ↓
 preload.py → optional local_ingestion + shortlist pipeline
+           → research-mode deterministic bootstrap retrieval over preloaded corpus handles
            → standard-mode seed URL content preload (budget-aware)
     ↓
 build_messages() (inside AskyClient)
@@ -228,8 +231,15 @@ resolve_session_for_turn()
 SessionManager.build_context_messages() / save_turn() / check_and_compact()
 ```
 
-In research mode, session resolution auto-creates a session if none is active so
-research-memory operations remain session-scoped for both CLI and API callers.
+Session resolution now owns effective research profile state:
+
+- sessions persist `research_mode`, `research_source_mode`, and `research_local_corpus_paths`,
+- resumed research sessions keep research behavior even when `-r` is omitted,
+- `-r` on an existing non-research session promotes and persists that session as research,
+- new `-r` corpus pointers replace stored session corpus pointers.
+
+If no session is active and effective research mode is requested, a research
+session is auto-created so research-memory operations remain session-scoped.
 
 ### Research Retrieval Flow
 
@@ -256,11 +266,11 @@ CLI research turns now perform an explicit post-answer drain
 (`wait_for_background_summaries`) before final banner teardown so late
 summarization token usage appears in the final live snapshot.
 
-Local-file targets can still be preloaded/indexed through research adapters:
+Local-file targets are preloaded/indexed through a built-in local loader:
 
-- built-in adapter fallback is gated by `research.local_document_roots`,
-- user-supplied local targets are normalized as corpus-relative paths under those roots
-  (absolute-looking inputs are still treated as relative),
+- local loading is gated by `research.local_document_roots`,
+- absolute paths ingest only when inside configured roots,
+- root-relative corpus paths resolve under configured roots,
 - directory discovery returns local file links, and file reads
   (txt/html/md/json/csv and PDF/EPUB via PyMuPDF) are cached/indexed.
 

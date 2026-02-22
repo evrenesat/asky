@@ -75,6 +75,9 @@ class Session:
     memory_auto_extract: bool = False
     max_turns: Optional[int] = None
     last_used_at: Optional[str] = None
+    research_mode: bool = False
+    research_source_mode: Optional[str] = None
+    research_local_corpus_paths: List[str] | None = None
 
 
 class HistoryRepository(ABC):
@@ -138,7 +141,14 @@ class HistoryRepository(ABC):
     # Session management methods
     @abstractmethod
     def create_session(
-        self, model: str, name: Optional[str] = None, max_turns: Optional[int] = None
+        self,
+        model: str,
+        name: Optional[str] = None,
+        memory_auto_extract: bool = False,
+        max_turns: Optional[int] = None,
+        research_mode: bool = False,
+        research_source_mode: Optional[str] = None,
+        research_local_corpus_paths: Optional[List[str]] = None,
     ) -> int:
         """Create a new session and return its ID."""
         pass
@@ -193,4 +203,16 @@ class HistoryRepository(ABC):
     @abstractmethod
     def update_session_last_used(self, session_id: int) -> None:
         """Update the last used timestamp for a session."""
+        pass
+
+    @abstractmethod
+    def update_session_research_profile(
+        self,
+        session_id: int,
+        *,
+        research_mode: bool,
+        research_source_mode: Optional[str],
+        research_local_corpus_paths: Optional[List[str]],
+    ) -> None:
+        """Update persisted research profile metadata for a session."""
         pass

@@ -37,25 +37,6 @@ summarization_workers = 2
 # Maximum findings to return from research memory queries
 memory_max_results = 10
 
-# Optional adapter layer to route research targets (e.g. local://...) through
-# user-defined custom tools. This keeps research tools generic while letting
-# you plug in your own readers/indexers (PDF, docs, local files, etc).
-#
-# Contract for adapter tool stdout (JSON):
-# {
-#   "title": "Source title",
-#   "content": "Plain text content (optional for directory-like targets)",
-#   "links": [{"text": "Doc title", "href": "local://doc-id"}],
-#   "error": null
-# }
-#
-# [research.source_adapters.local]
-# enabled = false
-# prefix = "local://"
-# tool = "local_research_source" # Optional single-tool mode (used for both discover/read)
-# discover_tool = "local_list_content" # Optional override for extract_links-style discovery
-# read_tool = "local_read_content"     # Optional override for full/relevant content retrieval
-
 [research.chromadb]
 # Directory used by ChromaDB's persistent client.
 persist_directory = "~/.config/asky/chromadb"

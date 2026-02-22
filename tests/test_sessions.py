@@ -6,6 +6,7 @@ from unittest.mock import patch, MagicMock
 from asky.storage.sqlite import SQLiteHistoryRepository
 from asky.core.session_manager import SessionManager, generate_session_name
 from asky.core.api_client import UsageTracker
+from asky.api.session import resolve_session_for_turn
 
 
 @pytest.fixture
@@ -185,3 +186,93 @@ def test_generate_session_name_strips_terminal_context_wrapper():
     session_name = generate_session_name(query, max_words=3)
 
     assert session_name == "debug_pytest_fixture"
+
+
+def _session_manager_cls_with_repo(repo: SQLiteHistoryRepository):
+    class RepoBackedSessionManager(SessionManager):
+        def __init__(self, model_config, usage_tracker=None, summarization_tracker=None):
+            super().__init__(model_config, usage_tracker, summarization_tracker)
+            self.repo = repo
+
+    return RepoBackedSessionManager
+
+
+def test_resolve_session_uses_stored_research_profile_without_r_flag(temp_repo):
+    sid = temp_repo.create_session(
+        "model-a",
+        name="research-session",
+        research_mode=True,
+        research_source_mode="local_only",
+        research_local_corpus_paths=["/books/book.epub"],
+    )
+    session_cls = _session_manager_cls_with_repo(temp_repo)
+
+    _manager, resolution = resolve_session_for_turn(
+        model_config={"alias": "model-a", "context_size": 1000},
+        usage_tracker=UsageTracker(),
+        summarization_tracker=UsageTracker(),
+        query_text="follow up question",
+        shell_session_id=sid,
+        research_mode=False,
+        session_manager_cls=session_cls,
+    )
+
+    assert resolution.research_mode is True
+    assert resolution.research_source_mode == "local_only"
+    assert resolution.research_local_corpus_paths == ["/books/book.epub"]
+
+
+def test_resolve_session_promotes_non_research_with_r_flag(temp_repo):
+    sid = temp_repo.create_session("model-a", name="standard-session")
+    session_cls = _session_manager_cls_with_repo(temp_repo)
+
+    _manager, resolution = resolve_session_for_turn(
+        model_config={"alias": "model-a", "context_size": 1000},
+        usage_tracker=UsageTracker(),
+        summarization_tracker=UsageTracker(),
+        query_text="switch to research",
+        shell_session_id=sid,
+        research_mode=True,
+        research_flag_provided=True,
+        session_manager_cls=session_cls,
+    )
+
+    reloaded = temp_repo.get_session_by_id(sid)
+    assert resolution.research_mode is True
+    assert resolution.research_source_mode == "web_only"
+    assert resolution.research_local_corpus_paths == []
+    assert reloaded is not None
+    assert reloaded.research_mode is True
+
+
+def test_resolve_session_replaces_corpus_profile_when_new_pointers_passed(temp_repo):
+    sid = temp_repo.create_session(
+        "model-a",
+        name="research-session",
+        research_mode=True,
+        research_source_mode="local_only",
+        research_local_corpus_paths=["/books/old.epub"],
+    )
+    session_cls = _session_manager_cls_with_repo(temp_repo)
+
+    _manager, resolution = resolve_session_for_turn(
+        model_config={"alias": "model-a", "context_size": 1000},
+        usage_tracker=UsageTracker(),
+        summarization_tracker=UsageTracker(),
+        query_text="update corpus",
+        shell_session_id=sid,
+        research_mode=True,
+        research_flag_provided=True,
+        research_source_mode="mixed",
+        replace_research_corpus=True,
+        requested_local_corpus_paths=["/books/new.epub"],
+        session_manager_cls=session_cls,
+    )
+
+    reloaded = temp_repo.get_session_by_id(sid)
+    assert resolution.research_mode is True
+    assert resolution.research_source_mode == "mixed"
+    assert resolution.research_local_corpus_paths == ["/books/new.epub"]
+    assert reloaded is not None
+    assert reloaded.research_source_mode == "mixed"
+    assert reloaded.research_local_corpus_paths == ["/books/new.epub"]

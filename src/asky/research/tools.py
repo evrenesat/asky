@@ -14,7 +14,6 @@ from asky.research.cache import ResearchCache
 from asky.research.chunker import chunk_text
 from asky.research.embeddings import get_embedding_client
 from asky.research.vector_store import get_vector_store
-from asky.research.adapters import fetch_source_via_adapter, has_source_adapter
 from asky.url_utils import is_local_filesystem_target, sanitize_url
 
 logger = logging.getLogger(__name__)
@@ -24,6 +23,7 @@ MAX_RAG_CANDIDATE_MULTIPLIER = 3
 CHUNK_DIVERSITY_SIMILARITY_THRESHOLD = 0.92
 CONTENT_PREVIEW_SHORT_CHARS = 2000
 CONTENT_PREVIEW_LONG_CHARS = 3000
+CORPUS_CACHE_HANDLE_PREFIX = "corpus://cache/"
 LOCAL_TARGET_UNSUPPORTED_ERROR = (
     "Local filesystem targets are not supported by this tool. "
     "Use an explicit local-source tool instead."
@@ -247,6 +247,72 @@ def _dedupe_preserve_order(values: List[str]) -> List[str]:
     return deduped
 
 
+def _extract_source_targets(
+    args: Dict[str, Any],
+    *,
+    allow_corpus_urls: bool = False,
+) -> List[str]:
+    """Extract requested source identifiers from tool args."""
+    urls = args.get("urls", [])
+    if isinstance(urls, str):
+        urls = [urls]
+    if not isinstance(urls, list):
+        urls = []
+
+    if urls:
+        return _dedupe_preserve_order([_sanitize_url(u) for u in urls if u])
+
+    if allow_corpus_urls:
+        corpus_urls = args.get("corpus_urls", [])
+        if isinstance(corpus_urls, str):
+            corpus_urls = [corpus_urls]
+        if isinstance(corpus_urls, list):
+            return _dedupe_preserve_order(
+                [_sanitize_url(u) for u in corpus_urls if u]
+            )
+
+    return []
+
+
+def _parse_corpus_cache_handle(target: str) -> Optional[int]:
+    """Parse `corpus://cache/<id>` handles into integer cache IDs."""
+    normalized = _sanitize_url(target)
+    prefix = CORPUS_CACHE_HANDLE_PREFIX
+    if not normalized.startswith(prefix):
+        return None
+    suffix = normalized[len(prefix) :].strip()
+    if not suffix.isdigit():
+        return None
+    return int(suffix)
+
+
+def _resolve_cached_source(
+    cache: ResearchCache,
+    source: str,
+) -> tuple[Optional[Dict[str, Any]], Optional[str]]:
+    """Resolve a URL or corpus handle to a cached entry."""
+    handle_cache_id = _parse_corpus_cache_handle(source)
+    if handle_cache_id is not None:
+        cached = cache.get_cached_by_id(handle_cache_id)
+        if not cached:
+            return None, "Not cached. Use preload/ingestion before querying this handle."
+        return cached, None
+
+    if source.startswith(CORPUS_CACHE_HANDLE_PREFIX):
+        return (
+            None,
+            f"Invalid corpus handle format. Expected {CORPUS_CACHE_HANDLE_PREFIX}<id>.",
+        )
+
+    if is_local_filesystem_target(source):
+        return None, LOCAL_TARGET_UNSUPPORTED_ERROR
+
+    cached = cache.get_cached(source)
+    if not cached:
+        return None, "Not cached. Use extract_links first to cache this URL."
+    return cached, None
+
+
 def _normalize_session_id(raw_session_id: Any) -> Optional[str]:
     """Normalize optional session identifiers from tool arguments."""
     if raw_session_id is None:
@@ -283,15 +349,8 @@ def _fetch_and_parse(
 ) -> Dict[str, Any]:
     """Fetch URL and extract content + links."""
     url = _sanitize_url(url)
-
-    adapter_result = fetch_source_via_adapter(
-        url,
-        query=query,
-        max_links=max_links,
-        operation=operation,
-    )
-    if adapter_result is not None:
-        return adapter_result
+    del query
+    del operation
 
     try:
         payload = fetch_url_document(
@@ -321,48 +380,6 @@ def _fetch_and_parse(
             "links": [],
             "error": f"Unexpected error: {str(e)}",
         }
-
-
-def _ensure_adapter_cached(
-    cache: ResearchCache,
-    url: str,
-    query: Optional[str] = None,
-    max_links: Optional[int] = None,
-    require_content: bool = False,
-    usage_tracker: Optional[Any] = None,
-) -> tuple[Optional[Dict[str, Any]], Optional[str]]:
-    """Ensure adapter targets are cached and optionally hydrated with content."""
-    cached = cache.get_cached(url)
-    if cached and (not require_content or cached.get("content")):
-        return cached, None
-
-    if not has_source_adapter(url):
-        return cached, None
-
-    parsed = _fetch_and_parse(
-        url,
-        query=query,
-        max_links=max_links,
-        operation="read" if require_content else "discover",
-    )
-    if parsed.get("error"):
-        return cached, parsed["error"]
-    if require_content and not parsed.get("content"):
-        return cached, "Adapter returned empty content."
-
-    cache.cache_url(
-        url=url,
-        content=parsed.get("content", ""),
-        title=parsed.get("title", url),
-        links=parsed.get("links", []),
-        trigger_summarization=bool(parsed.get("content", "")),
-        usage_tracker=usage_tracker,
-    )
-
-    cached = cache.get_cached(url)
-    if require_content and cached and not cached.get("content"):
-        return cached, "Adapter returned empty content."
-    return cached, None
 
 
 def _get_cache() -> ResearchCache:
@@ -548,18 +565,9 @@ def execute_get_link_summaries(args: Dict[str, Any]) -> Dict[str, Any]:
 
     cache = _get_cache()
     results = dict(rejected_results)
-    usage_tracker = args.get("summarization_tracker")
 
     for url in urls:
         summary_info = cache.get_summary(url)
-        if not summary_info and has_source_adapter(url):
-            _, adapter_error = _ensure_adapter_cached(
-                cache, url, require_content=True, usage_tracker=usage_tracker
-            )
-            if adapter_error:
-                results[url] = {"error": f"Adapter fetch failed: {adapter_error}"}
-                continue
-            summary_info = cache.get_summary(url)
 
         if not summary_info:
             results[url] = {
@@ -599,56 +607,31 @@ def execute_get_link_summaries(args: Dict[str, Any]) -> Dict[str, Any]:
 
 def execute_get_relevant_content(args: Dict[str, Any]) -> Dict[str, Any]:
     """Retrieve relevant content chunks from cached URLs using RAG."""
-    urls = args.get("urls", [])
-    if isinstance(urls, str):
-        urls = [urls]
-
-    urls = _dedupe_preserve_order([_sanitize_url(u) for u in urls if u])
+    urls = _extract_source_targets(args, allow_corpus_urls=True)
     query = args.get("query", "")
     max_chunks = args.get("max_chunks", 5)
     dense_weight = args.get("dense_weight", DEFAULT_HYBRID_DENSE_WEIGHT)
     min_relevance = args.get("min_relevance", DEFAULT_MIN_CHUNK_RELEVANCE)
 
     if not urls:
-        return {"error": "No URLs provided."}
+        return {"error": "No sources provided. Specify 'urls' or 'corpus_urls'."}
     if not query:
         return {"error": "Query is required for relevant content retrieval."}
 
-    urls, rejected_results = _split_local_targets(urls)
-    if not urls:
-        return rejected_results
-
     cache = _get_cache()
-    results = dict(rejected_results)
-    usage_tracker = args.get("summarization_tracker")
+    results: Dict[str, Any] = {}
 
-    for url in urls:
-        cached, adapter_error = _ensure_adapter_cached(
-            cache=cache,
-            url=url,
-            query=query,
-            max_links=max_chunks,
-            require_content=True,
-            usage_tracker=usage_tracker,
-        )
-        if adapter_error and not cached:
-            results[url] = {"error": f"Adapter fetch failed: {adapter_error}"}
-            continue
-
-        if not cached:
-            results[url] = {
-                "error": "Not cached. Use extract_links first to cache this URL."
-            }
+    for source in urls:
+        cached, lookup_error = _resolve_cached_source(cache=cache, source=source)
+        if lookup_error:
+            results[source] = {"error": lookup_error}
             continue
 
         cache_id = cached["id"]
         content = cached["content"]
 
         if not content:
-            if adapter_error:
-                results[url] = {"error": f"Adapter fetch failed: {adapter_error}"}
-                continue
-            results[url] = {"error": "Cached content is empty."}
+            results[source] = {"error": "Cached content is empty."}
             continue
 
         try:
@@ -666,7 +649,7 @@ def execute_get_relevant_content(args: Dict[str, Any]) -> Dict[str, Any]:
                     has_embeddings = model_result
 
             if not has_embeddings:
-                logger.debug(f"Generating chunk embeddings for {url}")
+                logger.debug(f"Generating chunk embeddings for {source}")
                 chunks = chunk_text(content)
                 stored = vector_store.store_chunk_embeddings(cache_id, chunks)
                 if stored == 0:
@@ -683,7 +666,7 @@ def execute_get_relevant_content(args: Dict[str, Any]) -> Dict[str, Any]:
             relevant = _select_diverse_chunks(ranked_chunks, max_chunks=max_chunks)
 
             if relevant:
-                results[url] = {
+                results[source] = {
                     "title": cached.get("title", ""),
                     "chunks": [
                         {
@@ -698,7 +681,7 @@ def execute_get_relevant_content(args: Dict[str, Any]) -> Dict[str, Any]:
                 }
             else:
                 # No relevant chunks found - return truncated content as fallback
-                results[url] = {
+                results[source] = {
                     "title": cached.get("title", ""),
                     "note": "No highly relevant sections found. Returning content preview.",
                     "content_preview": content[:CONTENT_PREVIEW_SHORT_CHARS]
@@ -706,9 +689,9 @@ def execute_get_relevant_content(args: Dict[str, Any]) -> Dict[str, Any]:
                 }
 
         except Exception as e:
-            logger.error(f"RAG retrieval failed for {url}: {e}")
+            logger.error(f"RAG retrieval failed for {source}: {e}")
             # Fallback: return truncated full content
-            results[url] = {
+            results[source] = {
                 "title": cached.get("title", ""),
                 "fallback": True,
                 "note": f"Semantic search unavailable ({str(e)[:50]}). Returning content preview.",
@@ -721,45 +704,25 @@ def execute_get_relevant_content(args: Dict[str, Any]) -> Dict[str, Any]:
 
 def execute_get_full_content(args: Dict[str, Any]) -> Dict[str, Any]:
     """Get full cached content for URLs."""
-    urls = args.get("urls", [])
-    if isinstance(urls, str):
-        urls = [urls]
-
-    urls = _dedupe_preserve_order([_sanitize_url(u) for u in urls if u])
+    urls = _extract_source_targets(args, allow_corpus_urls=True)
     if not urls:
-        return {"error": "No URLs provided."}
-
-    urls, rejected_results = _split_local_targets(urls)
-    if not urls:
-        return rejected_results
+        return {"error": "No sources provided. Specify 'urls' or 'corpus_urls'."}
 
     cache = _get_cache()
-    results = dict(rejected_results)
-    usage_tracker = args.get("summarization_tracker")
+    results: Dict[str, Any] = {}
 
-    for url in urls:
-        cached, adapter_error = _ensure_adapter_cached(
-            cache=cache, url=url, require_content=True, usage_tracker=usage_tracker
-        )
-        if adapter_error and not cached:
-            results[url] = {"error": f"Adapter fetch failed: {adapter_error}"}
-            continue
-
-        if not cached:
-            results[url] = {
-                "error": "Not cached. Use extract_links first to cache this URL."
-            }
+    for source in urls:
+        cached, lookup_error = _resolve_cached_source(cache=cache, source=source)
+        if lookup_error:
+            results[source] = {"error": lookup_error}
             continue
 
         content = cached.get("content", "")
         if not content:
-            if adapter_error:
-                results[url] = {"error": f"Adapter fetch failed: {adapter_error}"}
-                continue
-            results[url] = {"error": "Cached content is empty."}
+            results[source] = {"error": "Cached content is empty."}
             continue
 
-        results[url] = {
+        results[source] = {
             "title": cached.get("title", ""),
             "content": content,
             "content_length": len(content),

@@ -400,6 +400,7 @@ def create_research_tool_registry(
     disabled_tools: Optional[Set[str]] = None,
     session_id: Optional[str] = None,
     corpus_preloaded: bool = False,
+    preloaded_corpus_urls: Optional[list[str]] = None,
     summarization_tracker: Optional[UsageTracker] = None,
     tool_trace_callback: Optional[TraceCallback] = None,
 ) -> ToolRegistry:
@@ -453,11 +454,18 @@ def create_research_tool_registry(
 
     research_bindings = load_research_tool_bindings()
     schemas = research_bindings["schemas"]
+    fallback_corpus_urls = [url for url in (preloaded_corpus_urls or []) if str(url).strip()]
 
     def _execute_with_context(
         executor: ToolExecutor,
+        *,
+        include_corpus_url_fallback: bool = False,
     ) -> ToolExecutor:
-        if session_id is None and summarization_tracker is None:
+        if (
+            session_id is None
+            and summarization_tracker is None
+            and not include_corpus_url_fallback
+        ):
             return executor
 
         def _wrapped(args: Dict[str, Any]) -> Dict[str, Any]:
@@ -465,6 +473,7 @@ def create_research_tool_registry(
                 session_id is not None
                 and "session_id" in args
                 and summarization_tracker is None
+                and not include_corpus_url_fallback
             ):
                 return executor(args)
             enriched_args = dict(args)
@@ -472,6 +481,10 @@ def create_research_tool_registry(
                 enriched_args["session_id"] = session_id
             if summarization_tracker is not None:
                 enriched_args["summarization_tracker"] = summarization_tracker
+            if include_corpus_url_fallback and fallback_corpus_urls:
+                existing_urls = enriched_args.get("urls")
+                if not existing_urls:
+                    enriched_args["corpus_urls"] = list(fallback_corpus_urls)
             return executor(enriched_args)
 
         return _wrapped
@@ -497,13 +510,19 @@ def create_research_tool_registry(
             registry.register(
                 tool_name,
                 schema_with_overrides,
-                _execute_with_context(research_bindings["get_relevant_content"]),
+                _execute_with_context(
+                    research_bindings["get_relevant_content"],
+                    include_corpus_url_fallback=True,
+                ),
             )
         elif tool_name == "get_full_content":
             registry.register(
                 tool_name,
                 schema_with_overrides,
-                _execute_with_context(research_bindings["get_full_content"]),
+                _execute_with_context(
+                    research_bindings["get_full_content"],
+                    include_corpus_url_fallback=True,
+                ),
             )
         elif tool_name == "save_finding":
             registry.register(

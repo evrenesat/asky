@@ -1,40 +1,63 @@
 import pytest
-import os
 from unittest.mock import patch
+
 from asky.cli.main import _resolve_research_corpus
 
 
 def test_resolve_research_corpus_disabled():
-    enabled, paths, leftover = _resolve_research_corpus(False)
+    enabled, paths, leftover, source_mode, replace = _resolve_research_corpus(False)
     assert enabled is False
     assert paths is None
     assert leftover is None
+    assert source_mode is None
+    assert replace is False
 
-    enabled, paths, leftover = _resolve_research_corpus(None)
+    enabled, paths, leftover, source_mode, replace = _resolve_research_corpus(None)
     assert enabled is False
     assert paths is None
     assert leftover is None
+    assert source_mode is None
+    assert replace is False
 
 
 def test_resolve_research_corpus_enabled_no_pointer():
-    enabled, paths, leftover = _resolve_research_corpus(True)
+    enabled, paths, leftover, source_mode, replace = _resolve_research_corpus(True)
     assert enabled is True
     assert paths is None
     assert leftover is None
+    assert source_mode is None
+    assert replace is False
 
 
 def test_resolve_research_corpus_absolute_path(tmp_path):
-    # Success: absolute path exists
-    abs_file = tmp_path / "test.pdf"
+    root = tmp_path / "root"
+    root.mkdir()
+    abs_file = root / "test.pdf"
     abs_file.touch()
-    enabled, paths, leftover = _resolve_research_corpus(str(abs_file))
+
+    with patch("asky.cli.main.RESEARCH_LOCAL_DOCUMENT_ROOTS", [str(root)]):
+        enabled, paths, leftover, source_mode, replace = _resolve_research_corpus(
+            str(abs_file)
+        )
     assert enabled is True
-    assert paths == [str(abs_file)]
+    assert paths == [str(abs_file.resolve())]
     assert leftover is None
+    assert source_mode == "local_only"
+    assert replace is True
+
+
+def test_resolve_research_corpus_absolute_outside_roots_rejected(tmp_path):
+    root = tmp_path / "root"
+    root.mkdir()
+    outside = tmp_path / "outside.pdf"
+    outside.touch()
+
+    with patch("asky.cli.main.RESEARCH_LOCAL_DOCUMENT_ROOTS", [str(root)]):
+        with pytest.raises(ValueError, match="outside configured local_document_roots"):
+            _resolve_research_corpus(str(outside))
 
 
 def test_resolve_research_corpus_root_lookup(tmp_path):
-    # Setup corpus roots
     root1 = tmp_path / "root1"
     root1.mkdir()
     root2 = tmp_path / "root2"
@@ -44,10 +67,14 @@ def test_resolve_research_corpus_root_lookup(tmp_path):
     target_file.touch()
 
     with patch("asky.cli.main.RESEARCH_LOCAL_DOCUMENT_ROOTS", [str(root1), str(root2)]):
-        enabled, paths, leftover = _resolve_research_corpus("book.epub")
+        enabled, paths, leftover, source_mode, replace = _resolve_research_corpus(
+            "book.epub"
+        )
         assert enabled is True
-        assert paths == [str(target_file)]
+        assert paths == [str(target_file.resolve())]
         assert leftover is None
+        assert source_mode == "local_only"
+        assert replace is True
 
 
 def test_resolve_research_corpus_multi_pointer(tmp_path):
@@ -59,28 +86,59 @@ def test_resolve_research_corpus_multi_pointer(tmp_path):
     f2.touch()
 
     with patch("asky.cli.main.RESEARCH_LOCAL_DOCUMENT_ROOTS", [str(root)]):
-        enabled, paths, leftover = _resolve_research_corpus("a.pdf, b.epub")
+        enabled, paths, leftover, source_mode, replace = _resolve_research_corpus(
+            "a.pdf, b.epub"
+        )
         assert enabled is True
-        assert set(paths) == {str(f1), str(f2)}
+        assert set(paths or []) == {str(f1.resolve()), str(f2.resolve())}
         assert leftover is None
+        assert source_mode == "local_only"
+        assert replace is True
+
+
+def test_resolve_research_corpus_mixed_mode_with_web_token(tmp_path):
+    root = tmp_path / "root"
+    root.mkdir()
+    f1 = root / "a.pdf"
+    f1.touch()
+
+    with patch("asky.cli.main.RESEARCH_LOCAL_DOCUMENT_ROOTS", [str(root)]):
+        enabled, paths, leftover, source_mode, replace = _resolve_research_corpus(
+            "a.pdf,web"
+        )
+        assert enabled is True
+        assert paths == [str(f1.resolve())]
+        assert leftover is None
+        assert source_mode == "mixed"
+        assert replace is True
+
+
+def test_resolve_research_corpus_web_only_pointer():
+    enabled, paths, leftover, source_mode, replace = _resolve_research_corpus("web")
+    assert enabled is True
+    assert paths == []
+    assert leftover is None
+    assert source_mode == "web_only"
+    assert replace is True
 
 
 def test_resolve_research_corpus_query_fallback():
     with patch("asky.cli.main.RESEARCH_LOCAL_DOCUMENT_ROOTS", []):
-        # "query" is NOT a path (/...) and NOT a list (,), so it's a leftover
-        enabled, paths, leftover = _resolve_research_corpus("query")
+        enabled, paths, leftover, source_mode, replace = _resolve_research_corpus(
+            "query"
+        )
         assert enabled is True
         assert paths is None
         assert leftover == "query"
+        assert source_mode is None
+        assert replace is False
 
 
 def test_resolve_research_corpus_not_found_error():
     with patch("asky.cli.main.RESEARCH_LOCAL_DOCUMENT_ROOTS", []):
-        # Starts with / -> explicit path, fails if missing
         with pytest.raises(ValueError, match="could not be resolved"):
             _resolve_research_corpus("/missing.pdf")
 
-        # Contains , -> explicit list, fails if missing
         with pytest.raises(ValueError, match="could not be resolved"):
             _resolve_research_corpus("a.pdf,b.pdf")
 
@@ -92,7 +150,11 @@ def test_resolve_research_corpus_directory(tmp_path):
     subdir.mkdir()
 
     with patch("asky.cli.main.RESEARCH_LOCAL_DOCUMENT_ROOTS", [str(root)]):
-        enabled, paths, leftover = _resolve_research_corpus("papers")
+        enabled, paths, leftover, source_mode, replace = _resolve_research_corpus(
+            "papers"
+        )
         assert enabled is True
-        assert paths == [str(subdir)]
+        assert paths == [str(subdir.resolve())]
         assert leftover is None
+        assert source_mode == "local_only"
+        assert replace is True

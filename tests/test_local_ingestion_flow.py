@@ -106,3 +106,36 @@ def test_preload_local_research_sources_uses_explicit_targets():
 
     assert payload["targets"] == ["/explicit/path"]
     mock_extract.assert_not_called()
+
+
+def test_preload_local_research_sources_ingests_absolute_path_under_roots(tmp_path):
+    from asky.cli.local_ingestion_flow import preload_local_research_sources
+
+    root = tmp_path / "books"
+    root.mkdir()
+    source_file = root / "book.txt"
+    source_file.write_text("chapter one", encoding="utf-8")
+
+    cache = MagicMock()
+    cache.cache_url.return_value = 101
+    vector_store = MagicMock()
+    vector_store.has_chunk_embeddings.return_value = False
+    vector_store.embedding_client.model = "test-embedding-model"
+    vector_store.store_chunk_embeddings.return_value = 1
+
+    with (
+        patch("asky.research.adapters.RESEARCH_LOCAL_DOCUMENT_ROOTS", [str(root)]),
+        patch("asky.cli.local_ingestion_flow.ResearchCache", return_value=cache),
+        patch(
+            "asky.cli.local_ingestion_flow.get_vector_store", return_value=vector_store
+        ),
+        patch("asky.cli.local_ingestion_flow.chunk_text", return_value=[(0, "chunk")]),
+    ):
+        payload = preload_local_research_sources(
+            "summarize this book",
+            explicit_targets=[str(source_file.resolve())],
+        )
+
+    assert payload["enabled"] is True
+    assert len(payload["ingested"]) == 1
+    assert payload["stats"]["processed_documents"] == 1

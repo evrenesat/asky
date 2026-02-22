@@ -9,6 +9,7 @@ Command-line interface layer handling argument parsing, command routing, and use
 | `main.py`                 | Entry point, argument parsing, command routing                                  |
 | `chat.py`                 | Chat conversation orchestration                                                 |
 | `local_ingestion_flow.py` | Pre-LLM local source preload for research mode (path-redacted local KB context) |
+| `research_commands.py`    | Manual corpus query commands (no-LLM retrieval inspection)                      |
 | `shortlist_flow.py`       | Pre-LLM shortlist execution + banner updates                                    |
 | `completion.py`           | Shell completion with argcomplete                                               |
 | `display.py`              | Banner rendering, live status updates                                           |
@@ -44,8 +45,9 @@ Command-line interface layer handling argument parsing, command routing, and use
 | `-rs, --resume-session`        | `sessions.py`                                                  |
 | `-off, -tool-off, --tool-off`  | `chat.py` (runtime tool exclusion, supports `all`)             |
 | `--list-tools`                 | `main.py` (list all LLM tools and exit)                        |
-| `-r, --research`               | Enable deep research mode                                      |
-| `-lc, --local-corpus`          | Explicit local research corpus (implies `-r`)                  |
+| `--query-corpus`               | `research_commands.py` (deterministic corpus retrieval, no model call) |
+| `-r, --research`               | Enable/promote research mode with optional corpus pointer list |
+| `--shortlist auto\|on\|off`    | Per-run shortlist override                                      |
 | `-sfm, --session-from-message` | `history.py`                                                   |
 | `--clean-session-research`     | `sessions.py`                                                  |
 
@@ -58,6 +60,13 @@ Main conversation entry point via `run_chat()`:
 3. **API Orchestration**: `AskyClient.run_turn()` performs context/session/preload/model/persist flow.
 4. **UI Rendering**: `chat.py` maps API notices/events into Rich output + banner updates.
 5. **Interface Side Effects**: optional browser/email/push/report handling (including dynamic sidebar index updates).
+
+Research mode is session-owned:
+
+- Resumed sessions with `research_mode=true` continue in research mode even when `-r` is omitted.
+- Passing `-r` on a non-research session promotes and persists that session as research.
+- Corpus pointers passed with `-r` replace the session's stored corpus pointer list.
+- Follow-up turns in that session reuse persisted corpus/source-mode settings automatically.
 
 ### Error Handling
 
@@ -101,6 +110,7 @@ Main conversation entry point via `run_chat()`:
 main.py
 ├── chat.py → api/client.py
 ├── local_ingestion_flow.py → research/adapters.py, research/cache.py, research/vector_store.py
+├── research_commands.py → research/tools.py, research/cache.py, local_ingestion_flow.py
 ├── history.py → storage/sqlite.py
 ├── sessions.py → storage/sqlite.py
 ├── prompts.py → config/

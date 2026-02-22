@@ -174,9 +174,64 @@ def test_asky_client_run_messages_uses_research_registry(
         disabled_tools={"web_search"},
         session_id="42",
         corpus_preloaded=False,
+        preloaded_corpus_urls=[],
         summarization_tracker=client.summarization_tracker,
         tool_trace_callback=None,
     )
+
+
+@patch.object(AskyClient, "run_messages", return_value="Final")
+@patch.object(
+    AskyClient,
+    "_build_bootstrap_retrieval_context",
+    return_value="Bootstrap retrieval evidence from preloaded corpus:\n- Source: corpus://cache/9",
+)
+@patch(
+    "asky.api.client.run_preload_pipeline",
+    return_value=PreloadResolution(
+        combined_context="Local knowledge base preloaded before tool calls",
+        local_payload={
+            "targets": [],
+            "ingested": [{"source_handle": "corpus://cache/9"}],
+            "stats": {"indexed_chunks": 2},
+            "warnings": [],
+        },
+        preloaded_source_urls=["corpus://cache/9"],
+        preloaded_source_handles={"corpus://cache/9": "corpus://cache/9"},
+        shortlist_stats={"enabled": False},
+    ),
+)
+@patch(
+    "asky.api.client.resolve_session_for_turn",
+    return_value=(
+        None,
+        SessionResolution(
+            research_mode=True,
+            research_source_mode="local_only",
+            research_local_corpus_paths=["/tmp/corpus/book.epub"],
+        ),
+    ),
+)
+def test_run_turn_research_adds_bootstrap_context_to_user_message(
+    mock_resolve_session,
+    mock_preload,
+    mock_bootstrap,
+    mock_run_messages,
+):
+    client = AskyClient(AskyConfig(model_alias="gf", research_mode=False))
+    result = client.run_turn(
+        AskyTurnRequest(
+            query_text="summarize section on moore's law",
+            save_history=False,
+        )
+    )
+
+    assert result.final_answer == "Final"
+    sent_messages = mock_run_messages.call_args.args[0]
+    assert "Bootstrap retrieval evidence from preloaded corpus" in sent_messages[-1][
+        "content"
+    ]
+    mock_bootstrap.assert_called_once()
 
 
 @patch.object(AskyClient, "run_messages", return_value="Answer")
@@ -202,7 +257,7 @@ def test_asky_client_chat_returns_structured_result(mock_run_messages):
 )
 @patch(
     "asky.api.client.resolve_session_for_turn",
-    return_value=(None, SessionResolution()),
+    return_value=(None, SessionResolution(research_mode=False)),
 )
 @patch(
     "asky.api.client.load_context_from_history",
@@ -275,13 +330,23 @@ def test_asky_client_run_turn_halts_on_ambiguous_session(
     "asky.api.client.run_preload_pipeline",
     return_value=PreloadResolution(
         combined_context="Preloaded context",
-        local_payload={"targets": ["/tmp/corpus/doc.md"], "ingested": []},
+        local_payload={
+            "targets": ["/tmp/corpus/doc.md"],
+            "ingested": [{"target": "local:///tmp/corpus/doc.md"}],
+        },
         shortlist_stats={"enabled": True},
     ),
 )
 @patch(
     "asky.api.client.resolve_session_for_turn",
-    return_value=(None, SessionResolution()),
+    return_value=(
+        None,
+        SessionResolution(
+            research_mode=True,
+            research_source_mode="local_only",
+            research_local_corpus_paths=["/tmp/corpus/doc.md"],
+        ),
+    ),
 )
 @patch("asky.api.client.create_research_tool_registry")
 def test_asky_client_run_turn_redacts_local_targets_for_model(
@@ -310,6 +375,7 @@ def test_asky_client_run_turn_redacts_local_targets_for_model(
         session_manager=ANY,
         research_session_id=None,
         preload=result.preload,
+        research_mode=True,
         display_callback=None,
         verbose_output_callback=None,
         summarization_status_callback=None,
@@ -376,7 +442,7 @@ def test_asky_client_run_turn_propagates_local_corpus_paths(
 )
 @patch(
     "asky.api.client.resolve_session_for_turn",
-    return_value=(None, SessionResolution()),
+    return_value=(None, SessionResolution(research_mode=False)),
 )
 def test_run_turn_emits_preload_provenance_event(
     _mock_resolve_session,
@@ -402,7 +468,15 @@ def test_run_turn_emits_preload_provenance_event(
 
 @patch("asky.api.client.run_preload_pipeline")
 @patch(
-    "asky.api.client.resolve_session_for_turn", return_value=(None, SessionResolution())
+    "asky.api.client.resolve_session_for_turn",
+    return_value=(
+        None,
+        SessionResolution(
+            research_mode=True,
+            research_source_mode="web_only",
+            research_local_corpus_paths=["/opt/explicit"],
+        ),
+    ),
 )
 @patch("asky.api.client.AskyClient.run_messages")
 @patch("asky.api.client.save_interaction")
@@ -441,6 +515,38 @@ def test_asky_client_run_turn_enables_hint_with_only_explicit_paths(
 
 
 @patch("asky.api.client.save_interaction")
+@patch("asky.api.client.AskyClient.run_messages")
+@patch(
+    "asky.api.client.run_preload_pipeline",
+    return_value=PreloadResolution(local_payload={"ingested": [], "warnings": []}),
+)
+@patch(
+    "asky.api.client.resolve_session_for_turn",
+    return_value=(
+        None,
+        SessionResolution(
+            research_mode=True,
+            research_source_mode="local_only",
+            research_local_corpus_paths=["/missing/book.epub"],
+        ),
+    ),
+)
+def test_run_turn_fails_fast_when_local_only_ingestion_is_empty(
+    _mock_resolve_session,
+    _mock_preload,
+    mock_run_messages,
+    mock_save_interaction,
+):
+    client = AskyClient(AskyConfig(model_alias="gf", research_mode=True))
+    result = client.run_turn(AskyTurnRequest(query_text="summarize section"))
+
+    assert result.halted is True
+    assert result.halt_reason == "local_corpus_ingestion_failed"
+    mock_run_messages.assert_not_called()
+    mock_save_interaction.assert_not_called()
+
+
+@patch("asky.api.client.save_interaction")
 @patch.object(AskyClient, "run_messages", return_value="Final")
 @patch(
     "asky.api.client.run_preload_pipeline",
@@ -451,7 +557,7 @@ def test_asky_client_run_turn_enables_hint_with_only_explicit_paths(
 )
 @patch(
     "asky.api.client.resolve_session_for_turn",
-    return_value=(None, SessionResolution()),
+    return_value=(None, SessionResolution(research_mode=False)),
 )
 def test_run_turn_disables_retrieval_tools_when_seed_direct_mode_ready(
     _mock_resolve_session,
@@ -477,7 +583,7 @@ def test_run_turn_disables_retrieval_tools_when_seed_direct_mode_ready(
 )
 @patch(
     "asky.api.client.resolve_session_for_turn",
-    return_value=(None, SessionResolution()),
+    return_value=(None, SessionResolution(research_mode=True)),
 )
 def test_run_turn_does_not_disable_retrieval_tools_in_research_mode(
     _mock_resolve_session,

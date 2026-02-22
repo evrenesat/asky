@@ -112,6 +112,32 @@ def test_parse_args_lean_flag():
         assert args.query == ["query"]
 
 
+def test_parse_args_shortlist_override():
+    with patch("sys.argv", ["asky", "--shortlist", "off", "query"]):
+        args = parse_args()
+        assert args.shortlist == "off"
+        assert args.query == ["query"]
+
+
+def test_parse_args_query_corpus_options():
+    with patch(
+        "sys.argv",
+        [
+            "asky",
+            "--query-corpus",
+            "learning bottlenecks",
+            "--query-corpus-max-sources",
+            "7",
+            "--query-corpus-max-chunks",
+            "2",
+        ],
+    ):
+        args = parse_args()
+        assert args.query_corpus == "learning bottlenecks"
+        assert args.query_corpus_max_sources == 7
+        assert args.query_corpus_max_chunks == 2
+
+
 def test_parse_args_tool_off_aliases():
     with patch(
         "sys.argv",
@@ -903,6 +929,20 @@ def test_shortlist_enabled_resolution_prefers_model_override():
     assert reason == "model_override"
 
 
+def test_shortlist_enabled_resolution_prefers_request_override():
+    from asky.cli.chat import _shortlist_enabled_for_request
+
+    args = argparse.Namespace(lean=False, shortlist="on")
+    model_cfg = {"id": "test-model", "source_shortlist_enabled": False}
+    enabled, reason = _shortlist_enabled_for_request(
+        args=args,
+        model_config=model_cfg,
+        research_mode=False,
+    )
+    assert enabled is True
+    assert reason == "request_override_on"
+
+
 def test_print_shortlist_verbose(capsys):
     from rich.console import Console
     from asky.cli.chat import _print_shortlist_verbose
@@ -1510,6 +1550,72 @@ def test_slash_partial_filters_prompts(
         main()
 
     mock_list_prompts.assert_called_once_with(filter_prefix="g")
+
+
+@patch("asky.cli.main.research_commands.run_manual_corpus_query_command")
+@patch("asky.cli.main._resolve_research_corpus")
+@patch("asky.cli.main.parse_args")
+@patch("asky.cli.main.init_db")
+@patch("asky.cli.main.setup_logging")
+def test_main_runs_manual_query_corpus_command(
+    mock_setup_logging,
+    mock_init_db,
+    mock_parse,
+    mock_resolve_corpus,
+    mock_manual_query,
+):
+    mock_resolve_corpus.return_value = (
+        True,
+        ["/tmp/books/book.epub"],
+        None,
+        "local_only",
+        True,
+    )
+    mock_parse.return_value = argparse.Namespace(
+        model="gf",
+        history=None,
+        continue_ids=None,
+        summarize=False,
+        delete_messages=None,
+        delete_sessions=None,
+        all=False,
+        print_session=None,
+        print_ids=None,
+        prompts=False,
+        verbose=False,
+        open=False,
+        mail_recipients=None,
+        subject=None,
+        sticky_session=None,
+        resume_session=None,
+        session_end=False,
+        session_history=None,
+        terminal_lines=None,
+        add_model=False,
+        edit_model=None,
+        query=[],
+        reply=False,
+        session_from_message=None,
+        completion_script=None,
+        query_corpus="moore law learning",
+        query_corpus_max_sources=9,
+        query_corpus_max_chunks=2,
+        local_corpus=["/tmp/books/book.epub"],
+        shortlist="auto",
+        turns=None,
+        elephant_mode=False,
+        research=False,
+    )
+
+    with patch("asky.cli.main.MODELS", {"gf": {"id": "gemini-flash-latest"}}):
+        main()
+
+    mock_manual_query.assert_called_once_with(
+        query="moore law learning",
+        explicit_targets=["/tmp/books/book.epub"],
+        max_sources=9,
+        max_chunks=2,
+    )
 
 
 @patch("asky.cli.main.parse_args")

@@ -5,6 +5,7 @@ import importlib
 import re
 import threading
 import os
+from pathlib import Path
 from asky.config import RESEARCH_LOCAL_DOCUMENT_ROOTS
 from types import ModuleType
 from typing import Optional
@@ -56,8 +57,11 @@ prompts = _LazyModuleProxy("asky.cli.prompts")
 chat = _LazyModuleProxy("asky.cli.chat")
 utils = _LazyModuleProxy("asky.cli.utils")
 sessions = _LazyModuleProxy("asky.cli.sessions")
+research_commands = _LazyModuleProxy("asky.cli.research_commands")
 
 CACHE_CLEANUP_JOIN_TIMEOUT_SECONDS = 0.05
+DEFAULT_MANUAL_QUERY_MAX_SOURCES = 20
+DEFAULT_MANUAL_QUERY_MAX_CHUNKS = 3
 
 
 def parse_args() -> argparse.Namespace:
@@ -286,6 +290,12 @@ def parse_args() -> argparse.Namespace:
         help="Disable pre-LLM source shortlisting for this run (lean mode).",
     )
     parser.add_argument(
+        "--shortlist",
+        choices=["auto", "on", "off"],
+        default="auto",
+        help="Override source shortlisting for this run: auto (default), on, or off.",
+    )
+    parser.add_argument(
         "-off",
         "-tool-off",
         "--tool-off",
@@ -299,6 +309,31 @@ def parse_args() -> argparse.Namespace:
         "--list-tools",
         action="store_true",
         help="List all available tools and exit.",
+    )
+    parser.add_argument(
+        "--query-corpus",
+        metavar="QUERY",
+        help="Query cached/ingested research corpus directly without invoking any model.",
+    )
+    parser.add_argument(
+        "--query-corpus-max-sources",
+        type=int,
+        default=DEFAULT_MANUAL_QUERY_MAX_SOURCES,
+        metavar="COUNT",
+        help=(
+            "Maximum corpus sources to scan for --query-corpus "
+            f"(default {DEFAULT_MANUAL_QUERY_MAX_SOURCES})."
+        ),
+    )
+    parser.add_argument(
+        "--query-corpus-max-chunks",
+        type=int,
+        default=DEFAULT_MANUAL_QUERY_MAX_CHUNKS,
+        metavar="COUNT",
+        help=(
+            "Maximum chunks per source for --query-corpus "
+            f"(default {DEFAULT_MANUAL_QUERY_MAX_CHUNKS})."
+        ),
     )
     parser.add_argument(
         "--list-memories",
@@ -442,73 +477,151 @@ def _start_research_cache_cleanup_thread() -> threading.Thread:
     return thread
 
 
+def _research_roots() -> list[Path]:
+    """Return normalized configured research corpus roots."""
+    roots: list[Path] = []
+    for raw_root in RESEARCH_LOCAL_DOCUMENT_ROOTS:
+        try:
+            roots.append(Path(str(raw_root)).expanduser().resolve())
+        except Exception:
+            continue
+    return roots
+
+
+def _path_within_roots(path: Path, roots: list[Path]) -> bool:
+    """Return True when path is under one of configured corpus roots."""
+    for root in roots:
+        try:
+            path.relative_to(root)
+            return True
+        except ValueError:
+            continue
+    return False
+
+
+def _looks_like_pointer_token(token: str) -> bool:
+    """Heuristic to disambiguate pointer tokens from plain query text."""
+    if token.lower() == "web":
+        return True
+    if token.startswith(("/", "./", "../", "~")):
+        return True
+    if len(token) > 2 and token[1] == ":":
+        return True
+    if "/" in token or "\\" in token:
+        return True
+    return False
+
+
+def _manual_corpus_query_arg(args: argparse.Namespace) -> Optional[str]:
+    """Return normalized manual corpus query text when explicitly provided."""
+    value = getattr(args, "query_corpus", None)
+    if not isinstance(value, str):
+        return None
+    normalized = value.strip()
+    return normalized or None
+
+
 def _resolve_research_corpus(
     research_arg: str | bool,
-) -> tuple[bool, list[str] | None, str | None]:
-    """Resolve raw research flag value to (enabled, paths_or_none, leftover_query_token)."""
+) -> tuple[bool, list[str] | None, str | None, str | None, bool]:
+    """Resolve research flag to mode/corpus tuple.
+
+    Returns:
+      (research_enabled, local_paths, leftover_query_token, source_mode, replace_corpus)
+    """
     if research_arg is False or research_arg is None:
-        return False, None, None
+        return False, None, None, None, False
 
     if research_arg is True:
         # Flag used without value (-r -- "query")
-        return True, None, None
+        return True, None, None, None, False
 
     # Flag used with optional corpus pointer (-r "token" "query")
     raw_pointer = str(research_arg).strip()
     if not raw_pointer:
-        return True, None, None
+        return True, None, None, None, False
 
     tokens = [t.strip() for t in raw_pointer.split(",") if t.strip()]
     if not tokens:
-        return True, None, None
+        return True, None, None, None, False
 
     is_explicit_list = "," in raw_pointer
-    resolved_paths = []
+    resolved_paths: list[str] = []
+    has_web_token = False
+    roots = _research_roots()
 
     for token in tokens:
-        # 1. Direct absolute path existence check
-        if os.path.isabs(token) and (os.path.isfile(token) or os.path.isdir(token)):
-            resolved_paths.append(token)
+        if token.lower() == "web":
+            has_web_token = True
             continue
 
-        # 2. Look up under corpus roots
+        expanded_token = os.path.expanduser(token)
+        absolute_candidate = Path(expanded_token).resolve() if os.path.isabs(expanded_token) else None
+
+        if absolute_candidate is not None and (
+            absolute_candidate.is_file() or absolute_candidate.is_dir()
+        ):
+            if not roots:
+                raise ValueError(
+                    "local_document_roots is empty; configure research.local_document_roots to allow local corpus paths."
+                )
+            if not _path_within_roots(absolute_candidate, roots):
+                raise ValueError(
+                    f"Corpus pointer '{token}' is outside configured local_document_roots."
+                )
+            resolved_paths.append(str(absolute_candidate))
+            continue
+
         found = False
-        for root in RESEARCH_LOCAL_DOCUMENT_ROOTS:
-            # Absolute root required
-            full_path = os.path.join(os.path.abspath(root), token.lstrip("/"))
-            if os.path.isfile(full_path) or os.path.isdir(full_path):
-                resolved_paths.append(full_path)
+        for root in roots:
+            full_path = (root / expanded_token.lstrip("/")).resolve()
+            if not _path_within_roots(full_path, [root]):
+                continue
+            if full_path.is_file() or full_path.is_dir():
+                resolved_paths.append(str(full_path))
                 found = True
                 break
 
         if not found:
             # If it was a list (a,b) or looked like a path (/...), we fail fast.
             # If it's a single token that doesn't exist, we treat it as query start.
-            if is_explicit_list or token.startswith(("/", "./", "../", "~/")):
+            if is_explicit_list or _looks_like_pointer_token(token):
                 raise ValueError(
                     f"Corpus pointer '{token}' could not be resolved. "
                     f"Check your local_document_roots in research.toml."
                 )
             else:
                 # Treat as query start
-                return True, None, raw_pointer
+                return True, None, raw_pointer, None, False
 
-    return True, resolved_paths, None
+    if has_web_token and resolved_paths:
+        return True, resolved_paths, None, "mixed", True
+    if has_web_token:
+        return True, [], None, "web_only", True
+    return True, resolved_paths, None, "local_only", True
 
 
 def main() -> None:
     """Main entry point."""
     args = parse_args()
+    manual_corpus_query = _manual_corpus_query_arg(args)
 
     # Resolve research flag and local corpus paths
     try:
         # Use getattr to safely handle partially-mocked args in legacy tests
         research_arg = getattr(args, "research", False)
-        research_enabled, corpus_paths, leftover = _resolve_research_corpus(
-            research_arg
-        )
+        (
+            research_enabled,
+            corpus_paths,
+            leftover,
+            source_mode,
+            replace_corpus,
+        ) = _resolve_research_corpus(research_arg)
         args.research = research_enabled
         args.local_corpus = corpus_paths
+        args.research_flag_provided = research_arg is not False and research_arg is not None
+        args.research_source_mode = source_mode
+        args.replace_research_corpus = replace_corpus
         if leftover:
             # Re-insert the token into query list if argparse consumed it but it wasn't a pointer
             if not getattr(args, "query", None):
@@ -666,6 +779,7 @@ def main() -> None:
             args.session_history is not None,
             args.session_end,
             bool(args.query),
+            bool(manual_corpus_query),
             args.reply,  # Added for new logic
             getattr(args, "session_from_message", None),  # Added for new logic
         ]
@@ -749,6 +863,26 @@ def main() -> None:
         return
     if args.session_end:
         sessions.end_session_command()
+        return
+    if manual_corpus_query:
+        research_commands.run_manual_corpus_query_command(
+            query=manual_corpus_query,
+            explicit_targets=getattr(args, "local_corpus", None),
+            max_sources=int(
+                getattr(
+                    args,
+                    "query_corpus_max_sources",
+                    DEFAULT_MANUAL_QUERY_MAX_SOURCES,
+                )
+            ),
+            max_chunks=int(
+                getattr(
+                    args,
+                    "query_corpus_max_chunks",
+                    DEFAULT_MANUAL_QUERY_MAX_CHUNKS,
+                )
+            ),
+        )
         return
 
     # Handle terminal lines argument

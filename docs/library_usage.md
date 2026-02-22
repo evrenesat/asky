@@ -53,7 +53,7 @@ from asky.api import (
 | `summarize`                 | `bool`           | no       | `False` | Passed into core tool dispatch/summarization behavior.              |
 | `verbose`                   | `bool`           | no       | `False` | Enables verbose tool tracing payloads/callback behavior.            |
 | `open_browser`              | `bool`           | no       | `False` | Allows engine/browser rendering path for final answer.              |
-| `research_mode`             | `bool`           | no       | `False` | Uses research prompt/tool registry and research session behavior.   |
+| `research_mode`             | `bool`           | no       | `False` | Explicitly requests research mode for turns from this client. Effective mode can still come from resumed session profile. |
 | `disabled_tools`            | `set[str]`       | no       | `set()` | Runtime tool exclusion by exact tool name.                          |
 | `model_parameters_override` | `dict[str, Any]` | no       | `{}`    | Merged over configured model `parameters` for this client instance. |
 | `system_prompt_override`    | `str \| None`    | no       | `None`  | Override the default system prompt.                                 |
@@ -86,6 +86,10 @@ client = AskyClient(cfg)
 | `preload_shortlist`         | `bool`        | no       | `True`  | Run shortlist preload stage.                                  |
 | `additional_source_context` | `str \| None` | no       | `None`  | Extra corpus context appended to preload context.             |
 | `save_history`              | `bool`        | no       | `True`  | Persist turn (session/global history) after completion.       |
+| `research_flag_provided`    | `bool`        | no       | `False` | Marks this turn as an explicit `-r`-style request.            |
+| `research_source_mode`      | `str \| None` | no       | `None`  | Optional source intent: `web_only`, `local_only`, `mixed`.   |
+| `replace_research_corpus`   | `bool`        | no       | `False` | Replace persisted session corpus pointers for this turn.      |
+| `shortlist_override`        | `str \| None` | no       | `None`  | Per-turn shortlist override: `auto`, `on`, or `off`.         |
 
 Example:
 
@@ -95,6 +99,7 @@ request = AskyTurnRequest(
     continue_ids="~1",
     summarize_context=True,
     resume_session_term="project alpha",
+    shortlist_override="auto",
     save_history=True,
 )
 result = client.run_turn(request)
@@ -115,6 +120,12 @@ Returned by `run_turn()`. Includes:
 - `session` (`SessionResolution`)
 - `preload` (`PreloadResolution`)
 
+`SessionResolution` includes effective session-owned research profile values:
+
+- `research_mode`
+- `research_source_mode`
+- `research_local_corpus_paths`
+
 ### Halt behavior
 
 `run_turn()` may return `halted=True` with empty `final_answer`, for example:
@@ -129,6 +140,17 @@ Always check:
 if result.halted:
     print(result.halt_reason, result.notices)
 ```
+
+### Preload metadata for research reliability
+
+`result.preload` now includes:
+
+- `preloaded_source_urls`: resolved preloaded source identifiers used for retrieval
+- `preloaded_source_handles`: safe-handle mapping for local corpus sources
+
+In research mode with preloaded corpus, `AskyClient.run_turn()` also performs one
+deterministic bootstrap retrieval and appends the resulting evidence snippets into
+the first model-visible user message context.
 
 ## Minimal vs Full APIs
 
@@ -263,3 +285,4 @@ print(resume_result.session_id)
 - `model_alias` must match configured models in your asky configuration.
 - Tool disable names are exact string matches.
 - `run_turn(save_history=False)` lets you use asky as a stateless inference step.
+- On resumed sessions, effective research mode/profile is derived from persisted session metadata when no explicit override is supplied.

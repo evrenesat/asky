@@ -389,6 +389,62 @@ def test_research_registry_injects_session_id_for_memory_tools():
     assert query_calls[-1]["session_id"] == "explicit"
 
 
+def test_research_registry_injects_corpus_url_fallback_for_retrieval_tools():
+    from asky.core.tool_registry_factory import create_research_tool_registry
+
+    relevant_calls = []
+    full_calls = []
+
+    bindings = {
+        "schemas": [
+            {
+                "name": "get_relevant_content",
+                "description": "Retrieve chunks",
+                "parameters": {"type": "object", "properties": {}},
+            },
+            {
+                "name": "get_full_content",
+                "description": "Retrieve full content",
+                "parameters": {"type": "object", "properties": {}},
+            },
+        ],
+        "extract_links": lambda _args: {},
+        "get_link_summaries": lambda _args: {},
+        "get_relevant_content": lambda args: relevant_calls.append(args) or {"ok": True},
+        "get_full_content": lambda args: full_calls.append(args) or {"ok": True},
+        "save_finding": lambda _args: {"ok": True},
+        "query_research_memory": lambda _args: {"ok": True},
+    }
+
+    registry = create_research_tool_registry(
+        load_research_tool_bindings_fn=lambda: bindings,
+        disabled_tools={"web_search"},
+        preloaded_corpus_urls=["corpus://cache/3"],
+    )
+
+    registry.dispatch(
+        {
+            "function": {
+                "name": "get_relevant_content",
+                "arguments": '{"query":"test"}',
+            }
+        },
+        summarize=False,
+    )
+    registry.dispatch(
+        {
+            "function": {
+                "name": "get_full_content",
+                "arguments": "{}",
+            }
+        },
+        summarize=False,
+    )
+
+    assert relevant_calls[-1]["corpus_urls"] == ["corpus://cache/3"]
+    assert full_calls[-1]["corpus_urls"] == ["corpus://cache/3"]
+
+
 def test_research_registry_applies_config_tool_prompt_overrides():
     from asky.core.tool_registry_factory import create_research_tool_registry
 

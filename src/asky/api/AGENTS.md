@@ -23,10 +23,23 @@ Use `AskyClient.run_turn(request)` for CLI-equivalent orchestration:
 4. Build messages (with local-target query redaction + optional local-KB system hint) and execute `ConversationEngine`
 5. Generate summaries and persist session/history turns
 
+Research mode is resolved per turn from effective session state:
+
+- `resolve_session_for_turn()` now returns effective research profile
+  (`research_mode`, `research_source_mode`, `research_local_corpus_paths`).
+- `AskyClient.run_turn()` uses that resolved profile for prompt/tool/preload branching,
+  even when `AskyConfig.research_mode=False` (for resumed research sessions).
+- `AskyTurnRequest.shortlist_override` (`auto|on|off`) controls shortlist policy for
+  that turn with precedence below lean mode and above model/global settings.
+- Explicit local-only/mixed research runs fail fast when zero local documents ingest.
+
 ## Preload Notes
 
 - In standard mode, URL-bearing prompts now preload seed URL page content into
   the first model request context.
+- In research mode with preloaded corpus, `run_turn()` performs one deterministic
+  retrieval bootstrap (`execute_get_relevant_content`) before first model call,
+  then appends those evidence snippets into preloaded user context.
 - Seed URL preload uses a combined 80% main-model context budget and labels each
   seed block as `full_content`, `summarized_due_budget`,
   `summary_truncated_due_budget`, or `fetch_error`.
@@ -39,6 +52,9 @@ Use `AskyClient.run_turn(request)` for CLI-equivalent orchestration:
   also disables `web_search`, `get_url_content`, and `get_url_details` for that
   turn to guarantee direct-answer behavior without extra retrieval loops.
 - Shortlist-ranked links/snippets are still included after seed URL content.
+- Preload metadata now carries `preloaded_source_urls` and
+  `preloaded_source_handles` so tool registry/runtime can inject safe corpus
+  identifiers for retrieval tools when models omit explicit URL lists.
 
 ## Runtime Boundary
 

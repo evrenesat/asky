@@ -68,6 +68,8 @@ Builds `ToolRegistry` instances used by chat flow:
   session-scoped persistence/retrieval.
 - Both factories support `corpus_preloaded` (boolean); when `True` in research mode,
   acquisition tools are automatically excluded from the registry.
+- Research registry also accepts `preloaded_corpus_urls`; retrieval tools can use
+  these as fallback `corpus_urls` when model tool calls omit explicit `urls`.
 
 The module accepts optional executor callables so `engine.py` can preserve test patch
 compatibility while keeping factory logic out of the conversation loop module.
@@ -129,6 +131,9 @@ Initializes tool usage tracking for all available tools with a default of 0 at t
 - **Sessions are Persistent**: Conversation threads resumable anytime
 - **Shell-Sticky**: Lock files in `/tmp/asky_session_{PID}` tie to terminal
 - **Auto-Naming**: Names generated from query keywords (stopword filtering), with terminal-context wrappers stripped before extraction
+- **Session-Owned Research Profile**: session records now persist
+  `research_mode`, `research_source_mode`, and `research_local_corpus_paths`
+  so resumed sessions can continue research behavior without repeating flags.
 
 ### Compaction Strategies
 
@@ -144,6 +149,9 @@ Triggered when context reaches `SESSION_COMPACTION_THRESHOLD` (default 80%).
 - `build_system_prompt()`: Construct system message with current date
 - `extract_calls()`: Parse tool calls from LLM response (JSON or XML format)
 - `is_markdown()`: Detect markdown formatting in output
+- `append_research_guidance()`: Adds corpus/local-KB guidance; for local KB,
+  guidance now tells the model to move from empty `query_research_memory` to
+  `get_relevant_content` immediately.
 
 ## Dependencies
 

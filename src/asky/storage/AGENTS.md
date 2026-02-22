@@ -32,6 +32,12 @@ class Session:
     model: str
     created_at: str
     compacted_summary: Optional[str]
+    memory_auto_extract: bool
+    max_turns: Optional[int]
+    last_used_at: Optional[str]
+    research_mode: bool
+    research_source_mode: Optional[str]
+    research_local_corpus_paths: List[str]
 ```
 
 ## Database Schema
@@ -54,6 +60,12 @@ class Session:
 - `model`: Default model for session
 - `created_at`: Creation timestamp
 - `compacted_summary`: Concatenated history after compaction
+- `memory_auto_extract`: Elephant-mode flag
+- `max_turns`: Optional per-session max-turn override
+- `last_used_at`: Last activity timestamp
+- `research_mode`: Session-owned research-mode flag
+- `research_source_mode`: `web_only|local_only|mixed`
+- `research_local_corpus_paths`: JSON list of persisted corpus pointers
 
 ## SQLiteHistoryRepository (`sqlite.py`)
 
@@ -79,6 +91,7 @@ class Session:
 | `compact_session()` | Replace history with summary |
 | `list_sessions()` | Recent sessions listing |
 | `delete_sessions()` | Delete sessions and messages |
+| `update_session_research_profile()` | Persist session research profile metadata |
 | `convert_history_to_session()` | Convert interaction to session (session names strip terminal-context wrapper prefixes) |
 
 ## Design Decisions

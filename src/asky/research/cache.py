@@ -20,6 +20,7 @@ logger = logging.getLogger(__name__)
 CHUNK_FTS_TABLE_NAME = "content_chunks_fts"
 BACKGROUND_SUMMARY_INPUT_CHARS = 24000
 BACKGROUND_SUMMARY_MAX_OUTPUT_CHARS = 800
+DEFAULT_LIST_CACHED_SOURCES_LIMIT = 50
 
 
 class ResearchCache:
@@ -356,6 +357,7 @@ class ResearchCache:
         if row:
             return {
                 "id": row[0],
+                "url": url,
                 "content": row[1],
                 "title": row[2],
                 "summary": row[3],
@@ -366,6 +368,72 @@ class ResearchCache:
                 "cached": True,
             }
         return None
+
+    def get_cached_by_id(self, cache_id: int) -> Optional[Dict[str, Any]]:
+        """Get cached content by cache ID if valid (not expired)."""
+        conn = self._get_conn()
+        c = conn.cursor()
+
+        now = datetime.now().isoformat()
+        c.execute(
+            """
+            SELECT id, url, content, title, summary, summary_status, links_json,
+                   fetch_timestamp, expires_at
+            FROM research_cache
+            WHERE id = ? AND expires_at > ?
+        """,
+            (cache_id, now),
+        )
+        row = c.fetchone()
+        conn.close()
+
+        if row:
+            return {
+                "id": row[0],
+                "url": row[1],
+                "content": row[2],
+                "title": row[3],
+                "summary": row[4],
+                "summary_status": row[5],
+                "links": json.loads(row[6]) if row[6] else [],
+                "fetch_timestamp": row[7],
+                "expires_at": row[8],
+                "cached": True,
+            }
+        return None
+
+    def list_cached_sources(
+        self,
+        limit: int = DEFAULT_LIST_CACHED_SOURCES_LIMIT,
+    ) -> List[Dict[str, Any]]:
+        """List non-expired cached source entries."""
+        safe_limit = max(1, int(limit))
+        conn = self._get_conn()
+        c = conn.cursor()
+
+        now = datetime.now().isoformat()
+        c.execute(
+            """
+            SELECT id, url, title, updated_at
+            FROM research_cache
+            WHERE expires_at > ?
+            ORDER BY updated_at DESC
+            LIMIT ?
+        """,
+            (now, safe_limit),
+        )
+        rows = c.fetchall()
+        conn.close()
+
+        return [
+            {
+                "id": row[0],
+                "url": row[1],
+                "title": row[2] or "",
+                "updated_at": row[3],
+            }
+            for row in rows
+        ]
 
     def get_cache_id(self, url: str) -> Optional[int]:
         """Get cache ID for a URL if it exists and is valid."""

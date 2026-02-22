@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import copy
+import logging
 from dataclasses import dataclass
 from typing import Any, Callable, Dict, FrozenSet, List, Optional, Set, TYPE_CHECKING
 
@@ -26,6 +27,7 @@ from asky.storage import save_interaction
 from .context import load_context_from_history
 from .preload import (
     build_shortlist_stats,
+    combine_preloaded_source_context,
     format_local_ingestion_context,
     format_shortlist_context,
     preload_local_research_sources,
@@ -55,6 +57,10 @@ class FinalizeResult:
 STANDARD_SEED_DIRECT_ANSWER_DISABLED_TOOLS: FrozenSet[str] = frozenset(
     {"web_search", "get_url_content", "get_url_details"}
 )
+RESEARCH_BOOTSTRAP_MAX_SOURCES = 16
+RESEARCH_BOOTSTRAP_MAX_CHUNKS_PER_SOURCE = 2
+RESEARCH_BOOTSTRAP_MAX_TEXT_CHARS = 420
+logger = logging.getLogger(__name__)
 
 
 class AskyClient:
@@ -89,18 +95,24 @@ class AskyClient:
         session_manager: Optional[SessionManager] = None,
         preload: Optional[PreloadResolution] = None,
         local_kb_hint_enabled: bool = False,
+        research_mode: Optional[bool] = None,
     ) -> List[Dict[str, Any]]:
         """Build a message list for a single asky turn."""
+        effective_research_mode = (
+            self.config.research_mode
+            if research_mode is None
+            else bool(research_mode)
+        )
         if self.config.system_prompt_override:
             system_prompt = self.config.system_prompt_override
         else:
             system_prompt = (
                 construct_research_system_prompt()
-                if self.config.research_mode
+                if effective_research_mode
                 else construct_system_prompt()
             )
 
-        if self.config.research_mode:
+        if effective_research_mode:
             system_prompt = append_research_guidance(
                 system_prompt,
                 corpus_preloaded=preload.is_corpus_preloaded if preload else False,
@@ -170,10 +182,11 @@ class AskyClient:
         *,
         request: AskyTurnRequest,
         preload: PreloadResolution,
+        research_mode: bool,
     ) -> bool:
         """Return whether this turn should answer directly from preloaded seed content."""
         return (
-            not self.config.research_mode
+            not research_mode
             and not request.lean
             and preload.seed_url_direct_answer_ready
         )
@@ -183,6 +196,7 @@ class AskyClient:
         *,
         request: AskyTurnRequest,
         preload: PreloadResolution,
+        research_mode: bool,
     ) -> tuple[Optional[Set[str]], bool]:
         """Resolve turn-scoped tool disablement policy for run_turn."""
         if request.lean:
@@ -192,7 +206,11 @@ class AskyClient:
             disabled.update(get_all_available_tool_names())
             return disabled, False
 
-        if self._should_use_seed_direct_answer_mode(request=request, preload=preload):
+        if self._should_use_seed_direct_answer_mode(
+            request=request,
+            preload=preload,
+            research_mode=research_mode,
+        ):
             disabled = set(self.config.disabled_tools)
             disabled.update(STANDARD_SEED_DIRECT_ANSWER_DISABLED_TOOLS)
             return disabled, True
@@ -260,6 +278,89 @@ class AskyClient:
             }
         )
 
+    def _format_bootstrap_retrieval_context(
+        self,
+        retrieval_results: Dict[str, Dict[str, Any]],
+        *,
+        source_handle_map: Dict[str, str],
+    ) -> Optional[str]:
+        """Convert direct retrieval bootstrap results into model context text."""
+        if not retrieval_results:
+            return None
+
+        lines: List[str] = ["Bootstrap retrieval evidence from preloaded corpus:"]
+        rendered = 0
+        for url, payload in retrieval_results.items():
+            if not isinstance(payload, dict):
+                continue
+            chunks = payload.get("chunks")
+            if not isinstance(chunks, list) or not chunks:
+                continue
+
+            source_label = source_handle_map.get(url, "")
+            if not source_label:
+                source_label = str(payload.get("title", "") or url)
+
+            for chunk in chunks[:RESEARCH_BOOTSTRAP_MAX_CHUNKS_PER_SOURCE]:
+                text = str(chunk.get("text", "") or "").strip()
+                if not text:
+                    continue
+                relevance = chunk.get("relevance")
+                snippet = text[:RESEARCH_BOOTSTRAP_MAX_TEXT_CHARS]
+                if len(text) > RESEARCH_BOOTSTRAP_MAX_TEXT_CHARS:
+                    snippet += "..."
+                if isinstance(relevance, (int, float)):
+                    lines.append(
+                        f"- Source: {source_label} | relevance={float(relevance):.3f}"
+                    )
+                else:
+                    lines.append(f"- Source: {source_label}")
+                lines.append(f"  Evidence: {snippet}")
+                rendered += 1
+                if rendered >= (
+                    RESEARCH_BOOTSTRAP_MAX_SOURCES
+                    * RESEARCH_BOOTSTRAP_MAX_CHUNKS_PER_SOURCE
+                ):
+                    break
+            if rendered >= (
+                RESEARCH_BOOTSTRAP_MAX_SOURCES * RESEARCH_BOOTSTRAP_MAX_CHUNKS_PER_SOURCE
+            ):
+                break
+
+        if rendered == 0:
+            return None
+        return "\n".join(lines)
+
+    def _build_bootstrap_retrieval_context(
+        self,
+        *,
+        query_text: str,
+        preload: PreloadResolution,
+    ) -> Optional[str]:
+        """Run deterministic retrieval once on preloaded corpus and format context."""
+        source_urls = list(preload.preloaded_source_urls or [])
+        if not source_urls:
+            return None
+        try:
+            retrieval_payload = call_attr(
+                "asky.research.tools",
+                "execute_get_relevant_content",
+                {
+                    "query": query_text,
+                    "corpus_urls": source_urls[:RESEARCH_BOOTSTRAP_MAX_SOURCES],
+                    "max_chunks": RESEARCH_BOOTSTRAP_MAX_CHUNKS_PER_SOURCE,
+                },
+            )
+        except Exception as exc:
+            logger.debug("bootstrap retrieval failed: %s", exc)
+            return None
+        if not isinstance(retrieval_payload, dict):
+            return None
+        return self._format_bootstrap_retrieval_context(
+            retrieval_payload,
+            source_handle_map=dict(preload.preloaded_source_handles or {}),
+        )
+
     def run_messages(
         self,
         messages: List[Dict[str, Any]],
@@ -267,6 +368,7 @@ class AskyClient:
         session_manager: Optional[SessionManager] = None,
         research_session_id: Optional[str] = None,
         preload: Optional[PreloadResolution] = None,
+        research_mode: Optional[bool] = None,
         display_callback: Optional[
             Callable[[int, Optional[str], bool, Optional[str]], None]
         ] = None,
@@ -278,16 +380,24 @@ class AskyClient:
         max_turns: Optional[int] = None,
     ) -> str:
         """Run chat completion for prepared messages."""
+        effective_research_mode = (
+            self.config.research_mode
+            if research_mode is None
+            else bool(research_mode)
+        )
         effective_disabled_tools = (
             disabled_tools if disabled_tools is not None else self.config.disabled_tools
         )
 
-        if self.config.research_mode:
+        if effective_research_mode:
             registry = create_research_tool_registry(
                 usage_tracker=self.usage_tracker,
                 disabled_tools=effective_disabled_tools,
                 session_id=research_session_id,
                 corpus_preloaded=preload.is_corpus_preloaded if preload else False,
+                preloaded_corpus_urls=(
+                    list(preload.preloaded_source_urls) if preload else []
+                ),
                 summarization_tracker=self.summarization_tracker,
                 tool_trace_callback=(
                     verbose_output_callback if self.config.verbose else None
@@ -348,12 +458,14 @@ class AskyClient:
             context_str=context_str,
             session_manager=session_manager,
             preload=preload,
+            research_mode=self.config.research_mode,
         )
         final_answer = self.run_messages(
             messages,
             session_manager=session_manager,
             research_session_id=research_session_id,
             preload=preload,
+            research_mode=self.config.research_mode,
             display_callback=display_callback,
             verbose_output_callback=verbose_output_callback,
             summarization_status_callback=summarization_status_callback,
@@ -426,17 +538,43 @@ class AskyClient:
             resume_session_term=request.resume_session_term,
             shell_session_id=request.shell_session_id,
             research_mode=self.config.research_mode,
+            research_flag_provided=request.research_flag_provided,
+            research_source_mode=request.research_source_mode,
+            replace_research_corpus=request.replace_research_corpus,
+            requested_local_corpus_paths=request.local_corpus_paths,
             elephant_mode=request.elephant_mode,
             max_turns=request.max_turns,
             set_shell_session_id_fn=set_shell_session_id_fn,
             clear_shell_session_fn=clear_shell_session_fn,
         )
         notices.extend(session_resolution.notices)
+        resolved_research_mode = getattr(session_resolution, "research_mode", None)
+        effective_research_mode = (
+            resolved_research_mode
+            if isinstance(resolved_research_mode, bool)
+            else bool(self.config.research_mode)
+        )
+        resolved_source_mode = getattr(session_resolution, "research_source_mode", None)
+        effective_source_mode = (
+            str(resolved_source_mode)
+            if isinstance(resolved_source_mode, str)
+            else None
+        )
+        resolved_local_paths = getattr(
+            session_resolution,
+            "research_local_corpus_paths",
+            None,
+        )
+        effective_local_corpus_paths = (
+            list(resolved_local_paths)
+            if effective_research_mode and isinstance(resolved_local_paths, list)
+            else request.local_corpus_paths
+        )
 
         if session_resolved_callback and session_manager:
             session_resolved_callback(session_manager)
 
-        if self.config.research_mode:
+        if effective_research_mode:
             notices.insert(
                 0, "Research mode enabled - using link extraction and RAG tools"
             )
@@ -485,13 +623,14 @@ class AskyClient:
         # Process preload with *potentially modified* query text
         preload = run_preload_pipeline(
             query_text=effective_query_text,
-            research_mode=self.config.research_mode,
+            research_mode=effective_research_mode,
             model_config=self.model_config,
             lean=request.lean,
             preload_local_sources=request.preload_local_sources,
             preload_shortlist=request.preload_shortlist,
+            shortlist_override=request.shortlist_override,
             additional_source_context=request.additional_source_context,
-            local_corpus_paths=request.local_corpus_paths,
+            local_corpus_paths=effective_local_corpus_paths,
             status_callback=preload_status_callback,
             shortlist_executor=shortlist_executor or shortlist_prompt_sources,
             shortlist_formatter=shortlist_formatter or format_shortlist_context,
@@ -507,12 +646,70 @@ class AskyClient:
             ),
         )
 
+        local_ingested = len(preload.local_payload.get("ingested", []) or [])
+        if (
+            effective_research_mode
+            and effective_source_mode in {"local_only", "mixed"}
+            and request.preload_local_sources
+        ):
+            if not effective_local_corpus_paths:
+                notices.append(
+                    "Research session requires local corpus sources, but no corpus paths are configured. "
+                    "Re-run with -r and local corpus pointers."
+                )
+                return AskyTurnResult(
+                    final_answer="",
+                    query_summary="",
+                    answer_summary="",
+                    messages=[],
+                    model_alias=self.config.model_alias,
+                    session_id=(
+                        str(session_resolution.session_id)
+                        if session_resolution.session_id is not None
+                        else None
+                    ),
+                    halted=True,
+                    halt_reason="local_corpus_missing",
+                    notices=notices,
+                    context=context,
+                    session=session_resolution,
+                    preload=preload,
+                )
+            if local_ingested == 0:
+                warning_text = ""
+                warnings = preload.local_payload.get("warnings", []) or []
+                if warnings:
+                    warning_text = f" Details: {warnings[0]}"
+                notices.append(
+                    f"No local corpus documents were ingested from {len(effective_local_corpus_paths)} configured path(s). "
+                    "Check local_document_roots and corpus pointers, then re-run with updated -r corpus paths."
+                    + warning_text
+                )
+                return AskyTurnResult(
+                    final_answer="",
+                    query_summary="",
+                    answer_summary="",
+                    messages=[],
+                    model_alias=self.config.model_alias,
+                    session_id=(
+                        str(session_resolution.session_id)
+                        if session_resolution.session_id is not None
+                        else None
+                    ),
+                    halted=True,
+                    halt_reason="local_corpus_ingestion_failed",
+                    notices=notices,
+                    context=context,
+                    session=session_resolution,
+                    preload=preload,
+                )
+
         local_targets = preload.local_payload.get("targets") or []
         # Preload pipeline might have used original query (if we didn't update it above, but we did)
         # However, run_preload_pipeline does its own things.
         # We need to make sure subsequent steps use effective_query_text.
 
-        local_kb_hint_enabled = bool(local_targets) or bool(request.local_corpus_paths)
+        local_kb_hint_enabled = bool(local_targets) or bool(effective_local_corpus_paths)
         if local_kb_hint_enabled:
             effective_query_text = call_attr(
                 "asky.research.adapters",
@@ -522,12 +719,28 @@ class AskyClient:
             if not effective_query_text.strip():
                 effective_query_text = "Answer the user's request using the preloaded local knowledge base."
 
+        if effective_research_mode and preload.is_corpus_preloaded:
+            bootstrap_context = self._build_bootstrap_retrieval_context(
+                query_text=request.query_text,
+                preload=preload,
+            )
+            existing_context = (
+                preload.combined_context
+                if isinstance(preload.combined_context, str)
+                else None
+            )
+            preload.combined_context = combine_preloaded_source_context(
+                existing_context,
+                bootstrap_context,
+            )
+
         messages = self.build_messages(
             query_text=effective_query_text,
             context_str=context.context_str,
             session_manager=session_manager,
             preload=preload,
             local_kb_hint_enabled=local_kb_hint_enabled,
+            research_mode=effective_research_mode,
         )
         self._emit_preload_provenance(
             preload=preload,
@@ -541,6 +754,7 @@ class AskyClient:
             self._resolve_run_turn_disabled_tools(
                 request=request,
                 preload=preload,
+                research_mode=effective_research_mode,
             )
         )
         if seed_direct_mode_enabled:
@@ -572,6 +786,7 @@ class AskyClient:
                 else None
             ),
             preload=preload,
+            research_mode=effective_research_mode,
             display_callback=display_callback,
             verbose_output_callback=verbose_output_callback,
             summarization_status_callback=summarization_status_callback,

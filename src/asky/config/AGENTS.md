@@ -86,7 +86,6 @@ candidate pools while keeping fetch cost bounded.
 | `CUSTOM_TOOLS` | User-defined tool configs |
 | `USER_PROMPTS` | Prompt shortcuts |
 | `PUSH_DATA_ENDPOINTS` | Push data endpoints |
-| `RESEARCH_SOURCE_ADAPTERS` | Non-HTTP source adapters |
 
 ## Environment Variables
 

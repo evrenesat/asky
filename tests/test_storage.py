@@ -192,3 +192,35 @@ def test_delete_sessions(mock_db_path):
     delete_sessions(delete_all=True)
     assert repo.get_session_by_id(sid2) is None
     assert repo.get_session_by_id(sid3) is None
+
+
+def test_session_research_profile_roundtrip(mock_db_path):
+    from asky.storage.sqlite import SQLiteHistoryRepository
+
+    repo = SQLiteHistoryRepository()
+    init_db()
+
+    sid = repo.create_session(
+        "model",
+        name="research",
+        research_mode=True,
+        research_source_mode="mixed",
+        research_local_corpus_paths=["/books/a.epub", "/books/b.epub"],
+    )
+    loaded = repo.get_session_by_id(sid)
+    assert loaded is not None
+    assert loaded.research_mode is True
+    assert loaded.research_source_mode == "mixed"
+    assert loaded.research_local_corpus_paths == ["/books/a.epub", "/books/b.epub"]
+
+    repo.update_session_research_profile(
+        sid,
+        research_mode=True,
+        research_source_mode="web_only",
+        research_local_corpus_paths=[],
+    )
+    updated = repo.get_session_by_id(sid)
+    assert updated is not None
+    assert updated.research_mode is True
+    assert updated.research_source_mode == "web_only"
+    assert updated.research_local_corpus_paths == []

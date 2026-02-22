@@ -1,5 +1,84 @@
 # DEVLOG
 
+## 2026-02-22 - Local Corpus Retrieval Bootstrap + Manual `--query-corpus`
+
+Improved local-corpus research reliability when memory is empty and added a no-LLM corpus query command for debugging retrieval quality.
+
+- **Changed**:
+  - `src/asky/research/tools.py`, `src/asky/research/cache.py`:
+    - Added support for safe corpus handles (`corpus://cache/<id>`) in `get_relevant_content` and `get_full_content`.
+    - Retrieval tools now accept internal `corpus_urls` fallback input in addition to `urls`.
+    - Added cache helpers:
+      - `get_cached_by_id(cache_id)`
+      - `list_cached_sources(limit)`
+    - Local filesystem URL guardrails remain in place for raw local targets.
+  - `src/asky/api/preload.py`, `src/asky/api/client.py`, `src/asky/core/tool_registry_factory.py`:
+    - Preload now tracks safe source identifiers and handle mappings for local corpus documents.
+    - Research registry now injects preloaded corpus identifiers when retrieval tools are called without `urls`.
+    - Added deterministic pre-model retrieval bootstrap in research mode:
+      retrieved evidence snippets are appended to preloaded context before first model call.
+  - `src/asky/core/prompts.py`:
+    - Local-KB guidance now instructs model to call `get_relevant_content` immediately when `query_research_memory` is empty.
+  - `src/asky/cli/main.py`, `src/asky/cli/research_commands.py`:
+    - Added manual corpus query interface:
+      - `--query-corpus "..."` (no model call)
+      - `--query-corpus-max-sources`
+      - `--query-corpus-max-chunks`
+    - Command can ingest explicit `-r` corpus targets first, then run deterministic retrieval over cached corpus handles.
+- **Why**:
+  - Ingested local corpus could still fail to answer if model stopped after empty `query_research_memory` and never called retrieval tools.
+  - Users needed a direct way to test retrieval query quality without LLM/tool-loop behavior.
+- **Tests Added/Updated**:
+  - `tests/test_api_library.py`: bootstrap retrieval context included in first user message; updated registry call expectations.
+  - `tests/test_api_preload.py`: handle-based preloaded source URL/handle mapping coverage.
+  - `tests/test_research_tools.py`: corpus-handle retrieval/full-content support + malformed-handle behavior.
+  - `tests/test_tools.py`: research registry corpus URL fallback injection coverage.
+  - `tests/test_cli.py`: parser coverage for `--query-corpus*` and main-command dispatch.
+  - `tests/test_research_commands.py`: no-LLM manual corpus query command coverage.
+
+## 2026-02-22 - Session-Owned Research Mode + Local Corpus Reliability
+
+Implemented session-owned research behavior so resumed sessions carry research mode and corpus profile without repeating `-r`.
+
+- **Changed**:
+  - `src/asky/storage/interface.py`, `src/asky/storage/sqlite.py`, `src/asky/storage/__init__.py`, `src/asky/core/session_manager.py`:
+    - Added persisted session research profile fields:
+      - `research_mode`
+      - `research_source_mode` (`web_only|local_only|mixed`)
+      - `research_local_corpus_paths` (JSON list)
+    - Added backward-compatible SQLite migrations and read/write helpers (`update_session_research_profile`).
+  - `src/asky/api/session.py`, `src/asky/api/types.py`, `src/asky/api/client.py`:
+    - `resolve_session_for_turn()` now returns effective session-owned research profile.
+    - `-r` semantics now promote existing non-research sessions and persist profile.
+    - Stored corpus settings are reused on follow-up turns; explicit `-r` corpus pointers replace stored pointers.
+    - Turn execution now uses effective research mode/profile (prompt/tool/preload routing no longer keys only off config flag).
+    - Added local-corpus fail-fast for `local_only`/`mixed` profiles when zero local docs ingest.
+  - `src/asky/api/preload.py`, `src/asky/cli/main.py`, `src/asky/cli/chat.py`:
+    - Added `--shortlist auto|on|off` CLI override with precedence:
+      `lean > request override > model override > global`.
+    - `-r` corpus parsing now returns source-mode intent and replacement semantics.
+    - Added explicit `web` token support in pointer lists for mixed/web-only profile requests.
+  - `src/asky/research/adapters.py`, `src/asky/research/tools.py`, `src/asky/config/__init__.py`, `src/asky/data/config/research.toml`:
+    - Removed custom source-adapter routing capability.
+    - Kept built-in local loader only (local/file targets).
+    - URL-oriented research tools remain guarded against local filesystem targets.
+    - Fixed absolute-path ingestion by correctly handling absolute paths inside configured roots.
+- **Why**:
+  - Follow-up turns on resumed research sessions were dropping research/corpus context unless users repeated flags.
+  - Local corpus absolute paths resolved by CLI could fail during ingestion due path-normalization mismatch.
+  - Dormant custom adapter capability added complexity without active use.
+- **Tests Added/Updated**:
+  - `tests/test_sessions.py`: session-owned research profile reuse, promotion, replacement semantics.
+  - `tests/test_storage.py`: research profile round-trip persistence.
+  - `tests/test_research_corpus_resolution.py`: new corpus/source-mode parsing behavior (`web` token, replace semantics, absolute-root enforcement).
+  - `tests/test_local_ingestion_flow.py`: absolute-path ingestion success under configured roots.
+  - `tests/test_research_adapters.py`: replaced adapter-routing coverage with built-in local-loader coverage.
+  - `tests/test_api_library.py`: effective research-mode expectations + local-only fail-fast.
+  - `tests/test_api_preload.py`, `tests/test_cli.py`: shortlist request override coverage.
+- **Validation**:
+  - Targeted: `uv run pytest tests/test_storage.py tests/test_sessions.py tests/test_research_corpus_resolution.py tests/test_local_ingestion_flow.py tests/test_research_adapters.py tests/test_api_preload.py tests/test_api_library.py tests/test_cli.py` -> passed.
+  - Full suite: `uv run pytest` -> `606 passed in 6.00s`.
+
 ## 2026-02-22 - Fix: Session Idle Timeout UI Conflict
 
 Fixed a UI conflict where the session idle timeout prompt was hidden by the live banner and caused display corruption.

@@ -136,10 +136,19 @@ def shortlist_enabled_for_request(
     lean: bool,
     model_config: Dict[str, Any],
     research_mode: bool,
+    shortlist_override: Optional[str] = None,
 ) -> tuple[bool, str]:
-    """Resolve shortlist enablement with precedence: lean > model > global flags."""
+    """Resolve shortlist enablement with precedence: lean > request > model > global."""
     if lean:
         return False, "lean_flag"
+
+    normalized_override = (
+        str(shortlist_override).strip().lower() if shortlist_override else "auto"
+    )
+    if normalized_override == "on":
+        return True, "request_override_on"
+    if normalized_override == "off":
+        return False, "request_override_off"
 
     model_override = model_config.get("source_shortlist_enabled")
     if isinstance(model_override, bool):
@@ -176,6 +185,67 @@ def combine_preloaded_source_context(*context_blocks: Optional[str]) -> Optional
     if not merged:
         return None
     return "\n\n".join(merged)
+
+
+def _dedupe_preserve_order(values: List[str]) -> List[str]:
+    """Deduplicate strings while preserving first-seen order."""
+    seen = set()
+    deduped: List[str] = []
+    for value in values:
+        token = str(value).strip()
+        if not token or token in seen:
+            continue
+        seen.add(token)
+        deduped.append(token)
+    return deduped
+
+
+def _collect_preloaded_source_urls(
+    *,
+    local_payload: Dict[str, Any],
+    shortlist_payload: Dict[str, Any],
+) -> List[str]:
+    """Collect corpus source URLs cached during preload."""
+    urls: List[str] = []
+    for item in local_payload.get("ingested", []) or []:
+        if not isinstance(item, dict):
+            continue
+        source_handle = str(item.get("source_handle", "") or "").strip()
+        if source_handle:
+            urls.append(source_handle)
+            continue
+        target = str(item.get("target", "") or "").strip()
+        if target:
+            urls.append(target)
+    for item in shortlist_payload.get("candidates", []) or []:
+        if not isinstance(item, dict):
+            continue
+        url = str(item.get("url", "") or "").strip()
+        if url:
+            urls.append(url)
+    for item in shortlist_payload.get("seed_url_documents", []) or []:
+        if not isinstance(item, dict):
+            continue
+        url = str(item.get("resolved_url") or item.get("url") or "").strip()
+        if url:
+            urls.append(url)
+    return _dedupe_preserve_order(urls)
+
+
+def _collect_source_handles(local_payload: Dict[str, Any]) -> Dict[str, str]:
+    """Build URL->safe-handle mapping for local corpus sources."""
+    handle_map: Dict[str, str] = {}
+    for item in local_payload.get("ingested", []) or []:
+        if not isinstance(item, dict):
+            continue
+        target = str(item.get("target", "") or "").strip()
+        handle = str(item.get("source_handle", "") or "").strip()
+        if not handle:
+            continue
+        handle_map[handle] = handle
+        if target:
+            handle_map[target] = handle
+    return handle_map
 
 
 def summarize_seed_content(content: str, max_output_chars: int) -> str:
@@ -337,6 +407,7 @@ def run_preload_pipeline(
     lean: bool,
     preload_local_sources: bool = True,
     preload_shortlist: bool = True,
+    shortlist_override: Optional[str] = None,
     additional_source_context: Optional[str] = None,
     local_corpus_paths: Optional[List[str]] = None,
     status_callback: Optional[StatusCallback] = None,
@@ -412,6 +483,7 @@ def run_preload_pipeline(
         lean=lean,
         model_config=model_config,
         research_mode=research_mode,
+        shortlist_override=shortlist_override,
     )
     if not preload_shortlist:
         shortlist_enabled = False
@@ -481,6 +553,11 @@ def run_preload_pipeline(
         shortlist_payload,
         shortlist_elapsed_ms,
     )
+    preload.preloaded_source_urls = _collect_preloaded_source_urls(
+        local_payload=preload.local_payload,
+        shortlist_payload=preload.shortlist_payload,
+    )
+    preload.preloaded_source_handles = _collect_source_handles(preload.local_payload)
 
     # Post-retrieval evidence extraction (optional)
     if (

@@ -1,5 +1,6 @@
 """SQLite implementation of unified message and session storage."""
 
+import json
 import os
 import sqlite3
 from datetime import datetime
@@ -13,6 +14,7 @@ from asky.storage.interface import HistoryRepository, Interaction, Session
 SESSION_NAME_PREVIEW_MAX_CHARS = 30
 TERMINAL_CONTEXT_PREFIX = "terminal context (last "
 TERMINAL_CONTEXT_QUERY_MARKER = "\n\nQuery:\n"
+RESEARCH_SOURCE_MODES = {"web_only", "local_only", "mixed"}
 
 
 def _extract_session_name_source(user_content: str) -> str:
@@ -54,6 +56,39 @@ def _build_session_name_from_user_content(user_content: str) -> str:
     return first_non_empty_line[:SESSION_NAME_PREVIEW_MAX_CHARS] + "..."
 
 
+def _normalize_research_source_mode(value: Optional[str]) -> Optional[str]:
+    """Normalize persisted research source mode values."""
+    if value is None:
+        return None
+    normalized = str(value).strip().lower()
+    if not normalized:
+        return None
+    if normalized not in RESEARCH_SOURCE_MODES:
+        return None
+    return normalized
+
+
+def _serialize_local_corpus_paths(paths: Optional[List[str]]) -> Optional[str]:
+    """Serialize corpus path list for DB persistence."""
+    if paths is None:
+        return None
+    serialized = [str(item) for item in paths if str(item).strip()]
+    return json.dumps(serialized)
+
+
+def _deserialize_local_corpus_paths(raw: Optional[str]) -> List[str]:
+    """Deserialize corpus path list from DB values."""
+    if not raw:
+        return []
+    try:
+        parsed = json.loads(raw)
+    except (TypeError, ValueError):
+        return []
+    if not isinstance(parsed, list):
+        return []
+    return [str(item) for item in parsed if str(item).strip()]
+
+
 class SQLiteHistoryRepository(HistoryRepository):
     """SQLite-backed unified message and session storage."""
 
@@ -62,6 +97,26 @@ class SQLiteHistoryRepository(HistoryRepository):
 
     def _get_conn(self):
         return sqlite3.connect(self.db_path)
+
+    def _session_from_row(self, row: sqlite3.Row) -> Session:
+        """Build a Session dataclass from a sqlite row."""
+        return Session(
+            id=row["id"],
+            name=row["name"],
+            model=row["model"],
+            created_at=row["created_at"],
+            compacted_summary=row["compacted_summary"],
+            memory_auto_extract=bool(row["memory_auto_extract"]),
+            max_turns=row["max_turns"],
+            last_used_at=row["last_used_at"],
+            research_mode=bool(row["research_mode"] or 0),
+            research_source_mode=_normalize_research_source_mode(
+                row["research_source_mode"]
+            ),
+            research_local_corpus_paths=_deserialize_local_corpus_paths(
+                row["research_local_corpus_paths"]
+            ),
+        )
 
     def init_db(self) -> None:
         """Initialize the SQLite database and create tables if they don't exist."""
@@ -102,8 +157,12 @@ class SQLiteHistoryRepository(HistoryRepository):
                 model TEXT,
                 created_at TEXT,
                 compacted_summary TEXT,
+                memory_auto_extract INTEGER DEFAULT 0,
                 max_turns INTEGER,
-                last_used_at TEXT
+                last_used_at TEXT,
+                research_mode INTEGER DEFAULT 0,
+                research_source_mode TEXT,
+                research_local_corpus_paths TEXT
             )
         """
         )
@@ -125,6 +184,24 @@ class SQLiteHistoryRepository(HistoryRepository):
         # Schema migration: add last_used_at column to existing sessions tables
         try:
             c.execute("ALTER TABLE sessions ADD COLUMN last_used_at TEXT")
+        except sqlite3.OperationalError:
+            pass  # column already exists
+
+        # Schema migration: add research_mode column to existing sessions tables
+        try:
+            c.execute("ALTER TABLE sessions ADD COLUMN research_mode INTEGER DEFAULT 0")
+        except sqlite3.OperationalError:
+            pass  # column already exists
+
+        # Schema migration: add research_source_mode column to existing sessions tables
+        try:
+            c.execute("ALTER TABLE sessions ADD COLUMN research_source_mode TEXT")
+        except sqlite3.OperationalError:
+            pass  # column already exists
+
+        # Schema migration: add research_local_corpus_paths column
+        try:
+            c.execute("ALTER TABLE sessions ADD COLUMN research_local_corpus_paths TEXT")
         except sqlite3.OperationalError:
             pass  # column already exists
 
@@ -668,14 +745,29 @@ class SQLiteHistoryRepository(HistoryRepository):
         name: Optional[str] = None,
         memory_auto_extract: bool = False,
         max_turns: Optional[int] = None,
+        research_mode: bool = False,
+        research_source_mode: Optional[str] = None,
+        research_local_corpus_paths: Optional[List[str]] = None,
     ) -> int:
         """Create a new session and return its ID."""
         conn = self._get_conn()
         c = conn.cursor()
         timestamp = datetime.now().isoformat()
+        normalized_mode = _normalize_research_source_mode(research_source_mode)
+        serialized_paths = _serialize_local_corpus_paths(research_local_corpus_paths)
         c.execute(
-            "INSERT INTO sessions (name, model, created_at, memory_auto_extract, max_turns, last_used_at) VALUES (?, ?, ?, ?, ?, ?)",
-            (name, model, timestamp, int(memory_auto_extract), max_turns, timestamp),
+            "INSERT INTO sessions (name, model, created_at, memory_auto_extract, max_turns, last_used_at, research_mode, research_source_mode, research_local_corpus_paths) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                name,
+                model,
+                timestamp,
+                int(memory_auto_extract),
+                max_turns,
+                timestamp,
+                int(research_mode),
+                normalized_mode,
+                serialized_paths,
+            ),
         )
         session_id = c.lastrowid
         conn.commit()
@@ -699,24 +791,12 @@ class SQLiteHistoryRepository(HistoryRepository):
         conn.row_factory = sqlite3.Row
         c = conn.cursor()
         c.execute(
-            "SELECT id, name, model, created_at, compacted_summary, memory_auto_extract, max_turns, last_used_at FROM sessions WHERE name = ? ORDER BY created_at DESC",
+            "SELECT id, name, model, created_at, compacted_summary, memory_auto_extract, max_turns, last_used_at, research_mode, research_source_mode, research_local_corpus_paths FROM sessions WHERE name = ? ORDER BY created_at DESC",
             (name,),
         )
         rows = c.fetchall()
         conn.close()
-        return [
-            Session(
-                id=r["id"],
-                name=r["name"],
-                model=r["model"],
-                created_at=r["created_at"],
-                compacted_summary=r["compacted_summary"],
-                memory_auto_extract=bool(r["memory_auto_extract"]),
-                max_turns=r["max_turns"],
-                last_used_at=r["last_used_at"],
-            )
-            for r in rows
-        ]
+        return [self._session_from_row(r) for r in rows]
 
     def get_session_by_id(self, session_id: int) -> Optional[Session]:
         """Look up a session by ID."""
@@ -724,22 +804,13 @@ class SQLiteHistoryRepository(HistoryRepository):
         conn.row_factory = sqlite3.Row
         c = conn.cursor()
         c.execute(
-            "SELECT id, name, model, created_at, compacted_summary, memory_auto_extract, max_turns, last_used_at FROM sessions WHERE id = ?",
+            "SELECT id, name, model, created_at, compacted_summary, memory_auto_extract, max_turns, last_used_at, research_mode, research_source_mode, research_local_corpus_paths FROM sessions WHERE id = ?",
             (session_id,),
         )
         row = c.fetchone()
         conn.close()
         if row:
-            return Session(
-                id=row["id"],
-                name=row["name"],
-                model=row["model"],
-                created_at=row["created_at"],
-                compacted_summary=row["compacted_summary"],
-                memory_auto_extract=bool(row["memory_auto_extract"]),
-                max_turns=row["max_turns"],
-                last_used_at=row["last_used_at"],
-            )
+            return self._session_from_row(row)
         return None
 
     def get_session_by_name(self, name: str) -> Optional[Session]:
@@ -748,22 +819,13 @@ class SQLiteHistoryRepository(HistoryRepository):
         conn.row_factory = sqlite3.Row
         c = conn.cursor()
         c.execute(
-            "SELECT id, name, model, created_at, compacted_summary, memory_auto_extract, max_turns, last_used_at FROM sessions WHERE name = ? ORDER BY created_at DESC LIMIT 1",
+            "SELECT id, name, model, created_at, compacted_summary, memory_auto_extract, max_turns, last_used_at, research_mode, research_source_mode, research_local_corpus_paths FROM sessions WHERE name = ? ORDER BY created_at DESC LIMIT 1",
             (name,),
         )
         row = c.fetchone()
         conn.close()
         if row:
-            return Session(
-                id=row["id"],
-                name=row["name"],
-                model=row["model"],
-                created_at=row["created_at"],
-                compacted_summary=row["compacted_summary"],
-                memory_auto_extract=bool(row["memory_auto_extract"]),
-                max_turns=row["max_turns"],
-                last_used_at=row["last_used_at"],
-            )
+            return self._session_from_row(row)
         return None
 
     def save_message(
@@ -832,24 +894,12 @@ class SQLiteHistoryRepository(HistoryRepository):
         conn.row_factory = sqlite3.Row
         c = conn.cursor()
         c.execute(
-            "SELECT id, name, model, created_at, compacted_summary, memory_auto_extract, max_turns, last_used_at FROM sessions ORDER BY created_at DESC LIMIT ?",
+            "SELECT id, name, model, created_at, compacted_summary, memory_auto_extract, max_turns, last_used_at, research_mode, research_source_mode, research_local_corpus_paths FROM sessions ORDER BY created_at DESC LIMIT ?",
             (limit,),
         )
         rows = c.fetchall()
         conn.close()
-        return [
-            Session(
-                id=r["id"],
-                name=r["name"],
-                model=r["model"],
-                created_at=r["created_at"],
-                compacted_summary=r["compacted_summary"],
-                memory_auto_extract=bool(r["memory_auto_extract"]),
-                max_turns=r["max_turns"],
-                last_used_at=r["last_used_at"],
-            )
-            for r in rows
-        ]
+        return [self._session_from_row(r) for r in rows]
 
     def update_session_max_turns(self, session_id: int, max_turns: int) -> None:
         """Update the maximum turns explicitly set for a session."""
@@ -870,6 +920,31 @@ class SQLiteHistoryRepository(HistoryRepository):
         c.execute(
             "UPDATE sessions SET last_used_at = ? WHERE id = ?",
             (timestamp, session_id),
+        )
+        conn.commit()
+        conn.close()
+
+    def update_session_research_profile(
+        self,
+        session_id: int,
+        *,
+        research_mode: bool,
+        research_source_mode: Optional[str],
+        research_local_corpus_paths: Optional[List[str]],
+    ) -> None:
+        """Persist research mode/profile metadata for a session."""
+        conn = self._get_conn()
+        c = conn.cursor()
+        normalized_mode = _normalize_research_source_mode(research_source_mode)
+        serialized_paths = _serialize_local_corpus_paths(research_local_corpus_paths)
+        c.execute(
+            "UPDATE sessions SET research_mode = ?, research_source_mode = ?, research_local_corpus_paths = ? WHERE id = ?",
+            (
+                int(research_mode),
+                normalized_mode,
+                serialized_paths,
+                session_id,
+            ),
         )
         conn.commit()
         conn.close()
