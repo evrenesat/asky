@@ -165,14 +165,24 @@ def render_to_browser(content: str, filename_hint: Optional[str] = None) -> None
 
 
 def save_html_report(
-    content: str, filename_hint: Optional[str] = None, session_name: str = ""
+    content: str,
+    filename_hint: Optional[str] = None,
+    session_name: str = "",
+    message_id: Optional[int] = None,
+    session_id: Optional[int] = None,
 ) -> Tuple[str, str]:
     """
     Save markdown content as an HTML report in the archive directory.
     Returns a tuple of (absolute_path_to_file, absolute_path_to_sidebar_wrapped_file).
     """
     try:
-        file_path = _save_to_archive(content, filename_hint, session_name=session_name)
+        file_path = _save_to_archive(
+            content,
+            filename_hint,
+            session_name=session_name,
+            message_id=message_id,
+            session_id=session_id,
+        )
 
         index_path = ARCHIVE_DIR / "index.html"
         # The URL should fragment should contain the results/ subtree path

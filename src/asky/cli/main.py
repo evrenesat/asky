@@ -25,7 +25,10 @@ from asky.banner import get_banner, BannerState
 from asky.logger import setup_logging, generate_timestamped_log_path
 from asky.storage import init_db, get_db_record_count, get_total_session_count
 from asky.storage.sqlite import SQLiteHistoryRepository
-from asky.cli.completion import parse_session_selector_token
+from asky.cli.completion import (
+    parse_answer_selector_token,
+    parse_session_selector_token,
+)
 from asky.core import get_shell_session_id
 
 
@@ -63,7 +66,6 @@ def parse_args() -> argparse.Namespace:
         complete_model_aliases,
         complete_session_tokens,
         complete_single_answer_id,
-        parse_answer_selector_token,
         parse_session_selector_token,
         enable_argcomplete,
         complete_tool_names,

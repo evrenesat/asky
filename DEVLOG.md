@@ -1,5 +1,61 @@
 # DEVLOG
 
+## 2026-02-22 - Fix: save_html_report() TypeError Regression
+
+Fixed a regression where `save_html_report()` was missing `message_id` and `session_id` parameters, causing a crash during archive generation. This was a mismatch between `chat.py` call site and `rendering.py` signature.
+
+## 2026-02-22 - Standard-Mode Seed URL Content Preload Before First Tool Call
+
+Improved standard-mode URL summarization flow so URL content from the user prompt
+is proactively delivered to the model before the first tool loop.
+
+- **Changed**:
+  - `src/asky/research/shortlist_types.py`: Extended `CandidateRecord` with
+    fetch metadata fields (`requested_url`, `fetched_content`, `fetch_warning`,
+    `fetch_error`, `final_url`) for deterministic seed-document output.
+  - `src/asky/research/shortlist_collect.py`: Preserve `requested_url` on seed,
+    seed-link, and search candidates.
+  - `src/asky/research/source_shortlist.py`:
+    - Added `seed_url_documents` payload output aligned to prompt seed URL order.
+    - Ensured prompt seed URLs are fetched even when beyond the shortlist scoring
+      cap (`max_fetch_urls`) so preload can include them.
+    - Added bare-domain prompt URL extraction (e.g., `example.com/path`) so
+      un-schemed URLs are treated as seed URLs and normalized to `https://...`.
+    - Updated shortlist context formatting to always include explicitly mentioned
+      prompt URLs even if they rank below the normal top-k context cutoff.
+    - Added `fetched_count` to payload for preload-state checks.
+  - `src/asky/api/preload.py`:
+    - Added standard-mode seed URL context formatter.
+    - Implemented combined budget cap at 80% of model context size
+      (`context_size * 4 chars/token * 0.8`).
+    - Added per-URL delivery status labels:
+      `full_content`, `summarized_due_budget`,
+      `summary_truncated_due_budget`, `fetch_error`.
+    - Seed URL context is now inserted before shortlist context in
+      `combined_context`.
+  - `src/asky/api/types.py`: Added `seed_url_context` to `PreloadResolution`.
+  - Tests:
+    - `tests/test_source_shortlist.py`: added seed-document capture/failure and
+      seed-fetch-beyond-cap coverage, plus bare-domain extraction and explicit
+      URL inclusion-beyond-top-k coverage.
+    - `tests/test_api_preload.py`: added coverage for budget behavior,
+      summarization/truncation labeling, fetch-error labeling, and standard-mode
+      ordering in combined preload context.
+    - `tests/test_api_library.py`: added seed URL context presence assertion in
+      message construction.
+  - Docs:
+    - `src/asky/api/AGENTS.md`, `ARCHITECTURE.md` updated for new preload flow.
+
+- **Why**:
+  - Previous behavior fetched seed URLs during shortlist ranking but only passed
+    shortlist snippets to the model, which often forced an extra tool call to
+    refetch the same URL content.
+  - Preloading seed URL content lowers redundant tool turns and gives the model
+    immediate context for URL summarization requests.
+
+- **Validation**:
+  - `uv run pytest tests/test_source_shortlist.py tests/test_api_preload.py tests/test_api_library.py` -> passed.
+
 ## 2026-02-22 - Version 0.2.0: Copy Icons for Archive Sidebar
 
 Bumped minor version to 0.2.0 and added copy-to-clipboard functionality to the HTML archive sidebar.

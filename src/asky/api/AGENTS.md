@@ -23,6 +23,15 @@ Use `AskyClient.run_turn(request)` for CLI-equivalent orchestration:
 4. Build messages (with local-target query redaction + optional local-KB system hint) and execute `ConversationEngine`
 5. Generate summaries and persist session/history turns
 
+## Preload Notes
+
+- In standard mode, URL-bearing prompts now preload seed URL page content into
+  the first model request context.
+- Seed URL preload uses a combined 80% main-model context budget and labels each
+  seed block as `full_content`, `summarized_due_budget`,
+  `summary_truncated_due_budget`, or `fetch_error`.
+- Shortlist-ranked links/snippets are still included after seed URL content.
+
 ## Runtime Boundary
 
 - `asky.api` does not render terminal UI.

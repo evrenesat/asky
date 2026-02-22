@@ -70,6 +70,9 @@ _YAKE_MODULE: Optional[Any] = None
 _YAKE_MODULE_LOADED = False
 
 URL_PATTERN = re.compile(r"https?://[^\s<>\"']+")
+BARE_URL_PATTERN = re.compile(
+    r"(?<![@\w])(?:www\.)?(?:[A-Za-z0-9-]+\.)+[A-Za-z]{2,}(?:/[^\s<>\"']*)?"
+)
 TRAILING_URL_PUNCTUATION = ".,;:!?)]}>\"'"
 WHITESPACE_PATTERN = re.compile(r"\s+")
 TOKEN_PATTERN = re.compile(r"[A-Za-z0-9_]{2,}")
@@ -147,6 +150,7 @@ MAX_REASON_COUNT = 4
 MAX_SHORTLIST_CONTEXT_ITEMS = 5
 MAX_SHORTLIST_CONTEXT_SNIPPET_CHARS = 420
 MAX_TITLE_CHARS = 180
+MAX_SEED_URL_ERROR_CHARS = 500
 
 
 def extract_prompt_urls_and_query_text(user_prompt: str) -> Tuple[List[str], str]:
@@ -156,12 +160,19 @@ def extract_prompt_urls_and_query_text(user_prompt: str) -> Tuple[List[str], str
 
     seed_urls: List[str] = []
     for raw_url in URL_PATTERN.findall(user_prompt):
-        cleaned_url = raw_url.rstrip(TRAILING_URL_PUNCTUATION)
+        cleaned_url = _normalize_seed_url(raw_url.rstrip(TRAILING_URL_PUNCTUATION))
+        if cleaned_url:
+            seed_urls.append(cleaned_url)
+
+    prompt_without_http_urls = URL_PATTERN.sub(" ", user_prompt)
+    for raw_url in BARE_URL_PATTERN.findall(prompt_without_http_urls):
+        cleaned_url = _normalize_seed_url(raw_url.rstrip(TRAILING_URL_PUNCTUATION))
         if cleaned_url:
             seed_urls.append(cleaned_url)
 
     deduped_urls = _dedupe_preserve_order(seed_urls)
-    query_text = _normalize_whitespace(URL_PATTERN.sub(" ", user_prompt))
+    query_without_http_urls = URL_PATTERN.sub(" ", user_prompt)
+    query_text = _normalize_whitespace(BARE_URL_PATTERN.sub(" ", query_without_http_urls))
     return deduped_urls, query_text
 
 
@@ -255,6 +266,8 @@ def shortlist_prompt_sources(
         return {
             "enabled": False,
             "seed_urls": [],
+            "seed_url_documents": [],
+            "fetched_count": 0,
             "query_text": "",
             "search_query": "",
             "search_queries": [],
@@ -345,6 +358,8 @@ def shortlist_prompt_sources(
         return {
             "enabled": True,
             "seed_urls": seed_urls,
+            "seed_url_documents": [],
+            "fetched_count": 0,
             "query_text": query_text,
             "search_query": search_queries[0] if search_queries else "",
             "search_queries": search_queries,
@@ -371,9 +386,14 @@ def shortlist_prompt_sources(
     fetch_start = time.perf_counter()
     fetched_candidates = _fetch_candidate_content(
         candidates=candidates,
+        seed_urls=seed_urls,
         fetch_executor=active_fetch_executor,
         warnings=warnings,
         metrics=metrics,
+    )
+    seed_url_documents = _build_seed_url_documents(
+        seed_urls=seed_urls,
+        candidates=candidates,
     )
     fetch_ms = _elapsed_ms(fetch_start)
 
@@ -392,6 +412,8 @@ def shortlist_prompt_sources(
         return {
             "enabled": True,
             "seed_urls": seed_urls,
+            "seed_url_documents": seed_url_documents,
+            "fetched_count": len(fetched_candidates),
             "query_text": query_text,
             "search_query": search_queries[0] if search_queries else "",
             "search_queries": search_queries,
@@ -504,6 +526,8 @@ def shortlist_prompt_sources(
     return {
         "enabled": True,
         "seed_urls": seed_urls,
+        "seed_url_documents": seed_url_documents,
+        "fetched_count": len(fetched_candidates),
         "query_text": query_text,
         "search_query": search_queries[0] if search_queries else "",
         "search_queries": search_queries,
@@ -533,8 +557,34 @@ def format_shortlist_context(shortlist_payload: Dict[str, Any]) -> str:
     if not candidates:
         return ""
 
-    lines: List[str] = []
+    seed_urls = shortlist_payload.get("seed_urls", []) or []
+    explicit_seed_url_set = {
+        normalize_source_url(str(url))
+        for url in seed_urls
+        if normalize_source_url(str(url))
+    }
+    preferred_candidates: List[Dict[str, Any]] = []
+    seen_candidate_urls = set()
+
+    for item in candidates:
+        normalized_item_url = normalize_source_url(str(item.get("url", "")))
+        if not normalized_item_url:
+            continue
+        if normalized_item_url in explicit_seed_url_set:
+            preferred_candidates.append(item)
+            seen_candidate_urls.add(normalized_item_url)
+
+    selected_candidates = preferred_candidates[:]
     for item in candidates[:MAX_SHORTLIST_CONTEXT_ITEMS]:
+        normalized_item_url = normalize_source_url(str(item.get("url", "")))
+        if normalized_item_url and normalized_item_url in seen_candidate_urls:
+            continue
+        selected_candidates.append(item)
+        if normalized_item_url:
+            seen_candidate_urls.add(normalized_item_url)
+
+    lines: List[str] = []
+    for item in selected_candidates:
         title = item.get("title") or item.get("url", "")
         score = item.get("final_score", 0.0)
         reasons = item.get("why_selected", [])
@@ -553,6 +603,16 @@ def format_shortlist_context(shortlist_payload: Dict[str, Any]) -> str:
     return "\n\n".join(lines)
 
 
+def _normalize_seed_url(raw_url: str) -> str:
+    """Normalize raw URL-like prompt tokens into fetchable HTTP targets."""
+    cleaned = _normalize_whitespace(raw_url)
+    if not cleaned:
+        return ""
+    if cleaned.startswith("http://") or cleaned.startswith("https://"):
+        return cleaned
+    return f"https://{cleaned}"
+
+
 def _shortlist_enabled_for_mode(research_mode: bool) -> bool:
     """Return whether source shortlisting is enabled for the current chat mode."""
     if not SOURCE_SHORTLIST_ENABLED:
@@ -564,6 +624,7 @@ def _shortlist_enabled_for_mode(research_mode: bool) -> bool:
 
 def _fetch_candidate_content(
     candidates: Sequence[CandidateRecord],
+    seed_urls: Sequence[str],
     fetch_executor: FetchExecutor,
     warnings: List[str],
     metrics: Optional[ShortlistMetrics] = None,
@@ -571,15 +632,47 @@ def _fetch_candidate_content(
     """Fetch and extract main text for candidate URLs."""
     extracted: List[CandidateRecord] = []
     seen_canonical_urls = set()
-    for candidate in candidates[:SOURCE_SHORTLIST_MAX_FETCH_URLS]:
+    seed_url_set = set(seed_urls)
+    for index, candidate in enumerate(candidates):
+        should_fetch_for_scoring = index < SOURCE_SHORTLIST_MAX_FETCH_URLS
+        should_fetch_seed_document = (
+            candidate.source_type == "seed" and candidate.requested_url in seed_url_set
+        )
+        if not should_fetch_for_scoring and not should_fetch_seed_document:
+            continue
+
         fetch_start = time.perf_counter()
         if metrics is not None:
             metrics["fetch_calls"] += 1
 
         payload = fetch_executor(candidate.url)
         fetch_elapsed = _elapsed_ms(fetch_start)
+        warning_text = str(payload.get("warning", "") or "")
+        candidate.fetch_warning = warning_text
+        candidate.fetch_error = _extract_fetch_error(payload)
+        candidate.fetched_content = _normalize_whitespace(str(payload.get("text", "")))
+        candidate.final_url = str(payload.get("final_url", "") or "")
 
-        text = _normalize_whitespace(str(payload.get("text", "")))
+        fetched_title = _normalize_whitespace(str(payload.get("title", "")))
+        if fetched_title:
+            candidate.title = fetched_title[:MAX_TITLE_CHARS]
+        if payload.get("date"):
+            candidate.date = payload.get("date")
+        if warning_text:
+            warnings.append(warning_text)
+
+        if not should_fetch_for_scoring:
+            if metrics is not None and not candidate.fetched_content:
+                metrics["fetch_failures"] += 1
+            logger.debug(
+                "source_shortlist seed fetch-only success url=%s text_len=%d elapsed=%.2fms",
+                candidate.url,
+                len(candidate.fetched_content),
+                fetch_elapsed,
+            )
+            continue
+
+        text = candidate.fetched_content
         if len(text) < SOURCE_SHORTLIST_MIN_CONTENT_CHARS:
             if metrics is not None:
                 if text:
@@ -592,15 +685,11 @@ def _fetch_candidate_content(
                 len(text),
                 SOURCE_SHORTLIST_MIN_CONTENT_CHARS,
                 fetch_elapsed,
-                payload.get("warning"),
+                warning_text,
             )
             continue
 
-        candidate.title = (
-            _normalize_whitespace(str(payload.get("title", "")))[:MAX_TITLE_CHARS]
-            or candidate.title
-            or _derive_title_from_url(candidate.url)
-        )
+        candidate.title = candidate.title or _derive_title_from_url(candidate.url)
         _apply_canonical_url(candidate, payload)
         if candidate.normalized_url and candidate.normalized_url in seen_canonical_urls:
             if metrics is not None:
@@ -614,9 +703,6 @@ def _fetch_candidate_content(
 
         candidate.text = text[:SOURCE_SHORTLIST_MAX_SCORING_CHARS]
         candidate.snippet = candidate.text[:SOURCE_SHORTLIST_SNIPPET_CHARS]
-        candidate.date = payload.get("date")
-        if payload.get("warning"):
-            warnings.append(str(payload["warning"]))
         if metrics is not None:
             metrics["fetch_success"] += 1
         if candidate.normalized_url:
@@ -639,6 +725,57 @@ def _fetch_candidate_content(
         SOURCE_SHORTLIST_MAX_FETCH_URLS,
     )
     return extracted
+
+
+def _extract_fetch_error(payload: Dict[str, Any]) -> str:
+    """Extract fetch error from payload warnings, if present."""
+    warning_text = str(payload.get("warning", "") or "")
+    fetch_error_prefix = "fetch_error:"
+    if warning_text.startswith(fetch_error_prefix):
+        return warning_text[len(fetch_error_prefix) :].strip()[:MAX_SEED_URL_ERROR_CHARS]
+    return ""
+
+
+def _build_seed_url_documents(
+    *,
+    seed_urls: Sequence[str],
+    candidates: Sequence[CandidateRecord],
+) -> List[Dict[str, Any]]:
+    """Build deterministic seed URL document payloads in prompt order."""
+    seed_candidates = [
+        candidate for candidate in candidates if candidate.source_type == "seed"
+    ]
+    by_requested_url = {
+        candidate.requested_url: candidate
+        for candidate in seed_candidates
+        if candidate.requested_url
+    }
+    documents: List[Dict[str, Any]] = []
+    for seed_url in seed_urls:
+        candidate = by_requested_url.get(seed_url)
+        if candidate is None:
+            documents.append(
+                {
+                    "url": seed_url,
+                    "resolved_url": seed_url,
+                    "title": "",
+                    "content": "",
+                    "error": "Seed URL was not fetched by shortlist pipeline.",
+                    "warning": "",
+                }
+            )
+            continue
+        documents.append(
+            {
+                "url": seed_url,
+                "resolved_url": candidate.final_url or candidate.url or seed_url,
+                "title": candidate.title,
+                "content": candidate.fetched_content,
+                "error": candidate.fetch_error,
+                "warning": candidate.fetch_warning,
+            }
+        )
+    return documents
 
 
 def _default_fetch_executor(url: str) -> Dict[str, Any]:

@@ -27,6 +27,29 @@ def test_asky_client_build_messages_with_context_and_preloaded_sources():
     assert "Preloaded sources gathered before tool calls" in messages[2]["content"]
 
 
+def test_asky_client_build_messages_contains_seed_url_context_block():
+    client = AskyClient(
+        AskyConfig(
+            model_alias="gf",
+            research_mode=False,
+        )
+    )
+    messages = client.build_messages(
+        query_text="Summarize this URL",
+        preload=PreloadResolution(
+            combined_context=(
+                "Seed URL Content from Query:\n"
+                "1. URL: https://example.com\n"
+                "   Delivery status: full_content\n"
+                "   Content:\nExample content"
+            ),
+        ),
+    )
+
+    assert "Seed URL Content from Query:" in messages[-1]["content"]
+    assert "Delivery status: full_content" in messages[-1]["content"]
+
+
 def test_asky_client_build_messages_adds_local_kb_guidance():
     client = AskyClient(
         AskyConfig(

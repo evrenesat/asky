@@ -168,6 +168,14 @@ Pre-LLM source ranking to improve prompt relevance.
 5. Score with embeddings + heuristics
 6. Select top-k diverse sources
 
+Seed URL extraction accepts both explicit `http(s)://...` links and bare-domain
+targets (e.g., `example.com/path`), normalizing bare targets to `https://...`
+for deterministic fetch behavior.
+
+When formatting shortlist context, explicitly mentioned seed URLs are included
+in the model-facing shortlist context even if they rank below the usual top-k
+context cutoff.
+
 ### Internal Module Split
 
 - `source_shortlist.py` keeps public API and orchestration.

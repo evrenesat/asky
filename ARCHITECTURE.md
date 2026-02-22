@@ -157,6 +157,7 @@ context.py → resolve history selectors + context payload
 session.py → resolve create/resume/auto/research session state
     ↓
 preload.py → optional local_ingestion + shortlist pipeline
+           → standard-mode seed URL content preload (budget-aware)
     ↓
 build_messages() (inside AskyClient)
     ↓
@@ -192,6 +193,15 @@ Verbose tracing has two levels:
 
 Programmatic consumers can bypass CLI by instantiating `AskyClient` directly and
 calling `run_turn(...)` for full CLI-equivalent orchestration.
+
+In standard mode, when prompts include URL(s), preload now injects a
+`Seed URL Content from Query` block ahead of shortlist-ranked snippets. This
+block is capped to a combined 80% model-context budget and marks each URL block
+as `full_content`, `summarized_due_budget`, `summary_truncated_due_budget`, or
+`fetch_error`. Prompt URL extraction supports both explicit `http(s)://...` and
+bare-domain forms (`example.com/path`), and explicit prompt URLs are always
+included in the shortlist context section even when ranked below the normal
+top-k snippet cutoff.
 
 ### Session Flow
 

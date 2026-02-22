@@ -81,6 +81,8 @@ class PreloadResolution:
     local_context: Optional[str] = None
     local_payload: Dict[str, Any] = field(default_factory=dict)
     local_elapsed_ms: float = 0.0
+    seed_url_context: Optional[str] = None
+    seed_url_direct_answer_ready: bool = False
     shortlist_context: Optional[str] = None
     shortlist_payload: Dict[str, Any] = field(default_factory=dict)
     shortlist_stats: Dict[str, Any] = field(default_factory=dict)

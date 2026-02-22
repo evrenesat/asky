@@ -7,6 +7,7 @@ from dataclasses import asdict
 from typing import Any, Callable, Dict, List, Optional
 
 from asky.config import (
+    DEFAULT_CONTEXT_SIZE,
     SOURCE_SHORTLIST_ENABLED,
     SOURCE_SHORTLIST_ENABLE_RESEARCH_MODE,
     SOURCE_SHORTLIST_ENABLE_STANDARD_MODE,
@@ -18,12 +19,17 @@ from asky.config import (
     USER_MEMORY_ENABLED,
     USER_MEMORY_RECALL_TOP_K,
     USER_MEMORY_RECALL_MIN_SIMILARITY,
+    SUMMARIZE_PAGE_PROMPT,
 )
 from asky.lazy_imports import call_attr
 
 from .types import PreloadResolution
 
 StatusCallback = Callable[[str], None]
+SEED_URL_CONTEXT_BUDGET_RATIO = 0.8
+MODEL_CHARS_PER_TOKEN_ESTIMATE = 4
+SUMMARY_TRUNCATION_SUFFIX = "..."
+SUMMARY_TRUNCATION_SUFFIX_LENGTH = len(SUMMARY_TRUNCATION_SUFFIX)
 
 
 def shortlist_prompt_sources(*args: Any, **kwargs: Any) -> Dict[str, Any]:
@@ -171,6 +177,157 @@ def combine_preloaded_source_context(*context_blocks: Optional[str]) -> Optional
     return "\n\n".join(merged)
 
 
+def summarize_seed_content(content: str, max_output_chars: int) -> str:
+    """Summarize seed URL content using the existing summarization pipeline."""
+    if not content:
+        return ""
+    return call_attr(
+        "asky.summarization",
+        "_summarize_content",
+        content=content,
+        prompt_template=SUMMARIZE_PAGE_PROMPT,
+        max_output_chars=max_output_chars,
+    )
+
+
+def _truncate_with_ellipsis(text: str, max_chars: int) -> str:
+    """Truncate text to max chars while preserving explicit truncation signal."""
+    if max_chars <= 0:
+        return ""
+    if len(text) <= max_chars:
+        return text
+    if max_chars <= SUMMARY_TRUNCATION_SUFFIX_LENGTH:
+        return SUMMARY_TRUNCATION_SUFFIX[:max_chars]
+    return text[: max_chars - SUMMARY_TRUNCATION_SUFFIX_LENGTH] + SUMMARY_TRUNCATION_SUFFIX
+
+
+def _compute_seed_url_budget_chars(model_config: Dict[str, Any]) -> int:
+    """Compute combined seed URL budget in characters from model context size."""
+    context_tokens = int(model_config.get("context_size", DEFAULT_CONTEXT_SIZE))
+    context_chars = context_tokens * MODEL_CHARS_PER_TOKEN_ESTIMATE
+    return max(0, int(context_chars * SEED_URL_CONTEXT_BUDGET_RATIO))
+
+
+def format_seed_url_context(
+    *,
+    shortlist_payload: Dict[str, Any],
+    model_config: Dict[str, Any],
+    research_mode: bool,
+) -> Optional[str]:
+    """Build seed URL preload context with explicit delivery status labels."""
+    if research_mode:
+        return None
+
+    seed_docs = shortlist_payload.get("seed_url_documents", []) or []
+    if not seed_docs:
+        return None
+
+    combined_budget_chars = _compute_seed_url_budget_chars(model_config)
+    raw_contents = [str(doc.get("content", "") or "") for doc in seed_docs]
+    raw_total_chars = sum(len(content) for content in raw_contents)
+    should_summarize = raw_total_chars > combined_budget_chars and combined_budget_chars > 0
+
+    rendered_docs: List[Dict[str, str]] = []
+    for doc in seed_docs:
+        doc_content = str(doc.get("content", "") or "")
+        doc_error = str(doc.get("error", "") or "")
+        if doc_error:
+            rendered_docs.append(
+                {
+                    "url": str(doc.get("url", "") or ""),
+                    "resolved_url": str(doc.get("resolved_url", "") or ""),
+                    "title": str(doc.get("title", "") or ""),
+                    "status": "fetch_error",
+                    "content": _truncate_with_ellipsis(doc_error, combined_budget_chars),
+                }
+            )
+            continue
+
+        if should_summarize:
+            summary_text = summarize_seed_content(
+                content=doc_content,
+                max_output_chars=combined_budget_chars,
+            )
+            rendered_docs.append(
+                {
+                    "url": str(doc.get("url", "") or ""),
+                    "resolved_url": str(doc.get("resolved_url", "") or ""),
+                    "title": str(doc.get("title", "") or ""),
+                    "status": "summarized_due_budget",
+                    "content": summary_text,
+                }
+            )
+            continue
+
+        rendered_docs.append(
+            {
+                "url": str(doc.get("url", "") or ""),
+                "resolved_url": str(doc.get("resolved_url", "") or ""),
+                "title": str(doc.get("title", "") or ""),
+                "status": "full_content",
+                "content": doc_content,
+            }
+        )
+
+    remaining_chars = combined_budget_chars
+    for item in rendered_docs:
+        if item["status"] == "fetch_error":
+            continue
+        if len(item["content"]) <= remaining_chars:
+            remaining_chars -= len(item["content"])
+            continue
+
+        item["content"] = _truncate_with_ellipsis(item["content"], remaining_chars)
+        item["status"] = "summary_truncated_due_budget"
+        remaining_chars = 0
+
+    lines = ["Seed URL Content from Query:"]
+    for index, item in enumerate(rendered_docs, start=1):
+        header = f"{index}. URL: {item['url']}"
+        if item["resolved_url"] and item["resolved_url"] != item["url"]:
+            header += f" (resolved: {item['resolved_url']})"
+        lines.extend(
+            [
+                header,
+                f"   Delivery status: {item['status']}",
+            ]
+        )
+        if item["title"]:
+            lines.append(f"   Title: {item['title']}")
+        lines.append("   Content:")
+        lines.append(item["content"] if item["content"] else "[empty]")
+        lines.append("")
+
+    return "\n".join(lines).strip()
+
+
+def seed_url_context_allows_direct_answer(
+    *,
+    shortlist_payload: Dict[str, Any],
+    model_config: Dict[str, Any],
+    research_mode: bool,
+) -> bool:
+    """Return True when seed URL preload is sufficient to answer without refetch."""
+    if research_mode:
+        return False
+
+    seed_docs = shortlist_payload.get("seed_url_documents", []) or []
+    if not seed_docs:
+        return False
+
+    combined_budget_chars = _compute_seed_url_budget_chars(model_config)
+    if combined_budget_chars <= 0:
+        return False
+
+    raw_total_chars = 0
+    for doc in seed_docs:
+        if str(doc.get("error", "") or "").strip():
+            return False
+        raw_total_chars += len(str(doc.get("content", "") or ""))
+
+    return raw_total_chars <= combined_budget_chars
+
+
 def run_preload_pipeline(
     *,
     query_text: str,
@@ -262,6 +419,7 @@ def run_preload_pipeline(
 
     shortlist_payload: Dict[str, Any] = {
         "enabled": False,
+        "seed_url_documents": [],
         "candidates": [],
         "warnings": [],
         "stats": {},
@@ -294,6 +452,16 @@ def run_preload_pipeline(
         status_callback(f"Shortlist disabled ({shortlist_reason})")
 
     preload.shortlist_payload = shortlist_payload
+    preload.seed_url_context = format_seed_url_context(
+        shortlist_payload=shortlist_payload,
+        model_config=model_config,
+        research_mode=research_mode,
+    )
+    preload.seed_url_direct_answer_ready = seed_url_context_allows_direct_answer(
+        shortlist_payload=shortlist_payload,
+        model_config=model_config,
+        research_mode=research_mode,
+    )
     preload.shortlist_context = shortlist_context
     preload.shortlist_elapsed_ms = shortlist_elapsed_ms
     preload.shortlist_stats = shortlist_stats_builder(
@@ -360,6 +528,7 @@ def run_preload_pipeline(
 
     preload.combined_context = combine_preloaded_source_context(
         preload.local_context,
+        preload.seed_url_context,
         shortlist_context,
         preload.evidence_context,
         additional_source_context,

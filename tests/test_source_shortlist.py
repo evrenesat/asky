@@ -45,6 +45,14 @@ def test_extract_prompt_urls_and_query_text():
     assert query_text == "Compare these and"
 
 
+def test_extract_prompt_urls_and_query_text_detects_bare_domain_urls():
+    seed_urls, query_text = extract_prompt_urls_and_query_text(
+        "Summarize adamj.eu/tech/2023/09/18/git-dont-create-gitkeep/ in detail."
+    )
+    assert seed_urls == ["https://adamj.eu/tech/2023/09/18/git-dont-create-gitkeep/"]
+    assert query_text == "Summarize in detail."
+
+
 def test_normalize_source_url_removes_tracking_params():
     normalized = normalize_source_url(
         "HTTPS://Example.com:443/news/?utm_source=test&b=2&a=1#section"
@@ -381,6 +389,65 @@ def test_format_shortlist_context():
     assert "semantic_similarity=0.85" in context
 
 
+def test_format_shortlist_context_includes_explicit_seed_url_beyond_top_k():
+    payload = {
+        "seed_urls": ["https://example.com/target"],
+        "candidates": [
+            {
+                "rank": 1,
+                "title": "Top 1",
+                "final_score": 0.9,
+                "url": "https://example.com/one",
+                "why_selected": ["semantic_similarity=0.90"],
+                "snippet": "s1",
+            },
+            {
+                "rank": 2,
+                "title": "Top 2",
+                "final_score": 0.8,
+                "url": "https://example.com/two",
+                "why_selected": ["semantic_similarity=0.80"],
+                "snippet": "s2",
+            },
+            {
+                "rank": 3,
+                "title": "Top 3",
+                "final_score": 0.7,
+                "url": "https://example.com/three",
+                "why_selected": ["semantic_similarity=0.70"],
+                "snippet": "s3",
+            },
+            {
+                "rank": 4,
+                "title": "Top 4",
+                "final_score": 0.6,
+                "url": "https://example.com/four",
+                "why_selected": ["semantic_similarity=0.60"],
+                "snippet": "s4",
+            },
+            {
+                "rank": 5,
+                "title": "Top 5",
+                "final_score": 0.5,
+                "url": "https://example.com/five",
+                "why_selected": ["semantic_similarity=0.50"],
+                "snippet": "s5",
+            },
+            {
+                "rank": 6,
+                "title": "Target URL",
+                "final_score": 0.4,
+                "url": "https://example.com/target",
+                "why_selected": ["semantic_similarity=0.40"],
+                "snippet": "target snippet",
+            },
+        ],
+    }
+    context = format_shortlist_context(payload)
+    assert "https://example.com/target" in context
+    assert "Target URL" in context
+
+
 def test_shortlist_skips_embedding_when_cached_failure(monkeypatch):
     from asky.research import source_shortlist as shortlist_mod
 
@@ -408,3 +475,83 @@ def test_shortlist_skips_embedding_when_cached_failure(monkeypatch):
 
     assert len(payload["candidates"]) == 1
     assert "embedding_skipped:cached_model_load_failure" in payload["warnings"]
+
+
+def test_shortlist_includes_seed_url_documents_with_errors(monkeypatch):
+    from asky.research import source_shortlist as shortlist_mod
+
+    monkeypatch.setattr(shortlist_mod, "SOURCE_SHORTLIST_ENABLED", True)
+    monkeypatch.setattr(shortlist_mod, "SOURCE_SHORTLIST_ENABLE_RESEARCH_MODE", True)
+    monkeypatch.setattr(shortlist_mod, "SOURCE_SHORTLIST_ENABLE_STANDARD_MODE", True)
+    monkeypatch.setattr(
+        shortlist_mod, "SOURCE_SHORTLIST_SEED_LINK_EXPANSION_ENABLED", False
+    )
+    monkeypatch.setattr(shortlist_mod, "SOURCE_SHORTLIST_MIN_CONTENT_CHARS", 10)
+
+    def fake_fetch_executor(url: str) -> Dict[str, Any]:
+        if "ok" in url:
+            return {
+                "title": "Working Seed",
+                "text": "Enough content for a successful fetch.",
+                "date": None,
+            }
+        return {
+            "title": "",
+            "text": "",
+            "warning": "fetch_error:simulated failure",
+            "date": None,
+        }
+
+    payload = shortlist_prompt_sources(
+        user_prompt="Use https://example.com/ok and https://example.com/fail",
+        research_mode=False,
+        fetch_executor=fake_fetch_executor,
+        embedding_client=FakeEmbeddingClient(),
+    )
+
+    docs = payload["seed_url_documents"]
+    assert [doc["url"] for doc in docs] == [
+        "https://example.com/ok",
+        "https://example.com/fail",
+    ]
+    assert docs[0]["title"] == "Working Seed"
+    assert docs[0]["content"]
+    assert docs[0]["error"] == ""
+    assert docs[1]["error"] == "simulated failure"
+
+
+def test_shortlist_fetches_all_seed_urls_even_beyond_scoring_cap(monkeypatch):
+    from asky.research import source_shortlist as shortlist_mod
+
+    monkeypatch.setattr(shortlist_mod, "SOURCE_SHORTLIST_ENABLED", True)
+    monkeypatch.setattr(shortlist_mod, "SOURCE_SHORTLIST_ENABLE_RESEARCH_MODE", True)
+    monkeypatch.setattr(shortlist_mod, "SOURCE_SHORTLIST_ENABLE_STANDARD_MODE", True)
+    monkeypatch.setattr(
+        shortlist_mod, "SOURCE_SHORTLIST_SEED_LINK_EXPANSION_ENABLED", False
+    )
+    monkeypatch.setattr(shortlist_mod, "SOURCE_SHORTLIST_MAX_FETCH_URLS", 1)
+    monkeypatch.setattr(shortlist_mod, "SOURCE_SHORTLIST_MIN_CONTENT_CHARS", 10)
+
+    seen_urls: List[str] = []
+
+    def fake_fetch_executor(url: str) -> Dict[str, Any]:
+        seen_urls.append(url)
+        return {
+            "title": f"Title for {url}",
+            "text": f"Shortlist content for {url} with enough characters.",
+            "date": None,
+        }
+
+    payload = shortlist_prompt_sources(
+        user_prompt=(
+            "Summarize https://example.com/seed-one and https://example.com/seed-two."
+        ),
+        research_mode=False,
+        fetch_executor=fake_fetch_executor,
+        embedding_client=FakeEmbeddingClient(),
+    )
+
+    assert "https://example.com/seed-one" in seen_urls
+    assert "https://example.com/seed-two" in seen_urls
+    assert len(payload["seed_url_documents"]) == 2
+    assert payload["fetched_count"] == len(payload["candidates"])
