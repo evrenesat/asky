@@ -75,7 +75,7 @@ def _ensure_chunk_embeddings(
     model_check = getattr(vector_store, "has_chunk_embeddings_for_model", None)
     if callable(model_check):
         model_result = model_check(cache_id, embedding_model)
-        if isinstance(model_result, bool):
+        if model_result in (True, False):
             has_embeddings = model_result
 
     if has_embeddings:

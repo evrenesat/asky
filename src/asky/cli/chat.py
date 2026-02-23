@@ -1108,9 +1108,7 @@ def run_chat(args: argparse.Namespace, query_text: str) -> None:
             save_history=False,  # We handle saving manually after rendering
             elephant_mode=elephant_mode,
             max_turns=getattr(args, "turns", None),
-            research_flag_provided=bool(
-                getattr(args, "research_flag_provided", False)
-            ),
+            research_flag_provided=bool(getattr(args, "research_flag_provided", False)),
             research_source_mode=getattr(args, "research_source_mode", None),
             replace_research_corpus=bool(
                 getattr(args, "replace_research_corpus", False)
@@ -1148,7 +1146,7 @@ def run_chat(args: argparse.Namespace, query_text: str) -> None:
         )
         final_answer = turn_result.final_answer
         session_research_value = getattr(turn_result.session, "research_mode", None)
-        if isinstance(session_research_value, bool):
+        if session_research_value in (True, False):
             effective_research_mode = session_research_value
         else:
             effective_research_mode = research_mode

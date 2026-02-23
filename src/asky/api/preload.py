@@ -151,7 +151,7 @@ def shortlist_enabled_for_request(
         return False, "request_override_off"
 
     model_override = model_config.get("source_shortlist_enabled")
-    if isinstance(model_override, bool):
+    if model_override in (True, False):
         return model_override, "model_override"
 
     if not SOURCE_SHORTLIST_ENABLED:
@@ -269,7 +269,9 @@ def _truncate_with_ellipsis(text: str, max_chars: int) -> str:
         return text
     if max_chars <= SUMMARY_TRUNCATION_SUFFIX_LENGTH:
         return SUMMARY_TRUNCATION_SUFFIX[:max_chars]
-    return text[: max_chars - SUMMARY_TRUNCATION_SUFFIX_LENGTH] + SUMMARY_TRUNCATION_SUFFIX
+    return (
+        text[: max_chars - SUMMARY_TRUNCATION_SUFFIX_LENGTH] + SUMMARY_TRUNCATION_SUFFIX
+    )
 
 
 def _compute_seed_url_budget_chars(model_config: Dict[str, Any]) -> int:
@@ -296,7 +298,9 @@ def format_seed_url_context(
     combined_budget_chars = _compute_seed_url_budget_chars(model_config)
     raw_contents = [str(doc.get("content", "") or "") for doc in seed_docs]
     raw_total_chars = sum(len(content) for content in raw_contents)
-    should_summarize = raw_total_chars > combined_budget_chars and combined_budget_chars > 0
+    should_summarize = (
+        raw_total_chars > combined_budget_chars and combined_budget_chars > 0
+    )
 
     rendered_docs: List[Dict[str, str]] = []
     for doc in seed_docs:
@@ -309,7 +313,9 @@ def format_seed_url_context(
                     "resolved_url": str(doc.get("resolved_url", "") or ""),
                     "title": str(doc.get("title", "") or ""),
                     "status": "fetch_error",
-                    "content": _truncate_with_ellipsis(doc_error, combined_budget_chars),
+                    "content": _truncate_with_ellipsis(
+                        doc_error, combined_budget_chars
+                    ),
                 }
             )
             continue

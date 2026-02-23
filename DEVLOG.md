@@ -1,5 +1,26 @@
 # DEVLOG
 
+## 2026-02-23 - Critical Hardware/Storage Bug Fixes (C-01, C-02)
+
+Fixed two P0 bugs related to fragile string slicing with case-insensitive triggers and incorrect boolean type checking for persisted session settings.
+
+- **Changed**:
+  - `src/asky/api/client.py`:
+    - Refactored `run_turn` to use a robust, Unicode-safe original prefix mapping for memory trigger removal (`REMEMBER GLOBALLY:`, etc.). This handles cases where casefolding/lowercasing changes string character length (e.g. 'ẞ' -> 'ss').
+    - Hardened `research_mode` resolution to use explicit identity checks (`is True or is False`) instead of `isinstance(..., bool)`. This ensures that integer values (0/1) retrieved from SQLite (which are sometimes un-cast in raw fields) do not cause silent fallbacks to default config settings when they should have enabled research mode.
+  - `src/asky/cli/chat.py`, `src/asky/api/preload.py`, `src/asky/cli/local_ingestion_flow.py`:
+    - Updated `isinstance(..., bool)` checks to identity checks (`is True or is False`) for consistency and robustness against un-cast integer values from storage.
+- **Why**:
+  - `isinstance(value, bool)` returns `False` for `0` and `1`, which are the common representations of booleans in SQLite. This caused persisted session research mode to be ignored if the value wasn't explicitly cast to `bool` at exactly the right layer.
+  - Case-insensitive string slicing using `len(trigger)` is fragile when combined with `lower()` if the character length changes, leading to corrupted query text or failed prefix removal.
+- **Validation**:
+  - Created `tests/test_api_client_bugs.py` with targeted regression tests for:
+    - Case-insensitive trigger removal.
+    - Unicode-safe trigger removal (verified with 'ẞ').
+    - Boolean resolution robustness for session research mode.
+    - Invalid type fallback behavior.
+  - Full suite: `uv run pytest` -> `715 passed`.
+
 ## 2026-02-23 - XMPP Group Sessions + Session-Scoped TOML Overrides
 
 Implemented persistent group-chat session support in daemon mode, including trusted-invite room binding, session switching commands, and session-scoped TOML config overrides with last-write-wins semantics.

@@ -7,7 +7,7 @@ import logging
 from dataclasses import dataclass
 from typing import Any, Callable, Dict, FrozenSet, List, Optional, Set, TYPE_CHECKING
 
-from asky.config import MODELS
+from asky.config import MODELS, USER_MEMORY_GLOBAL_TRIGGERS
 from asky.core import (
     ConversationEngine,
     UsageTracker,
@@ -100,9 +100,7 @@ class AskyClient:
     ) -> List[Dict[str, Any]]:
         """Build a message list for a single asky turn."""
         effective_research_mode = (
-            self.config.research_mode
-            if research_mode is None
-            else bool(research_mode)
+            self.config.research_mode if research_mode is None else bool(research_mode)
         )
         if self.config.system_prompt_override:
             system_prompt = self.config.system_prompt_override
@@ -142,9 +140,7 @@ class AskyClient:
 
         user_content = query_text
         if preload and preload.combined_context:
-            preload_instruction = (
-                "Use this preloaded corpus as a starting point, then verify with tools before citing."
-            )
+            preload_instruction = "Use this preloaded corpus as a starting point, then verify with tools before citing."
             if preload.seed_url_direct_answer_ready:
                 preload_instruction = (
                     "Seed URL content is already preloaded with full_content status. "
@@ -325,7 +321,8 @@ class AskyClient:
                 ):
                     break
             if rendered >= (
-                RESEARCH_BOOTSTRAP_MAX_SOURCES * RESEARCH_BOOTSTRAP_MAX_CHUNKS_PER_SOURCE
+                RESEARCH_BOOTSTRAP_MAX_SOURCES
+                * RESEARCH_BOOTSTRAP_MAX_CHUNKS_PER_SOURCE
             ):
                 break
 
@@ -384,9 +381,7 @@ class AskyClient:
     ) -> str:
         """Run chat completion for prepared messages."""
         effective_research_mode = (
-            self.config.research_mode
-            if research_mode is None
-            else bool(research_mode)
+            self.config.research_mode if research_mode is None else bool(research_mode)
         )
         effective_disabled_tools = (
             disabled_tools if disabled_tools is not None else self.config.disabled_tools
@@ -556,14 +551,12 @@ class AskyClient:
         resolved_research_mode = getattr(session_resolution, "research_mode", None)
         effective_research_mode = (
             resolved_research_mode
-            if isinstance(resolved_research_mode, bool)
+            if resolved_research_mode is True or resolved_research_mode is False
             else bool(self.config.research_mode)
         )
         resolved_source_mode = getattr(session_resolution, "research_source_mode", None)
         effective_source_mode = (
-            str(resolved_source_mode)
-            if isinstance(resolved_source_mode, str)
-            else None
+            str(resolved_source_mode) if isinstance(resolved_source_mode, str) else None
         )
         resolved_local_paths = getattr(
             session_resolution,
@@ -607,18 +600,25 @@ class AskyClient:
 
         capture_global_memory = False
         effective_query_text = request.query_text
-
         if not request.lean:
             # Global Memory Trigger Detection
-            from asky.config import USER_MEMORY_GLOBAL_TRIGGERS
-
+            cf_query = effective_query_text.casefold()
             for trigger in USER_MEMORY_GLOBAL_TRIGGERS:
-                if effective_query_text.lower().startswith(trigger.lower()):
-                    # Strip trigger and whitespace
-                    effective_query_text = effective_query_text[len(trigger) :].strip()
-                    capture_global_memory = True
-                    notices.append(f"Global memory trigger detected: '{trigger}'")
-                    break
+                cf_trigger = trigger.casefold()
+                if cf_query.startswith(cf_trigger):
+                    # Robust original prefix mapping.
+                    # We find the smallest prefix of the original string that casefolds to the trigger.
+                    match_idx = -1
+                    for i in range(len(effective_query_text) + 1):
+                        if effective_query_text[:i].casefold() == cf_trigger:
+                            match_idx = i
+                            break
+
+                    if match_idx != -1:
+                        effective_query_text = effective_query_text[match_idx:].strip()
+                        capture_global_memory = True
+                        notices.append(f"Global memory trigger detected: '{trigger}'")
+                        break
 
         if initial_notice_callback:
             for notice in notices:
@@ -646,9 +646,7 @@ class AskyClient:
             local_ingestion_formatter=(
                 local_ingestion_formatter or format_local_ingestion_context
             ),
-            trace_callback=(
-                verbose_output_callback if self.config.verbose else None
-            ),
+            trace_callback=(verbose_output_callback if self.config.verbose else None),
         )
 
         local_ingested = len(preload.local_payload.get("ingested", []) or [])
@@ -714,10 +712,11 @@ class AskyClient:
         # However, run_preload_pipeline does its own things.
         # We need to make sure subsequent steps use effective_query_text.
 
-        local_kb_hint_enabled = bool(local_targets) or bool(effective_local_corpus_paths)
+        local_kb_hint_enabled = bool(local_targets) or bool(
+            effective_local_corpus_paths
+        )
         section_tools_enabled = bool(
-            effective_research_mode
-            and effective_source_mode in {"local_only", "mixed"}
+            effective_research_mode and effective_source_mode in {"local_only", "mixed"}
         )
         if local_kb_hint_enabled:
             effective_query_text = call_attr(
