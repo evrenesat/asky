@@ -1,6 +1,7 @@
 import pytest
 import argparse
 from unittest.mock import patch, MagicMock, ANY
+from asky.daemon.errors import DaemonUserError
 from asky.cli import (
     parse_args,
     show_history,
@@ -602,6 +603,18 @@ def test_parse_args_xmpp_daemon_flag():
         assert args.xmpp_daemon is True
 
 
+def test_parse_args_edit_daemon_flag():
+    with patch("sys.argv", ["asky", "--edit-daemon"]):
+        args = parse_args()
+        assert args.edit_daemon is True
+
+
+def test_parse_args_xmpp_menubar_child_hidden_flag():
+    with patch("sys.argv", ["asky", "--xmpp-menubar-child"]):
+        args = parse_args()
+        assert args.xmpp_menubar_child is True
+
+
 @patch("asky.cli.main.parse_args")
 @patch("asky.daemon.service.run_xmpp_daemon_foreground")
 def test_main_xmpp_daemon_early_exit(mock_run_daemon, mock_parse):
@@ -632,10 +645,226 @@ def test_main_xmpp_daemon_early_exit(mock_run_daemon, mock_parse):
         session_from_message=None,
         completion_script=None,
         xmpp_daemon=True,
+        edit_daemon=False,
+        xmpp_menubar_child=False,
+    )
+
+    with patch("asky.daemon.menubar.has_rumps", return_value=False):
+        main()
+    mock_run_daemon.assert_called_once()
+
+
+@patch("asky.cli.main.parse_args")
+@patch("asky.cli.main.subprocess.Popen")
+def test_main_xmpp_daemon_already_running_exits_nonzero(
+    mock_popen,
+    mock_parse,
+    capsys,
+):
+    mock_parse.return_value = argparse.Namespace(
+        model="gf",
+        history=None,
+        continue_ids=None,
+        summarize=False,
+        delete_messages=None,
+        delete_sessions=None,
+        all=False,
+        print_session=None,
+        print_ids=None,
+        prompts=False,
+        query=[],
+        verbose=False,
+        open=False,
+        mail_recipients=None,
+        subject=None,
+        sticky_session=None,
+        resume_session=None,
+        session_end=False,
+        session_history=None,
+        terminal_lines=None,
+        add_model=False,
+        edit_model=None,
+        reply=False,
+        session_from_message=None,
+        completion_script=None,
+        xmpp_daemon=True,
+        edit_daemon=False,
+        xmpp_menubar_child=False,
+    )
+    with (
+        patch("asky.cli.main.platform.system", return_value="Darwin"),
+        patch("asky.daemon.menubar.has_rumps", return_value=True),
+        patch("asky.daemon.menubar.is_menubar_instance_running", return_value=True),
+    ):
+        with pytest.raises(SystemExit) as excinfo:
+            main()
+    assert excinfo.value.code == 1
+    mock_popen.assert_not_called()
+    captured = capsys.readouterr()
+    assert "already running" in captured.out.lower()
+
+
+@patch("asky.cli.main.parse_args")
+def test_main_xmpp_menubar_child_error_exits_nonzero(mock_parse, capsys):
+    mock_parse.return_value = argparse.Namespace(
+        model="gf",
+        history=None,
+        continue_ids=None,
+        summarize=False,
+        delete_messages=None,
+        delete_sessions=None,
+        all=False,
+        print_session=None,
+        print_ids=None,
+        prompts=False,
+        query=[],
+        verbose=False,
+        open=False,
+        mail_recipients=None,
+        subject=None,
+        sticky_session=None,
+        resume_session=None,
+        session_end=False,
+        session_history=None,
+        terminal_lines=None,
+        add_model=False,
+        edit_model=None,
+        reply=False,
+        session_from_message=None,
+        completion_script=None,
+        xmpp_daemon=False,
+        edit_daemon=False,
+        xmpp_menubar_child=True,
+    )
+    with patch(
+        "asky.daemon.menubar.run_menubar_app",
+        side_effect=DaemonUserError("asky menubar daemon is already running."),
+    ):
+        with pytest.raises(SystemExit) as excinfo:
+            main()
+    assert excinfo.value.code == 1
+    captured = capsys.readouterr()
+    assert "already running" in captured.out.lower()
+
+
+@patch("asky.cli.main.parse_args")
+def test_main_xmpp_menubar_child_unexpected_error_exits_nonzero(mock_parse, capsys):
+    mock_parse.return_value = argparse.Namespace(
+        model="gf",
+        history=None,
+        continue_ids=None,
+        summarize=False,
+        delete_messages=None,
+        delete_sessions=None,
+        all=False,
+        print_session=None,
+        print_ids=None,
+        prompts=False,
+        query=[],
+        verbose=False,
+        open=False,
+        mail_recipients=None,
+        subject=None,
+        sticky_session=None,
+        resume_session=None,
+        session_end=False,
+        session_history=None,
+        terminal_lines=None,
+        add_model=False,
+        edit_model=None,
+        reply=False,
+        session_from_message=None,
+        completion_script=None,
+        xmpp_daemon=False,
+        edit_daemon=False,
+        xmpp_menubar_child=True,
+    )
+    with patch("asky.daemon.menubar.run_menubar_app", side_effect=RuntimeError("boom")):
+        with pytest.raises(SystemExit) as excinfo:
+            main()
+    assert excinfo.value.code == 1
+    captured = capsys.readouterr()
+    assert "failed to start" in captured.out.lower()
+
+
+@patch("asky.cli.main.parse_args")
+@patch("asky.daemon.service.run_xmpp_daemon_foreground")
+def test_main_xmpp_daemon_surfaces_user_error(mock_run_daemon, mock_parse, capsys):
+    mock_parse.return_value = argparse.Namespace(
+        model="gf",
+        history=None,
+        continue_ids=None,
+        summarize=False,
+        delete_messages=None,
+        delete_sessions=None,
+        all=False,
+        print_session=None,
+        print_ids=None,
+        prompts=False,
+        query=[],
+        verbose=False,
+        open=False,
+        mail_recipients=None,
+        subject=None,
+        sticky_session=None,
+        resume_session=None,
+        session_end=False,
+        session_history=None,
+        terminal_lines=None,
+        add_model=False,
+        edit_model=None,
+        reply=False,
+        session_from_message=None,
+        completion_script=None,
+        xmpp_daemon=True,
+        edit_daemon=False,
+        xmpp_menubar_child=False,
+    )
+    mock_run_daemon.side_effect = DaemonUserError("dependency missing", hint="install xmpp")
+
+    with patch("asky.daemon.menubar.has_rumps", return_value=False):
+        main()
+
+    captured = capsys.readouterr()
+    assert "dependency missing" in captured.out.lower()
+
+
+@patch("asky.cli.main.parse_args")
+@patch("asky.cli.daemon_config.edit_daemon_command")
+def test_main_edit_daemon_early_exit(mock_edit_daemon, mock_parse):
+    mock_parse.return_value = argparse.Namespace(
+        model="gf",
+        history=None,
+        continue_ids=None,
+        summarize=False,
+        delete_messages=None,
+        delete_sessions=None,
+        all=False,
+        print_session=None,
+        print_ids=None,
+        prompts=False,
+        query=[],
+        verbose=False,
+        open=False,
+        mail_recipients=None,
+        subject=None,
+        sticky_session=None,
+        resume_session=None,
+        session_end=False,
+        session_history=None,
+        terminal_lines=None,
+        add_model=False,
+        edit_model=None,
+        reply=False,
+        session_from_message=None,
+        completion_script=None,
+        xmpp_daemon=False,
+        edit_daemon=True,
+        xmpp_menubar_child=False,
     )
 
     main()
-    mock_run_daemon.assert_called_once()
+    mock_edit_daemon.assert_called_once()
 
 
 @patch("asky.cli.main.parse_args")

@@ -72,6 +72,8 @@ def _blocked_args():
         clear_memories=False,
         delete_memory=None,
         xmpp_daemon=False,
+        xmpp_menubar_child=False,
+        edit_daemon=False,
         completion_script=None,
     )
 

@@ -28,6 +28,9 @@ uv run pytest tests/test_cli.py::test_function_name
 | `test_presets.py`    | Command preset parsing/substitution/listing behavior                               |
 | `test_completion.py` | Shell completion logic                                                             |
 | `test_models_cli.py` | Model add/edit commands and role assignment actions (main/summarization/interface) |
+| `test_daemon_config_cli.py` | Interactive daemon config editor and startup toggle behavior |
+| `test_daemon_menubar.py` | macOS menubar daemon bootstrapping/fallback behavior, singleton lock guard, and state-aware menu labels |
+| `test_startup_registration.py` | Cross-platform startup registration helpers (macOS/Linux/Windows) |
 
 ### Core Tests
 

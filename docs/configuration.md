@@ -134,6 +134,7 @@ Expansion behavior:
 ## 8. XMPP Daemon Settings (`xmpp.toml`)
 
 Daemon mode is configured through `xmpp.toml` and started with `asky --xmpp-daemon`.
+Use `asky --edit-daemon` for an interactive cross-platform editor for daemon settings.
 
 Key options:
 
@@ -164,9 +165,15 @@ Install extras as needed:
 
 ```bash
 uv pip install "asky-cli[xmpp]"
-uv pip install "asky-cli[voice]"
-uv pip install "asky-cli[daemon]"
+uv pip install "asky-cli[mlx-whisper]"
+uv pip install "asky-cli[mac]"  # includes iterm2 + mlx-whisper + rumps + slixmpp
 ```
+
+Startup-at-login behavior managed by `--edit-daemon`:
+
+- macOS: LaunchAgent (`~/Library/LaunchAgents/com.evren.asky.menubar.plist`)
+- Linux: user `systemd` service (`~/.config/systemd/user/asky-xmpp-daemon.service`)
+- Windows: Startup folder launcher script (`asky-xmpp-daemon.cmd`)
 
 ## 9. Output Actions (`push_data.toml`)
 
@@ -185,7 +192,7 @@ Automate your workflow by pushing results directly from `asky` to external servi
 
 If you are an **iTerm2** user on macOS, you can include the last N lines of your terminal screen as auto-appended context for your query. Very useful for "why am I getting this error?" moments.
 
-- **Installation**: Requires the `iterm` optional dependency package (`pip install "asky-cli[iterm]"`).
+- **Installation**: Requires the `iterm2` optional dependency package (`pip install "asky-cli[iterm2]"`).
 - **Usage**: Use the `-tl` or `--terminal-lines` flag.
   ```bash
   asky -tl 15 "Why am I getting this error?"

@@ -20,8 +20,9 @@ asky embraces this philosophy. It does not take over your screen. It feels like 
 - **Multi-Model Support**: Easily define and switch between various LLMs and providers that support OpenAI compatible APIs.
 - **Deep Research Mode**: A specialized mode for an iterative, RAG-backed investigation across web sources and local data.
 - **Tool-Calling Integration**: Models autonomously search the web, fetch URLs, and use the current date/time to provide accurate answers.
-- **XMPP Remote Daemon (Optional)**: Run asky as a foreground XMPP client daemon (`asky --xmpp-daemon`) so authorized contacts can use asky from mobile/desktop XMPP apps.
-- **Voice Transcription & Voice Commands (Optional)**: In XMPP daemon mode, voice attachments can be transcribed (`mlx-whisper`, macOS phase 1) and routed as transcript-driven commands/queries.
+- **XMPP Remote Daemon (Optional)**: Run asky as an XMPP client daemon (`asky --xmpp-daemon`) so authorized contacts can use asky from mobile/desktop XMPP apps.
+- **macOS Menubar Daemon (Optional)**: On macOS with `rumps` installed, `asky --xmpp-daemon` launches a menubar app and runs daemon lifecycle controls from the status bar.
+- **Voice Transcription & Voice Commands (Optional)**: In XMPP daemon mode, voice attachments can be transcribed (`mlx-whisper`) and routed as transcript-driven commands/queries.
 - **Custom Tools**: Expose any CLI command as a tool for the LLM.
 - **User Memory (Elephant Mode)**: Cross-session persistent memory that allows the LLM to learn facts and preferences about you across different conversations.
 - **Smart Context Management**: Automatically summarizes older conversation history to maximize context window usage.
@@ -36,6 +37,7 @@ When you run `asky --xmpp-daemon`, asky logs into an XMPP account and waits for 
 - It only processes messages from configured allowlisted JIDs.
 - It exposes asky command/query flows over chat, including presets.
 - With voice enabled, audio attachments are transcribed and can be used as commands/queries.
+- On macOS with `rumps`, daemon mode is controlled through a menubar app.
 
 ## Documentation Index
 
@@ -64,9 +66,9 @@ pip install -e .
 To enable the optional iTerm2 context integration:
 
 ```bash
-pip install "asky-cli[iterm]"
+pip install "asky-cli[iterm2]"
 # Or via uv
-uv tool install "asky-cli[iterm]"
+uv tool install "asky-cli[iterm2]"
 ```
 
 Optional daemon extras:
@@ -75,11 +77,11 @@ Optional daemon extras:
 # XMPP daemon text mode
 uv pip install "asky-cli[xmpp]"
 
-# Voice transcription (mlx-whisper, macOS phase 1)
-uv pip install "asky-cli[voice]"
+# Voice transcription dependency
+uv pip install "asky-cli[mlx-whisper]"
 
-# Combined daemon extras
-uv pip install "asky-cli[daemon]"
+# macOS bundle (iterm2 + mlx-whisper + rumps + slixmpp)
+uv pip install "asky-cli[mac]"
 ```
 
 ## Basic Usage
@@ -100,8 +102,11 @@ asky -ss "Project X" "Let's brainstorm architectures"
 # Use a specific model
 asky -m gf "Explain quantum entanglement"
 
-# Run foreground XMPP daemon mode (optional)
+# Run XMPP daemon mode (menubar on macOS with rumps, foreground fallback otherwise)
 asky --xmpp-daemon
+
+# Edit daemon settings interactively (all platforms)
+asky --edit-daemon
 ```
 
 ```console

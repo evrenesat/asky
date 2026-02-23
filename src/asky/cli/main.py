@@ -2,9 +2,13 @@
 
 import argparse
 import importlib
+import logging
+import platform
 import re
 import threading
 import os
+import subprocess
+import sys
 from pathlib import Path
 from asky.config import RESEARCH_LOCAL_DOCUMENT_ROOTS
 from types import ModuleType
@@ -64,6 +68,8 @@ CACHE_CLEANUP_JOIN_TIMEOUT_SECONDS = 0.05
 DEFAULT_MANUAL_QUERY_MAX_SOURCES = 20
 DEFAULT_MANUAL_QUERY_MAX_CHUNKS = 3
 DEFAULT_SECTION_DETAIL = "balanced"
+MENUBAR_BOOTSTRAP_LOG_FILE = "~/.config/asky/logs/asky-menubar-bootstrap.log"
+logger = logging.getLogger(__name__)
 
 
 def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
@@ -433,6 +439,16 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
         "--xmpp-daemon",
         action="store_true",
         help="Run foreground XMPP daemon mode.",
+    )
+    parser.add_argument(
+        "--edit-daemon",
+        action="store_true",
+        help="Interactively edit XMPP daemon settings.",
+    )
+    parser.add_argument(
+        "--xmpp-menubar-child",
+        action="store_true",
+        help=argparse.SUPPRESS,
     )
     parser.add_argument("query", nargs="*", help="The query string")
 
@@ -809,10 +825,90 @@ def main() -> None:
         print(build_completion_script(args.completion_script))
         return
 
+    if getattr(args, "edit_daemon", False) is True:
+        logger.info("dispatching interactive daemon editor")
+        from asky.cli.daemon_config import edit_daemon_command
+
+        edit_daemon_command()
+        return
+
+    if getattr(args, "xmpp_menubar_child", False) is True:
+        from asky.daemon.errors import DaemonUserError
+        logger.info("dispatching xmpp menubar child mode")
+        from asky.daemon.menubar import run_menubar_app
+
+        try:
+            run_menubar_app()
+        except DaemonUserError as exc:
+            logger.error("menubar child failed: %s", exc.user_message)
+            print(f"Error: {exc.user_message}")
+            raise SystemExit(1)
+        except Exception as exc:
+            logger.exception("menubar child crashed")
+            print(f"Error: menubar daemon failed to start: {exc}")
+            raise SystemExit(1)
+        return
+
     if getattr(args, "xmpp_daemon", False) is True:
+        from asky.daemon.errors import DaemonUserError
+        logger.info("dispatching xmpp daemon mode")
+        is_macos = platform.system().lower() == "darwin"
+        logger.debug("xmpp daemon platform gate is_macos=%s", is_macos)
+        if is_macos:
+            try:
+                from asky.daemon.menubar import (
+                    MENUBAR_ALREADY_RUNNING_MESSAGE,
+                    has_rumps,
+                    is_menubar_instance_running,
+                    run_menubar_app,
+                )
+
+                if has_rumps():
+                    logger.info("rumps detected; using menubar bootstrap flow")
+                    if is_menubar_instance_running():
+                        logger.warning(
+                            "menubar daemon launch rejected: already running"
+                        )
+                        print(f"Error: {MENUBAR_ALREADY_RUNNING_MESSAGE}")
+                        raise SystemExit(1)
+                    if getattr(args, "xmpp_menubar_child", False):
+                        logger.info("running menubar app inline (child invocation)")
+                        run_menubar_app()
+                    else:
+                        log_path = Path(MENUBAR_BOOTSTRAP_LOG_FILE).expanduser()
+                        log_path.parent.mkdir(parents=True, exist_ok=True)
+                        log_file = log_path.open("a")
+                        command = [
+                            sys.executable,
+                            "-m",
+                            "asky",
+                            "--xmpp-daemon",
+                            "--xmpp-menubar-child",
+                        ]
+                        logger.debug(
+                            "spawning menubar child command=%s log_path=%s",
+                            command,
+                            log_path,
+                        )
+                        subprocess.Popen(
+                            command,
+                            stdout=log_file,
+                            stderr=log_file,
+                            start_new_session=True,
+                        )
+                        logger.info("xmpp menubar child spawned")
+                    return
+            except Exception:
+                # Fallback to foreground daemon mode when menubar flow cannot start.
+                logger.exception("menubar bootstrap failed; falling back to foreground daemon")
+        logger.info("running foreground xmpp daemon fallback")
         from asky.daemon.service import run_xmpp_daemon_foreground
 
-        run_xmpp_daemon_foreground()
+        try:
+            run_xmpp_daemon_foreground()
+        except DaemonUserError as exc:
+            logger.error("foreground daemon failed: %s", exc.user_message)
+            print(f"Error: {exc.user_message}")
         return
 
     if args.add_model:

@@ -55,18 +55,20 @@ ask = "asky.cli:main"
 asky = "asky.cli:main"
 
 [project.optional-dependencies]
-iterm = [
+iterm2 = [
     "iterm2>=2.13",
 ]
 xmpp = [
     "slixmpp>=1.11.0",
 ]
-voice = [
+mlx-whisper = [
     "mlx-whisper>=0.4.2",
 ]
-daemon = [
-    "slixmpp>=1.11.0",
+mac = [
+    "iterm2>=2.13",
     "mlx-whisper>=0.4.2",
+    "rumps>=0.4.0",
+    "slixmpp>=1.11.0",
 ]
 
 [tool.hatch.build.targets.wheel]

@@ -6,6 +6,8 @@ import inspect
 import logging
 from typing import Callable, Optional
 
+from asky.daemon.errors import DaemonUserError
+
 logger = logging.getLogger(__name__)
 OOB_XML_NAMESPACES = ("jabber:x:oob", "urn:xmpp:oob")
 MUC_USER_NAMESPACE = "http://jabber.org/protocol/muc#user"
@@ -31,11 +33,15 @@ class AskyXMPPClient:
         session_start_callback: Optional[Callable[[], None]] = None,
     ):
         if slixmpp is None:
-            raise RuntimeError(
-                "slixmpp is required for XMPP daemon mode. Install asky-cli[xmpp]."
+            raise DaemonUserError(
+                "XMPP dependency missing: slixmpp is not installed.",
+                hint="Install asky-cli[xmpp] or asky-cli[mac].",
             )
         if not jid or not password:
-            raise RuntimeError("XMPP credentials are not configured.")
+            raise DaemonUserError(
+                "XMPP credentials are not configured.",
+                hint="Run asky --edit-daemon to set jid/password/allowlist.",
+            )
 
         self._message_callback = message_callback
         self._session_start_callback = session_start_callback
@@ -85,11 +91,22 @@ class AskyXMPPClient:
 
     def start_foreground(self) -> None:
         """Connect and enter processing loop."""
+        logger.info("xmpp client starting foreground host=%s port=%s", self._host, self._port)
         connected = _connect_client(self._client, self._host, self._port)
         connected = _resolve_connect_result(self._client, connected)
         if connected is False:
-            raise RuntimeError("Failed to connect to XMPP server.")
+            logger.error("xmpp client connect returned false")
+            raise DaemonUserError(
+                "Failed to connect to XMPP server.",
+                hint="Check xmpp host/port/jid/password and network reachability.",
+            )
+        logger.debug("xmpp client connected successfully; entering runtime loop")
         _run_client_forever(self._client)
+
+    def stop(self) -> None:
+        """Attempt graceful shutdown for foreground loop."""
+        logger.info("xmpp client stop requested")
+        _disconnect_client(self._client)
 
     def send_chat_message(self, to_jid: str, body: str) -> None:
         self.send_message(to_jid=to_jid, body=body, message_type="chat")
@@ -117,7 +134,18 @@ class AskyXMPPClient:
         if not callable(join_method):
             logger.debug("xep_0045 plugin has no join_muc(); room=%s", room_jid)
             return
-        join_method(normalized_room, self._nick, wait=False)
+        try:
+            signature = inspect.signature(join_method)
+            if "wait" in signature.parameters:
+                join_method(normalized_room, self._nick, wait=False)
+                return
+        except Exception:
+            logger.debug("failed to inspect join_muc signature", exc_info=True)
+        try:
+            join_method(normalized_room, self._nick)
+        except TypeError:
+            # Fallback for plugin variants that prefer keyword-only room/nick.
+            join_method(room=normalized_room, nick=self._nick)
 
 
 def _full_jid(from_value) -> str:
@@ -313,3 +341,19 @@ def _dispatch_client_send(client, payload: dict) -> None:
         loop.call_soon_threadsafe(_send)
         return
     _send()
+
+
+def _disconnect_client(client) -> None:
+    """Best-effort disconnect across slixmpp runtime variants."""
+    disconnect_method = getattr(client, "disconnect", None)
+    if callable(disconnect_method):
+        try:
+            disconnect_method()
+        except Exception:
+            logger.debug("xmpp disconnect() failed", exc_info=True)
+    loop = getattr(client, "loop", None)
+    if loop is not None and hasattr(loop, "call_soon_threadsafe") and hasattr(loop, "stop"):
+        try:
+            loop.call_soon_threadsafe(loop.stop)
+        except Exception:
+            logger.debug("xmpp loop stop failed", exc_info=True)

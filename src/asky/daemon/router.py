@@ -242,7 +242,7 @@ class DaemonRouter:
         effective_sender = _normalize_jid(sender_jid or jid)
         digest = hashlib.sha1(audio_url.encode("utf-8")).hexdigest()[:16]
         artifact_path = (
-            Path(XMPP_IMAGE_STORAGE_DIR).expanduser() / conversation_id.replace("/", "_")
+            Path(XMPP_VOICE_STORAGE_DIR).expanduser() / conversation_id.replace("/", "_")
         )
         file_path = artifact_path / f"transcript_{digest}.audio"
         pending = self.transcript_manager.create_pending_transcript(
@@ -296,7 +296,7 @@ class DaemonRouter:
 
         digest = hashlib.sha1(image_url.encode("utf-8")).hexdigest()[:16]
         artifact_path = (
-            Path(XMPP_VOICE_STORAGE_DIR).expanduser() / conversation_id.replace("/", "_")
+            Path(XMPP_IMAGE_STORAGE_DIR).expanduser() / conversation_id.replace("/", "_")
         )
         file_path = artifact_path / f"image_{digest}.bin"
         pending = self.transcript_manager.create_pending_image_transcript(

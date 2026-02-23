@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 
 # Source directory for static archive assets (JS, icons)
 _DATA_DIR = Path(__file__).parent / "data"
-_ICON_SRC = Path(__file__).parent.parent.parent / "assets" / "asky_icon_small.png"
+_ICON_SRC = Path(__file__).parent.parent.parent / "assets" / "asky_icon_mono.ico"
 
 
 # Helper functions to get dynamic archive paths (ensures reactivity to config changes/mocking)

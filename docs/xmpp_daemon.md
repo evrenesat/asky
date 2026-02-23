@@ -1,6 +1,7 @@
 # XMPP Daemon Mode
 
-`asky` can run as a foreground XMPP client so authorized users can use chat messages as a remote interface.
+`asky` can run as an XMPP client so authorized users can use chat messages as a remote interface.
+On macOS with `rumps` installed, daemon mode is controlled from a menubar app.
 
 ## Install Optional Dependencies
 
@@ -10,11 +11,11 @@ Use one of these extras:
 # XMPP text-only daemon
 uv pip install "asky-cli[xmpp]"
 
-# Voice transcription only
-uv pip install "asky-cli[voice]"
+# Voice transcription dependency
+uv pip install "asky-cli[mlx-whisper]"
 
-# Full daemon stack (XMPP + voice)
-uv pip install "asky-cli[daemon]"
+# macOS bundle (iterm2 + mlx-whisper + rumps + slixmpp)
+uv pip install "asky-cli[mac]"
 ```
 
 ## Configure `xmpp.toml`
@@ -49,17 +50,29 @@ Important constraints:
 - Only direct `chat` stanzas are processed.
 - Keep `password` out of files in production and use `password_env`.
 
-## Run Foreground Daemon
+## Run Daemon
 
 ```bash
 asky --xmpp-daemon
 ```
+
+- macOS + `rumps`: launches menubar app.
+- non-macOS, or macOS without `rumps`: uses foreground daemon mode.
+- `asky --edit-daemon` works on all platforms and edits `xmpp.toml` + startup registration.
+- macOS menubar runtime is single-instance. If already running, `asky --xmpp-daemon` prints `Error: asky menubar daemon is already running.` and exits with status `1`.
+- Menubar does not edit XMPP credentials/allowlist. Configure those only via `asky --edit-daemon`.
 
 Runtime behavior:
 
 - one serialized processing queue per sender JID
 - ordered outbound chunking for long responses (`response_chunk_chars`)
 - sender-scoped persistent sessions named `xmpp:<jid>`
+
+Menubar action labels are state-aware:
+
+- `Start Daemon` / `Stop Daemon`
+- `Enable Voice` / `Disable Voice`
+- `Enable Run at Login` / `Disable Run at Login`
 
 ## Routing Behavior
 
@@ -182,7 +195,7 @@ Blocked remotely:
 - `--open`
 - `-tl` / `--terminal-lines`
 - destructive/history/session deletion and model mutation commands
-- daemon bootstrap flags (`--xmpp-daemon`, completion script output)
+- daemon bootstrap and local mutation flags (`--xmpp-daemon`, `--xmpp-menubar-child`, `--edit-daemon`, completion script output)
 
 Allowed remotely:
 

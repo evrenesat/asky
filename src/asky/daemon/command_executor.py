@@ -65,6 +65,8 @@ REMOTE_BLOCKED_FLAGS = (
     "--clear-memories",
     "--delete-memory",
     "--xmpp-daemon",
+    "--xmpp-menubar-child",
+    "--edit-daemon",
     "--completion-script",
 )
 INLINE_TOML_PATTERN = re.compile(
@@ -605,6 +607,8 @@ class CommandExecutor:
                 bool(getattr(args, "clear_memories", False)),
                 getattr(args, "delete_memory", None) is not None,
                 bool(getattr(args, "xmpp_daemon", False)),
+                bool(getattr(args, "xmpp_menubar_child", False)),
+                bool(getattr(args, "edit_daemon", False)),
                 bool(getattr(args, "completion_script", None)),
             ]
         )

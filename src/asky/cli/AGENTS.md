@@ -19,6 +19,7 @@ Command-line interface layer handling argument parsing, command routing, and use
 | `sessions.py`             | Session management commands                                                     |
 | `prompts.py`              | User prompt listing                                                             |
 | `models.py`               | Interactive model add/edit commands, including role assignment (main/summarization/interface) and per-model capability flags (`image_support`) |
+| `daemon_config.py`        | Interactive daemon config editor (`--edit-daemon`) and startup-at-login toggles |
 | `openrouter.py`           | OpenRouter API client for model discovery                                       |
 | `terminal.py`             | Terminal context fetching                                                       |
 | `utils.py`                | Query expansion, config printing                                                |
@@ -55,7 +56,8 @@ Command-line interface layer handling argument parsing, command routing, and use
 | `--shortlist auto\|on\|off`    | Per-run shortlist override                                      |
 | `-sfm, --session-from-message` | `history.py`                                                   |
 | `--clean-session-research`     | `sessions.py`                                                  |
-| `--xmpp-daemon`                | `daemon/service.py` foreground XMPP runtime                    |
+| `--xmpp-daemon`                | macOS menubar daemon (`daemon/menubar.py`) or foreground fallback (`daemon/service.py`); on macOS menubar path, duplicate launches are blocked with exit code `1` |
+| `--edit-daemon`                | `daemon_config.py` interactive daemon settings editor          |
 
 Preset invocation notes:
 

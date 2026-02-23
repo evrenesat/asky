@@ -4,9 +4,10 @@ from __future__ import annotations
 
 import logging
 import queue
+import re
 import threading
 from typing import Callable
-from urllib.parse import urlparse
+from urllib.parse import parse_qs, urlparse
 
 from asky.config import (
     DEFAULT_IMAGE_MODEL,
@@ -42,6 +43,7 @@ from asky.config import (
 )
 from asky.daemon.chunking import chunk_text
 from asky.daemon.command_executor import CommandExecutor
+from asky.daemon.errors import DaemonUserError
 from asky.daemon.image_transcriber import ImageTranscriber
 from asky.daemon.interface_planner import InterfacePlanner
 from asky.daemon.router import DaemonRouter
@@ -51,12 +53,16 @@ from asky.daemon.xmpp_client import AskyXMPPClient
 from asky.storage import init_db
 
 logger = logging.getLogger(__name__)
+URL_PATTERN = re.compile(r"https?://[^\s<>\"]+")
+AUDIO_EXTENSIONS = (".m4a", ".mp3", ".mp4", ".wav", ".webm", ".ogg", ".flac", ".opus")
+IMAGE_EXTENSIONS = (".jpg", ".jpeg", ".png", ".webp", ".gif")
 
 
 class XMPPDaemonService:
     """Coordinates daemon router, background workers, and XMPP transport."""
 
     def __init__(self):
+        logger.debug("initializing XMPPDaemonService")
         init_db()
         self.transcript_manager = TranscriptManager(
             transcript_cap=XMPP_TRANSCRIPT_MAX_PER_SESSION
@@ -112,9 +118,31 @@ class XMPPDaemonService:
             message_callback=self._on_xmpp_message,
             session_start_callback=self._on_xmpp_session_start,
         )
+        self._running = False
+        logger.debug(
+            "XMPPDaemonService initialized host=%s port=%s resource=%s allowed_count=%s",
+            XMPP_HOST,
+            XMPP_PORT,
+            XMPP_RESOURCE,
+            len(XMPP_ALLOWED_JIDS),
+        )
 
     def run_foreground(self) -> None:
-        self._client.start_foreground()
+        logger.info("daemon foreground loop starting")
+        self._running = True
+        try:
+            self._client.start_foreground()
+        finally:
+            self._running = False
+            logger.info("daemon foreground loop exited")
+
+    def stop(self) -> None:
+        """Request daemon shutdown."""
+        if not self._running:
+            logger.debug("daemon stop requested while not running")
+            return
+        logger.info("daemon stop requested")
+        self._client.stop()
 
     def _on_xmpp_message(self, payload: dict) -> None:
         from_jid = str(payload.get("from_jid", "") or "").strip()
@@ -124,8 +152,12 @@ class XMPPDaemonService:
 
         def _task() -> None:
             oob_urls = payload.get("oob_urls", []) or []
-            audio_urls, image_urls = _split_media_urls(oob_urls)
             body = str(payload.get("body", "") or "").strip()
+            body_urls = _extract_urls_from_text(body)
+            audio_urls_oob, image_urls_oob = _split_media_urls(oob_urls)
+            audio_urls_body, image_urls_body = _split_media_urls(body_urls)
+            audio_urls = _merge_unique_urls(audio_urls_oob + audio_urls_body)
+            image_urls = _merge_unique_urls(image_urls_oob + image_urls_body)
             message_type = str(payload.get("type", "") or "").strip().lower()
             room_jid = str(payload.get("room_jid", "") or "").strip().lower()
             sender_jid = str(payload.get("sender_jid", "") or "").strip()
@@ -137,76 +169,87 @@ class XMPPDaemonService:
                 message_type=message_type,
                 room_jid=room_jid,
             )
+            try:
+                if invite_room_jid and invite_from_jid:
+                    if self.router.handle_room_invite(
+                        room_jid=invite_room_jid,
+                        inviter_jid=invite_from_jid,
+                    ):
+                        self._client.join_room(invite_room_jid)
 
-            if invite_room_jid and invite_from_jid:
-                if self.router.handle_room_invite(
-                    room_jid=invite_room_jid,
-                    inviter_jid=invite_from_jid,
+                if message_type == "groupchat" and sender_nick == XMPP_RESOURCE:
+                    return
+
+                toml_urls = _extract_toml_urls(payload)
+                for toml_url in toml_urls:
+                    response_text = self.router.handle_toml_url_message(
+                        jid=from_jid,
+                        message_type=message_type,
+                        url=toml_url,
+                        room_jid=room_jid or None,
+                        sender_jid=sender_jid or None,
+                    )
+                    if response_text:
+                        self._send_chunked(
+                            target_jid,
+                            response_text,
+                            message_type=target_message_type,
+                        )
+
+                for audio_url in audio_urls:
+                    response_text = self.router.handle_audio_message(
+                        jid=from_jid,
+                        message_type=message_type,
+                        audio_url=audio_url,
+                        room_jid=room_jid or None,
+                        sender_jid=sender_jid or None,
+                    )
+                    if response_text:
+                        self._send_chunked(
+                            target_jid,
+                            response_text,
+                            message_type=target_message_type,
+                        )
+                for image_url in image_urls:
+                    response_text = self.router.handle_image_message(
+                        jid=from_jid,
+                        message_type=message_type,
+                        image_url=image_url,
+                        room_jid=room_jid or None,
+                    )
+                    if response_text:
+                        self._send_chunked(
+                            target_jid,
+                            response_text,
+                            message_type=target_message_type,
+                        )
+                if _should_process_text_body(
+                    has_media=bool(audio_urls or image_urls), body=body
                 ):
-                    self._client.join_room(invite_room_jid)
-
-            if message_type == "groupchat" and sender_nick == XMPP_RESOURCE:
-                return
-
-            toml_urls = _extract_toml_urls(payload)
-            for toml_url in toml_urls:
-                response_text = self.router.handle_toml_url_message(
-                    jid=from_jid,
-                    message_type=message_type,
-                    url=toml_url,
-                    room_jid=room_jid or None,
-                    sender_jid=sender_jid or None,
-                )
-                if response_text:
-                    self._send_chunked(
-                        target_jid,
-                        response_text,
-                        message_type=target_message_type,
+                    response_text = self.router.handle_text_message(
+                        jid=from_jid,
+                        message_type=message_type,
+                        body=body,
+                        room_jid=room_jid or None,
+                        sender_jid=sender_jid or None,
                     )
-
-            for audio_url in audio_urls:
-                response_text = self.router.handle_audio_message(
-                    jid=from_jid,
-                    message_type=message_type,
-                    audio_url=audio_url,
-                    room_jid=room_jid or None,
-                    sender_jid=sender_jid or None,
+                    if response_text:
+                        self._send_chunked(
+                            target_jid,
+                            response_text,
+                            message_type=target_message_type,
+                        )
+            except DaemonUserError as exc:
+                logger.warning(
+                    "user-visible daemon error for jid=%s: %s",
+                    from_jid,
+                    exc.user_message,
                 )
-                if response_text:
-                    self._send_chunked(
-                        target_jid,
-                        response_text,
-                        message_type=target_message_type,
-                    )
-            for image_url in image_urls:
-                response_text = self.router.handle_image_message(
-                    jid=from_jid,
-                    message_type=message_type,
-                    image_url=image_url,
-                    room_jid=room_jid or None,
+                self._send_chunked(
+                    target_jid,
+                    f"Error: {exc.user_message}",
+                    message_type=target_message_type,
                 )
-                if response_text:
-                    self._send_chunked(
-                        target_jid,
-                        response_text,
-                        message_type=target_message_type,
-                    )
-            if _should_process_text_body(
-                has_media=bool(audio_urls or image_urls), body=body
-            ):
-                response_text = self.router.handle_text_message(
-                    jid=from_jid,
-                    message_type=message_type,
-                    body=body,
-                    room_jid=room_jid or None,
-                    sender_jid=sender_jid or None,
-                )
-                if response_text:
-                    self._send_chunked(
-                        target_jid,
-                        response_text,
-                        message_type=target_message_type,
-                    )
 
         self._enqueue_for_jid(queue_key, _task)
 
@@ -273,7 +316,10 @@ class XMPPDaemonService:
 def run_xmpp_daemon_foreground() -> None:
     """Entry point used by CLI flag."""
     if not XMPP_ENABLED:
-        raise RuntimeError("XMPP daemon is disabled in xmpp.toml (xmpp.enabled=false).")
+        raise DaemonUserError(
+            "XMPP daemon is disabled in xmpp.toml (xmpp.enabled=false).",
+            hint="Run asky --edit-daemon to enable it.",
+        )
     service = XMPPDaemonService()
     service.run_foreground()
 
@@ -293,10 +339,12 @@ def _is_url_only_text(value: str) -> bool:
     normalized = str(value or "").strip()
     if not normalized:
         return False
-    if len(normalized.split()) != 1:
+    urls = _extract_urls_from_text(normalized)
+    if not urls:
         return False
-    parsed = urlparse(normalized)
-    return parsed.scheme in {"http", "https"} and bool(parsed.netloc)
+    remainder = URL_PATTERN.sub(" ", normalized).strip()
+    remainder = remainder.strip(".,;:!?()[]{}\"'`")
+    return not remainder
 
 
 def _resolve_queue_key(payload: dict, *, fallback_jid: str) -> str:
@@ -343,12 +391,53 @@ def _split_media_urls(urls: list[str]) -> tuple[list[str], list[str]]:
         if not normalized:
             continue
         parsed = urlparse(normalized)
-        path = str(parsed.path or "").lower()
-        if path.endswith(".toml"):
+        suffix_candidate = _extract_attachment_suffix(parsed)
+        if suffix_candidate.endswith(".toml"):
             continue
-        if path.endswith((".m4a", ".mp3", ".mp4", ".wav", ".webm", ".ogg", ".flac", ".opus")):
+        if suffix_candidate.endswith(AUDIO_EXTENSIONS):
             audio_urls.append(normalized)
             continue
-        if path.endswith((".jpg", ".jpeg", ".png", ".webp", ".gif")):
+        if suffix_candidate.endswith(IMAGE_EXTENSIONS):
             image_urls.append(normalized)
     return audio_urls, image_urls
+
+
+def _extract_urls_from_text(text: str) -> list[str]:
+    urls: list[str] = []
+    seen: set[str] = set()
+    for raw in URL_PATTERN.findall(str(text or "")):
+        candidate = str(raw or "").strip().rstrip(".,;:!?)]}\"'")
+        candidate = candidate.lstrip("([{<'\"")
+        parsed = urlparse(candidate)
+        if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+            continue
+        if candidate in seen:
+            continue
+        seen.add(candidate)
+        urls.append(candidate)
+    return urls
+
+
+def _extract_attachment_suffix(parsed_url) -> str:
+    path = str(parsed_url.path or "").lower()
+    if "." in path.rsplit("/", 1)[-1]:
+        return path
+    query_params = parse_qs(str(parsed_url.query or ""))
+    for key in ("filename", "file", "name"):
+        for value in query_params.get(key, []):
+            candidate = str(value or "").lower()
+            if "." in candidate.rsplit("/", 1)[-1]:
+                return candidate
+    return path
+
+
+def _merge_unique_urls(urls: list[str]) -> list[str]:
+    merged: list[str] = []
+    seen: set[str] = set()
+    for value in urls:
+        normalized = str(value or "").strip()
+        if not normalized or normalized in seen:
+            continue
+        seen.add(normalized)
+        merged.append(normalized)
+    return merged

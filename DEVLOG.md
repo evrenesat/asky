@@ -1,5 +1,128 @@
 # DEVLOG
 
+## 2026-02-23 - Removed Menubar XMPP Credential Editor
+
+Removed the menubar-based XMPP configuration UI and made daemon-start validation CLI-driven only.
+
+- **Changed**:
+  - `src/asky/daemon/menubar.py`:
+    - Removed `Configure XMPP` action from the menu.
+    - Removed prompt-based credential/allowlist editor flow from menubar (`jid/password/allowed_jids` windows).
+    - `Start Daemon` now fails fast with a user-visible message when config is incomplete, directing users to `asky --edit-daemon`.
+  - `tests/test_daemon_menubar.py`:
+    - Added regression coverage that missing config now reports the CLI guidance path (`--edit-daemon`) instead of opening a menubar prompt editor.
+    - Updated settings test helper to import `DaemonSettings` from `asky.cli.daemon_config`.
+  - Docs:
+    - `docs/xmpp_daemon.md` now explicitly states menubar does not edit XMPP credentials/allowlist.
+    - `ARCHITECTURE.md` updated to reflect CLI-only XMPP credential editing.
+- **Why**:
+  - Menubar config UI was buggy (including password overwrite risk) and produced poor UX.
+  - Centralizing credential editing in `--edit-daemon` avoids destructive accidental writes.
+- **Validation**:
+  - Targeted: `uv run pytest tests/test_daemon_menubar.py tests/test_cli.py` -> passed.
+  - Full: `uv run pytest` -> passed (`770 passed`).
+
+## 2026-02-23 - Menubar Icon Preference Set to `asky_icon_mono.ico`
+
+Updated menubar icon selection to use the requested mono icon while preserving crash-safe fallback behavior.
+
+- **Changed**:
+  - Copied `assets/asky_icon_mono.ico` to packaged path `src/asky/data/icons/asky_icon_mono.ico`.
+  - `src/asky/daemon/menubar.py` now prefers `asky_icon_mono.ico` and falls back to `asky_icon_small.png` if needed.
+- **Why**:
+  - Menubar should use the mono icon you requested, but startup must remain resilient if icon files are missing.
+- **Validation**:
+  - `uv run pytest` -> passed (`769 passed`).
+
+## 2026-02-23 - Menubar Startup Crash Fix (Missing Icon Path)
+
+Fixed a macOS menubar startup regression where the child process exited immediately before showing the menu icon.
+
+- **Changed**:
+  - `src/asky/daemon/menubar.py`:
+    - Switched menubar icon path to packaged asset `asky_icon_small.png`.
+    - Added icon existence fallback: if icon file is missing, menubar starts without custom icon instead of crashing.
+  - `src/asky/cli/main.py`:
+    - Added explicit catch/log/print for unexpected menubar child exceptions.
+    - Child now exits with status `1` and user-facing error text for non-`DaemonUserError` crashes.
+  - `tests/test_cli.py`:
+    - Added coverage for unexpected child exception path (`--xmpp-menubar-child` returns non-zero and prints error).
+- **Why**:
+  - Logs showed `FileNotFoundError` for a stale `.ico` path during `rumps.App(...)` initialization, causing silent-looking immediate exits in normal flow.
+- **Validation**:
+  - Targeted: `uv run pytest tests/test_daemon_menubar.py tests/test_cli.py` -> passed.
+  - Full: `uv run pytest` -> passed (`769 passed`).
+
+## 2026-02-23 - Menubar Singleton Guard + State-Aware Actions
+
+Fixed macOS menubar duplicate-instance behavior and clarified daemon UX/action semantics.
+
+- **Changed**:
+  - `src/asky/daemon/menubar.py`:
+    - Added `MenubarSingletonLock` with non-blocking file lock at `~/.config/asky/locks/menubar.lock`.
+    - Menubar child now acquires singleton lock before constructing `rumps.App`; duplicate launch raises user-facing `DaemonUserError` with message `asky menubar daemon is already running.`.
+    - Reworked menu actions from static labels to state-aware `MenuItem` callbacks:
+      - `Start Daemon` / `Stop Daemon`
+      - `Enable Voice` / `Disable Voice`
+      - `Enable Run at Login` / `Disable Run at Login`
+    - Added stronger menubar error surfacing via `rumps.alert(...)` for config/startup/service failures.
+  - `src/asky/cli/main.py`:
+    - macOS `--xmpp-daemon` parent path now probes menubar singleton state before spawning child.
+    - If already running, prints clear CLI error and exits with status `1`.
+    - `--xmpp-menubar-child` now exits with status `1` on `DaemonUserError`.
+  - Tests:
+    - `tests/test_cli.py`:
+      - added duplicate-running non-zero exit coverage and no-child-spawn assertion.
+      - added child-mode non-zero exit coverage for user-facing daemon errors.
+    - `tests/test_daemon_menubar.py`:
+      - added singleton duplicate rejection coverage.
+      - added state-aware action-label coverage.
+  - Docs:
+    - `docs/xmpp_daemon.md`, `ARCHITECTURE.md`, `src/asky/cli/AGENTS.md`, `tests/AGENTS.md` updated for singleton/exit semantics and state-aware labels.
+- **Why**:
+  - Prevent multiple menubar icons/processes from manual or launchd-triggered duplicate starts.
+  - Provide deterministic user-facing feedback (`already running`, non-zero exit) for CLI automation and manual use.
+  - Reduce menu UX ambiguity by replacing generic toggle wording with current-action labels.
+- **Validation**:
+  - Targeted: `uv run pytest tests/test_daemon_menubar.py tests/test_cli.py tests/test_xmpp_daemon.py tests/test_xmpp_client.py` -> passed.
+  - Full: `uv run pytest` -> passed (`768 passed`).
+
+## 2026-02-23 - XMPP Pasted Media URLs Routed as Attachments
+
+Improved daemon media ingress so plain pasted URLs to audio/image files are handled by the same transcription pipelines as OOB attachments.
+
+- **Changed**:
+  - `src/asky/daemon/service.py`:
+    - Added plain-text URL extraction from message bodies (`http(s)` pattern).
+    - Merges media candidates from both OOB payloads and body URLs, with deduping.
+    - Classifies media URLs by extension from path and common query keys (`filename`, `file`, `name`), then routes them through audio/image pipelines.
+    - Updated URL-only body detection to treat URL lists as attachment-only input, so media URL-only messages are not forwarded as normal model queries.
+  - `src/asky/daemon/router.py`:
+    - Fixed storage-path mix-up so audio artifacts use `XMPP_VOICE_STORAGE_DIR` and image artifacts use `XMPP_IMAGE_STORAGE_DIR`.
+  - `tests/test_xmpp_daemon.py`:
+    - Added coverage for pasted URL extraction, query-param filename classification, and URL-list text suppression when media is present.
+- **Why**:
+  - Users often copy-paste uploaded file links. These should behave like attachments instead of being sent directly to text models that cannot fetch/process raw file URLs.
+- **Validation**:
+  - `uv run pytest tests/test_xmpp_daemon.py tests/test_xmpp_router.py tests/test_xmpp_client.py` -> passed.
+  - `uv run pytest` -> passed (`763 passed`).
+
+## 2026-02-23 - XMPP `join_muc` API Compatibility Fix
+
+Fixed daemon room-join failures on slixmpp variants where `XEP_0045.join_muc` does not accept a `wait` keyword argument.
+
+- **Changed**:
+  - `src/asky/daemon/xmpp_client.py`:
+    - `AskyXMPPClient.join_room()` now inspects `join_muc` signature and only passes `wait=False` when supported.
+    - Added safe fallback calls for plugin variants that require positional or keyword-only `room`/`nick`.
+  - `tests/test_xmpp_client.py`:
+    - Added regression coverage for plugin signature `join_muc(room_jid, nick)` (no `wait` param).
+- **Why**:
+  - Prevent runtime `TypeError: XEP_0045.join_muc() got an unexpected keyword argument 'wait'` when processing group invites or rejoining persisted rooms.
+- **Validation**:
+  - `uv run pytest tests/test_xmpp_client.py tests/test_xmpp_daemon.py tests/test_xmpp_router.py tests/test_xmpp_group_sessions.py` -> passed.
+  - `uv run pytest` -> passed (`759 passed`).
+
 ## 2026-02-23 - Model Dialog Support for `default_image_model`
 
 Extended the interactive model management dialogs so users can set `general.default_image_model` directly, matching the existing main/summarization/interface role assignment UX.
@@ -2359,3 +2482,135 @@ For older logs, see [DEVLOG_ARCHIVE.md](DEVLOG_ARCHIVE.md).
   - Updated `test_banner_compact.py` and `test_display_token_usage.py` to test the new clean architecture.
 - **Round 2 token UI bug**: The banner UI was freezing on 0 summarization tokens because the live display (`renderer.live.stop()`) was stopped _immediately_ after the synchronous background compaction finished. At the start of the compaction, the tokens were 0, and since `update_banner` was never called again _after_ the heavy LLM summarization completed, the final visual state remained frozen at 0 tokens despite the `UsageTracker` being correctly populated.
 - **Fix**: Added a final `renderer.update_banner(renderer.current_turn, status_message=None)` call to the `finally` block in `asky/cli/chat.py` just before `renderer.stop_live()`. This guarantees the final token metrics are pulled from the trackers and rendered onto the screen before the process exits.
+
+## 2026-02-23
+
+### Cross-Platform Daemon Config + macOS Menubar Runtime + Extras Rework
+
+**Summary**: Added a new cross-platform `--edit-daemon` command, macOS menubar daemon flow for `--xmpp-daemon` when `rumps` is available, cross-platform startup-at-login registration helpers, and reworked optional dependency extras to `iterm2`, `xmpp`, `mlx-whisper`, and `mac`.
+
+- **What changed**:
+  - Packaging (`pyproject.toml`):
+    - Replaced old optional extras with:
+      - `iterm2`
+      - `xmpp`
+      - `mlx-whisper`
+      - `mac` (`iterm2` + `mlx-whisper` + `rumps`)
+  - New CLI daemon editor:
+    - Added `--edit-daemon` in `src/asky/cli/main.py`.
+    - Added `src/asky/cli/daemon_config.py` for interactive editing of `xmpp.toml` (`enabled`, `jid`, `password`, `allowed_jids`, `voice_enabled`) and startup-at-login toggle.
+  - macOS menubar runtime:
+    - Added `src/asky/daemon/menubar.py`.
+    - `asky --xmpp-daemon` now launches a menubar app on macOS when `rumps` is importable.
+    - Added hidden child flag `--xmpp-menubar-child` for detached menubar process bootstrap.
+    - Fallback preserved: non-macOS or missing `rumps` still uses foreground daemon service path.
+  - Daemon lifecycle controls:
+    - Added `AskyXMPPClient.stop()` in `src/asky/daemon/xmpp_client.py`.
+    - Added `XMPPDaemonService.stop()` and running-state tracking in `src/asky/daemon/service.py`.
+  - Cross-platform startup registration:
+    - Added `src/asky/daemon/startup.py` (platform router + normalized status).
+    - Added `src/asky/daemon/startup_macos.py` (LaunchAgent at `~/Library/LaunchAgents/com.evren.asky.menubar.plist`).
+    - Added `src/asky/daemon/startup_linux.py` (user `systemd` unit under `~/.config/systemd/user/`).
+    - Added `src/asky/daemon/startup_windows.py` (Startup-folder `.cmd` launcher).
+  - Assets:
+    - Added packaged icon: `src/asky/data/icons/asky_icon_small.png` for menubar app.
+  - Remote safety policy:
+    - Updated daemon command executor to block `--edit-daemon` and `--xmpp-menubar-child` remotely.
+
+- **Tests added/updated**:
+  - Added:
+    - `tests/test_daemon_config_cli.py`
+    - `tests/test_daemon_menubar.py`
+    - `tests/test_startup_registration.py`
+  - Updated:
+    - `tests/test_cli.py`
+    - `tests/test_xmpp_client.py`
+    - `tests/test_xmpp_daemon.py`
+    - `tests/test_xmpp_commands.py`
+
+- **Docs/architecture updates**:
+  - Updated `README.md`, `docs/configuration.md`, `docs/xmpp_daemon.md` for new extras and daemon behavior.
+  - Updated `ARCHITECTURE.md` daemon flow to include macOS menubar routing.
+  - Updated `src/asky/cli/AGENTS.md`, `src/asky/config/AGENTS.md`, and `tests/AGENTS.md`.
+
+- **Why**:
+  - Provides a user-facing daemon control surface on macOS while keeping non-mac behavior stable.
+  - Adds a single CLI-driven daemon setup path for all platforms.
+  - Keeps startup-at-login manageable from app-level configuration rather than manual OS setup.
+
+- **Gotchas / Follow-ups**:
+  - macOS menubar mode requires `rumps` (`asky-cli[mac]`).
+  - Linux startup toggling assumes `systemctl --user` availability.
+  - Windows startup uses Startup-folder script registration (no registry integration).
+
+### Menubar Bootstrap Reliability + Expanded Daemon Debug Logging
+
+**Summary**: Fixed silent menubar exit paths and improved daemon setup detection when XMPP password is provided via environment variable, plus added extensive debug logging across daemon bootstrap/startup flows.
+
+- **What changed**:
+  - `src/asky/cli/daemon_config.py`:
+    - `DaemonSettings` now tracks `password_env` and resolves effective password from env first.
+    - `has_minimum_requirements()` now accepts env-backed password (not only file-backed password).
+    - Added debug logging for config load/save, minimum-requirements checks, and startup-toggle outcomes.
+  - `src/asky/daemon/menubar.py`:
+    - Added detailed lifecycle/action logs (bootstrap, status refresh, setup prompts, start/stop, run-at-login toggles, quit).
+    - Wrapped autostart and service construction in exception handling so menu app does not crash silently.
+    - Added explicit error-state updates when startup fails.
+  - `src/asky/cli/main.py`:
+    - Added detailed daemon dispatch/bootstrap logs.
+    - Menubar child now writes stdout/stderr to `~/.config/asky/logs/asky-menubar-bootstrap.log` instead of `/dev/null`.
+    - Added fallback logging when menubar bootstrap errors and foreground fallback is used.
+  - `src/asky/daemon/startup.py`, `startup_macos.py`, `startup_linux.py`, `startup_windows.py`:
+    - Added debug/info logs for status checks and enable/disable operations.
+  - `src/asky/daemon/service.py`, `src/asky/daemon/xmpp_client.py`:
+    - Added start/stop and foreground-loop lifecycle logs.
+
+- **Tests**:
+  - Updated `tests/test_daemon_config_cli.py` with env-password requirement coverage.
+  - Updated `tests/test_daemon_menubar.py` for new `DaemonSettings` shape.
+  - Verified with targeted and full test runs.
+
+- **Why**:
+  - Menubar child process output was fully suppressed, making startup failures opaque.
+  - Existing valid configurations using `password_env` were incorrectly treated as incomplete by the menubar setup checker.
+
+- **Gotchas / Follow-ups**:
+  - Menubar child bootstrap logs are now in `~/.config/asky/logs/asky-menubar-bootstrap.log`.
+  - Runtime daemon logs continue to follow configured logger file settings in `general.toml`.
+
+### Daemon User-Visible Error Surface + mac Extra Completeness
+
+**Summary**: Added a dedicated daemon user-facing exception type and wired it through CLI/XMPP/menubar paths so dependency/config failures are surfaced directly to users (not only logs). Also updated `mac` extra to include `slixmpp` so mac bundle installs all daemon dependencies.
+
+- **What changed**:
+  - Added `src/asky/daemon/errors.py` with `DaemonUserError` (message + hint payload for UI-safe display).
+  - Updated daemon dependency/config failure points to raise `DaemonUserError`:
+    - `src/asky/daemon/xmpp_client.py`
+    - `src/asky/daemon/service.py`
+  - CLI handling now prints daemon user-visible errors:
+    - `src/asky/cli/main.py` catches `DaemonUserError` in menubar-child and foreground daemon paths and prints `Error: ...`.
+  - XMPP message path now surfaces daemon user-visible errors back to sender instead of log-only:
+    - `_on_xmpp_message` task wrapper in `src/asky/daemon/service.py` sends `Error: ...` replies for `DaemonUserError`.
+  - Menubar startup now surfaces daemon user-visible errors via alert/status:
+    - `src/asky/daemon/menubar.py` catches `DaemonUserError` during autostart and service construction.
+  - `mac` extra now includes `slixmpp`:
+    - `pyproject.toml`
+    - regenerated `uv.lock`
+  - Config readiness now respects `password_env`-provided password:
+    - `src/asky/cli/daemon_config.py`
+
+- **Logging additions**:
+  - Added detailed debug/info logs across:
+    - daemon config load/save + startup toggle actions
+    - menubar lifecycle/actions
+    - startup registration backends (macOS/Linux/Windows)
+    - daemon/xmpp client start-stop lifecycle
+  - Menubar child process now logs bootstrap output to:
+    - `~/.config/asky/logs/asky-menubar-bootstrap.log`
+
+- **Docs updates**:
+  - Updated extras docs to reflect `mac` bundle includes `slixmpp`.
+
+- **Tests**:
+  - Added/updated tests for CLI user-error surfacing and env-backed daemon readiness.
+  - Full suite passes.

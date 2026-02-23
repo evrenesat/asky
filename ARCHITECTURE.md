@@ -271,7 +271,16 @@ turn to enforce single-pass answering from preloaded seed content.
 ```
 asky --xmpp-daemon
     ↓
-daemon/service.py (foreground)
+macOS + rumps available:
+  cli/main.py
+    -> singleton probe (`menubar.lock`) before spawn
+    -> if running: print clear error, exit code 1
+    -> if not running: spawn `--xmpp-menubar-child`
+  daemon/menubar.py (status bar app)
+    -> child acquires singleton lock before creating `rumps.App`
+  menubar controls daemon/service.py lifecycle
+otherwise:
+  daemon/service.py (foreground)
     ↓
 xmpp_client.py message callback payload
     ↓
@@ -305,8 +314,8 @@ command_executor.py
   - AskyClient.run_turn() for query execution
     ↓
 optional media pipelines:
-  oob audio URL -> background worker -> mlx-whisper -> transcript persistence
-  oob image URL -> background worker -> base64 prompt -> image-capable model -> transcript persistence
+  oob/pasted audio URL -> background worker -> mlx-whisper -> transcript persistence
+  oob/pasted image URL -> background worker -> base64 prompt -> image-capable model -> transcript persistence
     ↓
 chunked outbound chat replies
 ```
@@ -315,6 +324,7 @@ Command presets are expanded at ingress (`\\name`, `\\presets`) before command e
 XMPP query ingress applies the same recursive slash-expansion behavior as CLI (`/alias`, `/cp`) before model execution, and unresolved slash queries follow CLI prompt-list semantics (`/` lists all prompts, unknown `/prefix` returns filtered prompt listing). This shared query-prep path is used by direct text queries, interface-planned query actions, and `transcript use` query execution.
 Daemon query prep also supports session-scoped media pointers: `#aN`/`#atN` for audio file+transcript and `#iN`/`#itN` for image file+transcript.
 Room bindings and session override files are persisted in SQLite; on daemon startup/session-start, previously bound rooms are auto-rejoined and continue with their last active bound sessions.
+On macOS menubar builds, action rows use state-aware labels (`Start/Stop Daemon`, `Enable/Disable Voice`, `Enable/Disable Run at Login`) while top rows remain informational status. XMPP credential/allowlist editing is CLI-only via `--edit-daemon` (no menubar credential editor).
 
 ### Session Flow
 
@@ -558,7 +568,7 @@ A simplified "retrieval-only" system prompt guidance is injected in these cases 
 
 - **Python**: 3.10+
 - **Key Dependencies**: `requests`, `rich`, `pyperclip`, `markdown`
-- **Optional Daemon Dependencies**: `slixmpp` (XMPP), `mlx-whisper` (voice transcription, macOS phase 1)
+- **Optional Daemon Dependencies**: `slixmpp` (XMPP), `mlx-whisper` (voice transcription), `rumps` (macOS menubar)
 - **Storage**: SQLite (local file at `~/.config/asky/history.db`)
 - **Configuration**: TOML format
 

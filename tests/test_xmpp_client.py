@@ -11,6 +11,7 @@ class _Loop:
         self.run_forever_called = False
         self.created_tasks = []
         self.threadsafe_callbacks = []
+        self.stop_called = False
 
     def run_forever(self):
         self.run_forever_called = True
@@ -24,6 +25,9 @@ class _Loop:
     def call_soon_threadsafe(self, callback):
         self.threadsafe_callbacks.append(callback)
         callback()
+
+    def stop(self):
+        self.stop_called = True
 
 
 class _ClientWithProcess:
@@ -171,6 +175,14 @@ class _MucPlugin:
         self.join_calls.append((room_jid, nick, wait))
 
 
+class _MucPluginNoWait:
+    def __init__(self):
+        self.join_calls = []
+
+    def join_muc(self, room_jid, nick):
+        self.join_calls.append((room_jid, nick))
+
+
 class _ClientWithMucSupport:
     def __init__(self, jid, password):
         self.jid = jid
@@ -195,6 +207,37 @@ class _ClientWithMucSupport:
     def send_message(self, **kwargs):
         _ = kwargs
 
+    def disconnect(self):
+        return None
+
+
+class _ClientWithMucSupportNoWait:
+    def __init__(self, jid, password):
+        self.jid = jid
+        self.password = password
+        self.handlers = {}
+        self.loop = _Loop()
+        self.plugin = {"xep_0045": _MucPluginNoWait()}
+
+    def add_event_handler(self, name, callback):
+        self.handlers[name] = callback
+
+    def register_plugin(self, _name):
+        return None
+
+    def connect(self, host=None, port=None):
+        _ = (host, port)
+        return True
+
+    def process(self, forever=True):
+        _ = forever
+
+    def send_message(self, **kwargs):
+        _ = kwargs
+
+    def disconnect(self):
+        return None
+
 
 def test_start_foreground_uses_process_api(monkeypatch):
     module = SimpleNamespace(ClientXMPP=_ClientWithProcess)
@@ -210,6 +253,22 @@ def test_start_foreground_uses_process_api(monkeypatch):
 
     client.start_foreground()
     assert client._client.process_called is True
+
+
+def test_stop_requests_disconnect_and_loop_stop(monkeypatch):
+    module = SimpleNamespace(ClientXMPP=_ClientWithMucSupport)
+    monkeypatch.setattr(xmpp_client, "slixmpp", module)
+    client = xmpp_client.AskyXMPPClient(
+        jid="bot@example.com",
+        password="secret",
+        host="xmpp.example.com",
+        port=5222,
+        resource="asky",
+        message_callback=lambda _payload: None,
+    )
+
+    client.stop()
+    assert client._client.loop.stop_called is True
 
 
 def test_start_foreground_falls_back_to_loop_run_forever(monkeypatch):
@@ -365,3 +424,19 @@ def test_join_room_uses_xep0045_plugin(monkeypatch):
     client.join_room("room@conference.example.com")
     plugin = client._client.plugin["xep_0045"]
     assert plugin.join_calls == [("room@conference.example.com", "asky", False)]
+
+
+def test_join_room_supports_xep0045_without_wait_param(monkeypatch):
+    module = SimpleNamespace(ClientXMPP=_ClientWithMucSupportNoWait)
+    monkeypatch.setattr(xmpp_client, "slixmpp", module)
+    client = xmpp_client.AskyXMPPClient(
+        jid="bot@example.com",
+        password="secret",
+        host="xmpp.example.com",
+        port=5222,
+        resource="asky",
+        message_callback=lambda _payload: None,
+    )
+    client.join_room("room@conference.example.com")
+    plugin = client._client.plugin["xep_0045"]
+    assert plugin.join_calls == [("room@conference.example.com", "asky")]

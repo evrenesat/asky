@@ -105,6 +105,9 @@ candidate pools while keeping fetch cost bounded.
 | `XMPP_IMAGE_*` | Image transcription feature flags/limits/storage/prompt settings for daemon mode |
 | `XMPP_INTERFACE_*` | Interface planner prompt-reference injection toggles in daemon mode |
 
+Daemon settings can be edited interactively through CLI command `asky --edit-daemon`,
+which updates `xmpp.toml` and startup-at-login registration per platform.
+
 ## Environment Variables
 
 | Variable | Purpose |
