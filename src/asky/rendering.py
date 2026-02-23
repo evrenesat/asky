@@ -42,8 +42,8 @@ def _asky_version() -> str:
 def _ensure_archive_assets() -> None:
     """Copy shared static assets to the archive directory if not already present.
 
-    - Unversioned assets (CSS, icons) are copied only if missing (never overwritten).
-    - Versioned assets (JS) are updated if a file with a different version exists.
+    - Unversioned assets (icons) are copied only if missing (never overwritten).
+    - Versioned assets (JS, CSS) are updated if a file with a different version exists.
     """
     if not ARCHIVE_DIR.exists():
         ARCHIVE_DIR.mkdir(parents=True, exist_ok=True)
@@ -53,9 +53,9 @@ def _ensure_archive_assets() -> None:
     # Asset specifications: (src_name, dst_dir, dst_stem, is_versioned)
     specs = [
         ("asky-report.js", _get_results_assets_dir(), "asky-report", True),
-        ("asky-report.css", _get_results_assets_dir(), "asky-report", False),
+        ("asky-report.css", _get_results_assets_dir(), "asky-report", True),
         ("asky-sidebar.js", _get_assets_dir(), "asky-sidebar", True),
-        ("asky-sidebar.css", _get_assets_dir(), "asky-sidebar", False),
+        ("asky-sidebar.css", _get_assets_dir(), "asky-sidebar", True),
     ]
 
     for src_name, dst_dir, dst_stem, is_versioned in specs:
@@ -264,7 +264,7 @@ def _update_sidebar_index(
     <meta charset="UTF-8" />
     <title>asky History</title>
     <link rel="icon" type="image/png" href="assets/asky-icon.png">
-    <link rel="stylesheet" href="assets/asky-sidebar.css">
+    <link rel="stylesheet" href="assets/asky-sidebar_v{current_ver}.css">
   </head>
   <body>
     <div class="sidebar">
