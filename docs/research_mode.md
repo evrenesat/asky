@@ -106,6 +106,41 @@ asky -r "The Efficiency Paradox What Big Data Cant Do - Edward Tenner.epub" \
 This is useful for debugging which query phrasing retrieves strong chunks before running
 full model-driven research turns.
 
+## Deterministic Section Summarization (No Main Model)
+
+For local corpus books/documents, use deterministic section commands to inspect
+headings and generate deep section-bounded summaries:
+
+```bash
+# List sections from the resolved local source
+asky -r "The Efficiency Paradox What Big Data Cant Do - Edward Tenner.epub" \
+  --summarize-section
+
+# Summarize one section in balanced detail (default)
+asky -r "The Efficiency Paradox What Big Data Cant Do - Edward Tenner.epub" \
+  --summarize-section "WHY LEARNING IS STILL A SLOG AFTER FIFTY YEARS OF MOORE'S LAW"
+
+# Force a specific cached source + max detail profile
+asky --summarize-section "WHY LEARNING IS STILL A SLOG AFTER FIFTY YEARS OF MOORE'S LAW" \
+  --section-source corpus://cache/247 \
+  --section-id why-learning-is-still-a-slog-after-fifty-years-o-038 \
+  --section-detail max \
+  --section-max-chunks 8
+
+# Include TOC/debug rows while listing
+asky --summarize-section --section-source corpus://cache/247 --section-include-toc
+```
+
+Behavior:
+
+- Matching is strict; low-confidence matches return suggestions instead of guessing.
+- `--summarize-section` without a value lists canonical body section IDs/titles by default.
+- Use `--section-include-toc` to include TOC/micro heading rows.
+- `--section-source` disambiguates source when multiple local docs are cached.
+- `--section-id` provides deterministic section selection and bypasses title matching.
+- `--section-detail` supports `compact`, `balanced` (default), and `max`.
+- Section rows now include `section_ref` in the form `corpus://cache/<id>#section=<section-id>`.
+
 ## Research Toolset
 
 Research mode exposes retrieval-first tools:
@@ -114,7 +149,21 @@ Research mode exposes retrieval-first tools:
 - `get_link_summaries`
 - `get_relevant_content`
 - `get_full_content`
+- `list_sections` (local-corpus section index only)
+- `summarize_section` (local-corpus section summary only)
 - `save_finding`
 - `query_research_memory`
 
 When corpus is already preloaded, acquisition tools can be restricted so the model focuses on retrieval/synthesis.
+
+Section-tool policy by source mode:
+
+- `web_only`: `list_sections` and `summarize_section` are not exposed.
+- `local_only`: section tools are available.
+- `mixed`: section tools are available, but they only accept local corpus handles (`corpus://cache/<id>`).
+
+Section scoping contract:
+
+- Preferred: pass explicit `section_ref` or `section_id`.
+- Compatibility: legacy source suffixes like `corpus://cache/<id>/<section-id>` are accepted.
+- For retrieval/full-content section scope, do not invent path hacks when `section_ref` is available.

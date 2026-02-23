@@ -1,5 +1,116 @@
 # DEVLOG
 
+## 2026-02-23 - Canonical Section Refs + Section-Scoped Retrieval Compatibility
+
+Hardened local-corpus section workflows after observed failures where models selected tiny TOC aliases and malformed section-scoped corpus URLs.
+
+- **Changed**:
+  - `src/asky/research/sections.py`:
+    - Added canonical section model with alias collapsing:
+      - canonical body sections (`canonical_sections`) and alias map (`alias_map`)
+      - section metadata (`is_toc`, `is_body`, `canonical_id`)
+      - helper APIs: `get_listable_sections(...)`, `resolve_section_alias(...)`, `get_section_by_id(...)`
+    - Added safety thresholds:
+      - `MIN_CANONICAL_BODY_CHARS`
+      - `MIN_SUMMARIZE_SECTION_CHARS`
+    - `slice_section_content(...)` now resolves aliases to canonical IDs by default and reports
+      `requested_section_id`, `resolved_section_id`, `auto_promoted`.
+  - `src/asky/research/tools.py`:
+    - Added canonical corpus reference parsing for:
+      - `corpus://cache/<id>`
+      - `corpus://cache/<id>#section=<section-id>`
+      - compatibility legacy `corpus://cache/<id>/<section-id>`
+    - `list_sections` now:
+      - defaults to canonical body-only rows,
+      - supports `include_toc`,
+      - returns `section_ref` per row,
+      - returns both `section_count` and `all_section_count`.
+    - `summarize_section` now:
+      - resolves section scope in order `section_ref` -> `section_id` -> strict `section_query`,
+      - accepts compatibility legacy source suffixes,
+      - promotes aliases to canonical sections,
+      - refuses tiny sections with actionable structured errors.
+    - `get_relevant_content` / `get_full_content` now:
+      - accept optional `section_id` / `section_ref`,
+      - accept legacy section-suffixed corpus sources,
+      - apply section-bounded slicing before retrieval/full return.
+  - `src/asky/cli/main.py`, `src/asky/cli/section_commands.py`:
+    - Added CLI flags:
+      - `--section-id`
+      - `--section-include-toc`
+    - Manual section listing now defaults to canonical body sections and prints `section_ref`.
+    - Manual section summary path now supports deterministic `--section-id` and tiny-section refusal.
+  - `src/asky/core/prompts.py`:
+    - Updated guidance to prefer `section_ref` / `section_id` and avoid section path suffix hacks.
+- **Why**:
+  - Real runs showed models choosing duplicate tiny TOC headings and generating low-quality summaries.
+  - Model attempts to call retrieval with `corpus://cache/<id>/<section-id>` failed previously.
+  - The new contract keeps section references explicit and compatible while preserving existing flows.
+- **Tests Added/Updated**:
+  - `tests/test_research_sections.py`
+  - `tests/test_section_commands.py`
+  - `tests/test_research_tools.py`
+  - `tests/test_cli.py`
+- **Validation**:
+  - Targeted:
+    - `uv run pytest tests/test_research_sections.py tests/test_section_commands.py tests/test_research_tools.py tests/test_cli.py tests/test_tools.py tests/test_api_library.py tests/test_llm.py` -> passed.
+  - Full:
+    - `uv run pytest` -> passed.
+
+## 2026-02-22 - Local-Only Section Summarization + Research Tool Gating
+
+Added deterministic local-corpus section workflows for both CLI and research tool execution, aimed at reliable deep section summaries without relying on model guesswork.
+
+- **Changed**:
+  - `src/asky/research/sections.py` (new):
+    - Added deterministic section primitives:
+      - `build_section_index(...)` (TOC-aware + heading-aware parsing with stable IDs)
+      - `match_section_strict(...)` (strict confidence + suggestion candidates)
+      - `slice_section_content(...)` (section-bounded extraction + optional chunk-limit slicing)
+  - `src/asky/cli/section_commands.py` (new):
+    - Added no-main-model section command flow:
+      - `--summarize-section` with no value lists sections.
+      - `--summarize-section "<query>"` runs strict section match + deep summary.
+      - Added source disambiguation and actionable errors for ambiguous sources/sections.
+    - Uses existing hierarchical summarizer (`_summarize_content`) with detail profiles:
+      `compact|balanced|max` (default `balanced`).
+  - `src/asky/cli/main.py`:
+    - Added CLI flags:
+      - `--summarize-section [SECTION_QUERY]`
+      - `--section-source SOURCE`
+      - `--section-detail balanced|max|compact`
+      - `--section-max-chunks N`
+    - Added command routing to `section_commands.run_summarize_section_command(...)`.
+  - `src/asky/research/tools.py`:
+    - Added research tools:
+      - `list_sections`
+      - `summarize_section`
+    - Enforced local-only behavior:
+      - Web URL inputs rejected explicitly.
+      - Mixed-mode enforcement for handle-only local inputs.
+  - `src/asky/core/tool_registry_factory.py`, `src/asky/api/client.py`, `src/asky/core/prompts.py`, `src/asky/core/engine.py`:
+    - Added `research_source_mode` propagation to research registry creation.
+    - Registry now hides section tools in `web_only` mode.
+    - Registry injects source-mode context into section tool executors.
+    - Prompt guidance now includes a local section flow (`list_sections` -> `summarize_section`) when local-capable modes are active.
+- **Why**:
+  - Retrieval-only prompting often produced shallow section answers or dead-ended when section titles were not matched exactly.
+  - Users needed deterministic introspection and section-level control to validate retrieval behavior and force comprehensive section summaries.
+- **Tests Added/Updated**:
+  - Added:
+    - `tests/test_research_sections.py`
+    - `tests/test_section_commands.py`
+  - Updated:
+    - `tests/test_research_tools.py`
+    - `tests/test_tools.py`
+    - `tests/test_cli.py`
+    - `tests/test_api_library.py`
+- **Validation**:
+  - Targeted:
+    - `uv run pytest tests/test_research_sections.py tests/test_section_commands.py tests/test_research_tools.py tests/test_tools.py tests/test_cli.py tests/test_api_library.py`
+  - Full suite:
+    - `uv run pytest` (passed after this change set).
+
 ## 2026-02-22 - Local Corpus Retrieval Bootstrap + Manual `--query-corpus`
 
 Improved local-corpus research reliability when memory is empty and added a no-LLM corpus query command for debugging retrieval quality.

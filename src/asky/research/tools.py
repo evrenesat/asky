@@ -2,6 +2,7 @@
 
 import difflib
 import logging
+import re
 from typing import Any, Dict, List, Optional
 
 from asky.config import (
@@ -12,8 +13,15 @@ from asky.config import (
 from asky.retrieval import fetch_url_document
 from asky.research.cache import ResearchCache
 from asky.research.chunker import chunk_text
-from asky.research.embeddings import get_embedding_client
+from asky.research.sections import (
+    MIN_SUMMARIZE_SECTION_CHARS,
+    build_section_index,
+    get_listable_sections,
+    match_section_strict,
+    slice_section_content,
+)
 from asky.research.vector_store import get_vector_store
+from asky.summarization import _summarize_content
 from asky.url_utils import is_local_filesystem_target, sanitize_url
 
 logger = logging.getLogger(__name__)
@@ -24,10 +32,31 @@ CHUNK_DIVERSITY_SIMILARITY_THRESHOLD = 0.92
 CONTENT_PREVIEW_SHORT_CHARS = 2000
 CONTENT_PREVIEW_LONG_CHARS = 3000
 CORPUS_CACHE_HANDLE_PREFIX = "corpus://cache/"
+SECTION_REF_FRAGMENT_PREFIX = "#section="
 LOCAL_TARGET_UNSUPPORTED_ERROR = (
     "Local filesystem targets are not supported by this tool. "
     "Use an explicit local-source tool instead."
 )
+SECTION_DETAIL_DEFAULT = "balanced"
+SECTION_DETAIL_OPTIONS = {"compact", "balanced", "max"}
+SECTION_SUMMARY_PROMPTS: Dict[str, str] = {
+    "compact": (
+        "Summarize this section concisely with high signal bullets and key claims."
+    ),
+    "balanced": (
+        "Produce a comprehensive section summary with argument flow, concrete examples, "
+        "caveats, and implications."
+    ),
+    "max": (
+        "Produce an exhaustive section summary with deep structural coverage, "
+        "sub-arguments, evidence, caveats, and practical implications."
+    ),
+}
+SECTION_SUMMARY_MAX_OUTPUT_CHARS: Dict[str, int] = {
+    "compact": 2800,
+    "balanced": 7200,
+    "max": 12000,
+}
 
 
 # Tool Schemas for LLM
@@ -119,6 +148,14 @@ Requires embedding model to be available.""",
                     "default": DEFAULT_MIN_CHUNK_RELEVANCE,
                     "description": "Minimum hybrid relevance threshold to include a section",
                 },
+                "section_id": {
+                    "type": "string",
+                    "description": "Optional section scope from list_sections output.",
+                },
+                "section_ref": {
+                    "type": "string",
+                    "description": "Optional section reference (corpus://cache/<id>#section=<section-id>).",
+                },
             },
             "required": ["urls", "query"],
         },
@@ -137,6 +174,14 @@ Content must have been cached previously via extract_links.""",
                     "type": "array",
                     "items": {"type": "string"},
                     "description": "URLs to get full content from (must be cached)",
+                },
+                "section_id": {
+                    "type": "string",
+                    "description": "Optional section scope from list_sections output.",
+                },
+                "section_ref": {
+                    "type": "string",
+                    "description": "Optional section reference (corpus://cache/<id>#section=<section-id>).",
                 },
             },
             "required": ["urls"],
@@ -195,6 +240,71 @@ Useful for recalling facts, statistics, or insights you've discovered before."""
             "required": ["query"],
         },
     },
+    {
+        "name": "list_sections",
+        "description": """List detected section headings for local corpus sources.
+Use this to inspect available section titles before requesting a deep section summary.
+This tool only supports local corpus handles/sources, not web URLs.""",
+        "system_prompt_guideline": "For local corpus research, call this first to discover exact section titles.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "source": {
+                    "type": "string",
+                    "description": "Optional source selector (prefer corpus://cache/<id>).",
+                },
+                "sources": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Optional source selectors for batch listing.",
+                },
+                "include_toc": {
+                    "type": "boolean",
+                    "description": "When true, include TOC/micro heading rows in addition to canonical body sections.",
+                    "default": False,
+                },
+            },
+            "required": [],
+        },
+    },
+    {
+        "name": "summarize_section",
+        "description": """Summarize one specific section from a local corpus source.
+Use exact section titles from list_sections for reliable matching.
+This tool only supports local corpus handles/sources, not web URLs.""",
+        "system_prompt_guideline": "Use after list_sections to produce deep section-bounded summaries from local corpus sources.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "source": {
+                    "type": "string",
+                    "description": "Source selector (prefer corpus://cache/<id>). Legacy /<section-id> suffix is accepted.",
+                },
+                "section_query": {
+                    "type": "string",
+                    "description": "Section title query to match strictly (fallback when section_id/section_ref is omitted).",
+                },
+                "section_id": {
+                    "type": "string",
+                    "description": "Exact section ID from list_sections output.",
+                },
+                "section_ref": {
+                    "type": "string",
+                    "description": "Section reference from list_sections output (corpus://cache/<id>#section=<section-id>).",
+                },
+                "detail": {
+                    "type": "string",
+                    "description": "Summary detail profile: balanced|max|compact.",
+                    "default": SECTION_DETAIL_DEFAULT,
+                },
+                "max_chunks": {
+                    "type": "integer",
+                    "description": "Optional chunk limit for section slicing before summarization.",
+                },
+            },
+            "required": [],
+        },
+    },
 ]
 
 
@@ -212,6 +322,8 @@ RETRIEVAL_TOOL_NAMES = frozenset(
         "get_relevant_content",
         "save_finding",
         "query_research_memory",
+        "list_sections",
+        "summarize_section",
     }
 )
 
@@ -274,43 +386,105 @@ def _extract_source_targets(
     return []
 
 
-def _parse_corpus_cache_handle(target: str) -> Optional[int]:
-    """Parse `corpus://cache/<id>` handles into integer cache IDs."""
+def _format_corpus_handle(cache_id: int) -> str:
+    return f"{CORPUS_CACHE_HANDLE_PREFIX}{int(cache_id)}"
+
+
+def _format_section_ref(cache_id: int, section_id: str) -> str:
+    return f"{_format_corpus_handle(cache_id)}{SECTION_REF_FRAGMENT_PREFIX}{section_id}"
+
+
+def _parse_corpus_source_token(target: str) -> Dict[str, Any]:
+    """Parse corpus source tokens with optional section scoping."""
     normalized = _sanitize_url(target)
-    prefix = CORPUS_CACHE_HANDLE_PREFIX
-    if not normalized.startswith(prefix):
-        return None
-    suffix = normalized[len(prefix) :].strip()
-    if not suffix.isdigit():
-        return None
-    return int(suffix)
+    payload: Dict[str, Any] = {
+        "source": normalized,
+        "is_corpus": False,
+        "cache_id": None,
+        "section_id": None,
+        "format_detected": None,
+        "error": None,
+    }
+    if not normalized.startswith(CORPUS_CACHE_HANDLE_PREFIX):
+        return payload
+
+    payload["is_corpus"] = True
+    suffix = normalized[len(CORPUS_CACHE_HANDLE_PREFIX) :].strip()
+    if not suffix:
+        payload["error"] = (
+            "Invalid corpus handle format. Accepted formats: "
+            "corpus://cache/<id>, corpus://cache/<id>#section=<section-id>, "
+            "or legacy corpus://cache/<id>/<section-id>."
+        )
+        return payload
+
+    section_token = ""
+    if SECTION_REF_FRAGMENT_PREFIX in suffix:
+        cache_token, section_token = suffix.split(SECTION_REF_FRAGMENT_PREFIX, 1)
+        payload["format_detected"] = "section_ref"
+    elif "/" in suffix:
+        cache_token, section_token = suffix.split("/", 1)
+        payload["format_detected"] = "legacy_path"
+    else:
+        cache_token = suffix
+        payload["format_detected"] = "base"
+
+    cache_token = cache_token.strip().strip("/")
+    if not cache_token.isdigit():
+        payload["error"] = (
+            "Invalid corpus handle format. Accepted formats: "
+            "corpus://cache/<id>, corpus://cache/<id>#section=<section-id>, "
+            "or legacy corpus://cache/<id>/<section-id>."
+        )
+        return payload
+
+    payload["cache_id"] = int(cache_token)
+    clean_section = section_token.strip()
+    if clean_section:
+        clean_section = clean_section.lstrip("/").strip()
+        if payload["format_detected"] == "legacy_path":
+            if "#" in clean_section:
+                clean_section = clean_section.split("#", 1)[0].strip()
+            if "?" in clean_section:
+                clean_section = clean_section.split("?", 1)[0].strip()
+        if not clean_section:
+            payload["error"] = (
+                "Section identifier is empty. Use <id>#section=<section-id> "
+                "or provide a non-empty legacy /<section-id> suffix."
+            )
+            return payload
+        payload["section_id"] = clean_section
+
+    return payload
 
 
 def _resolve_cached_source(
     cache: ResearchCache,
     source: str,
-) -> tuple[Optional[Dict[str, Any]], Optional[str]]:
+) -> tuple[Optional[Dict[str, Any]], Optional[str], Dict[str, Any]]:
     """Resolve a URL or corpus handle to a cached entry."""
-    handle_cache_id = _parse_corpus_cache_handle(source)
-    if handle_cache_id is not None:
+    parsed_corpus = _parse_corpus_source_token(source)
+    if parsed_corpus.get("is_corpus"):
+        if parsed_corpus.get("error"):
+            return None, str(parsed_corpus.get("error")), parsed_corpus
+
+        handle_cache_id = int(parsed_corpus.get("cache_id") or 0)
         cached = cache.get_cached_by_id(handle_cache_id)
         if not cached:
-            return None, "Not cached. Use preload/ingestion before querying this handle."
-        return cached, None
-
-    if source.startswith(CORPUS_CACHE_HANDLE_PREFIX):
-        return (
-            None,
-            f"Invalid corpus handle format. Expected {CORPUS_CACHE_HANDLE_PREFIX}<id>.",
-        )
+            return (
+                None,
+                "Not cached. Use preload/ingestion before querying this handle.",
+                parsed_corpus,
+            )
+        return cached, None, parsed_corpus
 
     if is_local_filesystem_target(source):
-        return None, LOCAL_TARGET_UNSUPPORTED_ERROR
+        return None, LOCAL_TARGET_UNSUPPORTED_ERROR, parsed_corpus
 
     cached = cache.get_cached(source)
     if not cached:
-        return None, "Not cached. Use extract_links first to cache this URL."
-    return cached, None
+        return None, "Not cached. Use extract_links first to cache this URL.", parsed_corpus
+    return cached, None, parsed_corpus
 
 
 def _normalize_session_id(raw_session_id: Any) -> Optional[str]:
@@ -319,6 +493,177 @@ def _normalize_session_id(raw_session_id: Any) -> Optional[str]:
         return None
     session_id = str(raw_session_id).strip()
     return session_id or None
+
+
+def _normalize_section_detail(raw_detail: Any) -> str:
+    detail = str(raw_detail or SECTION_DETAIL_DEFAULT).strip().lower()
+    if detail not in SECTION_DETAIL_OPTIONS:
+        return SECTION_DETAIL_DEFAULT
+    return detail
+
+
+def _extract_section_sources(args: Dict[str, Any]) -> List[str]:
+    """Extract section-source selectors with deterministic priority."""
+    sources: List[str] = []
+
+    single_source = args.get("source")
+    if isinstance(single_source, str) and single_source.strip():
+        sources.append(_sanitize_url(single_source))
+
+    multi_sources = args.get("sources", [])
+    if isinstance(multi_sources, str):
+        multi_sources = [multi_sources]
+    if isinstance(multi_sources, list):
+        for item in multi_sources:
+            token = str(item or "").strip()
+            if token:
+                sources.append(_sanitize_url(token))
+
+    if sources:
+        return _dedupe_preserve_order(sources)
+    return _extract_source_targets(args, allow_corpus_urls=True)
+
+
+def _looks_like_web_url(source: str) -> bool:
+    lowered = source.lower()
+    return lowered.startswith("http://") or lowered.startswith("https://")
+
+
+def _resolve_local_section_source(
+    cache: ResearchCache,
+    source: str,
+    *,
+    research_source_mode: Optional[str],
+) -> tuple[Optional[Dict[str, Any]], Optional[str], Dict[str, Any]]:
+    """Resolve local section source from handle/local target and enforce mode constraints."""
+    if _looks_like_web_url(source):
+        return (
+            None,
+            "Web URLs are not supported by this tool. Use local corpus handles (corpus://cache/<id>).",
+            _parse_corpus_source_token(source),
+        )
+
+    parsed_corpus = _parse_corpus_source_token(source)
+    if parsed_corpus.get("is_corpus"):
+        if parsed_corpus.get("error"):
+            return (
+                None,
+                str(parsed_corpus.get("error")),
+                parsed_corpus,
+            )
+        handle_cache_id = int(parsed_corpus.get("cache_id") or 0)
+        cached = cache.get_cached_by_id(handle_cache_id)
+        if not cached:
+            return (
+                None,
+                "Not cached. Ingest the local corpus first, then retry with this handle.",
+                parsed_corpus,
+            )
+        return cached, None, parsed_corpus
+
+    mode = str(research_source_mode or "").strip().lower()
+    if mode == "mixed":
+        return (
+            None,
+            "In mixed mode, only corpus handles are accepted for section tools (corpus://cache/<id>).",
+            parsed_corpus,
+        )
+
+    if is_local_filesystem_target(source):
+        cached = cache.get_cached(source)
+        if not cached:
+            return (
+                None,
+                "Local source not cached. Ingest this source first and use its corpus handle.",
+                parsed_corpus,
+            )
+        return cached, None, parsed_corpus
+
+    return (
+        None,
+        "Unsupported section source. Use corpus://cache/<id> from the local corpus cache.",
+        parsed_corpus,
+    )
+
+
+def _coerce_bool(value: Any) -> bool:
+    if isinstance(value, bool):
+        return value
+    if value is None:
+        return False
+    token = str(value).strip().lower()
+    return token in {"1", "true", "yes", "on"}
+
+
+def _normalize_section_id(raw_value: Any) -> Optional[str]:
+    if raw_value is None:
+        return None
+    section_id = str(raw_value).strip()
+    return section_id or None
+
+
+def _resolve_section_scope(
+    *,
+    source: str,
+    parsed_source: Dict[str, Any],
+    section_id_arg: Any,
+    section_ref_arg: Any,
+) -> tuple[Optional[str], Optional[str]]:
+    """Resolve section scope from explicit args, section refs, or legacy source syntax."""
+    explicit_section_ref = _normalize_section_id(section_ref_arg)
+    explicit_section_id = _normalize_section_id(section_id_arg)
+
+    if explicit_section_ref:
+        parsed_ref = _parse_corpus_source_token(explicit_section_ref)
+        if not parsed_ref.get("is_corpus"):
+            return (
+                None,
+                "section_ref must use corpus format: corpus://cache/<id>#section=<section-id>.",
+            )
+        if parsed_ref.get("error"):
+            return None, str(parsed_ref.get("error"))
+        ref_section_id = _normalize_section_id(parsed_ref.get("section_id"))
+        if not ref_section_id:
+            return (
+                None,
+                "section_ref is missing section id. Use corpus://cache/<id>#section=<section-id>.",
+            )
+        if parsed_source.get("is_corpus"):
+            source_cache_id = int(parsed_source.get("cache_id") or 0)
+            ref_cache_id = int(parsed_ref.get("cache_id") or 0)
+            if source_cache_id and ref_cache_id and source_cache_id != ref_cache_id:
+                return (
+                    None,
+                    "section_ref cache ID does not match source cache ID.",
+                )
+        return ref_section_id, None
+
+    if explicit_section_id:
+        return explicit_section_id, None
+
+    source_section_id = _normalize_section_id(parsed_source.get("section_id"))
+    if source_section_id:
+        return source_section_id, None
+    return None, None
+
+
+def _build_section_suggestions(
+    section_index: Dict[str, Any],
+    *,
+    cache_id: Optional[int],
+    limit: int = 8,
+) -> List[Dict[str, Any]]:
+    suggestions: List[Dict[str, Any]] = []
+    for section in get_listable_sections(section_index, include_toc=False)[: max(1, int(limit))]:
+        section_id = str(section.get("id", "") or "")
+        entry: Dict[str, Any] = {
+            "id": section_id,
+            "title": str(section.get("title", "") or ""),
+        }
+        if cache_id is not None and section_id:
+            entry["section_ref"] = _format_section_ref(cache_id, section_id)
+        suggestions.append(entry)
+    return suggestions
 
 
 def _select_diverse_chunks(
@@ -443,6 +788,57 @@ def _search_relevant_chunks(
         }
         for text, score in dense_results
     ]
+
+
+def _simple_query_match_score(query: str, text: str) -> float:
+    query_norm = str(query or "").strip().lower()
+    text_norm = str(text or "").strip().lower()
+    if not query_norm or not text_norm:
+        return 0.0
+
+    if query_norm in text_norm:
+        return 1.0
+
+    token_pattern = re.compile(r"[a-z0-9]+")
+    query_tokens = set(token_pattern.findall(query_norm))
+    text_tokens = set(token_pattern.findall(text_norm))
+    overlap = (
+        len(query_tokens & text_tokens) / len(query_tokens)
+        if query_tokens
+        else 0.0
+    )
+    sequence_similarity = difflib.SequenceMatcher(
+        None,
+        query_norm,
+        text_norm[: max(len(query_norm) * 8, 256)],
+    ).ratio()
+    return min((0.62 * overlap) + (0.38 * sequence_similarity), 1.0)
+
+
+def _rank_section_chunks_direct(
+    *,
+    content: str,
+    query: str,
+    max_chunks: int,
+    min_relevance: float,
+) -> List[Dict[str, Any]]:
+    """Rank section-scoped chunks without relying on full-document vector indexes."""
+    ranked: List[Dict[str, Any]] = []
+    for _, chunk_text_value in chunk_text(content):
+        score = _simple_query_match_score(query, chunk_text_value)
+        if score < float(min_relevance):
+            continue
+        ranked.append(
+            {
+                "text": chunk_text_value,
+                "score": score,
+                "dense_score": score,
+                "lexical_score": score,
+            }
+        )
+
+    ranked.sort(key=lambda item: float(item.get("score", 0.0)), reverse=True)
+    return ranked[: max(1, int(max_chunks) * MAX_RAG_CANDIDATE_MULTIPLIER)]
 
 
 def execute_extract_links(args: Dict[str, Any]) -> Dict[str, Any]:
@@ -612,6 +1008,8 @@ def execute_get_relevant_content(args: Dict[str, Any]) -> Dict[str, Any]:
     max_chunks = args.get("max_chunks", 5)
     dense_weight = args.get("dense_weight", DEFAULT_HYBRID_DENSE_WEIGHT)
     min_relevance = args.get("min_relevance", DEFAULT_MIN_CHUNK_RELEVANCE)
+    section_id_arg = args.get("section_id")
+    section_ref_arg = args.get("section_ref")
 
     if not urls:
         return {"error": "No sources provided. Specify 'urls' or 'corpus_urls'."}
@@ -622,51 +1020,125 @@ def execute_get_relevant_content(args: Dict[str, Any]) -> Dict[str, Any]:
     results: Dict[str, Any] = {}
 
     for source in urls:
-        cached, lookup_error = _resolve_cached_source(cache=cache, source=source)
+        cached, lookup_error, parsed_source = _resolve_cached_source(
+            cache=cache,
+            source=source,
+        )
         if lookup_error:
             results[source] = {"error": lookup_error}
             continue
 
-        cache_id = cached["id"]
-        content = cached["content"]
+        cache_id = int(cached.get("id", 0) or 0)
+        content = str(cached.get("content", "") or "")
 
         if not content:
             results[source] = {"error": "Cached content is empty."}
             continue
 
+        requested_section_id, scope_error = _resolve_section_scope(
+            source=source,
+            parsed_source=parsed_source,
+            section_id_arg=section_id_arg,
+            section_ref_arg=section_ref_arg,
+        )
+        if scope_error:
+            results[source] = {"error": scope_error}
+            continue
+
+        content_for_retrieval = content
+        scoped_section_payload: Optional[Dict[str, Any]] = None
+        if requested_section_id:
+            if not parsed_source.get("is_corpus"):
+                results[source] = {
+                    "error": (
+                        "Section-scoped retrieval only supports local corpus handles. "
+                        "Use corpus://cache/<id> with section_id or section_ref."
+                    )
+                }
+                continue
+
+            section_index = build_section_index(content)
+            slice_payload = slice_section_content(
+                content,
+                section_index,
+                requested_section_id,
+            )
+            if slice_payload.get("error"):
+                results[source] = {
+                    "error": str(slice_payload.get("error")),
+                    "requested_section_id": requested_section_id,
+                    "suggestions": _build_section_suggestions(
+                        section_index,
+                        cache_id=cache_id,
+                    ),
+                }
+                continue
+
+            content_for_retrieval = str(slice_payload.get("content", "") or "").strip()
+            if not content_for_retrieval:
+                results[source] = {
+                    "error": "Matched section has no content.",
+                    "requested_section_id": requested_section_id,
+                }
+                continue
+
+            resolved_section = dict(slice_payload.get("section") or {})
+            resolved_section_id = str(
+                slice_payload.get("resolved_section_id", requested_section_id)
+                or requested_section_id
+            )
+            scoped_section_payload = {
+                "requested_section_id": str(
+                    slice_payload.get("requested_section_id", requested_section_id)
+                    or requested_section_id
+                ),
+                "resolved_section_id": resolved_section_id,
+                "auto_promoted": bool(slice_payload.get("auto_promoted")),
+                "section_ref": _format_section_ref(cache_id, resolved_section_id),
+                "title": str(resolved_section.get("title", "") or ""),
+                "char_count": int(resolved_section.get("char_count", 0) or 0),
+            }
+
         try:
-            vector_store = get_vector_store()
-            embedding_model = vector_store.embedding_client.model
+            if scoped_section_payload:
+                ranked_chunks = _rank_section_chunks_direct(
+                    content=content_for_retrieval,
+                    query=query,
+                    max_chunks=max_chunks,
+                    min_relevance=min_relevance,
+                )
+            else:
+                vector_store = get_vector_store()
+                embedding_model = vector_store.embedding_client.model
 
-            # Ensure chunks are embedded
-            has_embeddings = vector_store.has_chunk_embeddings(cache_id)
-            has_for_model_method = getattr(
-                vector_store, "has_chunk_embeddings_for_model", None
-            )
-            if callable(has_for_model_method):
-                model_result = has_for_model_method(cache_id, embedding_model)
-                if isinstance(model_result, bool):
-                    has_embeddings = model_result
+                has_embeddings = vector_store.has_chunk_embeddings(cache_id)
+                has_for_model_method = getattr(
+                    vector_store, "has_chunk_embeddings_for_model", None
+                )
+                if callable(has_for_model_method):
+                    model_result = has_for_model_method(cache_id, embedding_model)
+                    if isinstance(model_result, bool):
+                        has_embeddings = model_result
 
-            if not has_embeddings:
-                logger.debug(f"Generating chunk embeddings for {source}")
-                chunks = chunk_text(content)
-                stored = vector_store.store_chunk_embeddings(cache_id, chunks)
-                if stored == 0:
-                    raise Exception("Failed to store chunk embeddings")
+                if not has_embeddings:
+                    logger.debug(f"Generating chunk embeddings for {source}")
+                    chunks = chunk_text(content)
+                    stored = vector_store.store_chunk_embeddings(cache_id, chunks)
+                    if stored == 0:
+                        raise Exception("Failed to store chunk embeddings")
 
-            ranked_chunks = _search_relevant_chunks(
-                vector_store=vector_store,
-                cache_id=cache_id,
-                query=query,
-                max_chunks=max_chunks,
-                dense_weight=dense_weight,
-                min_relevance=min_relevance,
-            )
+                ranked_chunks = _search_relevant_chunks(
+                    vector_store=vector_store,
+                    cache_id=cache_id,
+                    query=query,
+                    max_chunks=max_chunks,
+                    dense_weight=dense_weight,
+                    min_relevance=min_relevance,
+                )
             relevant = _select_diverse_chunks(ranked_chunks, max_chunks=max_chunks)
 
             if relevant:
-                results[source] = {
+                payload: Dict[str, Any] = {
                     "title": cached.get("title", ""),
                     "chunks": [
                         {
@@ -679,25 +1151,40 @@ def execute_get_relevant_content(args: Dict[str, Any]) -> Dict[str, Any]:
                     ],
                     "chunk_count": len(relevant),
                 }
+                if scoped_section_payload:
+                    payload["section"] = scoped_section_payload
+                results[source] = payload
             else:
-                # No relevant chunks found - return truncated content as fallback
-                results[source] = {
+                payload = {
                     "title": cached.get("title", ""),
                     "note": "No highly relevant sections found. Returning content preview.",
-                    "content_preview": content[:CONTENT_PREVIEW_SHORT_CHARS]
-                    + ("..." if len(content) > CONTENT_PREVIEW_SHORT_CHARS else ""),
+                    "content_preview": content_for_retrieval[:CONTENT_PREVIEW_SHORT_CHARS]
+                    + (
+                        "..."
+                        if len(content_for_retrieval) > CONTENT_PREVIEW_SHORT_CHARS
+                        else ""
+                    ),
                 }
+                if scoped_section_payload:
+                    payload["section"] = scoped_section_payload
+                results[source] = payload
 
         except Exception as e:
             logger.error(f"RAG retrieval failed for {source}: {e}")
-            # Fallback: return truncated full content
-            results[source] = {
+            payload = {
                 "title": cached.get("title", ""),
                 "fallback": True,
                 "note": f"Semantic search unavailable ({str(e)[:50]}). Returning content preview.",
-                "content_preview": content[:CONTENT_PREVIEW_LONG_CHARS]
-                + ("..." if len(content) > CONTENT_PREVIEW_LONG_CHARS else ""),
+                "content_preview": content_for_retrieval[:CONTENT_PREVIEW_LONG_CHARS]
+                + (
+                    "..."
+                    if len(content_for_retrieval) > CONTENT_PREVIEW_LONG_CHARS
+                    else ""
+                ),
             }
+            if scoped_section_payload:
+                payload["section"] = scoped_section_payload
+            results[source] = payload
 
     return results
 
@@ -705,6 +1192,8 @@ def execute_get_relevant_content(args: Dict[str, Any]) -> Dict[str, Any]:
 def execute_get_full_content(args: Dict[str, Any]) -> Dict[str, Any]:
     """Get full cached content for URLs."""
     urls = _extract_source_targets(args, allow_corpus_urls=True)
+    section_id_arg = args.get("section_id")
+    section_ref_arg = args.get("section_ref")
     if not urls:
         return {"error": "No sources provided. Specify 'urls' or 'corpus_urls'."}
 
@@ -712,23 +1201,330 @@ def execute_get_full_content(args: Dict[str, Any]) -> Dict[str, Any]:
     results: Dict[str, Any] = {}
 
     for source in urls:
-        cached, lookup_error = _resolve_cached_source(cache=cache, source=source)
+        cached, lookup_error, parsed_source = _resolve_cached_source(
+            cache=cache,
+            source=source,
+        )
         if lookup_error:
             results[source] = {"error": lookup_error}
             continue
 
-        content = cached.get("content", "")
+        cache_id = int(cached.get("id", 0) or 0)
+        content = str(cached.get("content", "") or "")
         if not content:
             results[source] = {"error": "Cached content is empty."}
             continue
 
-        results[source] = {
+        requested_section_id, scope_error = _resolve_section_scope(
+            source=source,
+            parsed_source=parsed_source,
+            section_id_arg=section_id_arg,
+            section_ref_arg=section_ref_arg,
+        )
+        if scope_error:
+            results[source] = {"error": scope_error}
+            continue
+
+        payload: Dict[str, Any] = {
             "title": cached.get("title", ""),
             "content": content,
             "content_length": len(content),
         }
+        if requested_section_id:
+            if not parsed_source.get("is_corpus"):
+                results[source] = {
+                    "error": (
+                        "Section-scoped full content only supports local corpus handles. "
+                        "Use corpus://cache/<id> with section_id or section_ref."
+                    )
+                }
+                continue
+
+            section_index = build_section_index(content)
+            slice_payload = slice_section_content(
+                content,
+                section_index,
+                requested_section_id,
+            )
+            if slice_payload.get("error"):
+                results[source] = {
+                    "error": str(slice_payload.get("error")),
+                    "requested_section_id": requested_section_id,
+                    "suggestions": _build_section_suggestions(
+                        section_index,
+                        cache_id=cache_id,
+                    ),
+                }
+                continue
+
+            section_text = str(slice_payload.get("content", "") or "").strip()
+            if not section_text:
+                results[source] = {
+                    "error": "Matched section has no content.",
+                    "requested_section_id": requested_section_id,
+                }
+                continue
+
+            resolved_section = dict(slice_payload.get("section") or {})
+            resolved_section_id = str(
+                slice_payload.get("resolved_section_id", requested_section_id)
+                or requested_section_id
+            )
+            payload["content"] = section_text
+            payload["content_length"] = len(section_text)
+            payload["section"] = {
+                "requested_section_id": str(
+                    slice_payload.get("requested_section_id", requested_section_id)
+                    or requested_section_id
+                ),
+                "resolved_section_id": resolved_section_id,
+                "auto_promoted": bool(slice_payload.get("auto_promoted")),
+                "section_ref": _format_section_ref(cache_id, resolved_section_id),
+                "title": str(resolved_section.get("title", "") or ""),
+                "char_count": int(resolved_section.get("char_count", 0) or 0),
+            }
+
+        results[source] = payload
 
     return results
+
+
+def execute_list_sections(args: Dict[str, Any]) -> Dict[str, Any]:
+    """List detected section headings for local corpus sources."""
+    sources = _extract_section_sources(args)
+    if not sources:
+        return {"error": "No sources provided. Specify 'source', 'sources', or 'corpus_urls'."}
+
+    cache = _get_cache()
+    source_mode = str(args.get("research_source_mode", "") or "").strip().lower()
+    include_toc = _coerce_bool(args.get("include_toc"))
+    results: Dict[str, Any] = {}
+
+    for source in sources:
+        cached, lookup_error, _parsed_source = _resolve_local_section_source(
+            cache=cache,
+            source=source,
+            research_source_mode=source_mode,
+        )
+        if lookup_error:
+            results[source] = {"error": lookup_error}
+            continue
+
+        content = str(cached.get("content", "") or "")
+        if not content.strip():
+            results[source] = {"error": "Cached content is empty."}
+            continue
+
+        section_index = build_section_index(content)
+        sections = get_listable_sections(section_index, include_toc=include_toc)
+        cache_id = int(cached["id"])
+        rows: List[Dict[str, Any]] = []
+        for section in sections:
+            section_id = str(section.get("id", "") or "")
+            row: Dict[str, Any] = {
+                "id": section_id,
+                "title": str(section.get("title", "") or ""),
+                "char_count": int(section.get("char_count", 0) or 0),
+                "section_ref": _format_section_ref(cache_id, section_id),
+            }
+            if include_toc:
+                row["is_toc"] = bool(section.get("is_toc"))
+            rows.append(row)
+
+        results[source] = {
+            "title": str(cached.get("title", "") or ""),
+            "section_count": len(rows),
+            "all_section_count": len(list(section_index.get("sections") or [])),
+            "sections": rows,
+        }
+
+    return results
+
+
+def execute_summarize_section(args: Dict[str, Any]) -> Dict[str, Any]:
+    """Summarize a strict-matched section from one local corpus source."""
+    sources = _extract_section_sources(args)
+    explicit_section_ref = _normalize_section_id(args.get("section_ref"))
+    if not sources and explicit_section_ref:
+        parsed_ref = _parse_corpus_source_token(explicit_section_ref)
+        if parsed_ref.get("is_corpus") and not parsed_ref.get("error") and parsed_ref.get("cache_id"):
+            sources = [_format_corpus_handle(int(parsed_ref["cache_id"]))]
+        else:
+            return {
+                "error": (
+                    "section_ref must use corpus format: "
+                    "corpus://cache/<id>#section=<section-id>."
+                )
+            }
+
+    if not sources:
+        return {"error": "No source provided. Specify 'source' or 'corpus_urls'."}
+    if len(sources) > 1:
+        return {
+            "error": (
+                "summarize_section requires exactly one source. "
+                "Call list_sections first and pass one corpus://cache/<id> source."
+            )
+        }
+
+    source = sources[0]
+    cache = _get_cache()
+    source_mode = str(args.get("research_source_mode", "") or "").strip().lower()
+    cached, lookup_error, parsed_source = _resolve_local_section_source(
+        cache=cache,
+        source=source,
+        research_source_mode=source_mode,
+    )
+    if lookup_error:
+        return {"error": lookup_error, "source": source}
+
+    content = str(cached.get("content", "") or "")
+    if not content.strip():
+        return {"error": "Cached content is empty.", "source": source}
+
+    cache_id = int(cached["id"])
+    canonical_source = _format_corpus_handle(cache_id)
+    section_index = build_section_index(content)
+    sections = get_listable_sections(section_index, include_toc=False)
+    if not sections:
+        return {"error": "No sections detected for this source.", "source": source}
+
+    requested_section_id, scope_error = _resolve_section_scope(
+        source=source,
+        parsed_source=parsed_source,
+        section_id_arg=args.get("section_id"),
+        section_ref_arg=args.get("section_ref"),
+    )
+    if scope_error:
+        return {"error": scope_error, "source": source}
+    section_query = str(args.get("section_query", "") or "").strip()
+
+    confidence = 1.0
+    suggestions = _build_section_suggestions(section_index, cache_id=cache_id)
+
+    if not requested_section_id:
+        if not section_query:
+            return {
+                "error": "section_ref, section_id, or section_query is required.",
+                "source": source,
+                "suggestions": suggestions,
+            }
+        match_payload = match_section_strict(section_query, section_index)
+        if not match_payload.get("matched"):
+            raw_suggestions = list(match_payload.get("suggestions") or [])
+            enriched_suggestions: List[Dict[str, Any]] = []
+            for item in raw_suggestions:
+                section_id = str(item.get("id", "") or "")
+                row = dict(item)
+                if section_id:
+                    row["section_ref"] = _format_section_ref(cache_id, section_id)
+                enriched_suggestions.append(row)
+            return {
+                "error": "No strict section match found.",
+                "source": source,
+                "confidence": float(match_payload.get("confidence", 0.0) or 0.0),
+                "reason": str(match_payload.get("reason", "") or ""),
+                "suggestions": enriched_suggestions,
+            }
+        matched_section = dict(match_payload.get("section") or {})
+        requested_section_id = str(matched_section.get("id", "") or "")
+        confidence = float(match_payload.get("confidence", 0.0) or 0.0)
+
+    detail = _normalize_section_detail(args.get("detail"))
+    max_chunks_raw = args.get("max_chunks")
+    try:
+        max_chunks = int(max_chunks_raw) if max_chunks_raw is not None else None
+    except (TypeError, ValueError):
+        return {
+            "error": "max_chunks must be an integer.",
+            "source": source,
+        }
+    slice_payload = slice_section_content(
+        content,
+        section_index,
+        str(requested_section_id or ""),
+        max_chunks=max_chunks,
+    )
+    if slice_payload.get("error"):
+        return {
+            "error": str(slice_payload["error"]),
+            "source": source,
+            "requested_section_id": requested_section_id,
+            "suggestions": suggestions,
+        }
+
+    section_text = str(slice_payload.get("content", "") or "").strip()
+    if not section_text:
+        return {"error": "Matched section has no content.", "source": source}
+
+    if len(section_text) < MIN_SUMMARIZE_SECTION_CHARS:
+        resolved_section = dict(slice_payload.get("section") or {})
+        resolved_section_id = str(
+            slice_payload.get("resolved_section_id", requested_section_id)
+            or requested_section_id
+        )
+        return {
+            "error": (
+                "Resolved section is too small to summarize reliably "
+                f"({len(section_text)} chars)."
+            ),
+            "source": canonical_source,
+            "requested_section_id": requested_section_id,
+            "resolved_section_id": resolved_section_id,
+            "auto_promoted": bool(slice_payload.get("auto_promoted")),
+            "section": {
+                "id": resolved_section_id,
+                "title": str(resolved_section.get("title", "") or ""),
+                "char_count": int(resolved_section.get("char_count", 0) or 0),
+                "section_ref": _format_section_ref(cache_id, resolved_section_id),
+            },
+            "min_required_chars": MIN_SUMMARIZE_SECTION_CHARS,
+            "suggestions": suggestions,
+        }
+
+    resolved_section = dict(slice_payload.get("section") or {})
+    resolved_section_id = str(
+        slice_payload.get("resolved_section_id", requested_section_id)
+        or requested_section_id
+    )
+    requested_section_id = str(
+        slice_payload.get("requested_section_id", requested_section_id)
+        or requested_section_id
+    )
+    auto_promoted = bool(slice_payload.get("auto_promoted"))
+
+    summary_prompt = (
+        f"{SECTION_SUMMARY_PROMPTS[detail]}\n"
+        f"Focus section title: {resolved_section.get('title', '')}\n"
+        "Do not include unrelated section material."
+    )
+    summary = _summarize_content(
+        content=section_text,
+        prompt_template=summary_prompt,
+        max_output_chars=SECTION_SUMMARY_MAX_OUTPUT_CHARS[detail],
+        usage_tracker=args.get("summarization_tracker"),
+    )
+
+    return {
+        "source": canonical_source,
+        "title": str(cached.get("title", "") or ""),
+        "section": {
+            "id": resolved_section_id,
+            "title": str(resolved_section.get("title", "")),
+            "char_count": int(resolved_section.get("char_count", 0) or 0),
+            "confidence": round(confidence, 3),
+            "section_ref": _format_section_ref(cache_id, resolved_section_id),
+        },
+        "requested_section_id": requested_section_id,
+        "resolved_section_id": resolved_section_id,
+        "auto_promoted": auto_promoted,
+        "detail": detail,
+        "summary": summary,
+        "section_text_chars": len(section_text),
+        "truncated": bool(slice_payload.get("truncated")),
+        "available_chunks": int(slice_payload.get("available_chunks", 0) or 0),
+        "suggestions": suggestions,
+    }
 
 
 def execute_save_finding(args: Dict[str, Any]) -> Dict[str, Any]:

@@ -23,6 +23,7 @@ ToolExecutor = Callable[[Dict[str, Any]], Dict[str, Any]]
 CustomToolExecutor = Callable[[str, Dict[str, Any]], Dict[str, Any]]
 ResearchBindingsLoader = Callable[[], Dict[str, Any]]
 TraceCallback = Callable[[Dict[str, Any]], None]
+LOCAL_CORPUS_ONLY_RESEARCH_TOOLS = frozenset({"list_sections", "summarize_section"})
 
 
 def _execute_web_search(
@@ -73,6 +74,8 @@ def _default_research_bindings_loader() -> Dict[str, Any]:
         "get_link_summaries": getattr(tools_module, "execute_get_link_summaries"),
         "get_relevant_content": getattr(tools_module, "execute_get_relevant_content"),
         "get_full_content": getattr(tools_module, "execute_get_full_content"),
+        "list_sections": getattr(tools_module, "execute_list_sections"),
+        "summarize_section": getattr(tools_module, "execute_summarize_section"),
         "save_finding": getattr(tools_module, "execute_save_finding"),
         "query_research_memory": getattr(tools_module, "execute_query_research_memory"),
     }
@@ -401,6 +404,7 @@ def create_research_tool_registry(
     session_id: Optional[str] = None,
     corpus_preloaded: bool = False,
     preloaded_corpus_urls: Optional[list[str]] = None,
+    research_source_mode: Optional[str] = None,
     summarization_tracker: Optional[UsageTracker] = None,
     tool_trace_callback: Optional[TraceCallback] = None,
 ) -> ToolRegistry:
@@ -454,17 +458,26 @@ def create_research_tool_registry(
 
     research_bindings = load_research_tool_bindings()
     schemas = research_bindings["schemas"]
-    fallback_corpus_urls = [url for url in (preloaded_corpus_urls or []) if str(url).strip()]
+    fallback_corpus_urls = [
+        url for url in (preloaded_corpus_urls or []) if str(url).strip()
+    ]
+    normalized_source_mode = (
+        str(research_source_mode).strip().lower()
+        if isinstance(research_source_mode, str)
+        else ""
+    )
 
     def _execute_with_context(
         executor: ToolExecutor,
         *,
         include_corpus_url_fallback: bool = False,
+        include_source_mode: bool = False,
     ) -> ToolExecutor:
         if (
             session_id is None
             and summarization_tracker is None
             and not include_corpus_url_fallback
+            and not include_source_mode
         ):
             return executor
 
@@ -474,6 +487,7 @@ def create_research_tool_registry(
                 and "session_id" in args
                 and summarization_tracker is None
                 and not include_corpus_url_fallback
+                and not include_source_mode
             ):
                 return executor(args)
             enriched_args = dict(args)
@@ -485,12 +499,19 @@ def create_research_tool_registry(
                 existing_urls = enriched_args.get("urls")
                 if not existing_urls:
                     enriched_args["corpus_urls"] = list(fallback_corpus_urls)
+            if include_source_mode and normalized_source_mode:
+                enriched_args["research_source_mode"] = normalized_source_mode
             return executor(enriched_args)
 
         return _wrapped
 
     for schema in schemas:
         tool_name = schema["name"]
+        if (
+            tool_name in LOCAL_CORPUS_ONLY_RESEARCH_TOOLS
+            and normalized_source_mode not in {"local_only", "mixed"}
+        ):
+            continue
         if not _is_tool_enabled(tool_name, excluded_tools):
             continue
         schema_with_overrides = _apply_tool_prompt_overrides(tool_name, schema)
@@ -535,6 +556,26 @@ def create_research_tool_registry(
                 tool_name,
                 schema_with_overrides,
                 _execute_with_context(research_bindings["query_research_memory"]),
+            )
+        elif tool_name == "list_sections":
+            registry.register(
+                tool_name,
+                schema_with_overrides,
+                _execute_with_context(
+                    research_bindings["list_sections"],
+                    include_corpus_url_fallback=True,
+                    include_source_mode=True,
+                ),
+            )
+        elif tool_name == "summarize_section":
+            registry.register(
+                tool_name,
+                schema_with_overrides,
+                _execute_with_context(
+                    research_bindings["summarize_section"],
+                    include_corpus_url_fallback=True,
+                    include_source_mode=True,
+                ),
             )
 
     for tool_name, tool_data in active_custom_tools.items():

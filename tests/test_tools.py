@@ -522,6 +522,7 @@ def test_research_registry_corpus_preloaded_excludes_acquisition_tools():
         load_research_tool_bindings_fn=lambda: bindings,
         disabled_tools={"web_search"},
         corpus_preloaded=True,
+        research_source_mode="local_only",
     )
 
     schemas = registry.get_schemas()
@@ -554,6 +555,7 @@ def test_research_registry_corpus_not_preloaded_keeps_all_tools():
         load_research_tool_bindings_fn=lambda: bindings,
         disabled_tools={"web_search"},
         corpus_preloaded=False,
+        research_source_mode="local_only",
     )
 
     schemas = registry.get_schemas()
@@ -562,3 +564,103 @@ def test_research_registry_corpus_not_preloaded_keeps_all_tools():
     # All tools should be present (except web_search which we disabled manually)
     for name in ACQUISITION_TOOL_NAMES | RETRIEVAL_TOOL_NAMES:
         assert name in schema_names
+
+
+def test_research_registry_hides_section_tools_in_web_only_mode():
+    from asky.core.tool_registry_factory import create_research_tool_registry
+
+    bindings = {
+        "schemas": [
+            {"name": "list_sections", "parameters": {"type": "object", "properties": {}}},
+            {"name": "summarize_section", "parameters": {"type": "object", "properties": {}}},
+            {"name": "query_research_memory", "parameters": {"type": "object", "properties": {}}},
+        ],
+        "extract_links": lambda _args: {},
+        "get_link_summaries": lambda _args: {},
+        "get_relevant_content": lambda _args: {},
+        "get_full_content": lambda _args: {},
+        "list_sections": lambda _args: {"ok": True},
+        "summarize_section": lambda _args: {"ok": True},
+        "save_finding": lambda _args: {"ok": True},
+        "query_research_memory": lambda _args: {"ok": True},
+    }
+
+    registry = create_research_tool_registry(
+        load_research_tool_bindings_fn=lambda: bindings,
+        disabled_tools={"web_search", "save_memory"},
+        research_source_mode="web_only",
+    )
+    names = {schema["function"]["name"] for schema in registry.get_schemas()}
+
+    assert "query_research_memory" in names
+    assert "list_sections" not in names
+    assert "summarize_section" not in names
+
+
+def test_research_registry_hides_section_tools_when_source_mode_unknown():
+    from asky.core.tool_registry_factory import create_research_tool_registry
+
+    bindings = {
+        "schemas": [
+            {"name": "list_sections", "parameters": {"type": "object", "properties": {}}},
+            {"name": "summarize_section", "parameters": {"type": "object", "properties": {}}},
+        ],
+        "extract_links": lambda _args: {},
+        "get_link_summaries": lambda _args: {},
+        "get_relevant_content": lambda _args: {},
+        "get_full_content": lambda _args: {},
+        "list_sections": lambda _args: {"ok": True},
+        "summarize_section": lambda _args: {"ok": True},
+        "save_finding": lambda _args: {"ok": True},
+        "query_research_memory": lambda _args: {"ok": True},
+    }
+
+    registry = create_research_tool_registry(
+        load_research_tool_bindings_fn=lambda: bindings,
+        disabled_tools={"web_search", "save_memory"},
+        research_source_mode=None,
+    )
+    names = {schema["function"]["name"] for schema in registry.get_schemas()}
+    assert "list_sections" not in names
+    assert "summarize_section" not in names
+
+
+def test_research_registry_keeps_section_tools_in_mixed_mode_and_injects_source_mode():
+    from asky.core.tool_registry_factory import create_research_tool_registry
+
+    section_calls = []
+
+    bindings = {
+        "schemas": [
+            {"name": "list_sections", "parameters": {"type": "object", "properties": {}}},
+        ],
+        "extract_links": lambda _args: {},
+        "get_link_summaries": lambda _args: {},
+        "get_relevant_content": lambda _args: {},
+        "get_full_content": lambda _args: {},
+        "list_sections": lambda args: section_calls.append(args) or {"ok": True},
+        "summarize_section": lambda _args: {"ok": True},
+        "save_finding": lambda _args: {"ok": True},
+        "query_research_memory": lambda _args: {"ok": True},
+    }
+
+    registry = create_research_tool_registry(
+        load_research_tool_bindings_fn=lambda: bindings,
+        disabled_tools={"web_search", "save_memory"},
+        research_source_mode="mixed",
+        preloaded_corpus_urls=["corpus://cache/4"],
+    )
+    names = {schema["function"]["name"] for schema in registry.get_schemas()}
+    assert "list_sections" in names
+
+    registry.dispatch(
+        {
+            "function": {
+                "name": "list_sections",
+                "arguments": "{}",
+            }
+        },
+        summarize=False,
+    )
+    assert section_calls[-1]["corpus_urls"] == ["corpus://cache/4"]
+    assert section_calls[-1]["research_source_mode"] == "mixed"

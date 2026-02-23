@@ -427,6 +427,84 @@ class TestGetRelevantContent:
         ]
         mock_cache.get_cached_by_id.assert_not_called()
 
+    def test_get_relevant_accepts_legacy_section_scoped_source(self, mock_cache):
+        from asky.research.tools import execute_get_relevant_content
+
+        mock_cache.get_cached_by_id.return_value = {
+            "id": 247,
+            "content": "body",
+            "title": "Book",
+        }
+
+        with (
+            patch("asky.research.tools.build_section_index") as mock_index,
+            patch("asky.research.tools.slice_section_content") as mock_slice,
+        ):
+            mock_index.return_value = {
+                "sections": [{"id": "why-learning-038", "title": "WHY LEARNING", "char_count": 84000}],
+                "canonical_sections": [{"id": "why-learning-038", "title": "WHY LEARNING", "char_count": 84000}],
+                "alias_map": {"why-learning-014": "why-learning-038", "why-learning-038": "why-learning-038"},
+            }
+            mock_slice.return_value = {
+                "content": "learning bottlenecks in classrooms " * 80,
+                "section": {"id": "why-learning-038", "title": "WHY LEARNING", "char_count": 84000},
+                "requested_section_id": "why-learning-014",
+                "resolved_section_id": "why-learning-038",
+                "auto_promoted": True,
+                "truncated": False,
+                "available_chunks": 1,
+            }
+
+            result = execute_get_relevant_content(
+                {
+                    "urls": ["corpus://cache/247/why-learning-014"],
+                    "query": "learning bottlenecks",
+                }
+            )
+
+        payload = result["corpus://cache/247/why-learning-014"]
+        assert "chunks" in payload
+        assert payload["section"]["auto_promoted"] is True
+        assert payload["section"]["resolved_section_id"] == "why-learning-038"
+
+    def test_get_relevant_accepts_section_ref_argument(self, mock_cache):
+        from asky.research.tools import execute_get_relevant_content
+
+        mock_cache.get_cached_by_id.return_value = {
+            "id": 11,
+            "content": "body",
+            "title": "Book",
+        }
+
+        with (
+            patch("asky.research.tools.build_section_index") as mock_index,
+            patch("asky.research.tools.slice_section_content") as mock_slice,
+        ):
+            mock_index.return_value = {
+                "sections": [{"id": "learning-038", "title": "WHY LEARNING", "char_count": 6000}],
+                "canonical_sections": [{"id": "learning-038", "title": "WHY LEARNING", "char_count": 6000}],
+                "alias_map": {"learning-038": "learning-038"},
+            }
+            mock_slice.return_value = {
+                "content": "learning friction evidence " * 50,
+                "section": {"id": "learning-038", "title": "WHY LEARNING", "char_count": 6000},
+                "requested_section_id": "learning-038",
+                "resolved_section_id": "learning-038",
+                "auto_promoted": False,
+                "truncated": False,
+                "available_chunks": 1,
+            }
+            result = execute_get_relevant_content(
+                {
+                    "corpus_urls": ["corpus://cache/11"],
+                    "query": "learning",
+                    "section_ref": "corpus://cache/11#section=learning-038",
+                }
+            )
+
+        assert "chunks" in result["corpus://cache/11"]
+        assert result["corpus://cache/11"]["section"]["resolved_section_id"] == "learning-038"
+
 
 class TestGetFullContent:
     """Tests for get_full_content tool."""
@@ -510,6 +588,284 @@ class TestGetFullContent:
         assert result["corpus://cache/11"]["content"] == "Complete text"
         mock_cache.get_cached_by_id.assert_called_once_with(11)
 
+    def test_get_full_supports_section_scoped_legacy_source(self, mock_cache):
+        from asky.research.tools import execute_get_full_content
+
+        mock_cache.get_cached_by_id.return_value = {
+            "id": 247,
+            "content": "book content",
+            "title": "Book",
+        }
+
+        with (
+            patch("asky.research.tools.build_section_index") as mock_index,
+            patch("asky.research.tools.slice_section_content") as mock_slice,
+        ):
+            mock_index.return_value = {
+                "sections": [{"id": "why-learning-038", "title": "WHY LEARNING", "char_count": 5000}],
+                "canonical_sections": [{"id": "why-learning-038", "title": "WHY LEARNING", "char_count": 5000}],
+                "alias_map": {"why-learning-014": "why-learning-038"},
+            }
+            mock_slice.return_value = {
+                "content": "section body",
+                "section": {"id": "why-learning-038", "title": "WHY LEARNING", "char_count": 5000},
+                "requested_section_id": "why-learning-014",
+                "resolved_section_id": "why-learning-038",
+                "auto_promoted": True,
+            }
+            result = execute_get_full_content(
+                {"urls": ["corpus://cache/247/why-learning-014"]}
+            )
+
+        payload = result["corpus://cache/247/why-learning-014"]
+        assert payload["content"] == "section body"
+        assert payload["section"]["resolved_section_id"] == "why-learning-038"
+
+    def test_get_full_supports_section_ref_argument(self, mock_cache):
+        from asky.research.tools import execute_get_full_content
+
+        mock_cache.get_cached_by_id.return_value = {
+            "id": 88,
+            "content": "book content",
+            "title": "Book",
+        }
+
+        with (
+            patch("asky.research.tools.build_section_index") as mock_index,
+            patch("asky.research.tools.slice_section_content") as mock_slice,
+        ):
+            mock_index.return_value = {
+                "sections": [{"id": "learning-038", "title": "WHY LEARNING", "char_count": 7000}],
+                "canonical_sections": [{"id": "learning-038", "title": "WHY LEARNING", "char_count": 7000}],
+                "alias_map": {"learning-038": "learning-038"},
+            }
+            mock_slice.return_value = {
+                "content": "section body text",
+                "section": {"id": "learning-038", "title": "WHY LEARNING", "char_count": 7000},
+                "requested_section_id": "learning-038",
+                "resolved_section_id": "learning-038",
+                "auto_promoted": False,
+            }
+            result = execute_get_full_content(
+                {
+                    "corpus_urls": ["corpus://cache/88"],
+                    "section_ref": "corpus://cache/88#section=learning-038",
+                }
+            )
+
+        assert result["corpus://cache/88"]["section"]["section_ref"].endswith(
+            "#section=learning-038"
+        )
+
+
+class TestSectionTools:
+    """Tests for local section tools."""
+
+    @pytest.fixture
+    def mock_cache(self):
+        with patch("asky.research.tools._get_cache") as mock:
+            cache = MagicMock()
+            mock.return_value = cache
+            yield cache
+
+    def test_list_sections_rejects_web_sources(self):
+        from asky.research.tools import execute_list_sections
+
+        result = execute_list_sections({"source": "https://example.com/article"})
+
+        assert "https://example.com/article" in result
+        assert "Web URLs are not supported" in result["https://example.com/article"]["error"]
+
+    def test_list_sections_accepts_corpus_handle(self, mock_cache):
+        from asky.research.tools import execute_list_sections
+
+        mock_cache.get_cached_by_id.return_value = {
+            "id": 7,
+            "title": "Book",
+            "content": "CHAPTER ONE\\n\\ntext\\n\\nCHAPTER TWO\\n\\ntext",
+        }
+
+        with patch("asky.research.tools.build_section_index") as mock_index:
+            mock_index.return_value = {
+                "sections": [
+                    {"id": "chapter-one-001", "title": "CHAPTER ONE", "char_count": 1200, "is_toc": True},
+                    {"id": "chapter-two-002", "title": "CHAPTER TWO", "char_count": 900},
+                ],
+                "canonical_sections": [
+                    {"id": "chapter-two-002", "title": "CHAPTER TWO", "char_count": 900},
+                ],
+            }
+            result = execute_list_sections({"source": "corpus://cache/7"})
+
+        assert result["corpus://cache/7"]["section_count"] == 1
+        assert result["corpus://cache/7"]["all_section_count"] == 2
+        assert result["corpus://cache/7"]["sections"][0]["section_ref"].endswith(
+            "#section=chapter-two-002"
+        )
+        mock_cache.get_cached_by_id.assert_called_once_with(7)
+
+    def test_list_sections_include_toc_returns_all_rows(self, mock_cache):
+        from asky.research.tools import execute_list_sections
+
+        mock_cache.get_cached_by_id.return_value = {
+            "id": 7,
+            "title": "Book",
+            "content": "body",
+        }
+        with patch("asky.research.tools.build_section_index") as mock_index:
+            mock_index.return_value = {
+                "sections": [
+                    {"id": "chapter-one-001", "title": "CHAPTER ONE", "char_count": 10, "is_toc": True},
+                    {"id": "chapter-two-002", "title": "CHAPTER TWO", "char_count": 1200, "is_toc": False},
+                ],
+                "canonical_sections": [
+                    {"id": "chapter-two-002", "title": "CHAPTER TWO", "char_count": 1200, "is_toc": False},
+                ],
+            }
+            result = execute_list_sections(
+                {"source": "corpus://cache/7", "include_toc": True}
+            )
+
+        assert result["corpus://cache/7"]["section_count"] == 2
+        assert "is_toc" in result["corpus://cache/7"]["sections"][0]
+
+    def test_summarize_section_rejects_non_handle_source_in_mixed_mode(self, mock_cache):
+        from asky.research.tools import execute_summarize_section
+
+        mock_cache.get_cached.return_value = {"content": "body", "title": "Book"}
+        result = execute_summarize_section(
+            {
+                "source": "local:///tmp/book.epub",
+                "research_source_mode": "mixed",
+                "section_query": "Preface",
+            }
+        )
+
+        assert "error" in result
+        assert "only corpus handles are accepted" in result["error"]
+
+    def test_summarize_section_returns_summary_for_strict_match(self, mock_cache):
+        from asky.research.tools import execute_summarize_section
+
+        mock_cache.get_cached_by_id.return_value = {
+            "id": 9,
+            "title": "Book",
+            "content": "body",
+        }
+
+        with (
+            patch("asky.research.tools.build_section_index") as mock_index,
+            patch("asky.research.tools.match_section_strict") as mock_match,
+            patch("asky.research.tools.slice_section_content") as mock_slice,
+            patch("asky.research.tools._summarize_content", return_value="Deep summary"),
+        ):
+            mock_index.return_value = {
+                "sections": [
+                    {
+                        "id": "learning-001",
+                        "title": "WHY LEARNING IS STILL A SLOG",
+                        "char_count": 4200,
+                    }
+                ]
+            }
+            mock_match.return_value = {
+                "matched": True,
+                "confidence": 0.96,
+                "section": mock_index.return_value["sections"][0],
+                "suggestions": [],
+            }
+            mock_slice.return_value = {
+                "content": "section text " * 60,
+                "truncated": False,
+                "available_chunks": 1,
+                "section": mock_index.return_value["sections"][0],
+                "resolved_section_id": "learning-001",
+                "requested_section_id": "learning-001",
+                "auto_promoted": False,
+            }
+            result = execute_summarize_section(
+                {
+                    "source": "corpus://cache/9",
+                    "section_query": "WHY LEARNING IS STILL A SLOG",
+                    "detail": "balanced",
+                }
+            )
+
+        assert result["summary"] == "Deep summary"
+        assert result["section"]["id"] == "learning-001"
+
+    def test_summarize_section_auto_promotes_alias_id(self, mock_cache):
+        from asky.research.tools import execute_summarize_section
+
+        mock_cache.get_cached_by_id.return_value = {
+            "id": 247,
+            "title": "Book",
+            "content": "body",
+        }
+        with (
+            patch("asky.research.tools.build_section_index") as mock_index,
+            patch("asky.research.tools.slice_section_content") as mock_slice,
+            patch("asky.research.tools._summarize_content", return_value="Deep summary"),
+        ):
+            mock_index.return_value = {
+                "sections": [{"id": "learning-038", "title": "WHY LEARNING", "char_count": 84000}],
+                "canonical_sections": [{"id": "learning-038", "title": "WHY LEARNING", "char_count": 84000}],
+                "alias_map": {"learning-014": "learning-038"},
+            }
+            mock_slice.return_value = {
+                "content": "section text " * 60,
+                "truncated": False,
+                "available_chunks": 1,
+                "section": mock_index.return_value["sections"][0],
+                "requested_section_id": "learning-014",
+                "resolved_section_id": "learning-038",
+                "auto_promoted": True,
+            }
+            result = execute_summarize_section(
+                {
+                    "source": "corpus://cache/247",
+                    "section_id": "learning-014",
+                }
+            )
+
+        assert result["auto_promoted"] is True
+        assert result["resolved_section_id"] == "learning-038"
+
+    def test_summarize_section_rejects_tiny_resolved_section(self, mock_cache):
+        from asky.research.tools import execute_summarize_section
+
+        mock_cache.get_cached_by_id.return_value = {
+            "id": 247,
+            "title": "Book",
+            "content": "body",
+        }
+        with (
+            patch("asky.research.tools.build_section_index") as mock_index,
+            patch("asky.research.tools.slice_section_content") as mock_slice,
+        ):
+            mock_index.return_value = {
+                "sections": [{"id": "learning-014", "title": "WHY LEARNING", "char_count": 62}],
+                "canonical_sections": [{"id": "learning-014", "title": "WHY LEARNING", "char_count": 62}],
+                "alias_map": {"learning-014": "learning-014"},
+            }
+            mock_slice.return_value = {
+                "content": "tiny text",
+                "truncated": False,
+                "available_chunks": 1,
+                "section": mock_index.return_value["sections"][0],
+                "requested_section_id": "learning-014",
+                "resolved_section_id": "learning-014",
+                "auto_promoted": False,
+            }
+            result = execute_summarize_section(
+                {
+                    "source": "corpus://cache/247",
+                    "section_id": "learning-014",
+                }
+            )
+
+        assert "too small to summarize reliably" in result["error"]
+
 
 class TestToolSchemas:
     """Tests for tool schemas."""
@@ -525,6 +881,8 @@ class TestToolSchemas:
             "get_full_content",
             "save_finding",
             "query_research_memory",
+            "list_sections",
+            "summarize_section",
         ]
 
         tool_names = [schema["name"] for schema in RESEARCH_TOOL_SCHEMAS]

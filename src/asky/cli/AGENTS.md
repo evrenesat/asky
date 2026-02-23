@@ -10,6 +10,7 @@ Command-line interface layer handling argument parsing, command routing, and use
 | `chat.py`                 | Chat conversation orchestration                                                 |
 | `local_ingestion_flow.py` | Pre-LLM local source preload for research mode (path-redacted local KB context) |
 | `research_commands.py`    | Manual corpus query commands (no-LLM retrieval inspection)                      |
+| `section_commands.py`     | Manual section listing/summarization for local corpus (no main model call)      |
 | `shortlist_flow.py`       | Pre-LLM shortlist execution + banner updates                                    |
 | `completion.py`           | Shell completion with argcomplete                                               |
 | `display.py`              | Banner rendering, live status updates                                           |
@@ -46,6 +47,9 @@ Command-line interface layer handling argument parsing, command routing, and use
 | `-off, -tool-off, --tool-off`  | `chat.py` (runtime tool exclusion, supports `all`)             |
 | `--list-tools`                 | `main.py` (list all LLM tools and exit)                        |
 | `--query-corpus`               | `research_commands.py` (deterministic corpus retrieval, no model call) |
+| `--summarize-section`          | `section_commands.py` (deterministic section list/summary, no main model call) |
+| `--section-id`                 | `section_commands.py` (deterministic section selection override) |
+| `--section-include-toc`        | `section_commands.py` (include TOC/debug rows in list mode) |
 | `-r, --research`               | Enable/promote research mode with optional corpus pointer list |
 | `--shortlist auto\|on\|off`    | Per-run shortlist override                                      |
 | `-sfm, --session-from-message` | `history.py`                                                   |
@@ -67,6 +71,12 @@ Research mode is session-owned:
 - Passing `-r` on a non-research session promotes and persists that session as research.
 - Corpus pointers passed with `-r` replace the session's stored corpus pointer list.
 - Follow-up turns in that session reuse persisted corpus/source-mode settings automatically.
+
+Section CLI behavior:
+
+- `--summarize-section` with no value lists canonical body sections by default.
+- `--section-include-toc` reveals TOC/micro heading rows for debugging.
+- list output includes copy-pastable `section_ref` values (`corpus://cache/<id>#section=<section-id>`).
 
 ### Error Handling
 
@@ -111,6 +121,7 @@ main.py
 ├── chat.py → api/client.py
 ├── local_ingestion_flow.py → research/adapters.py, research/cache.py, research/vector_store.py
 ├── research_commands.py → research/tools.py, research/cache.py, local_ingestion_flow.py
+├── section_commands.py → research/sections.py, summarization.py, research/cache.py, local_ingestion_flow.py
 ├── history.py → storage/sqlite.py
 ├── sessions.py → storage/sqlite.py
 ├── prompts.py → config/

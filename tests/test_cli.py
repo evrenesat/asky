@@ -138,6 +138,33 @@ def test_parse_args_query_corpus_options():
         assert args.query_corpus_max_chunks == 2
 
 
+def test_parse_args_summarize_section_options():
+    with patch(
+        "sys.argv",
+        [
+            "asky",
+            "--summarize-section",
+            "learning after moore law",
+            "--section-source",
+            "corpus://cache/7",
+            "--section-id",
+            "why-learning-038",
+            "--section-include-toc",
+            "--section-detail",
+            "max",
+            "--section-max-chunks",
+            "4",
+        ],
+    ):
+        args = parse_args()
+        assert args.summarize_section == "learning after moore law"
+        assert args.section_source == "corpus://cache/7"
+        assert args.section_id == "why-learning-038"
+        assert args.section_include_toc is True
+        assert args.section_detail == "max"
+        assert args.section_max_chunks == 4
+
+
 def test_parse_args_tool_off_aliases():
     with patch(
         "sys.argv",
@@ -1615,6 +1642,81 @@ def test_main_runs_manual_query_corpus_command(
         explicit_targets=["/tmp/books/book.epub"],
         max_sources=9,
         max_chunks=2,
+    )
+
+
+@patch("asky.cli.main.section_commands.run_summarize_section_command")
+@patch("asky.cli.main._resolve_research_corpus")
+@patch("asky.cli.main.parse_args")
+@patch("asky.cli.main.init_db")
+@patch("asky.cli.main.setup_logging")
+def test_main_runs_summarize_section_command(
+    _mock_setup_logging,
+    _mock_init_db,
+    mock_parse,
+    mock_resolve_corpus,
+    mock_section_command,
+):
+    mock_resolve_corpus.return_value = (
+        True,
+        ["/tmp/books/book.epub"],
+        None,
+        "local_only",
+        True,
+    )
+    mock_parse.return_value = argparse.Namespace(
+        model="gf",
+        history=None,
+        continue_ids=None,
+        summarize=False,
+        delete_messages=None,
+        delete_sessions=None,
+        all=False,
+        print_session=None,
+        print_ids=None,
+        prompts=False,
+        verbose=False,
+        open=False,
+        mail_recipients=None,
+        subject=None,
+        sticky_session=None,
+        resume_session=None,
+        session_end=False,
+        session_history=None,
+        terminal_lines=None,
+        add_model=False,
+        edit_model=None,
+        query=[],
+        reply=False,
+        session_from_message=None,
+        completion_script=None,
+        query_corpus=None,
+        query_corpus_max_sources=20,
+        query_corpus_max_chunks=3,
+        summarize_section="WHY LEARNING IS STILL A SLOG",
+        section_source="corpus://cache/9",
+        section_id="why-learning-038",
+        section_include_toc=True,
+        section_detail="balanced",
+        section_max_chunks=5,
+        local_corpus=["/tmp/books/book.epub"],
+        shortlist="auto",
+        turns=None,
+        elephant_mode=False,
+        research=False,
+    )
+
+    with patch("asky.cli.main.MODELS", {"gf": {"id": "gemini-flash-latest"}}):
+        main()
+
+    mock_section_command.assert_called_once_with(
+        section_query="WHY LEARNING IS STILL A SLOG",
+        section_source="corpus://cache/9",
+        section_id="why-learning-038",
+        section_include_toc=True,
+        section_detail="balanced",
+        section_max_chunks=5,
+        explicit_targets=["/tmp/books/book.epub"],
     )
 
 

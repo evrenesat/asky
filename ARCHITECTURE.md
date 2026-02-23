@@ -22,6 +22,7 @@ graph TB
         chat["chat.py<br/>Chat Flow"]
         local_ingest["local_ingestion_flow.py<br/>Pre-LLM Local Corpus Ingestion"]
         research_cmd["research_commands.py<br/>Manual No-LLM Corpus Query"]
+        section_cmd["section_commands.py<br/>Manual No-LLM Section Summary"]
         shortlist_flow["shortlist_flow.py<br/>Pre-LLM Shortlist Orchestration"]
         history["history.py<br/>History Commands"]
         sessions_cli["sessions.py<br/>Session Commands"]
@@ -53,6 +54,7 @@ graph TB
         vector["vector_store.py<br/>VectorStore"]
         vector_ops["vector_store_*_ops.py<br/>Chunk/Link/Finding Ops"]
         vector_common["vector_store_common.py<br/>Shared Math/Constants"]
+        sections["sections.py<br/>Section Index + Strict Match"]
         shortlist["source_shortlist.py<br/>Pre-LLM Ranking"]
         shortlist_ops["shortlist_collect.py<br/>shortlist_score.py"]
     end
@@ -72,6 +74,7 @@ graph TB
     api_preload -.-> shortlist
     main --> chat
     main --> research_cmd
+    main --> section_cmd
     chat --> api_client
     main --> history
     main --> sessions_cli
@@ -90,6 +93,7 @@ graph TB
     shortlist_flow -.-> shortlist
     shortlist -.-> shortlist_ops
     vector -.-> vector_ops
+    section_cmd -.-> sections
     vector_ops -.-> vector_common
     chat -.-> cache
 ```
@@ -185,6 +189,19 @@ generate_summaries() → persist (session/history)
     ↓
 (Optional) render_to_browser() / send_email()
 ```
+
+`main.py` also exposes deterministic no-main-model corpus utilities:
+
+- `--query-corpus` → `cli/research_commands.py`
+- `--summarize-section` (+ `--section-source`, `--section-id`, `--section-include-toc`, `--section-detail`, `--section-max-chunks`) → `cli/section_commands.py`
+
+Local section workflows now use canonical section references:
+
+- `list_sections` defaults to canonical body sections (TOC/micro duplicates hidden),
+- each row includes `section_ref` (`corpus://cache/<id>#section=<section-id>`),
+- retrieval tools also accept compatibility legacy section-suffixed sources
+  (`corpus://cache/<id>/<section-id>`) while explicit `section_ref`/`section_id`
+  is the preferred contract.
 
 Verbose tracing has two levels:
 

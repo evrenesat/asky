@@ -152,6 +152,29 @@ In research mode with preloaded corpus, `AskyClient.run_turn()` also performs on
 deterministic bootstrap retrieval and appends the resulting evidence snippets into
 the first model-visible user message context.
 
+### Local section tools in research mode
+
+Research registry now includes local section tools:
+
+- `list_sections`
+- `summarize_section`
+
+Exposure depends on effective `research_source_mode`:
+
+- `web_only`: section tools are hidden.
+- `local_only`: section tools are enabled.
+- `mixed`: section tools are enabled, but executors require local corpus handles
+  (`corpus://cache/<id>`) and reject web URLs.
+
+Section-reference contract for tool calls:
+
+- Preferred format: `corpus://cache/<id>#section=<section-id>` (`section_ref`).
+- Explicit `section_id` is also supported.
+- Compatibility mode accepts legacy `corpus://cache/<id>/<section-id>` sources for
+  retrieval/full-content flows.
+- `list_sections` defaults to canonical body sections and includes `section_ref` in
+  each row. Use `include_toc=true` only when TOC/debug rows are needed.
+
 ## Minimal vs Full APIs
 
 ### `run_turn()` (recommended)

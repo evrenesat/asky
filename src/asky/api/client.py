@@ -95,6 +95,7 @@ class AskyClient:
         session_manager: Optional[SessionManager] = None,
         preload: Optional[PreloadResolution] = None,
         local_kb_hint_enabled: bool = False,
+        section_tools_enabled: bool = False,
         research_mode: Optional[bool] = None,
     ) -> List[Dict[str, Any]]:
         """Build a message list for a single asky turn."""
@@ -117,6 +118,7 @@ class AskyClient:
                 system_prompt,
                 corpus_preloaded=preload.is_corpus_preloaded if preload else False,
                 local_kb_hint_enabled=local_kb_hint_enabled,
+                section_tools_enabled=section_tools_enabled,
             )
 
         messages: List[Dict[str, Any]] = [{"role": "system", "content": system_prompt}]
@@ -369,6 +371,7 @@ class AskyClient:
         research_session_id: Optional[str] = None,
         preload: Optional[PreloadResolution] = None,
         research_mode: Optional[bool] = None,
+        research_source_mode: Optional[str] = None,
         display_callback: Optional[
             Callable[[int, Optional[str], bool, Optional[str]], None]
         ] = None,
@@ -398,6 +401,7 @@ class AskyClient:
                 preloaded_corpus_urls=(
                     list(preload.preloaded_source_urls) if preload else []
                 ),
+                research_source_mode=research_source_mode,
                 summarization_tracker=self.summarization_tracker,
                 tool_trace_callback=(
                     verbose_output_callback if self.config.verbose else None
@@ -458,6 +462,7 @@ class AskyClient:
             context_str=context_str,
             session_manager=session_manager,
             preload=preload,
+            section_tools_enabled=False,
             research_mode=self.config.research_mode,
         )
         final_answer = self.run_messages(
@@ -710,6 +715,10 @@ class AskyClient:
         # We need to make sure subsequent steps use effective_query_text.
 
         local_kb_hint_enabled = bool(local_targets) or bool(effective_local_corpus_paths)
+        section_tools_enabled = bool(
+            effective_research_mode
+            and effective_source_mode in {"local_only", "mixed"}
+        )
         if local_kb_hint_enabled:
             effective_query_text = call_attr(
                 "asky.research.adapters",
@@ -740,6 +749,7 @@ class AskyClient:
             session_manager=session_manager,
             preload=preload,
             local_kb_hint_enabled=local_kb_hint_enabled,
+            section_tools_enabled=section_tools_enabled,
             research_mode=effective_research_mode,
         )
         self._emit_preload_provenance(
@@ -787,6 +797,7 @@ class AskyClient:
             ),
             preload=preload,
             research_mode=effective_research_mode,
+            research_source_mode=effective_source_mode,
             display_callback=display_callback,
             verbose_output_callback=verbose_output_callback,
             summarization_status_callback=summarization_status_callback,

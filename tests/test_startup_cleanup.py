@@ -55,9 +55,19 @@ class TestStartupCleanup:
                 args.clean_session_research = None
                 args.completion_script = None
                 args.list_tools = False
+                args.query_corpus = None
+                args.query_corpus_max_sources = 20
+                args.query_corpus_max_chunks = 3
+                args.summarize_section = None
+                args.section_source = None
+                args.section_detail = "balanced"
+                args.section_max_chunks = None
                 args.list_memories = False
                 args.delete_memory = None
                 args.clear_memories = False
+                args.shortlist = "auto"
+                args.turns = None
+                args.elephant_mode = False
 
                 mock_parse.return_value = args
                 yield mock_parse

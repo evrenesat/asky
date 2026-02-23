@@ -761,6 +761,7 @@ def create_research_tool_registry(
     usage_tracker: Optional[UsageTracker] = None,
     disabled_tools: Optional[Set[str]] = None,
     session_id: Optional[str] = None,
+    research_source_mode: Optional[str] = None,
     summarization_tracker: Optional[UsageTracker] = None,
     tool_trace_callback: Optional[Callable[[Dict[str, Any]], None]] = None,
 ) -> ToolRegistry:
@@ -775,6 +776,7 @@ def create_research_tool_registry(
         custom_tools=CUSTOM_TOOLS,
         disabled_tools=disabled_tools,
         session_id=session_id,
+        research_source_mode=research_source_mode,
         tool_trace_callback=tool_trace_callback,
     )
 

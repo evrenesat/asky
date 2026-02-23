@@ -175,6 +175,7 @@ def test_asky_client_run_messages_uses_research_registry(
         session_id="42",
         corpus_preloaded=False,
         preloaded_corpus_urls=[],
+        research_source_mode=None,
         summarization_tracker=client.summarization_tracker,
         tool_trace_callback=None,
     )
@@ -376,6 +377,7 @@ def test_asky_client_run_turn_redacts_local_targets_for_model(
         research_session_id=None,
         preload=result.preload,
         research_mode=True,
+        research_source_mode="local_only",
         display_callback=None,
         verbose_output_callback=None,
         summarization_status_callback=None,

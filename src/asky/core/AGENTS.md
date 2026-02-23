@@ -70,6 +70,9 @@ Builds `ToolRegistry` instances used by chat flow:
   acquisition tools are automatically excluded from the registry.
 - Research registry also accepts `preloaded_corpus_urls`; retrieval tools can use
   these as fallback `corpus_urls` when model tool calls omit explicit `urls`.
+- Research registry also accepts `research_source_mode`; local-only section tools
+  (`list_sections`, `summarize_section`) are hidden in `web_only` mode and receive
+  source-mode context for mixed-mode local-handle enforcement.
 
 The module accepts optional executor callables so `engine.py` can preserve test patch
 compatibility while keeping factory logic out of the conversation loop module.
@@ -151,7 +154,9 @@ Triggered when context reaches `SESSION_COMPACTION_THRESHOLD` (default 80%).
 - `is_markdown()`: Detect markdown formatting in output
 - `append_research_guidance()`: Adds corpus/local-KB guidance; for local KB,
   guidance now tells the model to move from empty `query_research_memory` to
-  `get_relevant_content` immediately.
+  `get_relevant_content` immediately, and when section tools are enabled it
+  guides model flow to `list_sections` then `summarize_section` using
+  explicit `section_ref`/`section_id` (not path-suffixed corpus URLs).
 
 ## Dependencies
 

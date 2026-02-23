@@ -20,6 +20,7 @@ RAG-powered research mode with caching, semantic search, and persistent memory.
 | `shortlist_collect.py`           | Candidate/seed-link collection stage            |
 | `shortlist_score.py`             | Semantic + heuristic scoring stage              |
 | `shortlist_types.py`             | Shared shortlist datatypes and callback aliases |
+| `sections.py`                    | Deterministic section indexing + strict matching |
 | `adapters.py`                    | Built-in local-source loading helpers           |
 
 ## Research Tools (`tools.py`)
@@ -32,6 +33,8 @@ RAG-powered research mode with caching, semantic search, and persistent memory.
 | `get_link_summaries`    | Get AI-generated page summaries            |
 | `get_relevant_content`  | RAG retrieval of relevant chunks           |
 | `get_full_content`      | Complete cached content                    |
+| `list_sections`         | List section headings for local corpus     |
+| `summarize_section`     | Deep summary for one local section         |
 | `save_finding`          | Persist insights to research memory        |
 | `query_research_memory` | Semantic search over saved findings        |
 
@@ -47,12 +50,18 @@ so session-scoped memory isolation is available by default in research mode.
 (`corpus://cache/<id>`) to cached entries. This enables local-corpus retrieval
 without exposing filesystem paths to the model.
 
+Section-scoped retrieval contract:
+
+- Preferred: `section_ref` (`corpus://cache/<id>#section=<section-id>`) or explicit `section_id`.
+- Compatibility: legacy `corpus://cache/<id>/<section-id>` source suffixes are accepted.
+- `list_sections` defaults to canonical body sections and emits `section_ref` for each row.
+
 ### Tool Sets by Stage
 
 Tools are grouped into constants to support per-stage exposure:
 
 - `ACQUISITION_TOOL_NAMES`: `extract_links`, `get_link_summaries`, `get_full_content`.
-- `RETRIEVAL_TOOL_NAMES`: `get_relevant_content`, `save_finding`, `query_research_memory`.
+- `RETRIEVAL_TOOL_NAMES`: `get_relevant_content`, `list_sections`, `summarize_section`, `save_finding`, `query_research_memory`.
 
 When a corpus is pre-loaded by acquisition stages, acquisition tools are excluded to prevent redundant LLM work.
 
@@ -227,6 +236,11 @@ context cutoff.
 - Generic research LLM tools (`extract_links`, `get_link_summaries`, `get_relevant_content`, `get_full_content`) reject local filesystem targets.
 - Safe corpus handles (`corpus://cache/<id>`) are allowed for retrieval tools
   and map to cached entries without revealing local paths.
+- `list_sections` and `summarize_section` are local-corpus-only tools:
+  - web URLs are rejected explicitly,
+  - they are hidden from registry exposure in `web_only` mode,
+  - in `mixed` mode they only accept corpus handles (`corpus://cache/<id>`).
+  - `summarize_section` resolves aliases to canonical body sections and refuses tiny sections.
 - This prevents implicit local-file access via broad URL-oriented tools.
 - Local-file access should be handled through explicit local-source tooling/adapters in dedicated workflows.
 - Query preprocessing can redact local path tokens from model-visible user text when local

@@ -58,10 +58,12 @@ chat = _LazyModuleProxy("asky.cli.chat")
 utils = _LazyModuleProxy("asky.cli.utils")
 sessions = _LazyModuleProxy("asky.cli.sessions")
 research_commands = _LazyModuleProxy("asky.cli.research_commands")
+section_commands = _LazyModuleProxy("asky.cli.section_commands")
 
 CACHE_CLEANUP_JOIN_TIMEOUT_SECONDS = 0.05
 DEFAULT_MANUAL_QUERY_MAX_SOURCES = 20
 DEFAULT_MANUAL_QUERY_MAX_CHUNKS = 3
+DEFAULT_SECTION_DETAIL = "balanced"
 
 
 def parse_args() -> argparse.Namespace:
@@ -336,6 +338,58 @@ def parse_args() -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--summarize-section",
+        nargs="?",
+        const="",
+        metavar="SECTION_QUERY",
+        help=(
+            "Summarize a section from local corpus without calling the main model. "
+            "If used without value, lists detected sections."
+        ),
+    )
+    parser.add_argument(
+        "--section-source",
+        metavar="SOURCE",
+        help=(
+            "Choose local corpus source for --summarize-section "
+            "(corpus://cache/<id>, cache id, or title/url match)."
+        ),
+    )
+    parser.add_argument(
+        "--section-id",
+        metavar="SECTION_ID",
+        help=(
+            "Exact section ID for deterministic --summarize-section selection. "
+            "Overrides title-query matching."
+        ),
+    )
+    parser.add_argument(
+        "--section-include-toc",
+        action="store_true",
+        help=(
+            "Include TOC/micro heading rows when listing sections with "
+            "--summarize-section and no section query."
+        ),
+    )
+    parser.add_argument(
+        "--section-detail",
+        choices=["balanced", "max", "compact"],
+        default=DEFAULT_SECTION_DETAIL,
+        help=(
+            "Detail profile for --summarize-section "
+            f"(default {DEFAULT_SECTION_DETAIL})."
+        ),
+    )
+    parser.add_argument(
+        "--section-max-chunks",
+        type=int,
+        metavar="COUNT",
+        help=(
+            "Optional chunk limit for --summarize-section input slicing before "
+            "hierarchical summarization."
+        ),
+    )
+    parser.add_argument(
         "--list-memories",
         action="store_true",
         help="List all saved user memories and exit.",
@@ -521,6 +575,16 @@ def _manual_corpus_query_arg(args: argparse.Namespace) -> Optional[str]:
     return normalized or None
 
 
+def _manual_section_query_arg(args: argparse.Namespace) -> Optional[str]:
+    """Return normalized section query value for --summarize-section."""
+    value = getattr(args, "summarize_section", None)
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        return ""
+    return value.strip()
+
+
 def _resolve_research_corpus(
     research_arg: str | bool,
 ) -> tuple[bool, list[str] | None, str | None, str | None, bool]:
@@ -605,6 +669,7 @@ def main() -> None:
     """Main entry point."""
     args = parse_args()
     manual_corpus_query = _manual_corpus_query_arg(args)
+    manual_section_query = _manual_section_query_arg(args)
 
     # Resolve research flag and local corpus paths
     try:
@@ -780,6 +845,7 @@ def main() -> None:
             args.session_end,
             bool(args.query),
             bool(manual_corpus_query),
+            manual_section_query is not None,
             args.reply,  # Added for new logic
             getattr(args, "session_from_message", None),  # Added for new logic
         ]
@@ -882,6 +948,19 @@ def main() -> None:
                     DEFAULT_MANUAL_QUERY_MAX_CHUNKS,
                 )
             ),
+        )
+        return
+    if manual_section_query is not None:
+        section_commands.run_summarize_section_command(
+            section_query=manual_section_query or None,
+            section_source=getattr(args, "section_source", None),
+            section_id=getattr(args, "section_id", None),
+            section_include_toc=bool(getattr(args, "section_include_toc", False)),
+            section_detail=str(
+                getattr(args, "section_detail", DEFAULT_SECTION_DETAIL)
+            ),
+            section_max_chunks=getattr(args, "section_max_chunks", None),
+            explicit_targets=getattr(args, "local_corpus", None),
         )
         return
 

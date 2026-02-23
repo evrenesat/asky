@@ -29,6 +29,9 @@ Research mode is resolved per turn from effective session state:
   (`research_mode`, `research_source_mode`, `research_local_corpus_paths`).
 - `AskyClient.run_turn()` uses that resolved profile for prompt/tool/preload branching,
   even when `AskyConfig.research_mode=False` (for resumed research sessions).
+- `AskyClient.run_messages(...)` now forwards `research_source_mode` into research
+  registry construction so local-only section tools (`list_sections`,
+  `summarize_section`) are exposed only for local-capable modes.
 - `AskyTurnRequest.shortlist_override` (`auto|on|off`) controls shortlist policy for
   that turn with precedence below lean mode and above model/global settings.
 - Explicit local-only/mixed research runs fail fast when zero local documents ingest.
@@ -55,6 +58,12 @@ Research mode is resolved per turn from effective session state:
 - Preload metadata now carries `preloaded_source_urls` and
   `preloaded_source_handles` so tool registry/runtime can inject safe corpus
   identifiers for retrieval tools when models omit explicit URL lists.
+- When effective source mode is `local_only` or `mixed`, message assembly adds
+  local section-tool guidance so model flow can use `list_sections` then
+  `summarize_section` for section-bounded queries.
+- Section-scoped retrieval now supports explicit `section_ref` /
+  `section_id` and compatibility legacy `corpus://cache/<id>/<section-id>`
+  source tokens, with canonical section promotion handled in research tools.
 
 ## Runtime Boundary
 

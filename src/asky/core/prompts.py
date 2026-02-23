@@ -162,6 +162,7 @@ def append_research_guidance(
     system_prompt: str,
     corpus_preloaded: bool = False,
     local_kb_hint_enabled: bool = False,
+    section_tools_enabled: bool = False,
 ) -> str:
     """Append context-aware research guidance to the system prompt."""
     if corpus_preloaded:
@@ -179,5 +180,13 @@ def append_research_guidance(
             "- Do not ask the user for local filesystem paths.\n"
             "- You may call `query_research_memory` first, but if it returns no findings, immediately call "
             "`get_relevant_content` against the preloaded corpus sources."
+        )
+    if section_tools_enabled:
+        system_prompt = (
+            f"{system_prompt}\n"
+            "- For section-focused local corpus questions, call `list_sections` first, then "
+            "`summarize_section` with `section_ref` or exact `section_id`.\n"
+            "- Do not append section IDs to corpus URL paths. Use `section_ref` "
+            "(`corpus://cache/<id>#section=<section-id>`) or explicit section args."
         )
     return system_prompt
