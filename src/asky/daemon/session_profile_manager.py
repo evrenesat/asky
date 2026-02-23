@@ -137,7 +137,9 @@ class SessionProfileManager:
                 source_session_id=source_session_id,
                 target_session_id=new_session_id,
             )
-        self._assign_conversation_session(room_jid=room_jid, jid=jid, session_id=new_session_id)
+        self._assign_conversation_session(
+            room_jid=room_jid, jid=jid, session_id=new_session_id
+        )
         return int(new_session_id)
 
     def switch_conversation_session(
@@ -152,7 +154,9 @@ class SessionProfileManager:
         if selected is None:
             return None, error or "Session not found."
         session_id = int(selected.id)
-        self._assign_conversation_session(room_jid=room_jid, jid=jid, session_id=session_id)
+        self._assign_conversation_session(
+            room_jid=room_jid, jid=jid, session_id=session_id
+        )
         return session_id, None
 
     def resolve_conversation_session_id(
@@ -166,6 +170,18 @@ class SessionProfileManager:
         if room_value:
             return self.get_or_create_room_session_id(room_value)
         return self.get_or_create_direct_session_id(str(jid or ""))
+
+    def count_session_messages(self, session_id: int) -> int:
+        """Return the number of conversation messages in a session."""
+        from asky.storage import get_session_messages
+
+        return len(get_session_messages(session_id))
+
+    def clear_conversation(self, session_id: int) -> int:
+        """Delete all conversation messages for a session. Returns deleted count."""
+        from asky.storage import clear_session_messages
+
+        return clear_session_messages(session_id)
 
     def get_effective_profile(self, *, session_id: int) -> EffectiveSessionProfile:
         """Build effective runtime profile from global defaults + session files."""
@@ -189,7 +205,9 @@ class SessionProfileManager:
                         summarization_model = summary_candidate.strip()
             elif filename == "user.toml":
                 parsed = _safe_parse_toml(content)
-                table = parsed.get("user_prompts", {}) if isinstance(parsed, dict) else {}
+                table = (
+                    parsed.get("user_prompts", {}) if isinstance(parsed, dict) else {}
+                )
                 if isinstance(table, dict):
                     prompt_map = {
                         str(key): str(value)

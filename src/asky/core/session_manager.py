@@ -332,9 +332,10 @@ class SessionManager:
                 results.append(session)
                 seen_ids.add(session.id)
 
-        # 1. Exact ID
+        # 1. Exact ID - numeric terms are unambiguous; skip name/partial scans
         if search_term.isdigit():
             add(self.repo.get_session_by_id(int(search_term)))
+            return results
 
         # 2. Legacy S-prefix
         if search_term.lower().startswith("s") and search_term[1:].isdigit():

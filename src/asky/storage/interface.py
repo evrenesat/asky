@@ -241,6 +241,11 @@ class HistoryRepository(ABC):
         pass
 
     @abstractmethod
+    def clear_session_messages(self, session_id: int) -> int:
+        """Delete all messages for a session and reset compacted_summary. Returns deleted count."""
+        pass
+
+    @abstractmethod
     def list_sessions(self, limit: int) -> list:
         """List recently created sessions."""
         pass
@@ -400,7 +405,9 @@ class HistoryRepository(ABC):
         pass
 
     @abstractmethod
-    def get_room_session_binding(self, *, room_jid: str) -> Optional[RoomSessionBinding]:
+    def get_room_session_binding(
+        self, *, room_jid: str
+    ) -> Optional[RoomSessionBinding]:
         """Fetch one room binding by room JID."""
         pass
 
@@ -431,7 +438,9 @@ class HistoryRepository(ABC):
         pass
 
     @abstractmethod
-    def list_session_override_files(self, *, session_id: int) -> List[SessionOverrideFile]:
+    def list_session_override_files(
+        self, *, session_id: int
+    ) -> List[SessionOverrideFile]:
         """List override file snapshots for a session."""
         pass
 

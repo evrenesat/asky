@@ -1,5 +1,14 @@
 # DEVLOG
 
+## 2026-02-24 - Session Bug Fix and Clear Command
+
+- **Session Ambiguity Fix**: Modified `core/session_manager.py` to return immediately when a numeric session ID is found. This prevents the partial name scan from incorrectly matching other sessions containing the same digits (e.g., when the numeric ID is "44", it no longer matches a session named "room-44-test").
+- **`/session clear` Command**: Implemented a new command to clear conversation history within a session while preserving transcripts and media.
+  - **`storage/`**: Added `clear_session_messages` to the repository interface and SQLite implementation. It deletes `messages` rows and resets `compacted_summary`.
+  - **`daemon/command_executor.py`**: Added `/session clear` action with a two-step confirmation process. It uses a pending-state dictionary to store confirmations temporarily.
+  - **`daemon/router.py`**: Intercepts `yes`/`no` replies when a session clear is pending.
+- **Validation**: 834 tests pass (added 6 new tests).
+
 ## 2026-02-23 - Fix Daemon -vv Console Output and Add XMPP Log File
 
 - **`daemon/command_executor.py`**: `CommandExecutor.__init__` now accepts `double_verbose: bool`. `_run_query_with_args` reads `self.double_verbose` (OR-ed with any value in `args`) instead of relying on `args` alone. This ensures that queries arriving via `execute_query_text` (which creates a hardcoded args Namespace with `verbose=False`) still get the verbose callback when the daemon was started with `-vv`.

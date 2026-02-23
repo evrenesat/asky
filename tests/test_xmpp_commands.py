@@ -88,6 +88,7 @@ class _FakeSessionProfileManager:
         self.switch_calls = []
         self.new_calls = []
         self.apply_calls = []
+        self._message_count = 5
 
     def resolve_conversation_session_id(self, *, room_jid, jid):
         _ = (room_jid, jid)
@@ -121,6 +122,15 @@ class _FakeSessionProfileManager:
             applied_keys=("general.default_model",),
             error=None,
         )
+
+    def count_session_messages(self, session_id: int) -> int:
+        _ = session_id
+        return self._message_count
+
+    def clear_conversation(self, session_id: int) -> int:
+        count = self._message_count
+        self._message_count = 0
+        return count
 
 
 def _turn_result(final_answer: str = "ok"):
@@ -391,3 +401,63 @@ def test_help_command_token_recognized_by_router():
     assert _looks_like_command("/h") is True
     assert _looks_like_command("/help") is True
     assert _looks_like_command("/HELP") is True
+
+
+def test_session_clear_returns_prompt_with_count():
+    manager = _FakeTranscriptManager()
+    manager.session_profile_manager._message_count = 8
+    executor = CommandExecutor(manager)
+
+    response = executor.execute_session_command(
+        jid="user@example.com",
+        room_jid=None,
+        command_text="/session clear",
+        conversation_key="user@example.com",
+    )
+
+    assert "8 message(s)" in response
+    assert "yes" in response.lower()
+    assert "transcripts" in response.lower()
+    assert executor._pending_clear.get("user@example.com") == ("user@example.com", None)
+
+
+def test_session_clear_empty_session_returns_no_prompt():
+    manager = _FakeTranscriptManager()
+    manager.session_profile_manager._message_count = 0
+    executor = CommandExecutor(manager)
+
+    response = executor.execute_session_command(
+        jid="user@example.com",
+        room_jid=None,
+        command_text="/session clear",
+        conversation_key="user@example.com",
+    )
+
+    assert "no messages" in response.lower()
+    assert not executor._pending_clear
+
+
+def test_confirm_session_clear_deletes_and_returns_count():
+    manager = _FakeTranscriptManager()
+    manager.session_profile_manager._message_count = 3
+    executor = CommandExecutor(manager)
+    executor._pending_clear["user@example.com"] = ("user@example.com", None)
+
+    result = executor.confirm_session_clear(jid="user@example.com", room_jid=None)
+
+    assert "Cleared 3 message(s)" in result
+    assert manager.session_profile_manager._message_count == 0
+
+
+def test_consume_pending_clear_without_consume_does_not_pop():
+    manager = _FakeTranscriptManager()
+    executor = CommandExecutor(manager)
+    executor._pending_clear["key"] = ("jid", None)
+
+    entry = executor.consume_pending_clear("key", consume=False)
+    assert entry == ("jid", None)
+    assert "key" in executor._pending_clear
+
+    entry2 = executor.consume_pending_clear("key", consume=True)
+    assert entry2 == ("jid", None)
+    assert "key" not in executor._pending_clear

@@ -347,7 +347,9 @@ class SQLiteHistoryRepository(HistoryRepository):
 
         # Schema migration: add research_local_corpus_paths column
         try:
-            c.execute("ALTER TABLE sessions ADD COLUMN research_local_corpus_paths TEXT")
+            c.execute(
+                "ALTER TABLE sessions ADD COLUMN research_local_corpus_paths TEXT"
+            )
         except sqlite3.OperationalError:
             pass  # column already exists
 
@@ -384,7 +386,9 @@ class SQLiteHistoryRepository(HistoryRepository):
             HAVING COUNT(*) > 1
             """
         )
-        duplicate_names = [str(row[0]) for row in cursor.fetchall() if row[0] is not None]
+        duplicate_names = [
+            str(row[0]) for row in cursor.fetchall() if row[0] is not None
+        ]
         if not duplicate_names:
             return 0
 
@@ -699,7 +703,10 @@ class SQLiteHistoryRepository(HistoryRepository):
                     if not text:
                         from asky.config import SUMMARIZATION_LAZY_THRESHOLD_CHARS
 
-                        if content and len(content) > SUMMARIZATION_LAZY_THRESHOLD_CHARS:
+                        if (
+                            content
+                            and len(content) > SUMMARIZATION_LAZY_THRESHOLD_CHARS
+                        ):
                             from asky.summarization import generate_summaries
                             from asky.core.api_client import get_llm_msg
 
@@ -1085,6 +1092,19 @@ class SQLiteHistoryRepository(HistoryRepository):
         conn.commit()
         conn.close()
 
+    def clear_session_messages(self, session_id: int) -> int:
+        """Delete all messages for a session and reset compacted_summary."""
+        conn = self._get_conn()
+        c = conn.cursor()
+        c.execute("DELETE FROM messages WHERE session_id = ?", (session_id,))
+        deleted = c.rowcount
+        c.execute(
+            "UPDATE sessions SET compacted_summary = NULL WHERE id = ?", (session_id,)
+        )
+        conn.commit()
+        conn.close()
+        return deleted
+
     def list_sessions(self, limit: int) -> List[Session]:
         """List recently created sessions."""
         conn = self._get_conn()
@@ -1164,7 +1184,9 @@ class SQLiteHistoryRepository(HistoryRepository):
             return content[:max_chars] + "..." if len(content) > max_chars else content
         return ""
 
-    def _next_session_transcript_id(self, conn: sqlite3.Connection, session_id: int) -> int:
+    def _next_session_transcript_id(
+        self, conn: sqlite3.Connection, session_id: int
+    ) -> int:
         cursor = conn.cursor()
         cursor.execute(
             "SELECT COALESCE(MAX(session_transcript_id), 0) FROM transcripts WHERE session_id = ?",
@@ -1276,7 +1298,9 @@ class SQLiteHistoryRepository(HistoryRepository):
             return None
         return self._transcript_from_row(row)
 
-    def list_transcripts(self, *, session_id: int, limit: int = 20) -> List[TranscriptRecord]:
+    def list_transcripts(
+        self, *, session_id: int, limit: int = 20
+    ) -> List[TranscriptRecord]:
         """List transcripts for a session in newest-first order."""
         conn = self._get_conn()
         conn.row_factory = sqlite3.Row
@@ -1318,7 +1342,9 @@ class SQLiteHistoryRepository(HistoryRepository):
             return None
         return self._transcript_from_row(row)
 
-    def prune_transcripts(self, *, session_id: int, keep: int) -> List[TranscriptRecord]:
+    def prune_transcripts(
+        self, *, session_id: int, keep: int
+    ) -> List[TranscriptRecord]:
         """Prune oldest transcripts beyond the keep threshold."""
         keep_count = max(0, int(keep))
         conn = self._get_conn()
@@ -1397,7 +1423,9 @@ class SQLiteHistoryRepository(HistoryRepository):
         )
         transcript_row_id = int(cursor.lastrowid)
         conn.commit()
-        cursor.execute("SELECT * FROM image_transcripts WHERE id = ?", (transcript_row_id,))
+        cursor.execute(
+            "SELECT * FROM image_transcripts WHERE id = ?", (transcript_row_id,)
+        )
         row = cursor.fetchone()
         conn.close()
         if row is None:
@@ -1560,7 +1588,9 @@ class SQLiteHistoryRepository(HistoryRepository):
         conn.commit()
         conn.close()
 
-    def get_room_session_binding(self, *, room_jid: str) -> Optional[RoomSessionBinding]:
+    def get_room_session_binding(
+        self, *, room_jid: str
+    ) -> Optional[RoomSessionBinding]:
         """Fetch one room binding by room JID."""
         normalized_room = str(room_jid or "").strip().lower()
         if not normalized_room:
@@ -1654,7 +1684,9 @@ class SQLiteHistoryRepository(HistoryRepository):
             return None
         return self._session_override_from_row(row)
 
-    def list_session_override_files(self, *, session_id: int) -> List[SessionOverrideFile]:
+    def list_session_override_files(
+        self, *, session_id: int
+    ) -> List[SessionOverrideFile]:
         """List all override files for one session."""
         conn = self._get_conn()
         conn.row_factory = sqlite3.Row

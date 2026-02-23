@@ -425,3 +425,40 @@ def test_init_db_deduplicates_legacy_duplicate_session_names(mock_db_path):
     assert len(names) == 2
     assert len(set(names)) == 2
     assert "dup_name" in names
+
+
+def test_clear_session_messages_preserves_transcripts(mock_db_path):
+    from asky.storage.sqlite import SQLiteHistoryRepository
+    from asky.storage import clear_session_messages, get_session_messages
+
+    repo = SQLiteHistoryRepository()
+    init_db()
+    session_id = repo.create_session("model", name="clear-test")
+
+    # Add messages
+    repo.save_message(session_id, "user", "msg1", "sum1", 10)
+    repo.save_message(session_id, "assistant", "msg2", "sum2", 10)
+    repo.compact_session(session_id, "Compacted")
+
+    # Add transcript
+    repo.create_transcript(
+        session_id=session_id,
+        jid="user@example.com",
+        audio_url="url",
+        audio_path="path",
+        status="completed",
+    )
+
+    # Verify initial state
+    assert len(get_session_messages(session_id)) == 2
+    assert len(repo.list_transcripts(session_id=session_id)) == 1
+    assert repo.get_session_by_id(session_id).compacted_summary == "Compacted"
+
+    # Clear
+    deleted = clear_session_messages(session_id)
+    assert deleted == 2
+
+    # Verify final state
+    assert len(get_session_messages(session_id)) == 0
+    assert len(repo.list_transcripts(session_id=session_id)) == 1
+    assert repo.get_session_by_id(session_id).compacted_summary is None

@@ -141,6 +141,11 @@ def compact_session(session_id: int, compacted_summary: str) -> None:
     _repo.compact_session(session_id, compacted_summary)
 
 
+def clear_session_messages(session_id: int) -> int:
+    """Delete all conversation messages for a session. Returns deleted count."""
+    return _repo.clear_session_messages(session_id)
+
+
 def list_sessions(limit: int) -> list[Session]:
     return _repo.list_sessions(limit)
 

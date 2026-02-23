@@ -45,6 +45,7 @@ SESSION_HELP = (
     "  /session                Show this help + latest sessions\n"
     "  /session new            Create and switch to a new session\n"
     "  /session child          Create and switch to a child session (inherit current overrides)\n"
+    "  /session clear          Clear all conversation messages (keeps transcripts/media)\n"
     "  /session <id|name>      Switch to an existing session by id or exact name"
 )
 HELP_COMMAND_TOKENS = {"/h", "/help"}
@@ -82,6 +83,7 @@ asky XMPP Help
 /session                            Show session help + recent sessions
 /session new                        Create and switch to a new session
 /session child                      Create child session (inherit current overrides)
+/session clear                      Clear conversation messages (keeps transcripts/media)
 /session <id|name>                  Switch to existing session by id or name
 
 --- Transcripts ---
@@ -152,6 +154,7 @@ class CommandExecutor:
         self.transcript_manager = transcript_manager
         self.session_profile_manager = transcript_manager.session_profile_manager
         self.double_verbose = double_verbose
+        self._pending_clear: dict[str, tuple[str, Optional[str]]] = {}
 
     def get_interface_command_reference(self) -> str:
         """Return command-surface guidance for interface planner prompting."""
@@ -177,6 +180,7 @@ class CommandExecutor:
         jid: str,
         room_jid: Optional[str],
         command_text: str,
+        conversation_key: str = "",
     ) -> str:
         """Execute /session command surface scoped to current conversation."""
         tokens = _split_command_tokens(command_text)
@@ -200,6 +204,10 @@ class CommandExecutor:
                 inherit_current=True,
             )
             return f"Switched to child session {session_id} (inherited overrides)."
+        if action == "clear":
+            return self._request_session_clear(
+                jid=jid, room_jid=room_jid, conversation_key=conversation_key
+            )
 
         selector = " ".join(tokens[1:]).strip()
         session_id, error = self.session_profile_manager.switch_conversation_session(
@@ -800,6 +808,44 @@ class CommandExecutor:
             room_jid=room_jid,
             jid=jid,
         )
+
+    def _request_session_clear(
+        self,
+        *,
+        jid: str,
+        room_jid: Optional[str],
+        conversation_key: str,
+    ) -> str:
+        session_id = self._resolve_session_id(jid=jid, room_jid=room_jid)
+        count = self.session_profile_manager.count_session_messages(session_id)
+        if count == 0:
+            return f"Session {session_id} has no messages to clear."
+        key = str(conversation_key or jid or "").strip()
+        self._pending_clear[key] = (jid, room_jid)
+        return (
+            f"Session {session_id} has {count} message(s). "
+            f"Reply 'yes' to clear all conversation messages.\n"
+            f"Transcripts and media files are not affected."
+        )
+
+    def confirm_session_clear(self, *, jid: str, room_jid: Optional[str]) -> str:
+        """Perform session message deletion after confirmation."""
+        session_id = self._resolve_session_id(jid=jid, room_jid=room_jid)
+        deleted = self.session_profile_manager.clear_conversation(session_id)
+        return f"Cleared {deleted} message(s) from session {session_id}."
+
+    def consume_pending_clear(
+        self, conversation_key: str, *, consume: bool
+    ) -> Optional[tuple[str, Optional[str]]]:
+        """Return pending clear entry for conversation_key if one exists.
+
+        If consume is True, remove it from the map.
+        """
+        key = str(conversation_key or "").strip()
+        entry = self._pending_clear.get(key)
+        if entry is not None and consume:
+            self._pending_clear.pop(key, None)
+        return entry
 
     def _render_session_help(self) -> str:
         listed = self.session_profile_manager.list_recent_sessions(

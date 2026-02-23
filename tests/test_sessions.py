@@ -98,6 +98,24 @@ def test_session_manager_find(temp_repo):
         assert results_p[0].id == sid
 
 
+def test_find_sessions_numeric_is_exact_id_only(temp_repo):
+    """Numeric search term must not match sessions whose name contains those digits."""
+    # Create session with ID 1
+    sid1 = temp_repo.create_session("model-a", name="session-with-1-in-name")
+    # Create session with ID 2
+    sid2 = temp_repo.create_session("model-a", name="another-session")
+
+    with patch(
+        "asky.core.session_manager.SQLiteHistoryRepository", return_value=temp_repo
+    ):
+        mgr = SessionManager({"alias": "model-a", "context_size": 1000})
+        # Searching for "1" should only return the session with ID 1, NOT
+        # the session named "session-with-1-in-name" even though it contains "1"
+        results = mgr.find_sessions("1")
+        assert len(results) == 1
+        assert results[0].id == sid1
+
+
 def test_session_manager_build_context(temp_repo):
     sid = temp_repo.create_session("model-a")
     temp_repo.save_message(sid, "user", "ping", "p_sum", 5)
@@ -190,7 +208,9 @@ def test_generate_session_name_strips_terminal_context_wrapper():
 
 def _session_manager_cls_with_repo(repo: SQLiteHistoryRepository):
     class RepoBackedSessionManager(SessionManager):
-        def __init__(self, model_config, usage_tracker=None, summarization_tracker=None):
+        def __init__(
+            self, model_config, usage_tracker=None, summarization_tracker=None
+        ):
             super().__init__(model_config, usage_tracker, summarization_tracker)
             self.repo = repo
 

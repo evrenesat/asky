@@ -119,6 +119,7 @@ class DaemonRouter:
                 jid=actor_jid,
                 room_jid=normalized_room or None,
                 command_text=text,
+                conversation_key=confirmation_key,
             )
 
         confirmation_result = self._handle_confirmation_shortcut(
@@ -428,11 +429,32 @@ class DaemonRouter:
         text: str,
         sender_jid: str = "",
     ) -> Optional[str]:
+        normalized = text.strip().lower()
+
+        # Check session clear pending first
+        clear_pending = self.command_executor.consume_pending_clear(
+            conversation_key, consume=False
+        )
+        if clear_pending is not None:
+            if normalized in YES_TOKENS:
+                self.command_executor.consume_pending_clear(
+                    conversation_key, consume=True
+                )
+                jid, room_jid = clear_pending
+                return self.command_executor.confirm_session_clear(
+                    jid=jid, room_jid=room_jid
+                )
+            if normalized in NO_TOKENS:
+                self.command_executor.consume_pending_clear(
+                    conversation_key, consume=True
+                )
+                return "Session clear cancelled."
+
+        # Existing transcript confirmation
         pending_key = (conversation_key, sender_jid)
         pending_id = self._pending_transcript_confirmation.get(pending_key)
         if pending_id is None:
             return None
-        normalized = text.strip().lower()
         if normalized in YES_TOKENS:
             self._pending_transcript_confirmation.pop(pending_key, None)
             room_jid = (

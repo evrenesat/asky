@@ -94,6 +94,7 @@ class _FakeCommandExecutor:
         self.session_calls = []
         self.toml_calls = []
         self.bound_rooms = set()
+        self._pending_clear = {}
 
     def execute_command_text(self, *, jid, command_text, room_jid=None):
         self.command_calls.append((jid, room_jid, command_text))
@@ -103,9 +104,23 @@ class _FakeCommandExecutor:
         self.query_calls.append((jid, room_jid, query_text))
         return f"query:{query_text}:{room_jid or '-'}"
 
-    def execute_session_command(self, *, jid, room_jid, command_text):
-        self.session_calls.append((jid, room_jid, command_text))
+    def execute_session_command(
+        self, *, jid, room_jid, command_text, conversation_key=""
+    ):
+        self.session_calls.append((jid, room_jid, command_text, conversation_key))
+        if "clear" in command_text:
+            self._pending_clear[conversation_key] = (jid, room_jid)
+            return "confirm-clear-prompt"
         return "session:ok"
+
+    def confirm_session_clear(self, *, jid, room_jid):
+        return f"cleared:{jid}:{room_jid or '-'}"
+
+    def consume_pending_clear(self, conversation_key, *, consume):
+        entry = self._pending_clear.get(conversation_key)
+        if entry and consume:
+            self._pending_clear.pop(conversation_key, None)
+        return entry
 
     def apply_inline_toml_if_present(self, *, jid, room_jid, body):
         if "```toml" not in body:
@@ -389,3 +404,26 @@ def test_router_trusted_invite_binds_room():
     )
     assert accepted is True
     assert router.command_executor.is_room_bound("room@conference.example.com")
+
+
+def test_router_session_clear_confirmation_flow():
+    router = _build_router(interface_enabled=False)
+    jid = "u@example.com/resource"
+
+    # 1. Action returns prompt
+    resp1 = router.handle_text_message(
+        jid=jid, message_type="chat", body="/session clear"
+    )
+    assert resp1 == "confirm-clear-prompt"
+    assert "u@example.com/resource" in router.command_executor._pending_clear
+
+    # 2. 'yes' confirms
+    resp2 = router.handle_text_message(jid=jid, message_type="chat", body="yes")
+    assert resp2 == "cleared:u@example.com/resource:-"
+    assert "u@example.com/resource" not in router.command_executor._pending_clear
+
+    # 3. Request again then 'no' cancels
+    router.handle_text_message(jid=jid, message_type="chat", body="/session clear")
+    resp3 = router.handle_text_message(jid=jid, message_type="chat", body="no")
+    assert "cancelled" in resp3.lower()
+    assert "u@example.com/resource" not in router.command_executor._pending_clear
