@@ -102,6 +102,7 @@ class XMPPDaemonService:
         )
         self._jid_queues: dict[str, queue.Queue[Callable[[], None]]] = {}
         self._jid_workers: dict[str, threading.Thread] = {}
+        self._jid_workers_lock = threading.Lock()
         self._client = AskyXMPPClient(
             jid=XMPP_JID,
             password=XMPP_PASSWORD,
@@ -169,6 +170,7 @@ class XMPPDaemonService:
                     message_type=message_type,
                     audio_url=audio_url,
                     room_jid=room_jid or None,
+                    sender_jid=sender_jid or None,
                 )
                 if response_text:
                     self._send_chunked(
@@ -211,15 +213,16 @@ class XMPPDaemonService:
     def _enqueue_for_jid(self, jid: str, task: Callable[[], None]) -> None:
         if jid not in self._jid_queues:
             self._jid_queues[jid] = queue.Queue()
-        if jid not in self._jid_workers or not self._jid_workers[jid].is_alive():
-            worker = threading.Thread(
-                target=self._jid_worker_loop,
-                args=(jid,),
-                daemon=True,
-                name=f"asky-xmpp-{jid}",
-            )
-            worker.start()
-            self._jid_workers[jid] = worker
+        with self._jid_workers_lock:
+            if jid not in self._jid_workers or not self._jid_workers[jid].is_alive():
+                worker = threading.Thread(
+                    target=self._jid_worker_loop,
+                    args=(jid,),
+                    daemon=True,
+                    name=f"asky-xmpp-{jid}",
+                )
+                worker.start()
+                self._jid_workers[jid] = worker
         self._jid_queues[jid].put(task)
 
     def _jid_worker_loop(self, jid: str) -> None:

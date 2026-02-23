@@ -2,6 +2,7 @@
 
 import logging
 import sqlite3
+import threading
 from typing import Any, Dict, List, Optional, Tuple
 
 from asky.config import (
@@ -83,6 +84,7 @@ class VectorStore:
         self._chroma_client: Any = None
         self._chroma_ready = False
         self._chroma_disabled = False
+        self._db_lock = threading.Lock()
         self._initialized = True
 
     @property
@@ -187,21 +189,22 @@ class VectorStore:
             return {}
 
         try:
-            conn = self._get_conn()
-            c = conn.cursor()
-            c.execute(
-                f"""
-                SELECT cc.chunk_index, bm25({CHUNK_FTS_TABLE_NAME}) AS bm25_score
-                FROM {CHUNK_FTS_TABLE_NAME}
-                JOIN content_chunks cc ON cc.id = {CHUNK_FTS_TABLE_NAME}.rowid
-                WHERE cc.cache_id = ? AND {CHUNK_FTS_TABLE_NAME} MATCH ?
-                ORDER BY bm25_score ASC
-                LIMIT ?
-                """,
-                (cache_id, match_query, limit),
-            )
-            rows = c.fetchall()
-            conn.close()
+            with self._db_lock:
+                conn = self._get_conn()
+                c = conn.cursor()
+                c.execute(
+                    f"""
+                    SELECT cc.chunk_index, bm25({CHUNK_FTS_TABLE_NAME}) AS bm25_score
+                    FROM {CHUNK_FTS_TABLE_NAME}
+                    JOIN content_chunks cc ON cc.id = {CHUNK_FTS_TABLE_NAME}.rowid
+                    WHERE cc.cache_id = ? AND {CHUNK_FTS_TABLE_NAME} MATCH ?
+                    ORDER BY bm25_score ASC
+                    LIMIT ?
+                    """,
+                    (cache_id, match_query, limit),
+                )
+                rows = c.fetchall()
+                conn.close()
         except sqlite3.OperationalError as exc:
             logger.warning("BM25 lexical scoring unavailable, falling back: %s", exc)
             return {}

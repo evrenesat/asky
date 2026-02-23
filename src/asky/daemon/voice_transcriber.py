@@ -52,6 +52,7 @@ class TranscriptionJob:
     transcript_id: int
     audio_url: str
     audio_path: str
+    sender_jid: str = ""
 
 
 class VoiceTranscriber:
@@ -109,6 +110,7 @@ class VoiceTranscriber:
                 status="failed",
                 error="Voice transcription is disabled.",
                 audio_path=job.audio_path,
+                sender_jid=job.sender_jid,
             )
             return
         self.start()
@@ -127,6 +129,7 @@ class VoiceTranscriber:
                     status="failed",
                     error=str(exc),
                     audio_path=job.audio_path,
+                    sender_jid=job.sender_jid,
                 )
             finally:
                 self._queue.task_done()
@@ -139,6 +142,7 @@ class VoiceTranscriber:
                 status="failed",
                 error=TRANSCRIPTION_ERROR_MACOS_ONLY,
                 audio_path=job.audio_path,
+                sender_jid=job.sender_jid,
             )
             return
 
@@ -153,6 +157,7 @@ class VoiceTranscriber:
             transcript_text=transcript_text,
             duration_seconds=elapsed_seconds,
             audio_path=str(file_path),
+            sender_jid=job.sender_jid,
         )
 
     def _download_audio(self, url: str, target_path: Path) -> Path:
@@ -277,6 +282,7 @@ class VoiceTranscriber:
         error: str = "",
         duration_seconds: Optional[float] = None,
         audio_path: str = "",
+        sender_jid: str = "",
     ) -> None:
         payload = {
             "jid": jid,
@@ -286,6 +292,7 @@ class VoiceTranscriber:
             "error": error,
             "duration_seconds": duration_seconds,
             "audio_path": audio_path,
+            "sender_jid": sender_jid,
         }
         try:
             self.completion_callback(payload)

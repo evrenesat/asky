@@ -1,5 +1,43 @@
 # DEVLOG
 
+## 2026-02-23 - High-Severity Security and Reliability Fixes
+
+Addressed 15 high-severity issues from the P1 code review.
+
+- **H-02** (`command_executor.py`): Bounded `INLINE_TOML_PATTERN` content capture group to `.{0,65536}?` to prevent catastrophic backtracking (ReDoS).
+- **H-03** (`cli/utils.py`): Added path traversal guard in `load_custom_prompts` — rejects `file://` URIs pointing outside the user's home directory.
+- **H-04** (`command_executor.py`): Added per-chunk deadline tracking in `_download_text_file` to prevent unbounded streaming hangs after the initial connect timeout.
+- **H-05** (`voice_transcriber.py`, `router.py`, `service.py`): Added `sender_jid` to `TranscriptionJob` and scoped `_pending_transcript_confirmation` by `(conversation_key, sender_jid)` so confirmations in group chats are not shared between users.
+- **H-06** (`storage/sqlite.py`): Wrapped `get_interaction_context` body in `try/finally` to guarantee connection is always closed, including when `generate_summaries` raises.
+- **H-07** (`core/session_manager.py`): Rewrote `set_shell_session_id` to use an atomic tempfile + `os.replace()` write, and registered `atexit` cleanup to remove the lock file on process exit.
+- **H-08** (`core/engine.py`): Wrapped `research_cache.get_summary` and `_summarize_and_cache` calls in individual `try/except` with graceful fallback to uncompacted values so cache errors cannot crash the conversation loop.
+- **H-09** (`core/engine.py`): `_handle_general_error` now re-raises after logging so unexpected engine exceptions propagate to callers instead of being silently swallowed.
+- **H-11** (`daemon/service.py`): Protected the JID worker check-then-spawn in `_enqueue_for_jid` with `_jid_workers_lock` to prevent duplicate worker threads under concurrent message arrival.
+- **H-12** (`research/embeddings.py`): Added `_init_lock` class-level lock with double-checked locking in `_ensure_model_loaded` to make model loading thread-safe.
+- **H-13** (`research/vector_store.py`): Added `_db_lock` to `VectorStore` and used it around the SQLite BM25 query in `_get_bm25_scores` to prevent concurrent connection issues.
+- **H-15** (`research/vector_store_chunk_link_ops.py`): After a Chroma chunk query returns zero IDs, check if any embeddings exist under a different model and emit a warning to guide re-indexing.
+- **H-16** (`storage/sqlite.py`): `create_session` and `update_session_research_profile` now raise `ValueError` immediately when a non-None `research_source_mode` normalizes to `None`.
+- **H-17** (`api/client.py`): Wrapped both elephant-mode background extraction threads in closures that log exceptions via `logger.exception`, so failures are not silently dropped.
+- **H-19** (`storage/sqlite.py`): Added `CREATE UNIQUE INDEX IF NOT EXISTS idx_sessions_name ON sessions(name) WHERE name IS NOT NULL` in `init_db` for partial uniqueness on named sessions.
+
+Tests: 13 new regression tests in `tests/test_high_severity_fixes.py`. Updated `tests/test_file_prompts.py` to mock `Path.home()` so files inside `tmp_path` pass the new path traversal guard. `737 passed`.
+
+## 2026-02-23 - SQLite Startup Fix for Duplicate Session Names
+
+Fixed daemon startup failure caused by legacy duplicate `sessions.name` rows when creating the unique name index.
+
+- **Changed**:
+  - `src/asky/storage/sqlite.py`:
+    - Added `_deduplicate_legacy_session_names(...)` in `init_db()` before unique index creation.
+    - Keeps newest duplicate on original name and renames older duplicates to deterministic `__dedup_<id>` variants (collision-safe).
+  - `tests/test_storage.py`:
+    - Added regression test that creates a legacy `sessions` table with duplicate names and verifies `init_db()` succeeds and leaves unique names.
+- **Why**:
+  - Prevent runtime `sqlite3.IntegrityError: UNIQUE constraint failed: sessions.name` during daemon boot on older DBs.
+- **Validation**:
+  - `uv run pytest tests/test_storage.py` -> passed.
+  - `uv run pytest` -> passed (`724 passed`).
+
 ## 2026-02-23 - XMPP Image Transcription + Session-Scoped Media Pointers
 
 Implemented phase-1 XMPP image support with base64 multimodal requests, model-level `image_support`, and session-scoped media pointers for both audio and image artifacts/transcripts.

@@ -7,6 +7,7 @@ import io
 import os
 import re
 import threading
+import time
 from contextlib import contextmanager, redirect_stderr, redirect_stdout
 from typing import Optional
 from urllib.parse import urlparse
@@ -67,7 +68,7 @@ REMOTE_BLOCKED_FLAGS = (
     "--completion-script",
 )
 INLINE_TOML_PATTERN = re.compile(
-    r"(?is)(?P<filename>[a-zA-Z0-9_\-]+\.(?:toml))\s*```toml\s*(?P<content>.*?)```"
+    r"(?is)(?P<filename>[a-zA-Z0-9_\-]+\.toml)\s*```toml\s*(?P<content>.{0,65536}?)```"
 )
 POINTER_PATTERN = re.compile(r"#(it|i|at|a)(\d+)\b", re.IGNORECASE)
 _SUMMARIZATION_MODEL_OVERRIDE_LOCK = threading.Lock()
@@ -754,9 +755,12 @@ def _download_text_file(url: str, *, timeout_seconds: int, max_bytes: int) -> st
         response.raise_for_status()
         chunks: list[bytes] = []
         total = 0
+        deadline = time.monotonic() + timeout_seconds
         for chunk in response.iter_content(chunk_size=8192):
             if not chunk:
                 continue
+            if time.monotonic() > deadline:
+                raise TimeoutError("Download exceeded time limit")
             total += len(chunk)
             if total > max_bytes:
                 raise RuntimeError(

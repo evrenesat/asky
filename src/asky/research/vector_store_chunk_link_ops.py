@@ -305,14 +305,29 @@ def search_chunks_with_chroma(
                 cache_id=cache_id,
                 embedding_model=store.embedding_client.model,
             ),
-            include=["documents", "distances"],
+            include=["documents", "distances", "ids"],
         )
     except Exception as exc:
         logger.warning("Chroma chunk query failed; falling back to SQLite: %s", exc)
         return []
 
+    ids = first_query_result(response.get("ids", []))
     docs = first_query_result(response.get("documents", []))
     distances = first_query_result(response.get("distances", []))
+
+    if not ids:
+        try:
+            all_count = collection.count()
+            if all_count > 0:
+                logger.warning(
+                    "No embeddings found for model '%s'. "
+                    "Data may have been indexed with a different model. "
+                    "Re-index or change RESEARCH_EMBEDDING_MODEL.",
+                    store.embedding_client.model,
+                )
+        except Exception:
+            pass
+        return []
 
     results: List[Tuple[str, float]] = []
     for doc, distance in zip(docs, distances):

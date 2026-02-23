@@ -97,6 +97,27 @@ def _deserialize_local_corpus_paths(raw: Optional[str]) -> List[str]:
     return [str(item) for item in parsed if str(item).strip()]
 
 
+def _build_unique_dedup_session_name(
+    cursor: sqlite3.Cursor,
+    *,
+    original_name: str,
+    session_id: int,
+) -> str:
+    """Return a collision-free deduplicated session name."""
+    base = f"{original_name}__dedup_{int(session_id)}"
+    candidate = base
+    counter = 1
+    while True:
+        cursor.execute(
+            "SELECT 1 FROM sessions WHERE name = ? AND id != ? LIMIT 1",
+            (candidate, int(session_id)),
+        )
+        if cursor.fetchone() is None:
+            return candidate
+        counter += 1
+        candidate = f"{base}_{counter}"
+
+
 class SQLiteHistoryRepository(HistoryRepository):
     """SQLite-backed unified message and session storage."""
 
@@ -330,6 +351,13 @@ class SQLiteHistoryRepository(HistoryRepository):
         except sqlite3.OperationalError:
             pass  # column already exists
 
+        self._deduplicate_legacy_session_names(c)
+
+        c.execute(
+            """CREATE UNIQUE INDEX IF NOT EXISTS idx_sessions_name
+               ON sessions(name) WHERE name IS NOT NULL"""
+        )
+
         # User memories table
         from asky.memory.store import init_memory_table
 
@@ -344,6 +372,50 @@ class SQLiteHistoryRepository(HistoryRepository):
 
         conn.commit()
         conn.close()
+
+    def _deduplicate_legacy_session_names(self, cursor: sqlite3.Cursor) -> int:
+        """Rename duplicate legacy session names so unique index creation succeeds."""
+        cursor.execute(
+            """
+            SELECT name
+            FROM sessions
+            WHERE name IS NOT NULL
+            GROUP BY name
+            HAVING COUNT(*) > 1
+            """
+        )
+        duplicate_names = [str(row[0]) for row in cursor.fetchall() if row[0] is not None]
+        if not duplicate_names:
+            return 0
+
+        updated = 0
+        for name in duplicate_names:
+            cursor.execute(
+                """
+                SELECT id
+                FROM sessions
+                WHERE name = ?
+                ORDER BY created_at DESC, id DESC
+                """,
+                (name,),
+            )
+            ids = [int(row[0]) for row in cursor.fetchall()]
+            if len(ids) <= 1:
+                continue
+
+            # Keep the newest session on the original name, rename older ones.
+            for session_id in ids[1:]:
+                new_name = _build_unique_dedup_session_name(
+                    cursor,
+                    original_name=name,
+                    session_id=session_id,
+                )
+                cursor.execute(
+                    "UPDATE sessions SET name = ? WHERE id = ?",
+                    (new_name, session_id),
+                )
+                updated += 1
+        return updated
 
     def save_interaction(
         self,
@@ -566,100 +638,97 @@ class SQLiteHistoryRepository(HistoryRepository):
         """Combine content from multiple interactions into a single context string."""
         self.init_db()
         conn = self._get_conn()
-        c = conn.cursor()
-        c = conn.cursor()
+        try:
+            c = conn.cursor()
 
-        # Smart Expansion: Include partners for global history interactions
-        expanded_ids = set(ids)
-        if ids:
-            placeholders = ",".join(["?"] * len(ids))
+            # Smart Expansion: Include partners for global history interactions
+            expanded_ids = set(ids)
+            if ids:
+                placeholders = ",".join(["?"] * len(ids))
+                c.execute(
+                    f"SELECT id, role FROM messages WHERE id IN ({placeholders}) AND session_id IS NULL",
+                    tuple(ids),
+                )
+                rows = c.fetchall()
+
+                for r in rows:
+                    curr_id, role = r
+                    if role == "assistant":
+                        c.execute(
+                            "SELECT id FROM messages WHERE role='user' AND id < ? AND session_id IS NULL ORDER BY id DESC LIMIT 1",
+                            (curr_id,),
+                        )
+                        partner = c.fetchone()
+                        if partner:
+                            expanded_ids.add(partner[0])
+                    elif role == "user":
+                        c.execute(
+                            "SELECT id FROM messages WHERE role='assistant' AND id > ? AND session_id IS NULL ORDER BY id ASC LIMIT 1",
+                            (curr_id,),
+                        )
+                        partner = c.fetchone()
+                        if partner:
+                            expanded_ids.add(partner[0])
+
+            final_ids = sorted(list(expanded_ids))
+            if not final_ids:
+                return ""
+
+            placeholders = ",".join(["?"] * len(final_ids))
+
+            # Fetch content and summary
             c.execute(
-                f"SELECT id, role FROM messages WHERE id IN ({placeholders}) AND session_id IS NULL",
-                tuple(ids),
+                f"SELECT id, role, content, summary FROM messages WHERE id IN ({placeholders}) ORDER BY id ASC",
+                tuple(final_ids),
             )
             rows = c.fetchall()
 
+            context_parts = []
+            updates = []
+
             for r in rows:
-                curr_id, role = r
-                if role == "assistant":
-                    c.execute(
-                        "SELECT id FROM messages WHERE role='user' AND id < ? AND session_id IS NULL ORDER BY id DESC LIMIT 1",
-                        (curr_id,),
-                    )
-                    partner = c.fetchone()
-                    if partner:
-                        expanded_ids.add(partner[0])
-                elif role == "user":
-                    c.execute(
-                        "SELECT id FROM messages WHERE role='assistant' AND id > ? AND session_id IS NULL ORDER BY id ASC LIMIT 1",
-                        (curr_id,),
-                    )
-                    partner = c.fetchone()
-                    if partner:
-                        expanded_ids.add(partner[0])
+                msg_id = r[0]
+                role = r[1]
+                content = r[2]
+                summary = r[3]
 
-        final_ids = sorted(list(expanded_ids))
-        if not final_ids:
-            conn.close()
-            return ""
+                if full:
+                    context_parts.append(content if content else "...")
+                else:
+                    text = summary
+                    if not text:
+                        from asky.config import SUMMARIZATION_LAZY_THRESHOLD_CHARS
 
-        placeholders = ",".join(["?"] * len(final_ids))
+                        if content and len(content) > SUMMARIZATION_LAZY_THRESHOLD_CHARS:
+                            from asky.summarization import generate_summaries
+                            from asky.core.api_client import get_llm_msg
 
-        # Fetch content and summary
-        c.execute(
-            f"SELECT id, role, content, summary FROM messages WHERE id IN ({placeholders}) ORDER BY id ASC",
-            tuple(final_ids),
-        )
-        rows = c.fetchall()
+                            if role == "user":
+                                sum_query, _ = generate_summaries(
+                                    content, "", usage_tracker=None
+                                )
+                                text = sum_query
+                            else:
+                                _, sum_answer = generate_summaries(
+                                    "", content, usage_tracker=None
+                                )
+                                text = sum_answer
 
-        context_parts = []
-        updates = []  # To hold IDs and their newly generated summaries
-
-        for r in rows:
-            msg_id = r[0]
-            role = r[1]
-            content = r[2]
-            summary = r[3]
-
-            if full:
-                context_parts.append(content if content else "...")
-            else:
-                text = summary
-                if not text:
-                    # Lazy Summarization: Only if the text is longer than the configured threshold
-                    from asky.config import SUMMARIZATION_LAZY_THRESHOLD_CHARS
-
-                    if content and len(content) > SUMMARIZATION_LAZY_THRESHOLD_CHARS:
-                        from asky.summarization import generate_summaries
-                        from asky.core.api_client import get_llm_msg
-
-                        # Generate the missing summary based on role
-                        if role == "user":
-                            sum_query, _ = generate_summaries(
-                                content, "", usage_tracker=None
-                            )
-                            text = sum_query
+                            if text:
+                                updates.append((text, msg_id))
                         else:
-                            _, sum_answer = generate_summaries(
-                                "", content, usage_tracker=None
-                            )
-                            text = sum_answer
+                            text = content
 
-                        if text:
-                            updates.append((text, msg_id))
-                    else:
-                        text = content
+                    prefix = "Query: " if role == "user" else "Answer: "
+                    context_parts.append(f"{prefix}{text}")
 
-                prefix = "Query: " if role == "user" else "Answer: "
-                context_parts.append(f"{prefix}{text}")
+            if updates:
+                c.executemany("UPDATE messages SET summary = ? WHERE id = ?", updates)
+                conn.commit()
 
-        # Batch update any newly generated summaries back into the database
-        if updates:
-            c.executemany("UPDATE messages SET summary = ? WHERE id = ?", updates)
-            conn.commit()
-
-        conn.close()
-        return "\n\n".join(context_parts)
+            return "\n\n".join(context_parts)
+        finally:
+            conn.close()
 
     def delete_messages(
         self,
@@ -879,6 +948,9 @@ class SQLiteHistoryRepository(HistoryRepository):
         c = conn.cursor()
         timestamp = datetime.now().isoformat()
         normalized_mode = _normalize_research_source_mode(research_source_mode)
+        if research_source_mode and normalized_mode is None:
+            conn.close()
+            raise ValueError(f"Invalid research_source_mode: {research_source_mode!r}")
         serialized_paths = _serialize_local_corpus_paths(research_local_corpus_paths)
         c.execute(
             "INSERT INTO sessions (name, model, created_at, memory_auto_extract, max_turns, last_used_at, research_mode, research_source_mode, research_local_corpus_paths) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
@@ -1061,6 +1133,9 @@ class SQLiteHistoryRepository(HistoryRepository):
         conn = self._get_conn()
         c = conn.cursor()
         normalized_mode = _normalize_research_source_mode(research_source_mode)
+        if research_source_mode and normalized_mode is None:
+            conn.close()
+            raise ValueError(f"Invalid research_source_mode: {research_source_mode!r}")
         serialized_paths = _serialize_local_corpus_paths(research_local_corpus_paths)
         c.execute(
             "UPDATE sessions SET research_mode = ?, research_source_mode = ?, research_local_corpus_paths = ? WHERE id = ?",

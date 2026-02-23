@@ -1,5 +1,6 @@
 """Session management logic for asky."""
 
+import atexit
 import logging
 import os
 import re
@@ -229,9 +230,12 @@ def get_shell_session_id() -> Optional[int]:
 
 
 def set_shell_session_id(session_id: int) -> None:
-    """Write the session ID to the shell's lock file."""
+    """Write the session ID to the shell's lock file atomically."""
     lock_file = _get_lock_file_path()
-    lock_file.write_text(str(session_id))
+    tmp = lock_file.with_suffix(".tmp")
+    tmp.write_text(str(session_id))
+    os.replace(tmp, lock_file)
+    atexit.register(clear_shell_session)
     logger.info(f"Session lock file created: {lock_file}")
 
 

@@ -64,7 +64,7 @@ class DaemonRouter:
                 self.allowed_full_jids.add(normalized)
             else:
                 self.allowed_bare_jids.add(bare_value)
-        self._pending_transcript_confirmation: dict[str, int] = {}
+        self._pending_transcript_confirmation: dict[tuple[str, str], int] = {}
 
     def is_authorized(self, jid: str) -> bool:
         normalized = _normalize_jid(jid)
@@ -121,7 +121,7 @@ class DaemonRouter:
                 command_text=text,
             )
 
-        confirmation_result = self._handle_confirmation_shortcut(confirmation_key, text)
+        confirmation_result = self._handle_confirmation_shortcut(confirmation_key, text, actor_jid)
         if confirmation_result is not None:
             return confirmation_result
 
@@ -215,6 +215,7 @@ class DaemonRouter:
         message_type: str,
         audio_url: str,
         room_jid: Optional[str] = None,
+        sender_jid: Optional[str] = None,
     ) -> Optional[str]:
         """Queue voice transcription job and return immediate acknowledgement."""
         normalized_type = str(message_type or "").strip().lower()
@@ -238,6 +239,7 @@ class DaemonRouter:
         if not audio_url:
             return "Error: audio URL is required."
 
+        effective_sender = _normalize_jid(sender_jid or jid)
         digest = hashlib.sha1(audio_url.encode("utf-8")).hexdigest()[:16]
         artifact_path = (
             Path(XMPP_IMAGE_STORAGE_DIR).expanduser() / conversation_id.replace("/", "_")
@@ -254,6 +256,7 @@ class DaemonRouter:
                 transcript_id=pending.session_transcript_id,
                 audio_url=audio_url,
                 audio_path=str(file_path),
+                sender_jid=effective_sender,
             )
         )
         return (
@@ -319,6 +322,7 @@ class DaemonRouter:
         jid = str(payload.get("jid", "") or "").strip()
         if not jid:
             return None
+        sender_jid = str(payload.get("sender_jid", "") or "").strip()
         transcript_id = int(payload.get("transcript_id", 0) or 0)
         status = str(payload.get("status", "") or "").strip().lower()
         if status == "completed":
@@ -348,7 +352,7 @@ class DaemonRouter:
                     query_text=text,
                 )
                 return (jid, answer)
-            self._pending_transcript_confirmation[jid] = transcript_id
+            self._pending_transcript_confirmation[(jid, sender_jid)] = transcript_id
             preview = record.transcript_text or ""
             return (
                 jid,
@@ -404,13 +408,15 @@ class DaemonRouter:
         self,
         conversation_key: str,
         text: str,
+        sender_jid: str = "",
     ) -> Optional[str]:
-        pending_id = self._pending_transcript_confirmation.get(conversation_key)
+        pending_key = (conversation_key, sender_jid)
+        pending_id = self._pending_transcript_confirmation.get(pending_key)
         if pending_id is None:
             return None
         normalized = text.strip().lower()
         if normalized in YES_TOKENS:
-            self._pending_transcript_confirmation.pop(conversation_key, None)
+            self._pending_transcript_confirmation.pop(pending_key, None)
             room_jid = (
                 conversation_key
                 if self.command_executor.is_room_bound(conversation_key)
@@ -422,7 +428,7 @@ class DaemonRouter:
                 command_text=f"transcript use #at{pending_id}",
             )
         if normalized in NO_TOKENS:
-            self._pending_transcript_confirmation.pop(conversation_key, None)
+            self._pending_transcript_confirmation.pop(pending_key, None)
             return (
                 f"Transcript #at{pending_id} kept without running. "
                 f"Use `transcript use #at{pending_id}` anytime."

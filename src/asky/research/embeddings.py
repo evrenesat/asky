@@ -5,6 +5,7 @@ import io
 import logging
 import os
 import struct
+import threading
 from typing import Any, Dict, List, Optional
 
 from asky.config import (
@@ -29,6 +30,7 @@ class EmbeddingClient:
     """Singleton sentence-transformers client used across research tools."""
 
     _instance: Optional["EmbeddingClient"] = None
+    _init_lock: threading.Lock = threading.Lock()
 
     def __new__(cls, *args, **kwargs):
         """Singleton pattern for efficient reuse."""
@@ -138,63 +140,69 @@ class EmbeddingClient:
         if self._model_load_error is not None:
             raise RuntimeError("Embedding model is unavailable") from self._model_load_error
 
-        if SentenceTransformer is None:
-            self._model_load_error = RuntimeError(
-                "sentence-transformers is required for research embeddings. "
-                "Install dependencies and retry."
-            )
-            raise RuntimeError("Embedding model is unavailable") from self._model_load_error
+        with self.__class__._init_lock:
+            if self._model is not None:
+                return self._model
+            if self._model_load_error is not None:
+                raise RuntimeError("Embedding model is unavailable") from self._model_load_error
 
-        configured_model = self.model
-        try:
-            self._model = self._load_model_with_cache_preference(
-                model_name=configured_model,
-            )
-        except Exception as primary_exc:
-            should_try_fallback = (
-                not self.local_files_only and configured_model != FALLBACK_EMBEDDING_MODEL
-            )
-            if should_try_fallback:
-                logger.warning(
-                    "Failed to load embedding model '%s'. "
-                    "Falling back to '%s' with Hugging Face auto-download enabled.",
-                    configured_model,
-                    FALLBACK_EMBEDDING_MODEL,
+            if SentenceTransformer is None:
+                self._model_load_error = RuntimeError(
+                    "sentence-transformers is required for research embeddings. "
+                    "Install dependencies and retry."
                 )
-                try:
-                    self._model = self._load_model_with_cache_preference(
-                        model_name=FALLBACK_EMBEDDING_MODEL,
+                raise RuntimeError("Embedding model is unavailable") from self._model_load_error
+
+            configured_model = self.model
+            try:
+                self._model = self._load_model_with_cache_preference(
+                    model_name=configured_model,
+                )
+            except Exception as primary_exc:
+                should_try_fallback = (
+                    not self.local_files_only and configured_model != FALLBACK_EMBEDDING_MODEL
+                )
+                if should_try_fallback:
+                    logger.warning(
+                        "Failed to load embedding model '%s'. "
+                        "Falling back to '%s' with Hugging Face auto-download enabled.",
+                        configured_model,
+                        FALLBACK_EMBEDDING_MODEL,
                     )
-                    self.model = FALLBACK_EMBEDDING_MODEL
-                    logger.info(
-                        "Loaded fallback embedding model '%s' successfully. "
-                        "Update research.embedding.model to avoid repeated primary model load failures.",
-                        self.model,
-                    )
-                except Exception as fallback_exc:
-                    self._model_load_error = fallback_exc
+                    try:
+                        self._model = self._load_model_with_cache_preference(
+                            model_name=FALLBACK_EMBEDDING_MODEL,
+                        )
+                        self.model = FALLBACK_EMBEDDING_MODEL
+                        logger.info(
+                            "Loaded fallback embedding model '%s' successfully. "
+                            "Update research.embedding.model to avoid repeated primary model load failures.",
+                            self.model,
+                        )
+                    except Exception as fallback_exc:
+                        self._model_load_error = fallback_exc
+                        logger.error(
+                            "Failed to load sentence-transformer model '%s': %s",
+                            configured_model,
+                            primary_exc,
+                        )
+                        logger.error(
+                            "Fallback embedding model '%s' also failed: %s",
+                            FALLBACK_EMBEDDING_MODEL,
+                            fallback_exc,
+                        )
+                        raise RuntimeError("Embedding model is unavailable") from fallback_exc
+                else:
+                    self._model_load_error = primary_exc
                     logger.error(
                         "Failed to load sentence-transformer model '%s': %s",
                         configured_model,
                         primary_exc,
                     )
-                    logger.error(
-                        "Fallback embedding model '%s' also failed: %s",
-                        FALLBACK_EMBEDDING_MODEL,
-                        fallback_exc,
-                    )
-                    raise RuntimeError("Embedding model is unavailable") from fallback_exc
-            else:
-                self._model_load_error = primary_exc
-                logger.error(
-                    "Failed to load sentence-transformer model '%s': %s",
-                    configured_model,
-                    primary_exc,
-                )
-                raise RuntimeError("Embedding model is unavailable") from primary_exc
+                    raise RuntimeError("Embedding model is unavailable") from primary_exc
 
-        self._tokenizer = getattr(self._model, "tokenizer", None)
-        return self._model
+            self._tokenizer = getattr(self._model, "tokenizer", None)
+            return self._model
 
     def _to_embedding_rows(self, encoded: Any) -> List[List[float]]:
         """Normalize model output to List[List[float]]."""

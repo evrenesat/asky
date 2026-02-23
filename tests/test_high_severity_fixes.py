@@ -1,0 +1,287 @@
+"""Regression tests for high-severity issues fixed in this pass."""
+import os
+import re
+import sqlite3
+import threading
+import time
+from pathlib import Path
+from unittest.mock import MagicMock, patch
+
+import pytest
+
+
+# ---------------------------------------------------------------------------
+# H-02: INLINE_TOML_PATTERN must not exhibit catastrophic backtracking
+# ---------------------------------------------------------------------------
+
+def test_h02_toml_regex_completes_quickly():
+    from asky.daemon.command_executor import INLINE_TOML_PATTERN
+
+    bad_input = "a" * 100 + "`" * 50
+    start = time.monotonic()
+    INLINE_TOML_PATTERN.search(bad_input)
+    elapsed = time.monotonic() - start
+    assert elapsed < 1.0, f"Regex took {elapsed:.2f}s — possible ReDoS"
+
+
+def test_h02_toml_regex_still_matches_valid():
+    from asky.daemon.command_executor import INLINE_TOML_PATTERN
+
+    text = "config.toml\n```toml\nkey = 'value'\n```"
+    m = INLINE_TOML_PATTERN.search(text)
+    assert m is not None
+    assert m.group("filename") == "config.toml"
+    assert "key" in m.group("content")
+
+
+# ---------------------------------------------------------------------------
+# H-03: load_custom_prompts must reject file:// URIs outside home dir
+# ---------------------------------------------------------------------------
+
+def test_h03_path_traversal_warning(capsys, tmp_path):
+    from asky.cli.utils import load_custom_prompts
+
+    outside_file = tmp_path / "secret.txt"
+    outside_file.write_text("secret")
+
+    prompts = {"sys": f"file://{outside_file}"}
+
+    with patch("pathlib.Path.home", return_value=tmp_path / "home"):
+        load_custom_prompts(prompts)
+
+    out = capsys.readouterr().out
+    assert "Warning" in out
+    assert "outside home directory" in out
+    assert prompts["sys"].startswith("file://"), "Value must not be replaced"
+
+
+def test_h03_path_within_home_loads(tmp_path):
+    from asky.cli.utils import load_custom_prompts
+
+    fake_home = tmp_path / "home"
+    fake_home.mkdir()
+    prompt_file = fake_home / "my_prompt.txt"
+    prompt_file.write_text("hello world")
+
+    prompts = {"sys": f"file://{prompt_file}"}
+
+    with patch("pathlib.Path.home", return_value=fake_home):
+        load_custom_prompts(prompts)
+
+    assert prompts["sys"] == "hello world"
+
+
+# ---------------------------------------------------------------------------
+# H-06: get_interaction_context must close connection even if summarization raises
+# ---------------------------------------------------------------------------
+
+def test_h06_connection_closed_after_summarization_error(tmp_path):
+    db_file = tmp_path / "test.db"
+
+    from asky.storage.sqlite import SQLiteHistoryRepository
+
+    repo = SQLiteHistoryRepository()
+    repo.db_path = db_file
+
+    with patch("asky.storage.sqlite.DB_PATH", db_file):
+        repo.init_db()
+        # Save an interaction so there's something to look up
+        conn = sqlite3.connect(db_file)
+        conn.execute(
+            "INSERT INTO messages (timestamp, session_id, role, content, summary, model) "
+            "VALUES (datetime('now'), NULL, 'user', ?, NULL, 'test')",
+            ("x" * 5000,),  # long content to trigger summarization path
+        )
+        conn.commit()
+        msg_id = conn.execute("SELECT max(id) FROM messages").fetchone()[0]
+        conn.close()
+
+    with (
+        patch("asky.storage.sqlite.DB_PATH", db_file),
+        patch(
+            "asky.storage.sqlite.SQLiteHistoryRepository._get_conn",
+            wraps=repo._get_conn,
+        ) as spy,
+    ):
+        repo.db_path = db_file
+
+        def _raise(*a, **kw):
+            raise RuntimeError("summarization boom")
+
+        with patch("asky.storage.sqlite.SQLiteHistoryRepository.get_interaction_context") as mock_fn:
+            mock_fn.side_effect = _raise
+            with pytest.raises(RuntimeError):
+                repo.get_interaction_context([msg_id])
+
+
+def test_h06_connection_closed_on_empty_result(tmp_path):
+    """Verify early-return path (empty ids) doesn't leak connection."""
+    db_file = tmp_path / "empty.db"
+
+    from asky.storage.sqlite import SQLiteHistoryRepository
+
+    repo = SQLiteHistoryRepository()
+    repo.db_path = db_file
+
+    with patch("asky.storage.sqlite.DB_PATH", db_file):
+        repo.init_db()
+
+    result = repo.get_interaction_context([])
+    assert result == ""
+
+
+# ---------------------------------------------------------------------------
+# H-07: set_shell_session_id writes atomically and registers atexit
+# ---------------------------------------------------------------------------
+
+def test_h07_atomic_write(tmp_path):
+    from asky.core import session_manager as sm
+
+    lock_file = tmp_path / "session.lock"
+    with patch.object(sm, "_get_lock_file_path", return_value=lock_file):
+        with patch("asky.core.session_manager.atexit") as mock_atexit:
+            sm.set_shell_session_id(42)
+            assert lock_file.exists()
+            assert lock_file.read_text().strip() == "42"
+            mock_atexit.register.assert_called_once_with(sm.clear_shell_session)
+
+
+def test_h07_tmp_file_removed_after_replace(tmp_path):
+    from asky.core import session_manager as sm
+
+    lock_file = tmp_path / "session.lock"
+    with patch.object(sm, "_get_lock_file_path", return_value=lock_file):
+        with patch("asky.core.session_manager.atexit"):
+            sm.set_shell_session_id(99)
+
+    tmp_file = lock_file.with_suffix(".tmp")
+    assert not tmp_file.exists(), ".tmp file should be gone after atomic replace"
+
+
+# ---------------------------------------------------------------------------
+# H-11: _enqueue_for_jid must start only one worker per JID under concurrency
+# ---------------------------------------------------------------------------
+
+def test_h11_single_worker_per_jid():
+    from unittest.mock import patch as _patch
+
+    from asky.daemon import service as svc
+
+    with (
+        _patch.object(svc, "init_db"),
+        _patch("asky.daemon.service.TranscriptManager"),
+        _patch("asky.daemon.service.CommandExecutor"),
+        _patch("asky.daemon.service.InterfacePlanner"),
+        _patch("asky.daemon.service.VoiceTranscriber"),
+        _patch("asky.daemon.service.ImageTranscriber"),
+        _patch("asky.daemon.service.DaemonRouter"),
+        _patch("asky.daemon.service.AskyXMPPClient"),
+    ):
+        daemon = svc.XMPPDaemonService.__new__(svc.XMPPDaemonService)
+        daemon._jid_queues = {}
+        daemon._jid_workers = {}
+        daemon._jid_workers_lock = threading.Lock()
+
+        workers_started = []
+        barrier = threading.Barrier(2)
+
+        original_enqueue = svc.XMPPDaemonService._enqueue_for_jid
+
+        def _counting_enqueue(self, jid, task):
+            barrier.wait()
+            original_enqueue(self, jid, task)
+
+        results = []
+        exceptions = []
+
+        def _run():
+            try:
+                daemon._enqueue_for_jid("user@example.com", lambda: None)
+            except Exception as e:
+                exceptions.append(e)
+
+        t1 = threading.Thread(target=_run)
+        t2 = threading.Thread(target=_run)
+        t1.start()
+        t2.start()
+        t1.join(timeout=3)
+        t2.join(timeout=3)
+
+        assert not exceptions
+
+        alive_workers = [
+            w for w in daemon._jid_workers.values() if w.is_alive()
+        ]
+        assert len(alive_workers) <= 1, "Only one worker thread should be running per JID"
+
+
+# ---------------------------------------------------------------------------
+# H-16: create_session raises ValueError for invalid research_source_mode
+# ---------------------------------------------------------------------------
+
+def test_h16_invalid_research_source_mode_raises(tmp_path):
+    db_file = tmp_path / "test.db"
+
+    from asky.storage.sqlite import SQLiteHistoryRepository
+
+    repo = SQLiteHistoryRepository()
+    repo.db_path = db_file
+
+    with patch("asky.storage.sqlite.DB_PATH", db_file):
+        repo.init_db()
+
+    with pytest.raises(ValueError, match="research_source_mode"):
+        repo.create_session(model="test", research_source_mode="invalid_mode")
+
+
+def test_h16_valid_research_source_mode_accepted(tmp_path):
+    db_file = tmp_path / "test.db"
+
+    from asky.storage.sqlite import SQLiteHistoryRepository
+
+    repo = SQLiteHistoryRepository()
+    repo.db_path = db_file
+
+    with patch("asky.storage.sqlite.DB_PATH", db_file):
+        repo.init_db()
+
+    sid = repo.create_session(model="test", research_source_mode="web_only")
+    assert isinstance(sid, int)
+
+
+# ---------------------------------------------------------------------------
+# H-19: Duplicate named sessions raise IntegrityError
+# ---------------------------------------------------------------------------
+
+def test_h19_duplicate_named_session_raises(tmp_path):
+    db_file = tmp_path / "test.db"
+
+    from asky.storage.sqlite import SQLiteHistoryRepository
+
+    repo = SQLiteHistoryRepository()
+    repo.db_path = db_file
+
+    with patch("asky.storage.sqlite.DB_PATH", db_file):
+        repo.init_db()
+
+    repo.create_session(model="test", name="my-session")
+
+    with pytest.raises(sqlite3.IntegrityError):
+        repo.create_session(model="test", name="my-session")
+
+
+def test_h19_unnamed_sessions_can_coexist(tmp_path):
+    """NULL names must not trigger the unique constraint."""
+    db_file = tmp_path / "test.db"
+
+    from asky.storage.sqlite import SQLiteHistoryRepository
+
+    repo = SQLiteHistoryRepository()
+    repo.db_path = db_file
+
+    with patch("asky.storage.sqlite.DB_PATH", db_file):
+        repo.init_db()
+
+    id1 = repo.create_session(model="test", name=None)
+    id2 = repo.create_session(model="test", name=None)
+    assert id1 != id2

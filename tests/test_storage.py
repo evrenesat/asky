@@ -384,3 +384,44 @@ def test_session_override_files_roundtrip_and_copy(mock_db_path):
 
     target_files = repo.list_session_override_files(session_id=target_session)
     assert [item.filename for item in target_files] == ["general.toml", "user.toml"]
+
+
+def test_init_db_deduplicates_legacy_duplicate_session_names(mock_db_path):
+    from asky.storage.sqlite import SQLiteHistoryRepository
+
+    conn = sqlite3.connect(mock_db_path)
+    c = conn.cursor()
+    c.execute(
+        """
+        CREATE TABLE sessions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT,
+            model TEXT,
+            created_at TEXT,
+            compacted_summary TEXT
+        )
+        """
+    )
+    c.execute(
+        "INSERT INTO sessions (name, model, created_at, compacted_summary) VALUES (?, ?, ?, ?)",
+        ("dup_name", "model", "2026-02-20T10:00:00", None),
+    )
+    c.execute(
+        "INSERT INTO sessions (name, model, created_at, compacted_summary) VALUES (?, ?, ?, ?)",
+        ("dup_name", "model", "2026-02-21T10:00:00", None),
+    )
+    conn.commit()
+    conn.close()
+
+    repo = SQLiteHistoryRepository()
+    repo.init_db()
+
+    conn = sqlite3.connect(mock_db_path)
+    c = conn.cursor()
+    c.execute("SELECT name FROM sessions ORDER BY id ASC")
+    names = [row[0] for row in c.fetchall()]
+    conn.close()
+
+    assert len(names) == 2
+    assert len(set(names)) == 2
+    assert "dup_name" in names

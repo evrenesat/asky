@@ -470,12 +470,15 @@ class ConversationEngine:
 
             # Case 1: Value is a dict with 'content' (e.g. get_full_content)
             if isinstance(value, dict) and "content" in value and is_url:
-                summary_info = self.research_cache.get_summary(key)
+                try:
+                    summary_info = self.research_cache.get_summary(key)
+                except Exception:
+                    logger.warning("Research cache lookup failed for %s", key)
+                    summary_info = None
                 if summary_info and summary_info.get("summary"):
                     logger.debug(
                         f"[Smart Compaction] Found summary for URL {key} (dict). Replacing content."
                     )
-                    # Replace full content with summary
                     compacted_data[key] = value.copy()
                     compacted_data[key]["content"] = (
                         f"[COMPACTED] {summary_info['summary']}"
@@ -487,7 +490,12 @@ class ConversationEngine:
                 else:
                     val_content = value.get("content", "")
                     if len(val_content) > 500:
-                        summary = self._summarize_and_cache(key, val_content)
+                        try:
+                            summary = self._summarize_and_cache(key, val_content)
+                        except Exception:
+                            logger.warning("Research cache summarization failed for %s", key)
+                            compacted_data[key] = value
+                            continue
                         compacted_data[key] = value.copy()
                         compacted_data[key]["content"] = f"[COMPACTED] {summary}"
                         compacted_data[key]["note"] = (
@@ -499,9 +507,11 @@ class ConversationEngine:
 
             # Case 2: Value is a string (e.g. get_url_content) AND key is URL
             elif isinstance(value, str) and is_url:
-                # Can we look up summary for this URL?
-                # Ideally yes if it's in cache.
-                summary_info = self.research_cache.get_summary(key)
+                try:
+                    summary_info = self.research_cache.get_summary(key)
+                except Exception:
+                    logger.warning("Research cache lookup failed for %s", key)
+                    summary_info = None
                 if summary_info and summary_info.get("summary"):
                     logger.debug(
                         f"[Smart Compaction] Found summary for URL {key} (str). Replacing content."
@@ -510,7 +520,12 @@ class ConversationEngine:
                     modified = True
                 else:
                     if len(value) > 500:
-                        summary = self._summarize_and_cache(key, value)
+                        try:
+                            summary = self._summarize_and_cache(key, value)
+                        except Exception:
+                            logger.warning("Research cache summarization failed for %s", key)
+                            compacted_data[key] = value
+                            continue
                         compacted_data[key] = f"[COMPACTED] {summary}"
                         modified = True
                     else:
@@ -729,6 +744,7 @@ class ConversationEngine:
     def _handle_general_error(self, e):
         logger.info(f"Error: {str(e)}")
         logger.exception("Engine failure")
+        raise
 
 
 def create_tool_registry(

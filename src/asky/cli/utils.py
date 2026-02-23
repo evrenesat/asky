@@ -2,6 +2,7 @@
 
 import re
 import os
+from pathlib import Path
 import pyperclip
 from asky.config import USER_PROMPTS, QUERY_EXPANSION_MAX_DEPTH, MAX_PROMPT_FILE_SIZE
 
@@ -17,7 +18,11 @@ def load_custom_prompts(prompt_map: dict[str, str] | None = None) -> None:
     for key, value in active_prompts.items():
         if isinstance(value, str) and value.startswith("file://"):
             file_path = value[7:]
-            path = os.path.expanduser(file_path)
+            resolved = Path(file_path).expanduser().resolve()
+            if not str(resolved).startswith(str(Path.home().resolve())):
+                print(f"[Warning: Custom prompt file outside home directory: {resolved}]")
+                continue
+            path = str(resolved)
 
             if not os.path.exists(path):
                 print(f"[Warning: Custom prompt file '{path}' not found]")

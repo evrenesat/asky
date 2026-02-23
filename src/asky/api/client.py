@@ -811,45 +811,58 @@ class AskyClient:
 
             # 1. Session-scoped extraction (Elephant Mode)
             if final_answer and session_resolution.memory_auto_extract:
-                # We must pass the current session ID
                 current_sid = (
                     session_manager.current_session.id
                     if session_manager and session_manager.current_session
                     else None
                 )
-                threading.Thread(
-                    target=call_attr,
-                    args=(
-                        "asky.memory.auto_extract",
-                        "extract_and_save_memories_from_turn",
-                    ),
-                    kwargs={
-                        "query": effective_query_text,
-                        "answer": final_answer,
-                        "llm_client": get_llm_msg,
-                        "model": self.model_config.get("model", ""),
-                        "db_path": DB_PATH,
-                        "chroma_dir": RESEARCH_CHROMA_PERSIST_DIRECTORY,
-                        "session_id": current_sid,
-                    },
-                    daemon=True,
-                ).start()
+
+                def _safe_session_extract(
+                    _query=effective_query_text,
+                    _answer=final_answer,
+                    _model=self.model_config.get("model", ""),
+                    _sid=current_sid,
+                ) -> None:
+                    try:
+                        call_attr(
+                            "asky.memory.auto_extract",
+                            "extract_and_save_memories_from_turn",
+                            query=_query,
+                            answer=_answer,
+                            llm_client=get_llm_msg,
+                            model=_model,
+                            db_path=DB_PATH,
+                            chroma_dir=RESEARCH_CHROMA_PERSIST_DIRECTORY,
+                            session_id=_sid,
+                        )
+                    except Exception:
+                        logger.exception("Background memory extraction failed")
+
+                threading.Thread(target=_safe_session_extract, daemon=True).start()
 
             # 2. Global extraction (Triggered)
             if final_answer and capture_global_memory:
-                threading.Thread(
-                    target=call_attr,
-                    args=("asky.memory.auto_extract", "extract_global_facts_from_turn"),
-                    kwargs={
-                        "query": effective_query_text,
-                        "answer": final_answer,
-                        "llm_client": get_llm_msg,
-                        "model": self.model_config.get("model", ""),
-                        "db_path": DB_PATH,
-                        "chroma_dir": RESEARCH_CHROMA_PERSIST_DIRECTORY,
-                    },
-                    daemon=True,
-                ).start()
+
+                def _safe_global_extract(
+                    _query=effective_query_text,
+                    _answer=final_answer,
+                    _model=self.model_config.get("model", ""),
+                ) -> None:
+                    try:
+                        call_attr(
+                            "asky.memory.auto_extract",
+                            "extract_global_facts_from_turn",
+                            query=_query,
+                            answer=_answer,
+                            llm_client=get_llm_msg,
+                            model=_model,
+                            db_path=DB_PATH,
+                            chroma_dir=RESEARCH_CHROMA_PERSIST_DIRECTORY,
+                        )
+                    except Exception:
+                        logger.exception("Background memory extraction failed")
+
+                threading.Thread(target=_safe_global_extract, daemon=True).start()
 
         query_summary, answer_summary = ("", "")
         if final_answer:
