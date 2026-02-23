@@ -68,7 +68,7 @@ uv run pytest tests/test_cli.py::test_function_name
 | `test_config.py` | Configuration loading |
 | `test_xmpp_daemon.py` | XMPP daemon lifecycle, per-JID queueing, chunking |
 | `test_xmpp_router.py` | Allowlist and hybrid router behavior |
-| `test_xmpp_commands.py` | Remote command policy, transcript command surface, preset routing |
+| `test_xmpp_commands.py` | Remote command policy, transcript command surface, preset routing, and CLI-equivalent XMPP query alias/slash expansion behavior |
 | `test_xmpp_client.py` | slixmpp runtime API compatibility (`process` vs loop fallback) |
 | `test_interface_planner.py` | Interface model prompt contract, command-reference injection, JSON fallback behavior |
 | `test_voice_transcription.py` | Background voice job pipeline and platform gating |

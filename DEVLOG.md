@@ -1,5 +1,39 @@
 # DEVLOG
 
+## 2026-02-23 - XMPP Query Alias Expansion Parity with CLI
+
+Added CLI-equivalent query alias/slash expansion to daemon query execution so XMPP queries now process user prompts recursively before model execution.
+
+- **Changed**:
+  - `src/asky/daemon/command_executor.py`:
+    - Added shared query-preparation path used by both:
+      - direct XMPP query ingress (`execute_query_text`),
+      - command-mode query execution (`_execute_asky_tokens`).
+    - Query prep now:
+      - loads custom prompt files when query contains `/`,
+      - recursively expands slash aliases via `expand_query_text(...)` (including `/cp`),
+      - applies CLI-equivalent unresolved slash behavior:
+        - `/` -> list all configured prompts,
+        - unknown `/prefix` -> filtered prompt list output.
+    - `transcript use <id>` inherits the same behavior through `execute_query_text`.
+  - `tests/test_xmpp_commands.py`:
+    - Added coverage for:
+      - recursive alias expansion before `AskyClient.run_turn()`,
+      - slash-only prompt listing short-circuit (no model call),
+      - unknown slash-prefix filtered prompt listing short-circuit (no model call),
+      - shared command-path query preparation,
+      - transcript-use query preparation inheritance.
+  - `ARCHITECTURE.md`:
+    - Updated XMPP daemon flow notes to document shared CLI-equivalent slash expansion behavior and ingress scope.
+  - `tests/AGENTS.md`:
+    - Updated `test_xmpp_commands.py` coverage description to include XMPP query alias/slash expansion behavior.
+- **Why**:
+  - XMPP queries previously bypassed prompt alias expansion that CLI queries already applied recursively, causing inconsistent behavior across interfaces.
+- **Validation**:
+  - `uv run pytest tests/test_xmpp_commands.py` -> passed.
+  - `uv run pytest tests/test_xmpp_router.py` -> passed.
+  - `uv run pytest` -> passed.
+
 ## 2026-02-23 - README Clarity for XMPP Daemon + Voice
 
 Clarified the top-level README so new users immediately understand what XMPP daemon mode is and why it matters.

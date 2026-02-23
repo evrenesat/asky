@@ -17,7 +17,7 @@ from asky.cli.main import (
     research_commands,
     section_commands,
 )
-from asky.config import DEFAULT_MODEL
+from asky.config import DEFAULT_MODEL, USER_PROMPTS
 from asky.daemon.transcript_manager import TranscriptManager
 from asky.storage import init_db
 
@@ -83,6 +83,12 @@ class CommandExecutor:
 
     def execute_query_text(self, *, jid: str, query_text: str) -> str:
         """Execute a plain query in sender-scoped persistent session."""
+        prepared_query, immediate_response = self._prepare_query_text(
+            raw_query=query_text,
+            verbose=False,
+        )
+        if immediate_response is not None:
+            return immediate_response
         return self._run_query_with_args(
             jid=jid,
             args=argparse.Namespace(
@@ -106,7 +112,7 @@ class CommandExecutor:
                 system_prompt=None,
                 terminal_lines=None,
             ),
-            query_text=query_text,
+            query_text=prepared_query or "",
         )
 
     def _execute_asky_tokens(self, *, jid: str, tokens: list[str]) -> str:
@@ -148,7 +154,7 @@ class CommandExecutor:
 
         if getattr(args, "prompts", False):
             utils.load_custom_prompts()
-            return _capture_output(prompts.list_prompts)
+            return _capture_output(prompts.list_prompts_command)
         if getattr(args, "history", None) is not None:
             return _capture_output(history.show_history, args.history)
         if getattr(args, "print_ids", None):
@@ -192,10 +198,13 @@ class CommandExecutor:
         if not query_tokens:
             return "Error: query is required."
         raw_query = " ".join(query_tokens).strip()
-        if raw_query.startswith("/"):
-            utils.load_custom_prompts()
-        query_text = utils.expand_query_text(raw_query, verbose=bool(args.verbose))
-        return self._run_query_with_args(jid=jid, args=args, query_text=query_text)
+        query_text, immediate_response = self._prepare_query_text(
+            raw_query=raw_query,
+            verbose=bool(args.verbose),
+        )
+        if immediate_response is not None:
+            return immediate_response
+        return self._run_query_with_args(jid=jid, args=args, query_text=query_text or "")
 
     def _run_query_with_args(
         self,
@@ -244,6 +253,28 @@ class CommandExecutor:
                 return f"Halted: {reason}\n{notices}"
             return f"Halted: {reason}"
         return result.final_answer or "(no response)"
+
+    def _prepare_query_text(
+        self,
+        *,
+        raw_query: str,
+        verbose: bool,
+    ) -> tuple[Optional[str], Optional[str]]:
+        query = str(raw_query or "")
+        if "/" in query:
+            utils.load_custom_prompts()
+        expanded_query = utils.expand_query_text(query, verbose=bool(verbose))
+        if expanded_query.startswith("/"):
+            first_part = expanded_query.split(maxsplit=1)[0]
+            if first_part == "/":
+                return None, _capture_output(prompts.list_prompts_command)
+            prefix = first_part[1:]
+            if prefix and prefix not in USER_PROMPTS:
+                return None, _capture_output(
+                    prompts.list_prompts_command,
+                    filter_prefix=prefix,
+                )
+        return expanded_query, None
 
     def _validate_remote_policy(self, args: argparse.Namespace) -> Optional[str]:
         blocked = any(
