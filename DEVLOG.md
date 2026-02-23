@@ -1,5 +1,26 @@
 # DEVLOG
 
+## 2026-02-24 - macOS App Bundle Spotlight Integration
+
+Implemented automatic creation of a macOS `.app` bundle for the XMPP daemon to allow launching from Spotlight/Finder.
+
+- **`src/asky/daemon/app_bundle_macos.py`** [NEW]:
+  - Logic to create `~/Applications/AskyDaemon.app`.
+  - Includes a shell script launcher that delegates to the current Python interpreter.
+  - Generates `Info.plist` with `LSUIElement=True` (background app) and `com.evren.asky.daemon` identifier.
+  - Implements `bundle_is_current()` to avoid redundant creation unless the Python path changes.
+  - Copies `asky.icns` as the app icon.
+- **`src/asky/data/icons/asky.icns`** [NEW]:
+  - Created high-quality `.icns` file from simplify mono PNG assets using `iconutil`.
+- **`src/asky/cli/main.py`**:
+  - Automatically calls `ensure_bundle_exists()` when starting the XMPP daemon on macOS.
+  - The process is non-blocking and failures are logged at DEBUG level.
+- **`tests/test_app_bundle_macos.py`** [NEW]:
+  - Unit tests for bundle creation, marker validation, and Info.plist content.
+- **Validation**:
+  - Full suite passed (787 tests).
+  - Manual verification on macOS confirmed bundle creation and Spotlight indexing.
+
 ## 2026-02-24 - Session Bug Fix and Clear Command
 
 - **Session Ambiguity Fix**: Modified `core/session_manager.py` to return immediately when a numeric session ID is found. This prevents the partial name scan from incorrectly matching other sessions containing the same digits (e.g., when the numeric ID is "44", it no longer matches a session named "room-44-test").

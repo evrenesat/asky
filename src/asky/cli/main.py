@@ -866,6 +866,24 @@ def main() -> None:
                 # In double-verbose mode, skip menubar and stay in foreground
                 if has_rumps() and not getattr(args, "double_verbose", False):
                     logger.info("rumps detected; using menubar bootstrap flow")
+
+                    # Auto-create the .app bundle so users can launch from Spotlight
+                    try:
+                        _slixmpp_available = True
+                        import slixmpp  # noqa: F401
+                    except ImportError:
+                        _slixmpp_available = False
+
+                    if _slixmpp_available:
+                        try:
+                            from asky.daemon.app_bundle_macos import (
+                                ensure_bundle_exists,
+                            )
+
+                            ensure_bundle_exists()
+                        except Exception:
+                            logger.debug("app bundle creation skipped", exc_info=True)
+
                     if is_menubar_instance_running():
                         logger.warning(
                             "menubar daemon launch rejected: already running"

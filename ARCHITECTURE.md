@@ -51,6 +51,7 @@ graph TB
         daemon_image["image_transcriber.py<br/>Async Image Jobs"]
         daemon_transcripts["transcript_manager.py<br/>Transcript Lifecycle"]
         daemon_chunking["chunking.py<br/>Outbound Chunking"]
+        daemon_app_bundle["app_bundle_macos.py<br/>macOS .app Bundle Creation"]
     end
 
     subgraph Storage["Storage Layer (storage/)"]
@@ -134,7 +135,7 @@ graph TB
 src/asky/
 ├── api/                # Programmatic library API surface (run_turn orchestration)
 ├── cli/                # Command-line interface → see cli/AGENTS.md
-├── daemon/             # Optional XMPP daemon runtime (transport/router/planner/voice/image/group sessions)
+├── daemon/             # Optional XMPP daemon runtime (transport/router/planner/voice/image/group sessions/macOS app bundle)
 ├── core/               # Conversation engine → see core/AGENTS.md
 ├── storage/            # Data persistence → see storage/AGENTS.md
 ├── research/           # Research mode RAG → see research/AGENTS.md
@@ -160,18 +161,18 @@ For test organization, see `tests/AGENTS.md`.
 
 ## Package Documentation
 
-| Package     | Documentation                                     | Key Components                                   |
-| ----------- | ------------------------------------------------- | ------------------------------------------------ |
-| `cli/`      | [cli/AGENTS.md](src/asky/cli/AGENTS.md)           | Entry point, chat flow, commands                 |
-| `daemon/`   | (package docs inline)                              | XMPP transport, group/direct router, session profile manager, voice+image pipelines  |
-| `api/`      | [api/AGENTS.md](src/asky/api/AGENTS.md)           | `AskyClient`, turn orchestration services        |
-| `core/`     | [core/AGENTS.md](src/asky/core/AGENTS.md)         | ConversationEngine, ToolRegistry, API client     |
-| `storage/`  | [storage/AGENTS.md](src/asky/storage/AGENTS.md)   | SQLite repository, data model                    |
-| `research/` | [research/AGENTS.md](src/asky/research/AGENTS.md) | Cache, vector store, embeddings                  |
-| `memory/`   | [memory/AGENTS.md](src/asky/memory/AGENTS.md)     | Cross-session user memory store, recall, tools   |
-| `evals/`    | (manual harness)                                  | Dual-mode research integration evaluation runner |
-| `config/`   | [config/AGENTS.md](src/asky/config/AGENTS.md)     | TOML loading, constants                          |
-| `tests/`    | [tests/AGENTS.md](tests/AGENTS.md)                | Test organization, patterns                      |
+| Package     | Documentation                                     | Key Components                                                                      |
+| ----------- | ------------------------------------------------- | ----------------------------------------------------------------------------------- |
+| `cli/`      | [cli/AGENTS.md](src/asky/cli/AGENTS.md)           | Entry point, chat flow, commands                                                    |
+| `daemon/`   | (package docs inline)                             | XMPP transport, group/direct router, session profile manager, voice+image pipelines |
+| `api/`      | [api/AGENTS.md](src/asky/api/AGENTS.md)           | `AskyClient`, turn orchestration services                                           |
+| `core/`     | [core/AGENTS.md](src/asky/core/AGENTS.md)         | ConversationEngine, ToolRegistry, API client                                        |
+| `storage/`  | [storage/AGENTS.md](src/asky/storage/AGENTS.md)   | SQLite repository, data model                                                       |
+| `research/` | [research/AGENTS.md](src/asky/research/AGENTS.md) | Cache, vector store, embeddings                                                     |
+| `memory/`   | [memory/AGENTS.md](src/asky/memory/AGENTS.md)     | Cross-session user memory store, recall, tools                                      |
+| `evals/`    | (manual harness)                                  | Dual-mode research integration evaluation runner                                    |
+| `config/`   | [config/AGENTS.md](src/asky/config/AGENTS.md)     | TOML loading, constants                                                             |
+| `tests/`    | [tests/AGENTS.md](tests/AGENTS.md)                | Test organization, patterns                                                         |
 
 ---
 
@@ -240,14 +241,14 @@ Verbose tracing has two levels:
   I/O payloads in boxed console output:
   - outbound request messages sent to the main model (all roles, full bodies),
   - inbound response messages returned by the main model (including tool-call payloads).
-  In Live-banner mode these traces stream immediately through the live console
-  (no end-of-turn deferral). Tool/summarization internals are shown as transport
-  metadata (target endpoint, response status/type, and response size), not full bodies.
-  Main-model transport request/response metadata is merged into the main request/response
-  boxes (not duplicated as separate transport panels), outbound request payload traces
-  include structured enabled-tool schemas/guidelines, and preload stage emits a
-  structured `Preloaded Context Sent To Main Model` provenance panel before the first
-  model call.
+    In Live-banner mode these traces stream immediately through the live console
+    (no end-of-turn deferral). Tool/summarization internals are shown as transport
+    metadata (target endpoint, response status/type, and response size), not full bodies.
+    Main-model transport request/response metadata is merged into the main request/response
+    boxes (not duplicated as separate transport panels), outbound request payload traces
+    include structured enabled-tool schemas/guidelines, and preload stage emits a
+    structured `Preloaded Context Sent To Main Model` provenance panel before the first
+    model call.
 
 Programmatic consumers can bypass CLI by instantiating `AskyClient` directly and
 calling `run_turn(...)` for full CLI-equivalent orchestration.

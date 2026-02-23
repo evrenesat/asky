@@ -4,25 +4,25 @@ Command-line interface layer handling argument parsing, command routing, and use
 
 ## Module Overview
 
-| Module                    | Purpose                                                                         |
-| ------------------------- | ------------------------------------------------------------------------------- |
-| `main.py`                 | Entry point, argument parsing, command routing                                  |
-| `chat.py`                 | Chat conversation orchestration                                                 |
-| `presets.py`              | Backslash command preset expansion/listing (`\\name`, `\\presets`)              |
-| `local_ingestion_flow.py` | Pre-LLM local source preload for research mode (path-redacted local KB context) |
-| `research_commands.py`    | Manual corpus query commands (no-LLM retrieval inspection)                      |
-| `section_commands.py`     | Manual section listing/summarization for local corpus (no main model call)      |
-| `shortlist_flow.py`       | Pre-LLM shortlist execution + banner updates                                    |
-| `completion.py`           | Shell completion with argcomplete                                               |
-| `display.py`              | Banner rendering, live status updates                                           |
-| `history.py`              | History viewing/deletion commands                                               |
-| `sessions.py`             | Session management commands                                                     |
-| `prompts.py`              | User prompt listing                                                             |
+| Module                    | Purpose                                                                                                                                        |
+| ------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| `main.py`                 | Entry point, argument parsing, command routing                                                                                                 |
+| `chat.py`                 | Chat conversation orchestration                                                                                                                |
+| `presets.py`              | Backslash command preset expansion/listing (`\\name`, `\\presets`)                                                                             |
+| `local_ingestion_flow.py` | Pre-LLM local source preload for research mode (path-redacted local KB context)                                                                |
+| `research_commands.py`    | Manual corpus query commands (no-LLM retrieval inspection)                                                                                     |
+| `section_commands.py`     | Manual section listing/summarization for local corpus (no main model call)                                                                     |
+| `shortlist_flow.py`       | Pre-LLM shortlist execution + banner updates                                                                                                   |
+| `completion.py`           | Shell completion with argcomplete                                                                                                              |
+| `display.py`              | Banner rendering, live status updates                                                                                                          |
+| `history.py`              | History viewing/deletion commands                                                                                                              |
+| `sessions.py`             | Session management commands                                                                                                                    |
+| `prompts.py`              | User prompt listing                                                                                                                            |
 | `models.py`               | Interactive model add/edit commands, including role assignment (main/summarization/interface) and per-model capability flags (`image_support`) |
-| `daemon_config.py`        | Interactive daemon config editor (`--edit-daemon`) and startup-at-login toggles |
-| `openrouter.py`           | OpenRouter API client for model discovery                                       |
-| `terminal.py`             | Terminal context fetching                                                       |
-| `utils.py`                | Query expansion, config printing                                                |
+| `daemon_config.py`        | Interactive daemon config editor (`--edit-daemon`) and startup-at-login toggles                                                                |
+| `openrouter.py`           | OpenRouter API client for model discovery                                                                                                      |
+| `terminal.py`             | Terminal context fetching                                                                                                                      |
+| `utils.py`                | Query expansion, config printing                                                                                                               |
 
 ## Entry Point (`main.py`)
 
@@ -37,27 +37,27 @@ Command-line interface layer handling argument parsing, command routing, and use
 
 ### Key CLI Flags
 
-| Flag                           | Handler                                                        |
-| ------------------------------ | -------------------------------------------------------------- |
-| `-m, --model`                  | Model selection                                                |
-| `-c, --continue-chat`          | Context loading from previous IDs                              |
-| `-H, --history`                | `history.py`                                                   |
-| `-pa, --print-answer`          | `history.py`                                                   |
-| `-v, --verbose` / `-vv`        | `chat.py` + `core/engine.py` (verbose / double-verbose traces) |
-| `-ss, --sticky-session`        | `sessions.py`                                                  |
-| `-rs, --resume-session`        | `sessions.py`                                                  |
-| `-off, -tool-off, --tool-off`  | `chat.py` (runtime tool exclusion, supports `all`)             |
-| `--list-tools`                 | `main.py` (list all LLM tools and exit)                        |
-| `--query-corpus`               | `research_commands.py` (deterministic corpus retrieval, no model call) |
-| `--summarize-section`          | `section_commands.py` (deterministic section list/summary, no main model call) |
-| `--section-id`                 | `section_commands.py` (deterministic section selection override) |
-| `--section-include-toc`        | `section_commands.py` (include TOC/debug rows in list mode) |
-| `-r, --research`               | Enable/promote research mode with optional corpus pointer list |
-| `--shortlist auto\|on\|off`    | Per-run shortlist override                                      |
-| `-sfm, --session-from-message` | `history.py`                                                   |
-| `--clean-session-research`     | `sessions.py`                                                  |
-| `--xmpp-daemon`                | macOS menubar daemon (`daemon/menubar.py`) or foreground fallback (`daemon/service.py`); on macOS menubar path, duplicate launches are blocked with exit code `1` |
-| `--edit-daemon`                | `daemon_config.py` interactive daemon settings editor          |
+| Flag                           | Handler                                                                                                                                                                                                                                                                     |
+| ------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `-m, --model`                  | Model selection                                                                                                                                                                                                                                                             |
+| `-c, --continue-chat`          | Context loading from previous IDs                                                                                                                                                                                                                                           |
+| `-H, --history`                | `history.py`                                                                                                                                                                                                                                                                |
+| `-pa, --print-answer`          | `history.py`                                                                                                                                                                                                                                                                |
+| `-v, --verbose` / `-vv`        | `chat.py` + `core/engine.py` (verbose / double-verbose traces)                                                                                                                                                                                                              |
+| `-ss, --sticky-session`        | `sessions.py`                                                                                                                                                                                                                                                               |
+| `-rs, --resume-session`        | `sessions.py`                                                                                                                                                                                                                                                               |
+| `-off, -tool-off, --tool-off`  | `chat.py` (runtime tool exclusion, supports `all`)                                                                                                                                                                                                                          |
+| `--list-tools`                 | `main.py` (list all LLM tools and exit)                                                                                                                                                                                                                                     |
+| `--query-corpus`               | `research_commands.py` (deterministic corpus retrieval, no model call)                                                                                                                                                                                                      |
+| `--summarize-section`          | `section_commands.py` (deterministic section list/summary, no main model call)                                                                                                                                                                                              |
+| `--section-id`                 | `section_commands.py` (deterministic section selection override)                                                                                                                                                                                                            |
+| `--section-include-toc`        | `section_commands.py` (include TOC/debug rows in list mode)                                                                                                                                                                                                                 |
+| `-r, --research`               | Enable/promote research mode with optional corpus pointer list                                                                                                                                                                                                              |
+| `--shortlist auto\|on\|off`    | Per-run shortlist override                                                                                                                                                                                                                                                  |
+| `-sfm, --session-from-message` | `history.py`                                                                                                                                                                                                                                                                |
+| `--clean-session-research`     | `sessions.py`                                                                                                                                                                                                                                                               |
+| `--xmpp-daemon`                | macOS menubar daemon (`daemon/menubar.py`) or foreground fallback (`daemon/service.py`); on macOS menubar path, duplicate launches are blocked with exit code `1`, and a `~/Applications/AskyDaemon.app` bundle is automatically created/updated for Spotlight integration. |
+| `--edit-daemon`                | `daemon_config.py` interactive daemon settings editor                                                                                                                                                                                                                       |
 
 Preset invocation notes:
 
