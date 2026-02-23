@@ -280,6 +280,53 @@ def test_transcript_crud_and_prune(mock_db_path):
     assert len(remaining) == 1
     assert remaining[0].session_transcript_id == 2
 
+    i1 = repo.create_image_transcript(
+        session_id=session_id,
+        jid="user@example.com/resource",
+        image_url="https://example.com/i1.jpg",
+        image_path="/tmp/i1.jpg",
+        status="pending",
+    )
+    assert i1.session_image_id == 1
+    assert i1.status == "pending"
+
+    i2 = repo.create_image_transcript(
+        session_id=session_id,
+        jid="user@example.com/resource",
+        image_url="https://example.com/i2.jpg",
+        image_path="/tmp/i2.jpg",
+        status="pending",
+    )
+    assert i2.session_image_id == 2
+
+    image_updated = repo.update_image_transcript(
+        session_id=session_id,
+        session_image_id=2,
+        status="completed",
+        transcript_text="image description",
+        duration_seconds=0.7,
+        used=True,
+    )
+    assert image_updated is not None
+    assert image_updated.status == "completed"
+    assert image_updated.used is True
+    assert image_updated.transcript_text == "image description"
+
+    image_listed = repo.list_image_transcripts(session_id=session_id, limit=10)
+    assert [item.session_image_id for item in image_listed] == [2, 1]
+
+    image_got = repo.get_image_transcript(session_id=session_id, session_image_id=2)
+    assert image_got is not None
+    assert image_got.image_url.endswith("i2.jpg")
+
+    image_deleted = repo.prune_image_transcripts(session_id=session_id, keep=1)
+    assert len(image_deleted) == 1
+    assert image_deleted[0].session_image_id == 1
+
+    image_remaining = repo.list_image_transcripts(session_id=session_id, limit=10)
+    assert len(image_remaining) == 1
+    assert image_remaining[0].session_image_id == 2
+
 
 def test_room_session_binding_roundtrip(mock_db_path):
     from asky.storage.sqlite import SQLiteHistoryRepository

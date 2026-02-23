@@ -9,6 +9,7 @@ from typing import List, Optional
 from asky.config import DB_PATH
 from asky.storage.interface import (
     HistoryRepository,
+    ImageTranscriptRecord,
     Interaction,
     RoomSessionBinding,
     Session,
@@ -150,6 +151,23 @@ class SQLiteHistoryRepository(HistoryRepository):
             updated_at=str(row["updated_at"] or ""),
         )
 
+    def _image_transcript_from_row(self, row: sqlite3.Row) -> ImageTranscriptRecord:
+        """Build an image transcript dataclass from a sqlite row."""
+        return ImageTranscriptRecord(
+            id=int(row["id"]),
+            session_id=int(row["session_id"]),
+            session_image_id=int(row["session_image_id"]),
+            jid=str(row["jid"] or ""),
+            created_at=str(row["created_at"] or ""),
+            status=str(row["status"] or ""),
+            image_url=str(row["image_url"] or ""),
+            image_path=str(row["image_path"] or ""),
+            transcript_text=str(row["transcript_text"] or ""),
+            error=str(row["error"] or ""),
+            duration_seconds=row["duration_seconds"],
+            used=bool(row["used"] or 0),
+        )
+
     def _session_override_from_row(self, row: sqlite3.Row) -> SessionOverrideFile:
         """Build a session override file dataclass from a sqlite row."""
         return SessionOverrideFile(
@@ -236,6 +254,27 @@ class SQLiteHistoryRepository(HistoryRepository):
                 session_id INTEGER NOT NULL,
                 updated_at TEXT NOT NULL,
                 FOREIGN KEY (session_id) REFERENCES sessions(id)
+            )
+            """
+        )
+
+        c.execute(
+            """
+            CREATE TABLE IF NOT EXISTS image_transcripts (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                session_id INTEGER NOT NULL,
+                session_image_id INTEGER NOT NULL,
+                jid TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                status TEXT NOT NULL,
+                image_url TEXT,
+                image_path TEXT,
+                transcript_text TEXT,
+                error TEXT,
+                duration_seconds REAL,
+                used INTEGER DEFAULT 0,
+                FOREIGN KEY (session_id) REFERENCES sessions(id),
+                UNIQUE (session_id, session_image_id)
             )
             """
         )
@@ -1059,6 +1098,15 @@ class SQLiteHistoryRepository(HistoryRepository):
         row = cursor.fetchone()
         return int((row[0] if row else 0) or 0) + 1
 
+    def _next_session_image_id(self, conn: sqlite3.Connection, session_id: int) -> int:
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT COALESCE(MAX(session_image_id), 0) FROM image_transcripts WHERE session_id = ?",
+            (session_id,),
+        )
+        row = cursor.fetchone()
+        return int((row[0] if row else 0) or 0) + 1
+
     def create_transcript(
         self,
         *,
@@ -1228,6 +1276,188 @@ class SQLiteHistoryRepository(HistoryRepository):
             placeholder = ",".join("?" for _ in ids)
             cursor.execute(
                 f"DELETE FROM transcripts WHERE id IN ({placeholder})",
+                tuple(ids),
+            )
+            conn.commit()
+        conn.close()
+        return deleted
+
+    def create_image_transcript(
+        self,
+        *,
+        session_id: int,
+        jid: str,
+        image_url: str,
+        image_path: str,
+        status: str,
+        transcript_text: str = "",
+        error: str = "",
+        duration_seconds: Optional[float] = None,
+    ) -> ImageTranscriptRecord:
+        """Create a session-scoped image transcript row."""
+        self.init_db()
+        conn = self._get_conn()
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        session_image_id = self._next_session_image_id(conn, session_id)
+        now = datetime.now().isoformat()
+        cursor.execute(
+            """
+            INSERT INTO image_transcripts
+            (session_id, session_image_id, jid, created_at, status, image_url, image_path, transcript_text, error, duration_seconds, used)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
+            """,
+            (
+                session_id,
+                session_image_id,
+                jid,
+                now,
+                status,
+                image_url,
+                image_path,
+                transcript_text,
+                error,
+                duration_seconds,
+            ),
+        )
+        transcript_row_id = int(cursor.lastrowid)
+        conn.commit()
+        cursor.execute("SELECT * FROM image_transcripts WHERE id = ?", (transcript_row_id,))
+        row = cursor.fetchone()
+        conn.close()
+        if row is None:
+            raise RuntimeError("Failed to create image transcript record")
+        return self._image_transcript_from_row(row)
+
+    def update_image_transcript(
+        self,
+        *,
+        session_id: int,
+        session_image_id: int,
+        status: str,
+        transcript_text: Optional[str] = None,
+        error: Optional[str] = None,
+        duration_seconds: Optional[float] = None,
+        used: Optional[bool] = None,
+    ) -> Optional[ImageTranscriptRecord]:
+        """Update image transcript status/content for one session-scoped ID."""
+        conn = self._get_conn()
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        fields = ["status = ?"]
+        values: list[object] = [status]
+
+        if transcript_text is not None:
+            fields.append("transcript_text = ?")
+            values.append(transcript_text)
+        if error is not None:
+            fields.append("error = ?")
+            values.append(error)
+        if duration_seconds is not None:
+            fields.append("duration_seconds = ?")
+            values.append(float(duration_seconds))
+        if used is not None:
+            fields.append("used = ?")
+            values.append(1 if used else 0)
+
+        values.extend([session_id, session_image_id])
+        cursor.execute(
+            f"UPDATE image_transcripts SET {', '.join(fields)} WHERE session_id = ? AND session_image_id = ?",
+            tuple(values),
+        )
+        conn.commit()
+        cursor.execute(
+            "SELECT * FROM image_transcripts WHERE session_id = ? AND session_image_id = ?",
+            (session_id, session_image_id),
+        )
+        row = cursor.fetchone()
+        conn.close()
+        if row is None:
+            return None
+        return self._image_transcript_from_row(row)
+
+    def list_image_transcripts(
+        self,
+        *,
+        session_id: int,
+        limit: int = 20,
+    ) -> List[ImageTranscriptRecord]:
+        """List image transcripts for a session in newest-first order."""
+        conn = self._get_conn()
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            SELECT * FROM image_transcripts
+            WHERE session_id = ?
+            ORDER BY session_image_id DESC
+            LIMIT ?
+            """,
+            (session_id, int(limit)),
+        )
+        rows = cursor.fetchall()
+        conn.close()
+        return [self._image_transcript_from_row(row) for row in rows]
+
+    def get_image_transcript(
+        self,
+        *,
+        session_id: int,
+        session_image_id: int,
+    ) -> Optional[ImageTranscriptRecord]:
+        """Get one image transcript by session-scoped identifier."""
+        conn = self._get_conn()
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            SELECT * FROM image_transcripts
+            WHERE session_id = ? AND session_image_id = ?
+            LIMIT 1
+            """,
+            (session_id, session_image_id),
+        )
+        row = cursor.fetchone()
+        conn.close()
+        if row is None:
+            return None
+        return self._image_transcript_from_row(row)
+
+    def prune_image_transcripts(
+        self, *, session_id: int, keep: int
+    ) -> List[ImageTranscriptRecord]:
+        """Prune oldest image transcripts beyond the keep threshold."""
+        keep_count = max(0, int(keep))
+        conn = self._get_conn()
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT COUNT(*) FROM image_transcripts WHERE session_id = ?",
+            (session_id,),
+        )
+        total_row = cursor.fetchone()
+        total = int((total_row[0] if total_row else 0) or 0)
+        if total <= keep_count:
+            conn.close()
+            return []
+
+        delete_count = total - keep_count
+        cursor.execute(
+            """
+            SELECT * FROM image_transcripts
+            WHERE session_id = ?
+            ORDER BY session_image_id ASC
+            LIMIT ?
+            """,
+            (session_id, delete_count),
+        )
+        rows = cursor.fetchall()
+        deleted = [self._image_transcript_from_row(row) for row in rows]
+        if deleted:
+            ids = [record.id for record in deleted]
+            placeholder = ",".join("?" for _ in ids)
+            cursor.execute(
+                f"DELETE FROM image_transcripts WHERE id IN ({placeholder})",
                 tuple(ids),
             )
             conn.commit()

@@ -99,6 +99,24 @@ class TranscriptRecord:
 
 
 @dataclass
+class ImageTranscriptRecord:
+    """Represents one persisted image transcript for daemon sessions."""
+
+    id: int
+    session_id: int
+    session_image_id: int
+    jid: str
+    created_at: str
+    status: str
+    image_url: str
+    image_path: str
+    transcript_text: str
+    error: str
+    duration_seconds: Optional[float]
+    used: bool = False
+
+
+@dataclass
 class RoomSessionBinding:
     """Represents one persistent group-room to session mapping."""
 
@@ -313,6 +331,67 @@ class HistoryRepository(ABC):
         keep: int,
     ) -> List[TranscriptRecord]:
         """Prune old transcripts for a session and return deleted records."""
+        pass
+
+    @abstractmethod
+    def create_image_transcript(
+        self,
+        *,
+        session_id: int,
+        jid: str,
+        image_url: str,
+        image_path: str,
+        status: str,
+        transcript_text: str = "",
+        error: str = "",
+        duration_seconds: Optional[float] = None,
+    ) -> ImageTranscriptRecord:
+        """Create and return an image transcript record."""
+        pass
+
+    @abstractmethod
+    def update_image_transcript(
+        self,
+        *,
+        session_id: int,
+        session_image_id: int,
+        status: str,
+        transcript_text: Optional[str] = None,
+        error: Optional[str] = None,
+        duration_seconds: Optional[float] = None,
+        used: Optional[bool] = None,
+    ) -> Optional[ImageTranscriptRecord]:
+        """Update image transcript fields and return updated record."""
+        pass
+
+    @abstractmethod
+    def list_image_transcripts(
+        self,
+        *,
+        session_id: int,
+        limit: int = 20,
+    ) -> List[ImageTranscriptRecord]:
+        """List image transcript records for one session (newest first)."""
+        pass
+
+    @abstractmethod
+    def get_image_transcript(
+        self,
+        *,
+        session_id: int,
+        session_image_id: int,
+    ) -> Optional[ImageTranscriptRecord]:
+        """Retrieve one image transcript by session-scoped image ID."""
+        pass
+
+    @abstractmethod
+    def prune_image_transcripts(
+        self,
+        *,
+        session_id: int,
+        keep: int,
+    ) -> List[ImageTranscriptRecord]:
+        """Prune old image transcripts for a session and return deleted records."""
         pass
 
     @abstractmethod

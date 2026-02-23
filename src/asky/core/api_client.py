@@ -71,8 +71,10 @@ def count_tokens(messages: List[Dict[str, Any]]) -> int:
     total_chars = 0
     for m in messages:
         content = m.get("content")
-        if content:
+        if isinstance(content, str):
             total_chars += len(content)
+        elif content is not None:
+            total_chars += len(json.dumps(content))
         # Also count tool calls and results
         tc = m.get("tool_calls")
         if tc:
@@ -158,6 +160,8 @@ def get_llm_msg(
 
     def format_log_content(m: Dict[str, Any]) -> str:
         content = m.get("content") or ""
+        if not isinstance(content, str):
+            content = json.dumps(content)
         if m.get("role") == "system" or verbose:
             return content
         if len(content) > 200:

@@ -48,6 +48,7 @@ graph TB
         daemon_profiles["session_profile_manager.py<br/>Room/Session Bindings + Session Overrides"]
         daemon_planner["interface_planner.py<br/>Interface Model Planner"]
         daemon_voice["voice_transcriber.py<br/>Async Voice Jobs"]
+        daemon_image["image_transcriber.py<br/>Async Image Jobs"]
         daemon_transcripts["transcript_manager.py<br/>Transcript Lifecycle"]
         daemon_chunking["chunking.py<br/>Outbound Chunking"]
     end
@@ -110,6 +111,7 @@ graph TB
     daemon_router --> daemon_exec
     daemon_router --> daemon_profiles
     daemon_router --> daemon_voice
+    daemon_router --> daemon_image
     daemon_router --> daemon_transcripts
     daemon_exec --> api_client
     daemon_exec --> daemon_profiles
@@ -132,7 +134,7 @@ graph TB
 src/asky/
 ├── api/                # Programmatic library API surface (run_turn orchestration)
 ├── cli/                # Command-line interface → see cli/AGENTS.md
-├── daemon/             # Optional XMPP daemon runtime (transport/router/planner/voice/group sessions)
+├── daemon/             # Optional XMPP daemon runtime (transport/router/planner/voice/image/group sessions)
 ├── core/               # Conversation engine → see core/AGENTS.md
 ├── storage/            # Data persistence → see storage/AGENTS.md
 ├── research/           # Research mode RAG → see research/AGENTS.md
@@ -161,7 +163,7 @@ For test organization, see `tests/AGENTS.md`.
 | Package     | Documentation                                     | Key Components                                   |
 | ----------- | ------------------------------------------------- | ------------------------------------------------ |
 | `cli/`      | [cli/AGENTS.md](src/asky/cli/AGENTS.md)           | Entry point, chat flow, commands                 |
-| `daemon/`   | (package docs inline)                              | XMPP transport, group/direct router, session profile manager, voice pipeline  |
+| `daemon/`   | (package docs inline)                              | XMPP transport, group/direct router, session profile manager, voice+image pipelines  |
 | `api/`      | [api/AGENTS.md](src/asky/api/AGENTS.md)           | `AskyClient`, turn orchestration services        |
 | `core/`     | [core/AGENTS.md](src/asky/core/AGENTS.md)         | ConversationEngine, ToolRegistry, API client     |
 | `storage/`  | [storage/AGENTS.md](src/asky/storage/AGENTS.md)   | SQLite repository, data model                    |
@@ -302,14 +304,16 @@ command_executor.py
   - transcript command namespace
   - AskyClient.run_turn() for query execution
     ↓
-optional voice pipeline:
+optional media pipelines:
   oob audio URL -> background worker -> mlx-whisper -> transcript persistence
+  oob image URL -> background worker -> base64 prompt -> image-capable model -> transcript persistence
     ↓
 chunked outbound chat replies
 ```
 
 Command presets are expanded at ingress (`\\name`, `\\presets`) before command execution, and remote policy is enforced after expansion/planning so blocked flags cannot be bypassed.
 XMPP query ingress applies the same recursive slash-expansion behavior as CLI (`/alias`, `/cp`) before model execution, and unresolved slash queries follow CLI prompt-list semantics (`/` lists all prompts, unknown `/prefix` returns filtered prompt listing). This shared query-prep path is used by direct text queries, interface-planned query actions, and `transcript use` query execution.
+Daemon query prep also supports session-scoped media pointers: `#aN`/`#atN` for audio file+transcript and `#iN`/`#itN` for image file+transcript.
 Room bindings and session override files are persisted in SQLite; on daemon startup/session-start, previously bound rooms are auto-rejoined and continue with their last active bound sessions.
 
 ### Session Flow

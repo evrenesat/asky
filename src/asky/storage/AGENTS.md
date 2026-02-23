@@ -55,6 +55,21 @@ class TranscriptRecord:
     used: bool
 
 @dataclass
+class ImageTranscriptRecord:
+    id: int
+    session_id: int
+    session_image_id: int
+    jid: str
+    created_at: str
+    status: str
+    image_url: str
+    image_path: str
+    transcript_text: str
+    error: str
+    duration_seconds: Optional[float]
+    used: bool
+
+@dataclass
 class RoomSessionBinding:
     room_jid: str
     session_id: int
@@ -107,6 +122,18 @@ class SessionOverrideFile:
 - `duration_seconds`: Transcription runtime
 - `used`: Whether transcript has been consumed via `transcript use`
 
+**`image_transcripts`** - Daemon image transcript records:
+- `id`: Primary key
+- `session_id`: Owning session
+- `session_image_id`: Numeric image/transcript ID scoped to session
+- `jid`: Sender full JID
+- `status`: `pending|completed|failed`
+- `image_url`, `image_path`: Source/media artifact metadata
+- `transcript_text`: Completed image explanation text
+- `error`: Failure details
+- `duration_seconds`: Image-model runtime
+- `used`: Whether image transcript has been consumed via pointer usage
+
 **`room_session_bindings`** - Persistent daemon room/session mapping:
 - `room_jid`: Lowercased room bare JID (primary key)
 - `session_id`: Active bound session for that room
@@ -149,6 +176,11 @@ class SessionOverrideFile:
 | `list_transcripts()` | List newest transcript rows for one session |
 | `get_transcript()` | Lookup transcript by `(session_id, session_transcript_id)` |
 | `prune_transcripts()` | Delete oldest transcripts beyond retention cap |
+| `create_image_transcript()` | Insert image transcript row with session-scoped incrementing ID |
+| `update_image_transcript()` | Update image transcript status/text/error/usage fields |
+| `list_image_transcripts()` | List newest image transcripts for one session |
+| `get_image_transcript()` | Lookup image transcript by `(session_id, session_image_id)` |
+| `prune_image_transcripts()` | Delete oldest image transcripts beyond retention cap |
 | `set_room_session_binding()` | Upsert room -> session binding |
 | `get_room_session_binding()` | Lookup bound session for one room |
 | `list_room_session_bindings()` | List all bound rooms |

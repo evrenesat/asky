@@ -32,8 +32,8 @@ TRANSCRIPT_COMMAND = "transcript"
 TRANSCRIPT_HELP = (
     "Transcript commands:\n"
     "  transcript list [limit]\n"
-    "  transcript show <id>\n"
-    "  transcript use <id>\n"
+    "  transcript show <id|#atN>\n"
+    "  transcript use <id|#atN>\n"
     "  transcript clear"
 )
 SESSION_COMMAND_TOKEN = "/session"
@@ -69,6 +69,7 @@ REMOTE_BLOCKED_FLAGS = (
 INLINE_TOML_PATTERN = re.compile(
     r"(?is)(?P<filename>[a-zA-Z0-9_\-]+\.(?:toml))\s*```toml\s*(?P<content>.*?)```"
 )
+POINTER_PATTERN = re.compile(r"#(it|i|at|a)(\d+)\b", re.IGNORECASE)
 _SUMMARIZATION_MODEL_OVERRIDE_LOCK = threading.Lock()
 
 
@@ -90,6 +91,7 @@ class CommandExecutor:
             "- section summary: --summarize-section [SECTION_QUERY] [--section-source SOURCE] [--section-id ID] [--section-detail balanced|max|compact] [--section-max-chunks N]",
             "- research/profile toggles: -r [CORPUS_POINTER], --shortlist auto|on|off, -L",
             "- transcript namespace: transcript list [limit], transcript show <id>, transcript use <id>, transcript clear",
+            "- pointer refs in queries: #iN image file, #itN image transcript, #aN audio file, #atN audio transcript",
             "- plain asky query text can be emitted as action_type=query",
             "Remote policy blocked flags/operations:",
             f"- {', '.join(REMOTE_BLOCKED_FLAGS)}",
@@ -173,6 +175,7 @@ class CommandExecutor:
             raw_query=query_text,
             verbose=False,
             prompt_map=profile.user_prompts,
+            conversation_id=str(room_jid or jid or "").strip(),
         )
         if immediate_response is not None:
             return immediate_response
@@ -396,6 +399,7 @@ class CommandExecutor:
             raw_query=raw_query,
             verbose=bool(args.verbose),
             prompt_map=profile.user_prompts,
+            conversation_id=str(room_jid or jid or "").strip(),
         )
         if immediate_response is not None:
             return immediate_response
@@ -466,8 +470,16 @@ class CommandExecutor:
         raw_query: str,
         verbose: bool,
         prompt_map: dict[str, str],
+        conversation_id: str,
     ) -> tuple[Optional[str], Optional[str]]:
         query = str(raw_query or "")
+        try:
+            query = self._resolve_query_pointers(
+                query=query,
+                conversation_id=conversation_id,
+            )
+        except ValueError as exc:
+            return None, f"Error: {exc}"
         if "/" in query:
             utils.load_custom_prompts(prompt_map=prompt_map)
         expanded_query = utils.expand_query_text(
@@ -486,6 +498,70 @@ class CommandExecutor:
                     filter_prefix=prefix,
                 )
         return expanded_query, None
+
+    def _resolve_query_pointers(self, *, query: str, conversation_id: str) -> str:
+        normalized_conversation_id = str(conversation_id or "").strip()
+        if not normalized_conversation_id:
+            return query
+
+        def _replace(match: re.Match[str]) -> str:
+            pointer_type = str(match.group(1) or "").lower()
+            pointer_id = int(match.group(2))
+            if pointer_type == "it":
+                record = self.transcript_manager.get_image_for_jid(
+                    normalized_conversation_id,
+                    pointer_id,
+                )
+                if record is None:
+                    raise ValueError(f"image transcript #it{pointer_id} not found.")
+                text = str(record.transcript_text or "").strip()
+                if not text:
+                    raise ValueError(f"image transcript #it{pointer_id} is empty.")
+                self.transcript_manager.mark_image_used(
+                    jid=normalized_conversation_id,
+                    image_id=pointer_id,
+                )
+                return text
+            if pointer_type == "i":
+                record = self.transcript_manager.get_image_for_jid(
+                    normalized_conversation_id,
+                    pointer_id,
+                )
+                if record is None:
+                    raise ValueError(f"image #i{pointer_id} not found.")
+                image_path = str(record.image_path or "").strip()
+                if not image_path:
+                    raise ValueError(f"image #i{pointer_id} has no file path.")
+                return image_path
+            if pointer_type == "at":
+                record = self.transcript_manager.get_for_jid(
+                    normalized_conversation_id,
+                    pointer_id,
+                )
+                if record is None:
+                    raise ValueError(f"audio transcript #at{pointer_id} not found.")
+                text = str(record.transcript_text or "").strip()
+                if not text:
+                    raise ValueError(f"audio transcript #at{pointer_id} is empty.")
+                self.transcript_manager.mark_used(
+                    jid=normalized_conversation_id,
+                    transcript_id=pointer_id,
+                )
+                return text
+            if pointer_type == "a":
+                record = self.transcript_manager.get_for_jid(
+                    normalized_conversation_id,
+                    pointer_id,
+                )
+                if record is None:
+                    raise ValueError(f"audio #a{pointer_id} not found.")
+                audio_path = str(record.audio_path or "").strip()
+                if not audio_path:
+                    raise ValueError(f"audio #a{pointer_id} has no file path.")
+                return audio_path
+            return match.group(0)
+
+        return POINTER_PATTERN.sub(_replace, query)
 
     def _render_prompt_list(
         self,
@@ -557,7 +633,10 @@ class CommandExecutor:
                 except ValueError:
                     return "Error: transcript list limit must be an integer."
             records = self.transcript_manager.list_for_jid(conversation_id, limit=limit)
-            if not records:
+            image_records = self.transcript_manager.list_images_for_jid(
+                conversation_id, limit=limit
+            )
+            if not records and not image_records:
                 return "No transcripts found."
             lines = ["Transcripts:"]
             for record in records:
@@ -565,7 +644,16 @@ class CommandExecutor:
                 if len(preview) > 80:
                     preview = preview[:77] + "..."
                 lines.append(
-                    f"  {record.session_transcript_id}: {record.status} used={int(record.used)} {preview}"
+                    f"  #at{record.session_transcript_id} (audio #a{record.session_transcript_id}): "
+                    f"{record.status} used={int(record.used)} {preview}"
+                )
+            for record in image_records:
+                preview = (record.transcript_text or "").strip().replace("\n", " ")
+                if len(preview) > 80:
+                    preview = preview[:77] + "..."
+                lines.append(
+                    f"  #it{record.session_image_id} (image #i{record.session_image_id}): "
+                    f"{record.status} used={int(record.used)} {preview}"
                 )
             return "\n".join(lines)
 
@@ -573,14 +661,14 @@ class CommandExecutor:
             if len(tokens) < 2:
                 return "Error: transcript show requires an id."
             try:
-                transcript_id = int(tokens[1])
+                transcript_id = _parse_prefixed_index(tokens[1], "at")
             except ValueError:
-                return "Error: transcript id must be an integer."
+                return "Error: transcript id must be an integer or #atN."
             record = self.transcript_manager.get_for_jid(conversation_id, transcript_id)
             if not record:
                 return f"Error: transcript {transcript_id} not found."
             return (
-                f"Transcript {record.session_transcript_id} ({record.status})\n"
+                f"Transcript #at{record.session_transcript_id} of audio #a{record.session_transcript_id} ({record.status})\n"
                 f"{record.transcript_text or ''}"
             )
 
@@ -588,9 +676,9 @@ class CommandExecutor:
             if len(tokens) < 2:
                 return "Error: transcript use requires an id."
             try:
-                transcript_id = int(tokens[1])
+                transcript_id = _parse_prefixed_index(tokens[1], "at")
             except ValueError:
-                return "Error: transcript id must be an integer."
+                return "Error: transcript id must be an integer or #atN."
             record = self.transcript_manager.get_for_jid(conversation_id, transcript_id)
             if not record:
                 return f"Error: transcript {transcript_id} not found."
@@ -635,6 +723,17 @@ def _split_command_tokens(command_text: str) -> list[str]:
         return shlex.split(command_text, posix=True)
     except ValueError:
         return []
+
+
+def _parse_prefixed_index(raw: str, prefix: str) -> int:
+    value = str(raw or "").strip().lower()
+    normalized_prefix = str(prefix or "").strip().lower()
+    if value.startswith("#"):
+        expected = f"#{normalized_prefix}"
+        if not value.startswith(expected):
+            raise ValueError("invalid prefix")
+        value = value[len(expected) :]
+    return int(value)
 
 
 def _capture_output(fn, *args, **kwargs) -> str:

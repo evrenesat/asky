@@ -3,6 +3,7 @@
 from typing import Optional, Union
 from asky.config import DB_PATH
 from asky.storage.interface import (
+    ImageTranscriptRecord,
     Interaction,
     HistoryRepository,
     RoomSessionBinding,
@@ -215,6 +216,82 @@ def get_transcript(
 def prune_transcripts(*, session_id: int, keep: int) -> list[TranscriptRecord]:
     """Prune oldest transcript rows for one session."""
     return _repo.prune_transcripts(session_id=session_id, keep=keep)
+
+
+def create_image_transcript(
+    *,
+    session_id: int,
+    jid: str,
+    image_url: str,
+    image_path: str,
+    status: str,
+    transcript_text: str = "",
+    error: str = "",
+    duration_seconds: float | None = None,
+) -> ImageTranscriptRecord:
+    """Create an image transcript row for daemon image ingestion."""
+    return _repo.create_image_transcript(
+        session_id=session_id,
+        jid=jid,
+        image_url=image_url,
+        image_path=image_path,
+        status=status,
+        transcript_text=transcript_text,
+        error=error,
+        duration_seconds=duration_seconds,
+    )
+
+
+def update_image_transcript(
+    *,
+    session_id: int,
+    session_image_id: int,
+    status: str,
+    transcript_text: str | None = None,
+    error: str | None = None,
+    duration_seconds: float | None = None,
+    used: bool | None = None,
+) -> ImageTranscriptRecord | None:
+    """Update image transcript fields."""
+    return _repo.update_image_transcript(
+        session_id=session_id,
+        session_image_id=session_image_id,
+        status=status,
+        transcript_text=transcript_text,
+        error=error,
+        duration_seconds=duration_seconds,
+        used=used,
+    )
+
+
+def list_image_transcripts(
+    *,
+    session_id: int,
+    limit: int = 20,
+) -> list[ImageTranscriptRecord]:
+    """List image transcript rows for one session."""
+    return _repo.list_image_transcripts(session_id=session_id, limit=limit)
+
+
+def get_image_transcript(
+    *,
+    session_id: int,
+    session_image_id: int,
+) -> ImageTranscriptRecord | None:
+    """Get one image transcript row by session-scoped image ID."""
+    return _repo.get_image_transcript(
+        session_id=session_id,
+        session_image_id=session_image_id,
+    )
+
+
+def prune_image_transcripts(
+    *,
+    session_id: int,
+    keep: int,
+) -> list[ImageTranscriptRecord]:
+    """Prune oldest image transcript rows for one session."""
+    return _repo.prune_image_transcripts(session_id=session_id, keep=keep)
 
 
 def set_room_session_binding(*, room_jid: str, session_id: int) -> None:

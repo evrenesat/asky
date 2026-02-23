@@ -55,6 +55,9 @@ summarization_model = ""
 # Model used for interface planning in remote daemon mode.
 interface_model = ""
 
+# Model used for image transcription in daemon mode.
+default_image_model = ""
+
 # User-Agent string to be used for search and content retrieval requests.
 user_agent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36"
 

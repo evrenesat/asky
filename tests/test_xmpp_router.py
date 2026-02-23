@@ -48,6 +48,40 @@ class _FakeTranscriptManager:
     def clear_for_jid(self, jid):
         return []
 
+    def create_pending_image_transcript(self, *, jid, image_url, image_path):
+        rec = SimpleNamespace(session_image_id=1)
+        self.records[(jid, "i", 1)] = SimpleNamespace(
+            session_image_id=1,
+            status="completed",
+            transcript_text="image transcript",
+            used=False,
+            image_path=image_path,
+            image_url=image_url,
+        )
+        return rec
+
+    def mark_image_transcript_completed(self, *, jid, image_id, transcript_text, duration_seconds):
+        rec = self.records[(jid, "i", image_id)]
+        rec.transcript_text = transcript_text
+        rec.status = "completed"
+        return rec
+
+    def mark_image_transcript_failed(self, *, jid, image_id, error):
+        return None
+
+    def list_images_for_jid(self, jid, limit=20):
+        _ = (jid, limit)
+        return []
+
+    def get_image_for_jid(self, jid, image_id):
+        return self.records.get((jid, "i", image_id))
+
+    def mark_image_used(self, *, jid, image_id):
+        rec = self.records.get((jid, "i", image_id))
+        if rec is not None:
+            rec.used = True
+        return rec
+
 
 class _FakeCommandExecutor:
     def __init__(self):
@@ -105,12 +139,22 @@ class _FakeVoiceTranscriber:
         self.jobs.append(job)
 
 
+class _FakeImageTranscriber:
+    def __init__(self, enabled=True):
+        self.enabled = enabled
+        self.jobs = []
+
+    def enqueue(self, job):
+        self.jobs.append(job)
+
+
 def _build_router(interface_enabled=True, auto_yes_without_interface=True):
     return DaemonRouter(
         transcript_manager=_FakeTranscriptManager(),
         command_executor=_FakeCommandExecutor(),
         interface_planner=_FakePlanner(enabled=interface_enabled),
         voice_transcriber=_FakeVoiceTranscriber(enabled=True),
+        image_transcriber=_FakeImageTranscriber(enabled=True),
         command_prefix="/asky",
         allowed_jids=["u@example.com/resource"],
         voice_auto_yes_without_interface_model=auto_yes_without_interface,
@@ -133,6 +177,7 @@ def test_router_bare_jid_allowlist_matches_any_resource():
         command_executor=_FakeCommandExecutor(),
         interface_planner=_FakePlanner(enabled=True),
         voice_transcriber=_FakeVoiceTranscriber(enabled=True),
+        image_transcriber=_FakeImageTranscriber(enabled=True),
         command_prefix="/asky",
         allowed_jids=["u@example.com"],
     )
@@ -195,6 +240,16 @@ def test_router_audio_queues_background_transcription():
     assert "Queued transcription job" in str(response)
 
 
+def test_router_image_queues_background_transcription():
+    router = _build_router()
+    response = router.handle_image_message(
+        jid="u@example.com/resource",
+        message_type="chat",
+        image_url="https://example.com/image.jpg",
+    )
+    assert "Queued image transcription" in str(response)
+
+
 def test_router_transcript_ready_message_clarifies_yes_no_action():
     router = _build_router()
     router.handle_audio_message(
@@ -213,7 +268,7 @@ def test_router_transcript_ready_message_clarifies_yes_no_action():
     )
     assert result is not None
     _jid, message = result
-    assert "Reply 'yes' to run transcript #1 as a query now." in message
+    assert "Reply 'yes' to run transcript #at1 as a query now." in message
     assert "Reply 'no' to keep it for later." in message
 
 
@@ -254,7 +309,29 @@ def test_router_auto_run_can_be_disabled_explicitly():
     )
     assert result is not None
     _jid, message = result
-    assert "Reply 'yes' to run transcript #1 as a query now." in message
+    assert "Reply 'yes' to run transcript #at1 as a query now." in message
+
+
+def test_router_image_transcript_completion_message():
+    router = _build_router(interface_enabled=False)
+    router.handle_image_message(
+        jid="u@example.com/resource",
+        message_type="chat",
+        image_url="https://example.com/image.jpg",
+    )
+    result = router.handle_image_transcription_result(
+        {
+            "jid": "u@example.com/resource",
+            "image_id": 1,
+            "status": "completed",
+            "transcript_text": "a flower in sunlight",
+            "duration_seconds": 0.8,
+        }
+    )
+    assert result == (
+        "u@example.com/resource",
+        "transcript #it1 of image #i1:\na flower in sunlight",
+    )
 
 
 def test_router_groupchat_uses_bound_room_session():

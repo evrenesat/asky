@@ -46,6 +46,7 @@ Persist model changes using `tomlkit` to preserve formatting.
 | Constant | Source |
 |----------|--------|
 | `DEFAULT_MODEL` | `general.default_model` |
+| `DEFAULT_IMAGE_MODEL` | `general.default_image_model` |
 | `MAX_TURNS` | `general.max_turns` |
 | `REQUEST_TIMEOUT` | `general.request_timeout` |
 | `DB_PATH` | `general.db_path` or env var |
@@ -58,6 +59,10 @@ Persist model changes using `tomlkit` to preserve formatting.
 | `MODELS` | Dict of all model definitions |
 | `SUMMARIZATION_MODEL` | Model for summarization tasks |
 | `INTERFACE_MODEL` | Optional interface planner model alias for daemon routing |
+| `DEFAULT_IMAGE_MODEL` | Model alias used by daemon image transcription jobs |
+
+Model entries may include capability flags like `image_support=true` for
+daemon multimodal routing eligibility checks.
 
 ### Prompts
 
@@ -97,6 +102,7 @@ candidate pools while keeping fetch cost bounded.
 |----------|-------------|
 | `XMPP_*` | Daemon transport/auth/allowlist/chunking/transcript caps |
 | `XMPP_VOICE_*` | Voice transcription feature flags/limits/model/storage settings, including Hugging Face token env/key wiring |
+| `XMPP_IMAGE_*` | Image transcription feature flags/limits/storage/prompt settings for daemon mode |
 | `XMPP_INTERFACE_*` | Interface planner prompt-reference injection toggles in daemon mode |
 
 ## Environment Variables

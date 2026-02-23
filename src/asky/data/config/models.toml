@@ -7,6 +7,9 @@
 #     - true: force-enable shortlist for this model
 #     - false: force-disable shortlist for this model
 #     - unset: use global shortlist settings
+#   image_support: Optional boolean capability flag for multimodal image input.
+#     - true: model can accept image content arrays (text + image_url base64)
+#     - false/unset: model is treated as text-only
 
 # Note: max_chars is the context_size values of the following models are arbitrarily set for my own use.
 # Check model provider's documentation for the actual context size of the models.

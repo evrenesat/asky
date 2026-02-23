@@ -18,7 +18,7 @@ Command-line interface layer handling argument parsing, command routing, and use
 | `history.py`              | History viewing/deletion commands                                               |
 | `sessions.py`             | Session management commands                                                     |
 | `prompts.py`              | User prompt listing                                                             |
-| `models.py`               | Interactive model add/edit commands, including role assignment (main/summarization/interface) |
+| `models.py`               | Interactive model add/edit commands, including role assignment (main/summarization/interface) and per-model capability flags (`image_support`) |
 | `openrouter.py`           | OpenRouter API client for model discovery                                       |
 | `terminal.py`             | Terminal context fetching                                                       |
 | `utils.py`                | Query expansion, config printing                                                |

@@ -9,6 +9,7 @@ from typing import Callable
 from urllib.parse import urlparse
 
 from asky.config import (
+    DEFAULT_IMAGE_MODEL,
     INTERFACE_MODEL,
     INTERFACE_PLANNER_SYSTEM_PROMPT,
     XMPP_ALLOWED_JIDS,
@@ -16,6 +17,12 @@ from asky.config import (
     XMPP_ENABLED,
     XMPP_HOST,
     XMPP_INTERFACE_PLANNER_INCLUDE_COMMAND_REFERENCE,
+    XMPP_IMAGE_ALLOWED_MIME_TYPES,
+    XMPP_IMAGE_ENABLED,
+    XMPP_IMAGE_MAX_SIZE_MB,
+    XMPP_IMAGE_PROMPT,
+    XMPP_IMAGE_STORAGE_DIR,
+    XMPP_IMAGE_WORKERS,
     XMPP_JID,
     XMPP_PASSWORD,
     XMPP_PORT,
@@ -35,6 +42,7 @@ from asky.config import (
 )
 from asky.daemon.chunking import chunk_text
 from asky.daemon.command_executor import CommandExecutor
+from asky.daemon.image_transcriber import ImageTranscriber
 from asky.daemon.interface_planner import InterfacePlanner
 from asky.daemon.router import DaemonRouter
 from asky.daemon.transcript_manager import TranscriptManager
@@ -72,11 +80,22 @@ class XMPPDaemonService:
             allowed_mime_types=XMPP_VOICE_ALLOWED_MIME_TYPES,
             completion_callback=self._on_transcription_complete,
         )
+        self.image_transcriber = ImageTranscriber(
+            enabled=XMPP_IMAGE_ENABLED,
+            workers=XMPP_IMAGE_WORKERS,
+            max_size_mb=XMPP_IMAGE_MAX_SIZE_MB,
+            model_alias=DEFAULT_IMAGE_MODEL,
+            prompt_text=XMPP_IMAGE_PROMPT,
+            storage_dir=XMPP_IMAGE_STORAGE_DIR,
+            allowed_mime_types=XMPP_IMAGE_ALLOWED_MIME_TYPES,
+            completion_callback=self._on_image_transcription_complete,
+        )
         self.router = DaemonRouter(
             transcript_manager=self.transcript_manager,
             command_executor=self.command_executor,
             interface_planner=self.interface_planner,
             voice_transcriber=self.voice_transcriber,
+            image_transcriber=self.image_transcriber,
             command_prefix=XMPP_COMMAND_PREFIX,
             allowed_jids=list(XMPP_ALLOWED_JIDS),
             voice_auto_yes_without_interface_model=XMPP_VOICE_AUTO_YES_WITHOUT_INTERFACE_MODEL,
@@ -103,7 +122,8 @@ class XMPPDaemonService:
         queue_key = _resolve_queue_key(payload, fallback_jid=from_jid)
 
         def _task() -> None:
-            audio_url = str(payload.get("audio_url", "") or "").strip()
+            oob_urls = payload.get("oob_urls", []) or []
+            audio_urls, image_urls = _split_media_urls(oob_urls)
             body = str(payload.get("body", "") or "").strip()
             message_type = str(payload.get("type", "") or "").strip().lower()
             room_jid = str(payload.get("room_jid", "") or "").strip().lower()
@@ -143,7 +163,7 @@ class XMPPDaemonService:
                         message_type=target_message_type,
                     )
 
-            if audio_url:
+            for audio_url in audio_urls:
                 response_text = self.router.handle_audio_message(
                     jid=from_jid,
                     message_type=message_type,
@@ -156,7 +176,22 @@ class XMPPDaemonService:
                         response_text,
                         message_type=target_message_type,
                     )
-            if _should_process_text_body(audio_url=audio_url, body=body):
+            for image_url in image_urls:
+                response_text = self.router.handle_image_message(
+                    jid=from_jid,
+                    message_type=message_type,
+                    image_url=image_url,
+                    room_jid=room_jid or None,
+                )
+                if response_text:
+                    self._send_chunked(
+                        target_jid,
+                        response_text,
+                        message_type=target_message_type,
+                    )
+            if _should_process_text_body(
+                has_media=bool(audio_urls or image_urls), body=body
+            ):
                 response_text = self.router.handle_text_message(
                     jid=from_jid,
                     message_type=message_type,
@@ -219,6 +254,14 @@ class XMPPDaemonService:
         message_type = "groupchat" if self.command_executor.is_room_bound(jid) else "chat"
         self._send_chunked(jid, message, message_type=message_type)
 
+    def _on_image_transcription_complete(self, payload: dict) -> None:
+        result = self.router.handle_image_transcription_result(payload)
+        if not result:
+            return
+        jid, message = result
+        message_type = "groupchat" if self.command_executor.is_room_bound(jid) else "chat"
+        self._send_chunked(jid, message, message_type=message_type)
+
     def _on_xmpp_session_start(self) -> None:
         for room_jid in self.command_executor.list_bound_room_jids():
             self._client.join_room(room_jid)
@@ -232,11 +275,11 @@ def run_xmpp_daemon_foreground() -> None:
     service.run_foreground()
 
 
-def _should_process_text_body(*, audio_url: str, body: str) -> bool:
+def _should_process_text_body(*, has_media: bool, body: str) -> bool:
     normalized_body = str(body or "").strip()
     if not normalized_body:
         return False
-    if not str(audio_url or "").strip():
+    if not has_media:
         return True
     if _is_url_only_text(normalized_body):
         return False
@@ -287,3 +330,22 @@ def _extract_toml_urls(payload: dict) -> list[str]:
             continue
         urls.append(normalized)
     return urls
+
+
+def _split_media_urls(urls: list[str]) -> tuple[list[str], list[str]]:
+    audio_urls: list[str] = []
+    image_urls: list[str] = []
+    for value in urls:
+        normalized = str(value or "").strip()
+        if not normalized:
+            continue
+        parsed = urlparse(normalized)
+        path = str(parsed.path or "").lower()
+        if path.endswith(".toml"):
+            continue
+        if path.endswith((".m4a", ".mp3", ".mp4", ".wav", ".webm", ".ogg", ".flac", ".opus")):
+            audio_urls.append(normalized)
+            continue
+        if path.endswith((".jpg", ".jpeg", ".png", ".webp", ".gif")):
+            image_urls.append(normalized)
+    return audio_urls, image_urls

@@ -10,9 +10,11 @@ from typing import Optional
 from asky.config import (
     XMPP_ALLOWED_JIDS,
     XMPP_COMMAND_PREFIX,
+    XMPP_IMAGE_STORAGE_DIR,
     XMPP_VOICE_STORAGE_DIR,
 )
 from asky.daemon.command_executor import CommandExecutor
+from asky.daemon.image_transcriber import ImageTranscriber, ImageTranscriptionJob
 from asky.daemon.interface_planner import (
     ACTION_COMMAND,
     InterfacePlanner,
@@ -37,6 +39,7 @@ class DaemonRouter:
         command_executor: CommandExecutor,
         interface_planner: InterfacePlanner,
         voice_transcriber: VoiceTranscriber,
+        image_transcriber: ImageTranscriber,
         command_prefix: str = XMPP_COMMAND_PREFIX,
         allowed_jids: Optional[list[str]] = None,
         voice_auto_yes_without_interface_model: bool = True,
@@ -45,6 +48,7 @@ class DaemonRouter:
         self.command_executor = command_executor
         self.interface_planner = interface_planner
         self.voice_transcriber = voice_transcriber
+        self.image_transcriber = image_transcriber
         self.command_prefix = str(command_prefix or XMPP_COMMAND_PREFIX).strip()
         self.voice_auto_yes_without_interface_model = bool(
             voice_auto_yes_without_interface_model
@@ -236,7 +240,7 @@ class DaemonRouter:
 
         digest = hashlib.sha1(audio_url.encode("utf-8")).hexdigest()[:16]
         artifact_path = (
-            Path(XMPP_VOICE_STORAGE_DIR).expanduser() / conversation_id.replace("/", "_")
+            Path(XMPP_IMAGE_STORAGE_DIR).expanduser() / conversation_id.replace("/", "_")
         )
         file_path = artifact_path / f"transcript_{digest}.audio"
         pending = self.transcript_manager.create_pending_transcript(
@@ -253,7 +257,60 @@ class DaemonRouter:
             )
         )
         return (
-            f"Queued transcription job #{pending.session_transcript_id}. "
+            f"Queued transcription job #at{pending.session_transcript_id} for audio #a{pending.session_transcript_id}. "
+            "I will notify you when it is ready."
+        )
+
+    def handle_image_message(
+        self,
+        *,
+        jid: str,
+        message_type: str,
+        image_url: str,
+        room_jid: Optional[str] = None,
+    ) -> Optional[str]:
+        """Queue image transcription job and return immediate acknowledgement."""
+        normalized_type = str(message_type or "").strip().lower()
+        normalized_room = _normalize_jid(room_jid or "")
+        if normalized_type == "groupchat":
+            if not normalized_room:
+                return None
+            if not self.command_executor.is_room_bound(normalized_room):
+                return None
+            conversation_id = normalized_room
+        elif normalized_type == "chat":
+            if not self.is_authorized(jid):
+                return None
+            conversation_id = _normalize_jid(jid)
+        else:
+            return None
+        if not self.image_transcriber.enabled:
+            return "Image transcription is disabled."
+
+        image_url = str(image_url or "").strip()
+        if not image_url:
+            return "Error: image URL is required."
+
+        digest = hashlib.sha1(image_url.encode("utf-8")).hexdigest()[:16]
+        artifact_path = (
+            Path(XMPP_VOICE_STORAGE_DIR).expanduser() / conversation_id.replace("/", "_")
+        )
+        file_path = artifact_path / f"image_{digest}.bin"
+        pending = self.transcript_manager.create_pending_image_transcript(
+            jid=conversation_id,
+            image_url=image_url,
+            image_path=str(file_path),
+        )
+        self.image_transcriber.enqueue(
+            ImageTranscriptionJob(
+                jid=conversation_id,
+                image_id=pending.session_image_id,
+                image_url=image_url,
+                image_path=str(file_path),
+            )
+        )
+        return (
+            f"Queued image transcription #it{pending.session_image_id} for image #i{pending.session_image_id}. "
             "I will notify you when it is ready."
         )
 
@@ -281,8 +338,8 @@ class DaemonRouter:
                     return (
                         jid,
                         (
-                            f"Transcript #{transcript_id} is empty. "
-                            f"Use `transcript show {transcript_id}` to inspect."
+                            f"Transcript #at{transcript_id} is empty. "
+                            f"Use `transcript show #at{transcript_id}` to inspect."
                         ),
                     )
                 answer = self.command_executor.execute_query_text(
@@ -296,11 +353,11 @@ class DaemonRouter:
             return (
                 jid,
                 (
-                    f"Transcript #{transcript_id} ready.\n"
+                    f"Transcript #at{transcript_id} of audio #a{transcript_id} ready.\n"
                     f"{preview}\n\n"
-                    f"Reply 'yes' to run transcript #{transcript_id} as a query now.\n"
+                    f"Reply 'yes' to run transcript #at{transcript_id} as a query now.\n"
                     f"Reply 'no' to keep it for later.\n"
-                    f"Or run: transcript use {transcript_id}"
+                    f"Or run: transcript use #at{transcript_id}"
                 ),
             )
 
@@ -310,7 +367,38 @@ class DaemonRouter:
             transcript_id=transcript_id,
             error=error_text,
         )
-        return (jid, f"Transcript #{transcript_id} failed: {error_text}")
+        return (jid, f"Transcript #at{transcript_id} failed: {error_text}")
+
+    def handle_image_transcription_result(self, payload: dict) -> Optional[tuple[str, str]]:
+        """Persist image transcription completion and build user-facing notification."""
+        jid = str(payload.get("jid", "") or "").strip()
+        if not jid:
+            return None
+        image_id = int(payload.get("image_id", 0) or 0)
+        status = str(payload.get("status", "") or "").strip().lower()
+        if status == "completed":
+            text = str(payload.get("transcript_text", "") or "").strip()
+            duration_seconds = payload.get("duration_seconds")
+            record = self.transcript_manager.mark_image_transcript_completed(
+                jid=jid,
+                image_id=image_id,
+                transcript_text=text,
+                duration_seconds=duration_seconds,
+            )
+            if record is None:
+                return None
+            return (
+                jid,
+                f"transcript #it{image_id} of image #i{image_id}:\n{text}",
+            )
+
+        error_text = str(payload.get("error", "") or "Unknown image transcription error")
+        self.transcript_manager.mark_image_transcript_failed(
+            jid=jid,
+            image_id=image_id,
+            error=error_text,
+        )
+        return (jid, f"Transcript #it{image_id} failed: {error_text}")
 
     def _handle_confirmation_shortcut(
         self,
@@ -331,13 +419,13 @@ class DaemonRouter:
             return self.command_executor.execute_command_text(
                 jid=conversation_key,
                 room_jid=room_jid,
-                command_text=f"transcript use {pending_id}",
+                command_text=f"transcript use #at{pending_id}",
             )
         if normalized in NO_TOKENS:
             self._pending_transcript_confirmation.pop(conversation_key, None)
             return (
-                f"Transcript #{pending_id} kept without running. "
-                f"Use `transcript use {pending_id}` anytime."
+                f"Transcript #at{pending_id} kept without running. "
+                f"Use `transcript use #at{pending_id}` anytime."
             )
         return None
 

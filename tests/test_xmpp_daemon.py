@@ -3,6 +3,7 @@
 from asky.daemon.chunking import chunk_text
 from asky.daemon.service import (
     _extract_toml_urls,
+    _split_media_urls,
     _should_process_text_body,
     run_xmpp_daemon_foreground,
 )
@@ -28,7 +29,7 @@ def test_run_xmpp_daemon_requires_enabled(monkeypatch):
 def test_audio_message_url_body_is_not_processed_as_text():
     assert (
         _should_process_text_body(
-            audio_url="https://share.example/file/audio.m4a",
+            has_media=True,
             body="https://share.example/file/audio.m4a",
         )
         is False
@@ -38,7 +39,7 @@ def test_audio_message_url_body_is_not_processed_as_text():
 def test_audio_message_with_caption_still_processes_text():
     assert (
         _should_process_text_body(
-            audio_url="https://share.example/file/audio.m4a",
+            has_media=True,
             body="Please summarize this after transcribing.",
         )
         is True
@@ -58,3 +59,15 @@ def test_extract_toml_urls_filters_non_toml_payloads():
         "https://example.com/user.toml",
         "https://example.com/general.toml?download=1",
     ]
+
+
+def test_split_media_urls_detects_audio_and_images():
+    audio_urls, image_urls = _split_media_urls(
+        [
+            "https://example.com/a.m4a",
+            "https://example.com/b.jpg",
+            "https://example.com/c.txt",
+        ]
+    )
+    assert audio_urls == ["https://example.com/a.m4a"]
+    assert image_urls == ["https://example.com/b.jpg"]

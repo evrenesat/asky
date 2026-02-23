@@ -44,6 +44,7 @@ def test_save_model_config_persists_context_and_shortlist_override(tmp_path):
                 "api": "openai",
                 "context_size": 120000,
                 "source_shortlist_enabled": False,
+                "image_support": True,
                 "parameters": {"temperature": 0.2},
             },
         )
@@ -54,6 +55,7 @@ def test_save_model_config_persists_context_and_shortlist_override(tmp_path):
     model = data["models"]["nano"]
     assert model["context_size"] == 120000
     assert model["source_shortlist_enabled"] is False
+    assert model["image_support"] is True
     assert model["parameters"]["temperature"] == 0.2
 
 
@@ -68,6 +70,7 @@ def test_save_model_config_omits_shortlist_override_when_auto(tmp_path):
                 "api": "openai",
                 "context_size": 256000,
                 "source_shortlist_enabled": None,
+                "image_support": None,
                 "parameters": None,
             },
         )
@@ -78,6 +81,7 @@ def test_save_model_config_omits_shortlist_override_when_auto(tmp_path):
     model = data["models"]["std"]
     assert model["context_size"] == 256000
     assert "source_shortlist_enabled" not in model
+    assert "image_support" not in model
 
 
 def _patch_edit_model(action: str, extra_inputs: list | None = None):
@@ -150,8 +154,8 @@ def test_edit_model_action_e_saves_changes(tmp_path):
     """Choosing 'e' enters parameter edit flow; confirming save writes model config."""
     _prepare_models_file(tmp_path)
 
-    # First response: action choice. Second: shortlist prompt. Remaining: '' for each param.
-    fixed_responses = ["e", "auto"] + [""] * 20
+    # First response: action choice. Then shortlist + image support prompts. Remaining: '' for params.
+    fixed_responses = ["e", "auto", "auto"] + [""] * 20
 
     def fake_prompt(*args, **kwargs):
         return fixed_responses.pop(0)

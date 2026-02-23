@@ -21,6 +21,7 @@ MAX_TURNS = _gen["max_turns"]
 DEFAULT_MODEL = _gen["default_model"]
 SUMMARIZATION_MODEL = _gen["summarization_model"]
 INTERFACE_MODEL = _gen.get("interface_model", DEFAULT_MODEL)
+DEFAULT_IMAGE_MODEL = _gen.get("default_image_model", DEFAULT_MODEL)
 SEARCH_PROVIDER = _gen.get("search_provider", "searxng")
 SERPER_API_URL = _gen.get("serper_api_url", "https://google.serper.dev/search")
 SERPER_API_KEY_ENV = _gen.get("serper_api_key_env", "SERPER_API_KEY")
@@ -335,5 +336,20 @@ XMPP_VOICE_AUTO_YES_WITHOUT_INTERFACE_MODEL = bool(
 XMPP_VOICE_ALLOWED_MIME_TYPES = [
     str(value).strip().lower()
     for value in _xmpp.get("voice_allowed_mime_types", [])
+    if str(value).strip()
+]
+XMPP_IMAGE_ENABLED = bool(_xmpp.get("image_enabled", False))
+XMPP_IMAGE_WORKERS = int(_xmpp.get("image_workers", 1) or 1)
+XMPP_IMAGE_MAX_SIZE_MB = int(_xmpp.get("image_max_size_mb", 20) or 20)
+XMPP_IMAGE_STORAGE_DIR = Path(
+    _xmpp.get("image_storage_dir", "~/.config/asky/images")
+).expanduser()
+XMPP_IMAGE_PROMPT = str(
+    _xmpp.get("image_prompt", "Explain this image briefly.")
+    or "Explain this image briefly."
+).strip()
+XMPP_IMAGE_ALLOWED_MIME_TYPES = [
+    str(value).strip().lower()
+    for value in _xmpp.get("image_allowed_mime_types", [])
     if str(value).strip()
 ]

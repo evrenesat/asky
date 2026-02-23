@@ -79,6 +79,7 @@ uv run pytest tests/test_cli.py::test_function_name
 | `test_xmpp_client.py`                  | slixmpp runtime API compatibility (`process` vs loop fallback)                                                                  |
 | `test_interface_planner.py`            | Interface model prompt contract, command-reference injection, JSON fallback behavior                                            |
 | `test_voice_transcription.py`          | Background voice job pipeline and platform gating                                                                               |
+| `test_image_transcription.py`          | Background image job pipeline and multimodal payload formatting                                                                  |
 | `test_api_model_parameter_override.py` | API config parameter override merge behavior                                                                                    |
 | `test_email.py`                        | Email sending                                                                                                                   |
 | `test_html.py`                         | HTML stripping                                                                                                                  |

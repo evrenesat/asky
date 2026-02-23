@@ -9,13 +9,18 @@ from typing import Optional
 from asky.config import XMPP_TRANSCRIPT_MAX_PER_SESSION
 from asky.daemon.session_profile_manager import SessionProfileManager
 from asky.storage import (
+    create_image_transcript,
     create_transcript,
+    get_image_transcript,
     get_transcript,
+    list_image_transcripts,
     list_transcripts,
+    prune_image_transcripts,
     prune_transcripts,
+    update_image_transcript,
     update_transcript,
 )
-from asky.storage.interface import TranscriptRecord
+from asky.storage.interface import ImageTranscriptRecord, TranscriptRecord
 
 logger = logging.getLogger(__name__)
 
@@ -83,6 +88,25 @@ class TranscriptManager:
         self._prune_if_needed(session_id)
         return record
 
+    def create_pending_image_transcript(
+        self,
+        *,
+        jid: str,
+        image_url: str,
+        image_path: str,
+    ) -> ImageTranscriptRecord:
+        """Create a pending image transcript row."""
+        session_id = self.get_or_create_session_id(jid)
+        record = create_image_transcript(
+            session_id=session_id,
+            jid=jid,
+            image_url=image_url,
+            image_path=image_path,
+            status="pending",
+        )
+        self._prune_if_needed(session_id)
+        return record
+
     def mark_transcript_completed(
         self,
         *,
@@ -121,6 +145,44 @@ class TranscriptManager:
         self._prune_if_needed(session_id)
         return updated
 
+    def mark_image_transcript_completed(
+        self,
+        *,
+        jid: str,
+        image_id: int,
+        transcript_text: str,
+        duration_seconds: Optional[float] = None,
+    ) -> Optional[ImageTranscriptRecord]:
+        """Mark image transcript as completed and persist text."""
+        session_id = self.get_or_create_session_id(jid)
+        updated = update_image_transcript(
+            session_id=session_id,
+            session_image_id=int(image_id),
+            status="completed",
+            transcript_text=transcript_text,
+            duration_seconds=duration_seconds,
+        )
+        self._prune_if_needed(session_id)
+        return updated
+
+    def mark_image_transcript_failed(
+        self,
+        *,
+        jid: str,
+        image_id: int,
+        error: str,
+    ) -> Optional[ImageTranscriptRecord]:
+        """Mark image transcript job as failed."""
+        session_id = self.get_or_create_session_id(jid)
+        updated = update_image_transcript(
+            session_id=session_id,
+            session_image_id=int(image_id),
+            status="failed",
+            error=error,
+        )
+        self._prune_if_needed(session_id)
+        return updated
+
     def list_for_jid(self, jid: str, limit: int = 20) -> list[TranscriptRecord]:
         """List transcript rows for one sender."""
         session_id = self.get_or_create_session_id(jid)
@@ -134,6 +196,19 @@ class TranscriptManager:
             session_transcript_id=int(transcript_id),
         )
 
+    def list_images_for_jid(self, jid: str, limit: int = 20) -> list[ImageTranscriptRecord]:
+        """List image transcript rows for one sender."""
+        session_id = self.get_or_create_session_id(jid)
+        return list_image_transcripts(session_id=session_id, limit=limit)
+
+    def get_image_for_jid(self, jid: str, image_id: int) -> Optional[ImageTranscriptRecord]:
+        """Fetch one image transcript by sender and session image id."""
+        session_id = self.get_or_create_session_id(jid)
+        return get_image_transcript(
+            session_id=session_id,
+            session_image_id=int(image_id),
+        )
+
     def mark_used(self, *, jid: str, transcript_id: int) -> Optional[TranscriptRecord]:
         """Mark one transcript as consumed by a user command."""
         session_id = self.get_or_create_session_id(jid)
@@ -144,21 +219,43 @@ class TranscriptManager:
             used=True,
         )
 
+    def mark_image_used(
+        self,
+        *,
+        jid: str,
+        image_id: int,
+    ) -> Optional[ImageTranscriptRecord]:
+        """Mark one image transcript as consumed by pointer usage."""
+        session_id = self.get_or_create_session_id(jid)
+        return update_image_transcript(
+            session_id=session_id,
+            session_image_id=int(image_id),
+            status="completed",
+            used=True,
+        )
+
     def clear_for_jid(self, jid: str) -> list[TranscriptRecord]:
         """Remove transcript records for one sender by pruning keep=0."""
         session_id = self.get_or_create_session_id(jid)
         deleted = prune_transcripts(session_id=session_id, keep=0)
-        self._delete_artifacts(deleted)
+        deleted_images = prune_image_transcripts(session_id=session_id, keep=0)
+        self._delete_audio_artifacts(deleted)
+        self._delete_image_artifacts(deleted_images)
         return deleted
 
     def _prune_if_needed(self, session_id: int) -> None:
         if self._transcript_cap < 0:
             return
         deleted = prune_transcripts(session_id=session_id, keep=self._transcript_cap)
+        deleted_images = prune_image_transcripts(
+            session_id=session_id, keep=self._transcript_cap
+        )
         if deleted:
-            self._delete_artifacts(deleted)
+            self._delete_audio_artifacts(deleted)
+        if deleted_images:
+            self._delete_image_artifacts(deleted_images)
 
-    def _delete_artifacts(self, records: list[TranscriptRecord]) -> None:
+    def _delete_audio_artifacts(self, records: list[TranscriptRecord]) -> None:
         for record in records:
             path_str = str(record.audio_path or "").strip()
             if not path_str:
@@ -170,3 +267,18 @@ class TranscriptManager:
                 path.unlink()
             except Exception as exc:
                 logger.debug("failed to delete transcript artifact '%s': %s", path, exc)
+
+    def _delete_image_artifacts(self, records: list[ImageTranscriptRecord]) -> None:
+        for record in records:
+            path_str = str(record.image_path or "").strip()
+            if not path_str:
+                continue
+            path = Path(path_str).expanduser()
+            if not path.exists():
+                continue
+            try:
+                path.unlink()
+            except Exception as exc:
+                logger.debug(
+                    "failed to delete image transcript artifact '%s': %s", path, exc
+                )

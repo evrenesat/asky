@@ -15,9 +15,20 @@ class _FakeTranscriptManager:
                 status="completed",
                 transcript_text="transcript text",
                 used=False,
+                audio_path="/tmp/a1.m4a",
+            )
+        }
+        self.image_records = {
+            ("jid", 1): SimpleNamespace(
+                session_image_id=1,
+                status="completed",
+                transcript_text="image transcript text",
+                used=False,
+                image_path="/tmp/i1.jpg",
             )
         }
         self.used = []
+        self.image_used = []
 
     def get_or_create_session_id(self, jid):
         return 1
@@ -34,6 +45,17 @@ class _FakeTranscriptManager:
 
     def clear_for_jid(self, jid):
         return list(self.records.values())
+
+    def list_images_for_jid(self, jid, limit=20):
+        _ = (jid, limit)
+        return list(self.image_records.values())
+
+    def get_image_for_jid(self, jid, image_id):
+        return self.image_records.get((jid, image_id))
+
+    def mark_image_used(self, *, jid, image_id):
+        self.image_used.append((jid, image_id))
+        return self.image_records.get((jid, image_id))
 
 
 def _blocked_args():
@@ -121,9 +143,11 @@ def test_transcript_list_show_and_clear():
 
     listed = executor.execute_command_text(jid="jid", command_text="transcript list")
     assert "Transcripts:" in listed
+    assert "#at1" in listed
+    assert "#it1" in listed
 
     shown = executor.execute_command_text(jid="jid", command_text="transcript show 1")
-    assert "Transcript 1" in shown
+    assert "Transcript #at1" in shown
     assert "transcript text" in shown
 
     cleared = executor.execute_command_text(jid="jid", command_text="transcript clear")
@@ -253,6 +277,41 @@ def test_transcript_use_path_inherits_query_alias_preparation():
     )
     request = mock_client.run_turn.call_args.args[0]
     assert request.query_text == "expanded transcript query"
+
+
+def test_query_pointer_resolution_for_audio_and_image():
+    manager = _FakeTranscriptManager()
+    executor = CommandExecutor(manager)
+    with patch("asky.daemon.command_executor.AskyClient") as mock_client_cls:
+        mock_client = mock_client_cls.return_value
+        mock_client.run_turn.return_value = _turn_result("ok")
+        response = executor.execute_query_text(
+            jid="jid",
+            query_text="compare #i1 with #a1 and #it1 plus #at1",
+        )
+
+    assert response == "ok"
+    request = mock_client.run_turn.call_args.args[0]
+    assert "/tmp/i1.jpg" in request.query_text
+    assert "/tmp/a1.m4a" in request.query_text
+    assert "image transcript text" in request.query_text
+    assert "transcript text" in request.query_text
+    assert manager.used == [("jid", 1)]
+    assert manager.image_used == [("jid", 1)]
+
+
+def test_transcript_use_accepts_prefixed_id():
+    manager = _FakeTranscriptManager()
+    executor = CommandExecutor(manager)
+    with patch("asky.daemon.command_executor.AskyClient") as mock_client_cls:
+        mock_client = mock_client_cls.return_value
+        mock_client.run_turn.return_value = _turn_result("answer")
+        response = executor.execute_command_text(
+            jid="jid",
+            command_text="transcript use #at1",
+        )
+
+    assert response == "answer"
 
 
 def test_session_command_help_lists_recent_sessions():

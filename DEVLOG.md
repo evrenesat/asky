@@ -1,5 +1,51 @@
 # DEVLOG
 
+## 2026-02-23 - XMPP Image Transcription + Session-Scoped Media Pointers
+
+Implemented phase-1 XMPP image support with base64 multimodal requests, model-level `image_support`, and session-scoped media pointers for both audio and image artifacts/transcripts.
+
+- **Changed**:
+  - `src/asky/data/config/general.toml`, `src/asky/config/__init__.py`:
+    - Added `general.default_image_model` and exported `DEFAULT_IMAGE_MODEL`.
+  - `src/asky/data/config/xmpp.toml`, `src/asky/config/__init__.py`:
+    - Added XMPP image settings and exports (`XMPP_IMAGE_*`): enable/workers/size/storage/prompt/mime allowlist.
+  - `src/asky/data/config/models.toml`, `src/asky/cli/models.py`:
+    - Added model capability support for `image_support` and interactive CLI add/edit persistence for this field.
+  - `src/asky/storage/interface.py`, `src/asky/storage/sqlite.py`, `src/asky/storage/__init__.py`:
+    - Added `ImageTranscriptRecord` and full CRUD/prune APIs via new `image_transcripts` table with session-scoped `session_image_id`.
+  - `src/asky/daemon/image_transcriber.py` (new):
+    - Added async image worker pipeline:
+      - download + size/mime validation,
+      - base64 encoding,
+      - multimodal request payload (`text` + `image_url`) to `default_image_model`,
+      - completion callback payloads.
+  - `src/asky/daemon/service.py`, `src/asky/daemon/router.py`, `src/asky/daemon/transcript_manager.py`:
+    - Added OOB media URL split (audio vs image) and image ingestion path.
+    - Added image completion handling and notification format:
+      - `transcript #itN of image #iN: ...`
+    - Updated audio transcript UX text to prefixed IDs:
+      - `#aN` (audio file), `#atN` (audio transcript).
+  - `src/asky/daemon/command_executor.py`:
+    - Added pointer resolution in daemon query prep:
+      - `#iN`, `#itN`, `#aN`, `#atN`.
+    - Added `transcript show/use #atN` support (kept integer compatibility).
+    - Extended transcript list output to include both audio and image transcript IDs.
+  - `src/asky/core/api_client.py`:
+    - Hardened token counting/log payload formatting to support structured multimodal message content.
+  - Docs:
+    - Updated `ARCHITECTURE.md`, `src/asky/config/AGENTS.md`, `src/asky/storage/AGENTS.md`, `src/asky/cli/AGENTS.md`.
+
+- **Why**:
+  - Enable practical XMPP-first multimodal usage with minimal protocol complexity (base64 only).
+  - Improve low-keyboard UX through short, session-scoped pointer IDs for media and transcript reuse.
+  - Preserve existing audio workflow while introducing a parallel image pipeline and shared pointer semantics.
+
+- **Validation**:
+  - Targeted tests:
+    - `uv run pytest tests/test_config.py tests/test_models_cli.py tests/test_storage.py tests/test_image_transcription.py tests/test_xmpp_router.py tests/test_xmpp_daemon.py tests/test_xmpp_commands.py` -> passed.
+  - Full suite:
+    - `uv run pytest` -> passed.
+
 ## 2026-02-23 - Critical Hardware/Storage Bug Fixes (C-01, C-02)
 
 Fixed two P0 bugs related to fragile string slicing with case-insensitive triggers and incorrect boolean type checking for persisted session settings.

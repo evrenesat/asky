@@ -53,3 +53,16 @@ voice_allowed_mime_types = [
     "audio/ogg",
     "audio/flac",
 ]
+
+# Image/transcription controls.
+image_enabled = false
+image_workers = 1
+image_max_size_mb = 20
+image_storage_dir = "~/.config/asky/images"
+image_prompt = "Explain this image briefly."
+image_allowed_mime_types = [
+    "image/jpeg",
+    "image/png",
+    "image/webp",
+    "image/gif",
+]

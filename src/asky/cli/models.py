@@ -17,6 +17,9 @@ console = Console()
 SHORTLIST_MODE_AUTO = "auto"
 SHORTLIST_MODE_ON = "on"
 SHORTLIST_MODE_OFF = "off"
+IMAGE_SUPPORT_MODE_AUTO = "auto"
+IMAGE_SUPPORT_MODE_ON = "on"
+IMAGE_SUPPORT_MODE_OFF = "off"
 
 
 def list_model_aliases() -> List[str]:
@@ -64,6 +67,24 @@ def _shortlist_value_from_mode(mode: str) -> Optional[bool]:
     if mode == SHORTLIST_MODE_ON:
         return True
     if mode == SHORTLIST_MODE_OFF:
+        return False
+    return None
+
+
+def _image_support_mode_from_value(value: Optional[bool]) -> str:
+    """Map image support setting to CLI choice token."""
+    if value is True:
+        return IMAGE_SUPPORT_MODE_ON
+    if value is False:
+        return IMAGE_SUPPORT_MODE_OFF
+    return IMAGE_SUPPORT_MODE_AUTO
+
+
+def _image_support_value_from_mode(mode: str) -> Optional[bool]:
+    """Map CLI choice token back to stored image support setting."""
+    if mode == IMAGE_SUPPORT_MODE_ON:
+        return True
+    if mode == IMAGE_SUPPORT_MODE_OFF:
         return False
     return None
 
@@ -156,6 +177,12 @@ def add_model_command():
         default=SHORTLIST_MODE_AUTO,
     )
     shortlist_enabled = _shortlist_value_from_mode(shortlist_mode)
+    image_support_mode = Prompt.ask(
+        "Image input support for this model",
+        choices=[IMAGE_SUPPORT_MODE_AUTO, IMAGE_SUPPORT_MODE_ON, IMAGE_SUPPORT_MODE_OFF],
+        default=IMAGE_SUPPORT_MODE_AUTO,
+    )
+    image_support = _image_support_value_from_mode(image_support_mode)
 
     # Step 3: Configure parameters
     console.print("\n[bold]Step 3: Configure Parameters[/bold]")
@@ -212,6 +239,7 @@ def add_model_command():
     console.print(f"  API: {selected_api}")
     console.print(f"  Context Size: {context_size}")
     console.print(f"  Source Shortlist: {shortlist_mode}")
+    console.print(f"  Image Support: {image_support_mode}")
     if parameters:
         console.print(f"  Parameters: {parameters}")
 
@@ -223,6 +251,7 @@ def add_model_command():
                 "api": selected_api,
                 "context_size": context_size,
                 "source_shortlist_enabled": shortlist_enabled,
+                "image_support": image_support,
                 "parameters": parameters if parameters else None,
             },
         )
@@ -328,6 +357,10 @@ def edit_model_command(model_alias: Optional[str] = None):
         f"  Source shortlist: "
         f"{_shortlist_mode_from_value(current_config.get('source_shortlist_enabled'))}"
     )
+    console.print(
+        f"  Image support:    "
+        f"{_image_support_mode_from_value(current_config.get('image_support'))}"
+    )
 
     console.print("\n[bold]Perform action:[/bold]")
     console.print("  [green]m[/green] - set as [bold]main[/bold] model")
@@ -367,6 +400,12 @@ def edit_model_command(model_alias: Optional[str] = None):
         ),
     )
     shortlist_enabled = _shortlist_value_from_mode(shortlist_mode)
+    image_support_mode = Prompt.ask(
+        "Image input support for this model",
+        choices=[IMAGE_SUPPORT_MODE_AUTO, IMAGE_SUPPORT_MODE_ON, IMAGE_SUPPORT_MODE_OFF],
+        default=_image_support_mode_from_value(current_config.get("image_support")),
+    )
+    image_support = _image_support_value_from_mode(image_support_mode)
 
     console.print("\n[bold]Configure Parameters[/bold]")
 
@@ -424,6 +463,7 @@ def edit_model_command(model_alias: Optional[str] = None):
             "api": current_config.get("api"),
             "context_size": context_size,
             "source_shortlist_enabled": shortlist_enabled,
+            "image_support": image_support,
             "parameters": parameters if parameters else None,
         }
         save_model_config(model_alias, new_config)
@@ -464,6 +504,9 @@ def save_model_config(nickname: str, config: Dict[str, Any]):
         shortlist_enabled = config.get("source_shortlist_enabled")
         if shortlist_enabled is not None:
             model_data["source_shortlist_enabled"] = bool(shortlist_enabled)
+        image_support = config.get("image_support")
+        if image_support is not None:
+            model_data["image_support"] = bool(image_support)
 
         if config.get("parameters"):
             params = tomlkit.table()
