@@ -44,7 +44,7 @@ uv run pytest tests/test_cli.py::test_function_name
 
 | File | Coverage |
 |------|----------|
-| `test_storage.py` | Database operations, CRUD |
+| `test_storage.py` | Database operations, CRUD, transcript records, room/session bindings, session override file persistence |
 | `test_sessions.py` | Session lifecycle, compaction |
 
 ### Research Tests
@@ -69,6 +69,7 @@ uv run pytest tests/test_cli.py::test_function_name
 | `test_xmpp_daemon.py` | XMPP daemon lifecycle, per-JID queueing, chunking |
 | `test_xmpp_router.py` | Allowlist and hybrid router behavior |
 | `test_xmpp_commands.py` | Remote command policy, transcript command surface, preset routing, and CLI-equivalent XMPP query alias/slash expansion behavior |
+| `test_xmpp_group_sessions.py` | Room/session binding persistence and session-scoped TOML override semantics (last-write-wins) |
 | `test_xmpp_client.py` | slixmpp runtime API compatibility (`process` vs loop fallback) |
 | `test_interface_planner.py` | Interface model prompt contract, command-reference injection, JSON fallback behavior |
 | `test_voice_transcription.py` | Background voice job pipeline and platform gating |

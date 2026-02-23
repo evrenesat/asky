@@ -53,14 +53,37 @@ class _FakeCommandExecutor:
     def __init__(self):
         self.command_calls = []
         self.query_calls = []
+        self.session_calls = []
+        self.toml_calls = []
+        self.bound_rooms = set()
 
-    def execute_command_text(self, *, jid, command_text):
-        self.command_calls.append((jid, command_text))
-        return f"command:{command_text}"
+    def execute_command_text(self, *, jid, command_text, room_jid=None):
+        self.command_calls.append((jid, room_jid, command_text))
+        return f"command:{command_text}:{room_jid or '-'}"
 
-    def execute_query_text(self, *, jid, query_text):
-        self.query_calls.append((jid, query_text))
-        return f"query:{query_text}"
+    def execute_query_text(self, *, jid, query_text, room_jid=None):
+        self.query_calls.append((jid, room_jid, query_text))
+        return f"query:{query_text}:{room_jid or '-'}"
+
+    def execute_session_command(self, *, jid, room_jid, command_text):
+        self.session_calls.append((jid, room_jid, command_text))
+        return "session:ok"
+
+    def apply_inline_toml_if_present(self, *, jid, room_jid, body):
+        if "```toml" not in body:
+            return None
+        return "inline-toml-applied"
+
+    def apply_toml_url(self, *, jid, room_jid, url):
+        self.toml_calls.append((jid, room_jid, url))
+        return f"toml:{url}"
+
+    def ensure_room_binding(self, room_jid):
+        self.bound_rooms.add(room_jid)
+        return 9
+
+    def is_room_bound(self, room_jid):
+        return room_jid in self.bound_rooms
 
 
 class _FakePlanner:
@@ -118,7 +141,7 @@ def test_router_bare_jid_allowlist_matches_any_resource():
         message_type="chat",
         body="/asky --history 1",
     )
-    assert response == "command:--history 1"
+    assert response == "command:--history 1:-"
 
 
 def test_router_full_jid_allowlist_remains_strict():
@@ -138,7 +161,7 @@ def test_router_prefixed_command_with_interface_enabled():
         message_type="chat",
         body="/asky --history 5",
     )
-    assert response == "command:--history 5"
+    assert response == "command:--history 5:-"
 
 
 def test_router_query_without_interface_model_command_detection():
@@ -148,7 +171,7 @@ def test_router_query_without_interface_model_command_detection():
         message_type="chat",
         body="what is new",
     )
-    assert response == "query:what is new"
+    assert response == "query:what is new:-"
 
 
 def test_router_preset_listing():
@@ -210,7 +233,7 @@ def test_router_auto_runs_transcript_when_interface_model_disabled():
             "duration_seconds": 1.1,
         }
     )
-    assert result == ("u@example.com/resource", "query:how is weather in rijswijk today")
+    assert result == ("u@example.com/resource", "query:how is weather in rijswijk today:-")
 
 
 def test_router_auto_run_can_be_disabled_explicitly():
@@ -232,3 +255,39 @@ def test_router_auto_run_can_be_disabled_explicitly():
     assert result is not None
     _jid, message = result
     assert "Reply 'yes' to run transcript #1 as a query now." in message
+
+
+def test_router_groupchat_uses_bound_room_session():
+    router = _build_router(interface_enabled=False)
+    router.command_executor.ensure_room_binding("room@conference.example.com")
+
+    response = router.handle_text_message(
+        jid="room@conference.example.com/nick",
+        message_type="groupchat",
+        body="what is new",
+        room_jid="room@conference.example.com",
+        sender_jid="u@example.com/resource",
+    )
+    assert response == "query:what is new:room@conference.example.com"
+
+
+def test_router_groupchat_ignores_unbound_room():
+    router = _build_router(interface_enabled=False)
+    response = router.handle_text_message(
+        jid="room@conference.example.com/nick",
+        message_type="groupchat",
+        body="hello",
+        room_jid="room@conference.example.com",
+        sender_jid="u@example.com/resource",
+    )
+    assert response is None
+
+
+def test_router_trusted_invite_binds_room():
+    router = _build_router(interface_enabled=False)
+    accepted = router.handle_room_invite(
+        room_jid="room@conference.example.com",
+        inviter_jid="u@example.com/resource",
+    )
+    assert accepted is True
+    assert router.command_executor.is_room_bound("room@conference.example.com")

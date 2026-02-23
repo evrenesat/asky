@@ -11,9 +11,10 @@ def clear_screen():
     os.system("cls" if os.name == "nt" else "clear")
 
 
-def load_custom_prompts() -> None:
+def load_custom_prompts(prompt_map: dict[str, str] | None = None) -> None:
     """Read custom prompts from file path if they start with file://."""
-    for key, value in USER_PROMPTS.items():
+    active_prompts = prompt_map if prompt_map is not None else USER_PROMPTS
+    for key, value in active_prompts.items():
         if isinstance(value, str) and value.startswith("file://"):
             file_path = value[7:]
             path = os.path.expanduser(file_path)
@@ -41,7 +42,7 @@ def load_custom_prompts() -> None:
             try:
                 with open(path, "r", encoding="utf-8") as f:
                     content = f.read()
-                    USER_PROMPTS[key] = content
+                    active_prompts[key] = content
             except UnicodeDecodeError:
                 print(
                     f"[Warning: Custom prompt file '{path}' is not a valid text file]"
@@ -50,8 +51,13 @@ def load_custom_prompts() -> None:
                 print(f"[Warning: Error reading custom prompt file '{path}': {e}]")
 
 
-def expand_query_text(text: str, verbose: bool = False) -> str:
+def expand_query_text(
+    text: str,
+    verbose: bool = False,
+    prompt_map: dict[str, str] | None = None,
+) -> str:
     """Recursively expand slash commands like /cp and predefined prompts."""
+    active_prompts = prompt_map if prompt_map is not None else USER_PROMPTS
     expanded = text
     max_depth = QUERY_EXPANSION_MAX_DEPTH
     depth = 0
@@ -75,7 +81,7 @@ def expand_query_text(text: str, verbose: bool = False) -> str:
                     print(f"[Error reading clipboard: {e}]")
 
         # 2. Expand predefined prompts from USER_PROMPTS
-        for key, prompt_val in USER_PROMPTS.items():
+        for key, prompt_val in active_prompts.items():
             pattern = rf"/{re.escape(key)}(\s|$)"
             if re.search(pattern, expanded):
                 expanded = re.sub(pattern, rf"{prompt_val}\1", expanded)

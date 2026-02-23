@@ -279,3 +279,61 @@ def test_transcript_crud_and_prune(mock_db_path):
     remaining = repo.list_transcripts(session_id=session_id, limit=10)
     assert len(remaining) == 1
     assert remaining[0].session_transcript_id == 2
+
+
+def test_room_session_binding_roundtrip(mock_db_path):
+    from asky.storage.sqlite import SQLiteHistoryRepository
+
+    repo = SQLiteHistoryRepository()
+    init_db()
+    session_id = repo.create_session("model", name="room-session")
+
+    repo.set_room_session_binding(
+        room_jid="Room@conference.example.com",
+        session_id=session_id,
+    )
+    binding = repo.get_room_session_binding(room_jid="room@conference.example.com")
+    assert binding is not None
+    assert binding.room_jid == "room@conference.example.com"
+    assert binding.session_id == session_id
+
+    listed = repo.list_room_session_bindings()
+    assert len(listed) == 1
+    assert listed[0].room_jid == "room@conference.example.com"
+
+
+def test_session_override_files_roundtrip_and_copy(mock_db_path):
+    from asky.storage.sqlite import SQLiteHistoryRepository
+
+    repo = SQLiteHistoryRepository()
+    init_db()
+    source_session = repo.create_session("model", name="source")
+    target_session = repo.create_session("model", name="target")
+
+    repo.save_session_override_file(
+        session_id=source_session,
+        filename="general.toml",
+        content='[general]\ndefault_model = "a"\n',
+    )
+    repo.save_session_override_file(
+        session_id=source_session,
+        filename="user.toml",
+        content='[user_prompts]\nfoo = "bar"\n',
+    )
+
+    loaded = repo.get_session_override_file(
+        session_id=source_session,
+        filename="GENERAL.toml",
+    )
+    assert loaded is not None
+    assert loaded.filename == "general.toml"
+    assert 'default_model = "a"' in loaded.content
+
+    copied_count = repo.copy_session_override_files(
+        source_session_id=source_session,
+        target_session_id=target_session,
+    )
+    assert copied_count == 2
+
+    target_files = repo.list_session_override_files(session_id=target_session)
+    assert [item.filename for item in target_files] == ["general.toml", "user.toml"]

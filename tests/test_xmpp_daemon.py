@@ -1,7 +1,11 @@
 """Daemon service/unit tests."""
 
 from asky.daemon.chunking import chunk_text
-from asky.daemon.service import _should_process_text_body, run_xmpp_daemon_foreground
+from asky.daemon.service import (
+    _extract_toml_urls,
+    _should_process_text_body,
+    run_xmpp_daemon_foreground,
+)
 
 
 def test_chunk_text_splits_in_order():
@@ -39,3 +43,18 @@ def test_audio_message_with_caption_still_processes_text():
         )
         is True
     )
+
+
+def test_extract_toml_urls_filters_non_toml_payloads():
+    payload = {
+        "oob_urls": [
+            "https://example.com/user.toml",
+            "https://example.com/audio.m4a",
+            "https://example.com/general.toml?download=1",
+        ]
+    }
+    urls = _extract_toml_urls(payload)
+    assert urls == [
+        "https://example.com/user.toml",
+        "https://example.com/general.toml?download=1",
+    ]

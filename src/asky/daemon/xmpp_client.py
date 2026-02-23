@@ -8,6 +8,7 @@ from typing import Callable, Optional
 
 logger = logging.getLogger(__name__)
 OOB_XML_NAMESPACES = ("jabber:x:oob", "urn:xmpp:oob")
+MUC_USER_NAMESPACE = "http://jabber.org/protocol/muc#user"
 
 try:
     import slixmpp  # type: ignore
@@ -27,6 +28,7 @@ class AskyXMPPClient:
         port: int,
         resource: str,
         message_callback: Callable[[dict], None],
+        session_start_callback: Optional[Callable[[], None]] = None,
     ):
         if slixmpp is None:
             raise RuntimeError(
@@ -36,10 +38,19 @@ class AskyXMPPClient:
             raise RuntimeError("XMPP credentials are not configured.")
 
         self._message_callback = message_callback
+        self._session_start_callback = session_start_callback
         full_jid = jid if not resource else f"{jid}/{resource}"
         self._client = slixmpp.ClientXMPP(full_jid, password)
         self._host = host
         self._port = int(port)
+        self._nick = str(resource or "asky").strip() or "asky"
+
+        register_plugin = getattr(self._client, "register_plugin", None)
+        if callable(register_plugin):
+            try:
+                register_plugin("xep_0045")
+            except Exception:
+                logger.debug("failed to register xep_0045 plugin", exc_info=True)
 
         self._client.add_event_handler("session_start", self._on_session_start)
         self._client.add_event_handler("message", self._on_message)
@@ -47,14 +58,28 @@ class AskyXMPPClient:
     def _on_session_start(self, _event) -> None:
         self._client.send_presence()
         self._client.get_roster()
+        if self._session_start_callback is not None:
+            self._session_start_callback()
 
     def _on_message(self, msg) -> None:
         from_jid = _full_jid(msg.get("from"))
+        message_type = str(msg.get("type", "") or "")
+        oob_urls = _extract_oob_urls(msg)
+        room_jid = _room_jid_from_message(from_jid, message_type)
+        sender_nick = _sender_nick_from_message(from_jid, message_type)
+        sender_jid = _extract_group_sender_jid(msg)
+        invite_room, invite_from = _extract_group_invite(msg)
         payload = {
             "from_jid": from_jid,
-            "type": str(msg.get("type", "") or ""),
+            "type": message_type,
             "body": str(msg.get("body", "") or ""),
             "audio_url": _extract_oob_url(msg),
+            "oob_urls": oob_urls,
+            "room_jid": room_jid,
+            "sender_nick": sender_nick,
+            "sender_jid": sender_jid,
+            "invite_room_jid": invite_room,
+            "invite_from_jid": invite_from,
         }
         self._message_callback(payload)
 
@@ -67,12 +92,32 @@ class AskyXMPPClient:
         _run_client_forever(self._client)
 
     def send_chat_message(self, to_jid: str, body: str) -> None:
+        self.send_message(to_jid=to_jid, body=body, message_type="chat")
+
+    def send_group_message(self, room_jid: str, body: str) -> None:
+        self.send_message(to_jid=room_jid, body=body, message_type="groupchat")
+
+    def send_message(self, *, to_jid: str, body: str, message_type: str) -> None:
         payload = {
             "mto": to_jid,
             "mbody": str(body or ""),
-            "mtype": "chat",
+            "mtype": str(message_type or "chat"),
         }
         _dispatch_client_send(self._client, payload)
+
+    def join_room(self, room_jid: str) -> None:
+        normalized_room = str(room_jid or "").strip()
+        if not normalized_room:
+            return
+        muc_plugin = _get_muc_plugin(self._client)
+        if muc_plugin is None:
+            logger.debug("xep_0045 plugin is not available; cannot join room=%s", room_jid)
+            return
+        join_method = getattr(muc_plugin, "join_muc", None)
+        if not callable(join_method):
+            logger.debug("xep_0045 plugin has no join_muc(); room=%s", room_jid)
+            return
+        join_method(normalized_room, self._nick, wait=False)
 
 
 def _full_jid(from_value) -> str:
@@ -91,22 +136,37 @@ def _extract_oob_url(msg) -> Optional[str]:
         if xml is None:
             return None
 
-        for namespace in OOB_XML_NAMESPACES:
-            for node in xml.findall(f".//{{{namespace}}}url"):
-                url = str(getattr(node, "text", "") or "").strip()
-                if url:
-                    return url
-
-            for wrapper in xml.findall(f".//{{{namespace}}}x"):
-                for child in list(wrapper):
-                    if _xml_local_name(getattr(child, "tag", "")) != "url":
-                        continue
-                    url = str(getattr(child, "text", "") or "").strip()
-                    if url:
-                        return url
+        urls = _extract_oob_urls(msg)
+        if urls:
+            return urls[0]
     except Exception:
         logger.debug("failed to parse XMPP oob payload", exc_info=True)
     return None
+
+
+def _extract_oob_urls(msg) -> list[str]:
+    """Extract all OOB URLs from the message stanza."""
+    xml = getattr(msg, "xml", None)
+    if xml is None:
+        return []
+    urls: list[str] = []
+    seen: set[str] = set()
+    for namespace in OOB_XML_NAMESPACES:
+        for node in xml.findall(f".//{{{namespace}}}url"):
+            url = str(getattr(node, "text", "") or "").strip()
+            if url and url not in seen:
+                seen.add(url)
+                urls.append(url)
+
+        for wrapper in xml.findall(f".//{{{namespace}}}x"):
+            for child in list(wrapper):
+                if _xml_local_name(getattr(child, "tag", "")) != "url":
+                    continue
+                url = str(getattr(child, "text", "") or "").strip()
+                if url and url not in seen:
+                    seen.add(url)
+                    urls.append(url)
+    return urls
 
 
 def _xml_local_name(tag: str) -> str:
@@ -114,6 +174,65 @@ def _xml_local_name(tag: str) -> str:
     if tag_value.startswith("{") and "}" in tag_value:
         return tag_value.split("}", 1)[1]
     return tag_value
+
+
+def _room_jid_from_message(from_jid: str, message_type: str) -> str:
+    if str(message_type or "").strip().lower() != "groupchat":
+        return ""
+    return _bare_jid(from_jid)
+
+
+def _sender_nick_from_message(from_jid: str, message_type: str) -> str:
+    if str(message_type or "").strip().lower() != "groupchat":
+        return ""
+    if "/" not in str(from_jid or ""):
+        return ""
+    return str(from_jid).split("/", 1)[1]
+
+
+def _extract_group_sender_jid(msg) -> str:
+    """Best effort extraction of real sender JID from MUC user extension."""
+    xml = getattr(msg, "xml", None)
+    if xml is None:
+        return ""
+    for item in xml.findall(f".//{{{MUC_USER_NAMESPACE}}}item"):
+        jid = str(getattr(item, "attrib", {}).get("jid", "") or "").strip()
+        if jid:
+            return jid
+    return ""
+
+
+def _extract_group_invite(msg) -> tuple[str, str]:
+    """Extract invite target room and inviter JID from MUC user extension."""
+    xml = getattr(msg, "xml", None)
+    if xml is None:
+        return "", ""
+    from_value = _full_jid(msg.get("from"))
+    room_jid = _bare_jid(from_value)
+    for invite in xml.findall(f".//{{{MUC_USER_NAMESPACE}}}invite"):
+        inviter = str(getattr(invite, "attrib", {}).get("from", "") or "").strip()
+        if inviter:
+            return room_jid, inviter
+    return "", ""
+
+
+def _bare_jid(jid: str) -> str:
+    normalized = str(jid or "").strip()
+    if "/" not in normalized:
+        return normalized
+    return normalized.split("/", 1)[0]
+
+
+def _get_muc_plugin(client):
+    plugins = getattr(client, "plugin", None)
+    if plugins is None:
+        return None
+    if isinstance(plugins, dict):
+        return plugins.get("xep_0045")
+    try:
+        return plugins["xep_0045"]
+    except Exception:
+        return None
 
 
 def _resolve_connect_result(client, connected):

@@ -1,5 +1,76 @@
 # DEVLOG
 
+## 2026-02-23 - XMPP Group Sessions + Session-Scoped TOML Overrides
+
+Implemented persistent group-chat session support in daemon mode, including trusted-invite room binding, session switching commands, and session-scoped TOML config overrides with last-write-wins semantics.
+
+- **Changed**:
+  - `src/asky/storage/interface.py`, `src/asky/storage/sqlite.py`, `src/asky/storage/__init__.py`:
+    - Added persistent daemon tables/APIs:
+      - `room_session_bindings` (room bare JID -> active session),
+      - `session_override_files` (session-scoped override snapshots keyed by filename).
+    - Added repository methods for binding lookup/upsert and override file save/list/get/copy.
+  - `src/asky/daemon/session_profile_manager.py` (new):
+    - Added daemon profile manager for:
+      - direct and room session resolution,
+      - room binding create/switch flows,
+      - `/session` command backing behaviors (`new`, `child`, switch),
+      - override-file validation/sanitization for `general.toml` + `user.toml`,
+      - effective runtime profile assembly (default model, summarization model, prompt map).
+    - Enforced supported-key filtering:
+      - `general.default_model`, `general.summarization_model` (must reference existing model aliases),
+      - `[user_prompts]` string entries.
+    - Unsupported keys are ignored with warning surface; unsupported filenames are rejected.
+  - `src/asky/daemon/transcript_manager.py`:
+    - Delegated session lifecycle responsibilities to `SessionProfileManager`.
+    - Added room binding helper methods used by router/service.
+  - `src/asky/daemon/command_executor.py`:
+    - Added daemon session control command surface:
+      - `/session`, `/session new`, `/session child`, `/session <id|name>`.
+    - Added inline TOML and URL-TOML apply paths for current conversation session.
+    - Added conversation-scoped runtime profile usage for:
+      - default model selection,
+      - summarization model override (context-managed),
+      - prompt alias expansion/listing.
+  - `src/asky/cli/utils.py`:
+    - Added optional `prompt_map` argument to `load_custom_prompts(...)` and `expand_query_text(...)` for session-scoped prompt expansion without global mutation.
+  - `src/asky/daemon/xmpp_client.py`:
+    - Added groupchat payload metadata extraction:
+      - `room_jid`, `sender_nick`, `sender_jid`,
+      - room invite extraction from MUC user extension,
+      - all OOB URLs collection.
+    - Added room join helper (`join_room`) and group-send helper (`send_group_message`).
+    - Added optional session-start callback hook.
+  - `src/asky/daemon/router.py`:
+    - Added `groupchat` handling path:
+      - messages are processed only for bound rooms,
+      - trusted invite bind helper (`handle_room_invite`),
+      - room-aware query/command routing and transcript confirmation keys.
+    - Added TOML URL apply routing and inline TOML apply handling.
+  - `src/asky/daemon/service.py`:
+    - Switched daemon serialization from strict per-sender JID to per-conversation key (room for groupchat).
+    - Added trusted invite auto-join flow and startup auto-rejoin for persisted bound rooms.
+    - Added room-aware reply targeting (`chat` vs `groupchat`) and TOML URL ingestion pass before normal text routing.
+  - Tests:
+    - Added `tests/test_xmpp_group_sessions.py`.
+    - Updated:
+      - `tests/test_storage.py`,
+      - `tests/test_xmpp_commands.py`,
+      - `tests/test_xmpp_router.py`,
+      - `tests/test_xmpp_client.py`,
+      - `tests/test_xmpp_daemon.py`.
+  - Docs:
+    - Updated `ARCHITECTURE.md` daemon flow and component map for group sessions + session overrides.
+    - Updated `src/asky/storage/AGENTS.md` and `tests/AGENTS.md`.
+- **Why**:
+  - Enable permanent per-group behavior and runtime-simple configuration changes via uploaded TOML while keeping scope constrained and avoiding broad runtime-global config refactors.
+  - Keep configuration ownership on sessions so groups can switch sessions and child sessions can inherit overrides.
+- **Validation**:
+  - Targeted:
+    - `uv run pytest tests/test_storage.py tests/test_file_prompts.py tests/test_xmpp_commands.py tests/test_xmpp_router.py tests/test_xmpp_client.py tests/test_xmpp_daemon.py tests/test_xmpp_group_sessions.py` -> passed.
+  - Full suite:
+    - `uv run pytest` -> `711 passed`.
+
 ## 2026-02-23 - XMPP Query Alias Expansion Parity with CLI
 
 Added CLI-equivalent query alias/slash expansion to daemon query execution so XMPP queries now process user prompts recursively before model execution.

@@ -24,6 +24,7 @@ from asky.cli.presets import expand_preset_invocation, list_presets_text
 logger = logging.getLogger(__name__)
 YES_TOKENS = {"yes", "y"}
 NO_TOKENS = {"no", "n"}
+SESSION_COMMAND_PREFIX = "/session"
 
 
 class DaemonRouter:
@@ -76,23 +77,56 @@ class DaemonRouter:
         jid: str,
         message_type: str,
         body: str,
+        room_jid: Optional[str] = None,
+        sender_jid: Optional[str] = None,
     ) -> Optional[str]:
         """Handle one text message and return response body."""
-        if message_type != "chat":
-            return None
-        if not self.is_authorized(jid):
+        normalized_type = str(message_type or "").strip().lower()
+        normalized_room = _normalize_jid(room_jid or "")
+        actor_jid = _normalize_jid(sender_jid or jid)
+
+        if normalized_type == "groupchat":
+            if not normalized_room:
+                return None
+            if not self.command_executor.is_room_bound(normalized_room):
+                return None
+            confirmation_key = normalized_room
+        elif normalized_type == "chat":
+            if not self.is_authorized(jid):
+                return None
+            confirmation_key = _normalize_jid(jid)
+        else:
             return None
 
         text = str(body or "").strip()
         if not text:
             return "Error: empty message."
 
-        confirmation_result = self._handle_confirmation_shortcut(jid, text)
+        inline_toml_result = self.command_executor.apply_inline_toml_if_present(
+            jid=actor_jid,
+            room_jid=normalized_room or None,
+            body=text,
+        )
+        if inline_toml_result is not None:
+            return inline_toml_result
+
+        if text.startswith(SESSION_COMMAND_PREFIX):
+            return self.command_executor.execute_session_command(
+                jid=actor_jid,
+                room_jid=normalized_room or None,
+                command_text=text,
+            )
+
+        confirmation_result = self._handle_confirmation_shortcut(confirmation_key, text)
         if confirmation_result is not None:
             return confirmation_result
 
         if text.startswith("\\"):
-            return self._handle_preset_invocation(jid, text)
+            return self._handle_preset_invocation(
+                jid=actor_jid,
+                room_jid=normalized_room or None,
+                text=text,
+            )
 
         if self.interface_planner.enabled:
             if self.command_prefix and text.startswith(self.command_prefix):
@@ -100,21 +134,75 @@ class DaemonRouter:
                 if not command_text:
                     return "Error: command body is required after prefix."
                 return self.command_executor.execute_command_text(
-                    jid=jid,
+                    jid=actor_jid,
                     command_text=command_text,
+                    room_jid=normalized_room or None,
                 )
             action = self.interface_planner.plan(text)
             if action.action_type == ACTION_COMMAND:
                 return self.command_executor.execute_command_text(
-                    jid=jid,
+                    jid=actor_jid,
                     command_text=action.command_text,
+                    room_jid=normalized_room or None,
                 )
-            return self.command_executor.execute_query_text(jid=jid, query_text=action.query_text)
+            return self.command_executor.execute_query_text(
+                jid=actor_jid,
+                room_jid=normalized_room or None,
+                query_text=action.query_text,
+            )
 
         if _looks_like_command(text):
-            return self.command_executor.execute_command_text(jid=jid, command_text=text)
+            return self.command_executor.execute_command_text(
+                jid=actor_jid,
+                room_jid=normalized_room or None,
+                command_text=text,
+            )
 
-        return self.command_executor.execute_query_text(jid=jid, query_text=text)
+        return self.command_executor.execute_query_text(
+            jid=actor_jid,
+            room_jid=normalized_room or None,
+            query_text=text,
+        )
+
+    def handle_toml_url_message(
+        self,
+        *,
+        jid: str,
+        message_type: str,
+        url: str,
+        room_jid: Optional[str] = None,
+        sender_jid: Optional[str] = None,
+    ) -> Optional[str]:
+        """Apply one uploaded TOML URL payload for chat/group conversation."""
+        normalized_type = str(message_type or "").strip().lower()
+        normalized_room = _normalize_jid(room_jid or "")
+        actor_jid = _normalize_jid(sender_jid or jid)
+        if normalized_type == "groupchat":
+            if not normalized_room:
+                return None
+            if not self.command_executor.is_room_bound(normalized_room):
+                return None
+        elif normalized_type == "chat":
+            if not self.is_authorized(jid):
+                return None
+        else:
+            return None
+        return self.command_executor.apply_toml_url(
+            jid=actor_jid,
+            room_jid=normalized_room or None,
+            url=url,
+        )
+
+    def handle_room_invite(self, *, room_jid: str, inviter_jid: str) -> bool:
+        """Authorize trusted room invite and ensure room binding exists."""
+        normalized_room = _normalize_jid(room_jid)
+        normalized_inviter = _normalize_jid(inviter_jid)
+        if not normalized_room or not normalized_inviter:
+            return False
+        if not self.is_authorized(normalized_inviter):
+            return False
+        self.command_executor.ensure_room_binding(normalized_room)
+        return True
 
     def handle_audio_message(
         self,
@@ -122,11 +210,22 @@ class DaemonRouter:
         jid: str,
         message_type: str,
         audio_url: str,
+        room_jid: Optional[str] = None,
     ) -> Optional[str]:
         """Queue voice transcription job and return immediate acknowledgement."""
-        if message_type != "chat":
-            return None
-        if not self.is_authorized(jid):
+        normalized_type = str(message_type or "").strip().lower()
+        normalized_room = _normalize_jid(room_jid or "")
+        if normalized_type == "groupchat":
+            if not normalized_room:
+                return None
+            if not self.command_executor.is_room_bound(normalized_room):
+                return None
+            conversation_id = normalized_room
+        elif normalized_type == "chat":
+            if not self.is_authorized(jid):
+                return None
+            conversation_id = _normalize_jid(jid)
+        else:
             return None
         if not self.voice_transcriber.enabled:
             return "Voice transcription is disabled."
@@ -136,16 +235,18 @@ class DaemonRouter:
             return "Error: audio URL is required."
 
         digest = hashlib.sha1(audio_url.encode("utf-8")).hexdigest()[:16]
-        artifact_path = Path(XMPP_VOICE_STORAGE_DIR).expanduser() / jid.replace("/", "_")
+        artifact_path = (
+            Path(XMPP_VOICE_STORAGE_DIR).expanduser() / conversation_id.replace("/", "_")
+        )
         file_path = artifact_path / f"transcript_{digest}.audio"
         pending = self.transcript_manager.create_pending_transcript(
-            jid=jid,
+            jid=conversation_id,
             audio_url=audio_url,
             audio_path=str(file_path),
         )
         self.voice_transcriber.enqueue(
             TranscriptionJob(
-                jid=jid,
+                jid=conversation_id,
                 transcript_id=pending.session_transcript_id,
                 audio_url=audio_url,
                 audio_path=str(file_path),
@@ -186,6 +287,7 @@ class DaemonRouter:
                     )
                 answer = self.command_executor.execute_query_text(
                     jid=jid,
+                    room_jid=(jid if self.command_executor.is_room_bound(jid) else None),
                     query_text=text,
                 )
                 return (jid, answer)
@@ -210,19 +312,29 @@ class DaemonRouter:
         )
         return (jid, f"Transcript #{transcript_id} failed: {error_text}")
 
-    def _handle_confirmation_shortcut(self, jid: str, text: str) -> Optional[str]:
-        pending_id = self._pending_transcript_confirmation.get(jid)
+    def _handle_confirmation_shortcut(
+        self,
+        conversation_key: str,
+        text: str,
+    ) -> Optional[str]:
+        pending_id = self._pending_transcript_confirmation.get(conversation_key)
         if pending_id is None:
             return None
         normalized = text.strip().lower()
         if normalized in YES_TOKENS:
-            self._pending_transcript_confirmation.pop(jid, None)
+            self._pending_transcript_confirmation.pop(conversation_key, None)
+            room_jid = (
+                conversation_key
+                if self.command_executor.is_room_bound(conversation_key)
+                else None
+            )
             return self.command_executor.execute_command_text(
-                jid=jid,
+                jid=conversation_key,
+                room_jid=room_jid,
                 command_text=f"transcript use {pending_id}",
             )
         if normalized in NO_TOKENS:
-            self._pending_transcript_confirmation.pop(jid, None)
+            self._pending_transcript_confirmation.pop(conversation_key, None)
             return (
                 f"Transcript #{pending_id} kept without running. "
                 f"Use `transcript use {pending_id}` anytime."
@@ -234,10 +346,20 @@ class DaemonRouter:
             return False
         return not self.interface_planner.enabled
 
-    def _handle_preset_invocation(self, jid: str, text: str) -> str:
+    def _handle_preset_invocation(
+        self,
+        *,
+        jid: str,
+        room_jid: Optional[str],
+        text: str,
+    ) -> str:
         expansion = expand_preset_invocation(text)
         if not expansion.matched:
-            return self.command_executor.execute_query_text(jid=jid, query_text=text)
+            return self.command_executor.execute_query_text(
+                jid=jid,
+                room_jid=room_jid,
+                query_text=text,
+            )
         if expansion.command_text == "\\presets":
             return list_presets_text()
         if expansion.error:
@@ -245,7 +367,11 @@ class DaemonRouter:
         command_text = str(expansion.command_text or "").strip()
         if not command_text:
             return "Error: preset expansion produced an empty command."
-        return self.command_executor.execute_command_text(jid=jid, command_text=command_text)
+        return self.command_executor.execute_command_text(
+            jid=jid,
+            room_jid=room_jid,
+            command_text=command_text,
+        )
 
 
 def _looks_like_command(text: str) -> bool:
@@ -254,6 +380,7 @@ def _looks_like_command(text: str) -> bool:
         return False
     first_token = stripped.split(maxsplit=1)[0].lower()
     command_tokens = {
+        "/session",
         "transcript",
         "history",
         "session",

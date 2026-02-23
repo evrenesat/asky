@@ -6,7 +6,7 @@ Data persistence layer using SQLite for message history and sessions.
 
 | Module | Purpose |
 |--------|---------|
-| `interface.py` | `HistoryRepository` ABC, `Interaction` / `Session` / `TranscriptRecord` dataclasses |
+| `interface.py` | `HistoryRepository` ABC, `Interaction` / `Session` / `TranscriptRecord` / room-binding / session-override dataclasses |
 | `sqlite.py` | `SQLiteHistoryRepository` implementation |
 
 ## Data Model (`interface.py`)
@@ -53,6 +53,19 @@ class TranscriptRecord:
     error: str
     duration_seconds: Optional[float]
     used: bool
+
+@dataclass
+class RoomSessionBinding:
+    room_jid: str
+    session_id: int
+    updated_at: str
+
+@dataclass
+class SessionOverrideFile:
+    session_id: int
+    filename: str
+    content: str
+    updated_at: str
 ```
 
 ## Database Schema
@@ -94,6 +107,17 @@ class TranscriptRecord:
 - `duration_seconds`: Transcription runtime
 - `used`: Whether transcript has been consumed via `transcript use`
 
+**`room_session_bindings`** - Persistent daemon room/session mapping:
+- `room_jid`: Lowercased room bare JID (primary key)
+- `session_id`: Active bound session for that room
+- `updated_at`: Last bind/switch timestamp
+
+**`session_override_files`** - Session-scoped override TOML snapshots:
+- `session_id`: Owning session
+- `filename`: Supported filename key (`general.toml`, `user.toml`)
+- `content`: Sanitized TOML content persisted with replace semantics
+- `updated_at`: Last write timestamp
+
 ## SQLiteHistoryRepository (`sqlite.py`)
 
 ### History Methods
@@ -125,6 +149,13 @@ class TranscriptRecord:
 | `list_transcripts()` | List newest transcript rows for one session |
 | `get_transcript()` | Lookup transcript by `(session_id, session_transcript_id)` |
 | `prune_transcripts()` | Delete oldest transcripts beyond retention cap |
+| `set_room_session_binding()` | Upsert room -> session binding |
+| `get_room_session_binding()` | Lookup bound session for one room |
+| `list_room_session_bindings()` | List all bound rooms |
+| `save_session_override_file()` | Upsert one session override TOML snapshot |
+| `get_session_override_file()` | Lookup one override file by session + filename |
+| `list_session_override_files()` | List override file snapshots for one session |
+| `copy_session_override_files()` | Copy override file snapshots across sessions |
 
 ## Design Decisions
 

@@ -6,11 +6,10 @@ import logging
 from pathlib import Path
 from typing import Optional
 
-from asky.config import DEFAULT_MODEL, XMPP_TRANSCRIPT_MAX_PER_SESSION
+from asky.config import XMPP_TRANSCRIPT_MAX_PER_SESSION
+from asky.daemon.session_profile_manager import SessionProfileManager
 from asky.storage import (
-    create_session,
     create_transcript,
-    get_session_by_name,
     get_transcript,
     list_transcripts,
     prune_transcripts,
@@ -19,14 +18,17 @@ from asky.storage import (
 from asky.storage.interface import TranscriptRecord
 
 logger = logging.getLogger(__name__)
-JID_SESSION_PREFIX = "xmpp:"
 
 
 class TranscriptManager:
     """Persist transcript state and map daemon senders to sessions."""
 
-    def __init__(self, transcript_cap: Optional[int] = None):
-        self._jid_to_session_id: dict[str, int] = {}
+    def __init__(
+        self,
+        transcript_cap: Optional[int] = None,
+        session_profile_manager: Optional[SessionProfileManager] = None,
+    ):
+        self.session_profile_manager = session_profile_manager or SessionProfileManager()
         self._transcript_cap = int(
             transcript_cap
             if transcript_cap is not None
@@ -38,18 +40,29 @@ class TranscriptManager:
         normalized_jid = str(jid).strip()
         if not normalized_jid:
             raise ValueError("jid is required")
-        cached = self._jid_to_session_id.get(normalized_jid)
-        if cached is not None:
-            return cached
+        return self.session_profile_manager.get_or_create_direct_session_id(normalized_jid)
 
-        session_name = f"{JID_SESSION_PREFIX}{normalized_jid}"
-        session = get_session_by_name(session_name)
-        if session is None:
-            session_id = create_session(model=DEFAULT_MODEL, name=session_name)
-        else:
-            session_id = int(session.id)
-        self._jid_to_session_id[normalized_jid] = session_id
-        return session_id
+    def get_or_create_room_session_id(self, room_jid: str) -> int:
+        """Return persistent session id for a room JID."""
+        normalized = str(room_jid or "").strip()
+        if not normalized:
+            raise ValueError("room_jid is required")
+        return self.session_profile_manager.get_or_create_room_session_id(normalized)
+
+    def bind_room_to_session(self, *, room_jid: str, session_id: int) -> None:
+        """Bind room to a specific existing session."""
+        self.session_profile_manager.bind_room_to_session(
+            room_jid=room_jid,
+            session_id=session_id,
+        )
+
+    def is_room_bound(self, room_jid: str) -> bool:
+        """Return whether room has a persisted session binding."""
+        return self.session_profile_manager.is_room_bound(room_jid)
+
+    def list_bound_room_jids(self) -> list[str]:
+        """List persisted room JIDs with active session bindings."""
+        return self.session_profile_manager.list_bound_room_jids()
 
     def create_pending_transcript(
         self,

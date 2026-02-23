@@ -3,12 +3,12 @@
 from types import SimpleNamespace
 from unittest.mock import patch
 
-import asky.daemon.command_executor as command_executor
 from asky.daemon.command_executor import CommandExecutor
 
 
 class _FakeTranscriptManager:
     def __init__(self):
+        self.session_profile_manager = _FakeSessionProfileManager()
         self.records = {
             ("jid", 1): SimpleNamespace(
                 session_transcript_id=1,
@@ -54,6 +54,51 @@ def _blocked_args():
     )
 
 
+class _FakeSessionProfileManager:
+    def __init__(self):
+        self.profile = SimpleNamespace(
+            default_model="dummy-model",
+            summarization_model="dummy-model",
+            user_prompts={},
+        )
+        self.switch_calls = []
+        self.new_calls = []
+        self.apply_calls = []
+
+    def resolve_conversation_session_id(self, *, room_jid, jid):
+        _ = (room_jid, jid)
+        return 1
+
+    def get_effective_profile(self, *, session_id):
+        _ = session_id
+        return self.profile
+
+    def list_recent_sessions(self, limit=20):
+        _ = limit
+        return [SimpleNamespace(id=1, name="session-one")]
+
+    def create_new_conversation_session(self, *, room_jid, jid, inherit_current):
+        self.new_calls.append((room_jid, jid, inherit_current))
+        _ = (room_jid, jid, inherit_current)
+        return 11
+
+    def switch_conversation_session(self, *, room_jid, jid, selector):
+        self.switch_calls.append((room_jid, jid, selector))
+        _ = (room_jid, jid, selector)
+        return 7, None
+
+    def apply_override_file(self, *, session_id, filename, content):
+        self.apply_calls.append((session_id, filename, content))
+        _ = (session_id, content)
+        return SimpleNamespace(
+            filename=filename,
+            saved=True,
+            ignored_keys=(),
+            applied_keys=("general.default_model",),
+            error=None,
+        )
+
+
 def _turn_result(final_answer: str = "ok"):
     return SimpleNamespace(
         halted=False,
@@ -86,7 +131,9 @@ def test_transcript_list_show_and_clear():
 
 
 def test_execute_query_text_expands_aliases_before_model_call():
-    executor = CommandExecutor(_FakeTranscriptManager())
+    manager = _FakeTranscriptManager()
+    manager.session_profile_manager.profile.user_prompts = {"alias": "hello"}
+    executor = CommandExecutor(manager)
     with (
         patch("asky.daemon.command_executor.AskyClient") as mock_client_cls,
         patch("asky.daemon.command_executor.utils.load_custom_prompts") as mock_load,
@@ -100,61 +147,58 @@ def test_execute_query_text_expands_aliases_before_model_call():
         response = executor.execute_query_text(jid="jid", query_text="ask /alias now")
 
     assert response == "expanded answer"
-    mock_load.assert_called_once()
-    mock_expand.assert_called_once_with("ask /alias now", verbose=False)
+    mock_load.assert_called_once_with(prompt_map={"alias": "hello"})
+    mock_expand.assert_called_once_with(
+        "ask /alias now",
+        verbose=False,
+        prompt_map={"alias": "hello"},
+    )
     request = mock_client.run_turn.call_args.args[0]
     assert request.query_text == "expanded query"
 
 
 def test_execute_query_text_slash_only_lists_prompts():
-    executor = CommandExecutor(_FakeTranscriptManager())
+    manager = _FakeTranscriptManager()
+    manager.session_profile_manager.profile.user_prompts = {"known": "Known prompt"}
+    executor = CommandExecutor(manager)
     with (
         patch(
             "asky.daemon.command_executor.utils.expand_query_text",
             return_value="/",
         ),
         patch("asky.daemon.command_executor.utils.load_custom_prompts"),
-        patch(
-            "asky.daemon.command_executor._capture_output",
-            return_value="prompt list",
-        ) as mock_capture,
         patch("asky.daemon.command_executor.AskyClient") as mock_client_cls,
     ):
         response = executor.execute_query_text(jid="jid", query_text="/")
 
-    assert response == "prompt list"
+    assert "Prompt Aliases:" in response
+    assert "/known:" in response
     mock_client_cls.assert_not_called()
-    assert mock_capture.call_count == 1
-    assert mock_capture.call_args.args[0] == command_executor.prompts.list_prompts_command
-    assert mock_capture.call_args.kwargs == {}
 
 
 def test_execute_query_text_unknown_slash_lists_filtered_prompts():
-    executor = CommandExecutor(_FakeTranscriptManager())
+    manager = _FakeTranscriptManager()
+    manager.session_profile_manager.profile.user_prompts = {"known": "Known"}
+    executor = CommandExecutor(manager)
     with (
-        patch.dict(command_executor.USER_PROMPTS, {"known": "Known"}, clear=True),
         patch(
             "asky.daemon.command_executor.utils.expand_query_text",
             return_value="/unknown rest",
         ),
         patch("asky.daemon.command_executor.utils.load_custom_prompts"),
-        patch(
-            "asky.daemon.command_executor._capture_output",
-            return_value="filtered prompt list",
-        ) as mock_capture,
         patch("asky.daemon.command_executor.AskyClient") as mock_client_cls,
     ):
         response = executor.execute_query_text(jid="jid", query_text="/unknown rest")
 
-    assert response == "filtered prompt list"
+    assert "Prompt Aliases:" in response
+    assert "/known:" in response
     mock_client_cls.assert_not_called()
-    assert mock_capture.call_count == 1
-    assert mock_capture.call_args.args[0] == command_executor.prompts.list_prompts_command
-    assert mock_capture.call_args.kwargs == {"filter_prefix": "unknown"}
 
 
 def test_execute_command_text_query_uses_shared_preparation():
-    executor = CommandExecutor(_FakeTranscriptManager())
+    manager = _FakeTranscriptManager()
+    manager.session_profile_manager.profile.user_prompts = {"alias": "Hello"}
+    executor = CommandExecutor(manager)
     with (
         patch("asky.daemon.command_executor.AskyClient") as mock_client_cls,
         patch("asky.daemon.command_executor.init_db"),
@@ -172,14 +216,19 @@ def test_execute_command_text_query_uses_shared_preparation():
         )
 
     assert response == "query answer"
-    mock_load.assert_called_once()
-    mock_expand.assert_called_once_with("ask /alias from command", verbose=False)
+    mock_load.assert_called_once_with(prompt_map={"alias": "Hello"})
+    mock_expand.assert_called_once_with(
+        "ask /alias from command",
+        verbose=False,
+        prompt_map={"alias": "Hello"},
+    )
     request = mock_client.run_turn.call_args.args[0]
     assert request.query_text == "normalized query"
 
 
 def test_transcript_use_path_inherits_query_alias_preparation():
     manager = _FakeTranscriptManager()
+    manager.session_profile_manager.profile.user_prompts = {"alias": "Hello"}
     manager.records[("jid", 1)].transcript_text = "check /alias"
     executor = CommandExecutor(manager)
     with (
@@ -196,7 +245,60 @@ def test_transcript_use_path_inherits_query_alias_preparation():
 
     assert response == "transcript answer"
     assert manager.used == [("jid", 1)]
-    mock_load.assert_called_once()
-    mock_expand.assert_called_once_with("check /alias", verbose=False)
+    mock_load.assert_called_once_with(prompt_map={"alias": "Hello"})
+    mock_expand.assert_called_once_with(
+        "check /alias",
+        verbose=False,
+        prompt_map={"alias": "Hello"},
+    )
     request = mock_client.run_turn.call_args.args[0]
     assert request.query_text == "expanded transcript query"
+
+
+def test_session_command_help_lists_recent_sessions():
+    manager = _FakeTranscriptManager()
+    executor = CommandExecutor(manager)
+    output = executor.execute_session_command(
+        jid="jid",
+        room_jid=None,
+        command_text="/session",
+    )
+    assert "Session commands:" in output
+    assert "Latest 20 Sessions:" in output
+    assert "1: session-one" in output
+
+
+def test_session_command_switch_and_child():
+    manager = _FakeTranscriptManager()
+    executor = CommandExecutor(manager)
+
+    switched = executor.execute_session_command(
+        jid="jid",
+        room_jid="room@conference.example.com",
+        command_text="/session 7",
+    )
+    child = executor.execute_session_command(
+        jid="jid",
+        room_jid="room@conference.example.com",
+        command_text="/session child",
+    )
+    assert switched == "Switched to session 7."
+    assert child == "Switched to child session 11 (inherited overrides)."
+    assert manager.session_profile_manager.switch_calls == [
+        ("room@conference.example.com", "jid", "7")
+    ]
+    assert manager.session_profile_manager.new_calls == [
+        ("room@conference.example.com", "jid", True)
+    ]
+
+
+def test_apply_inline_toml_if_present_uses_current_session():
+    manager = _FakeTranscriptManager()
+    executor = CommandExecutor(manager)
+    response = executor.apply_inline_toml_if_present(
+        jid="jid",
+        room_jid="room@conference.example.com",
+        body='general.toml\n```toml\n[general]\ndefault_model = "dummy-model"\n```',
+    )
+    assert "Applied general.toml override to session 1." in str(response)
+    assert manager.session_profile_manager.apply_calls[0][1] == "general.toml"

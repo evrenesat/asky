@@ -90,6 +90,7 @@ class XMPPDaemonService:
             port=XMPP_PORT,
             resource=XMPP_RESOURCE,
             message_callback=self._on_xmpp_message,
+            session_start_callback=self._on_xmpp_session_start,
         )
 
     def run_foreground(self) -> None:
@@ -99,30 +100,78 @@ class XMPPDaemonService:
         from_jid = str(payload.get("from_jid", "") or "").strip()
         if not from_jid:
             return
+        queue_key = _resolve_queue_key(payload, fallback_jid=from_jid)
 
         def _task() -> None:
-            response_text = None
             audio_url = str(payload.get("audio_url", "") or "").strip()
             body = str(payload.get("body", "") or "").strip()
             message_type = str(payload.get("type", "") or "").strip().lower()
+            room_jid = str(payload.get("room_jid", "") or "").strip().lower()
+            sender_jid = str(payload.get("sender_jid", "") or "").strip()
+            sender_nick = str(payload.get("sender_nick", "") or "").strip()
+            invite_room_jid = str(payload.get("invite_room_jid", "") or "").strip().lower()
+            invite_from_jid = str(payload.get("invite_from_jid", "") or "").strip()
+            target_jid, target_message_type = _resolve_reply_target(
+                from_jid=from_jid,
+                message_type=message_type,
+                room_jid=room_jid,
+            )
+
+            if invite_room_jid and invite_from_jid:
+                if self.router.handle_room_invite(
+                    room_jid=invite_room_jid,
+                    inviter_jid=invite_from_jid,
+                ):
+                    self._client.join_room(invite_room_jid)
+
+            if message_type == "groupchat" and sender_nick == XMPP_RESOURCE:
+                return
+
+            toml_urls = _extract_toml_urls(payload)
+            for toml_url in toml_urls:
+                response_text = self.router.handle_toml_url_message(
+                    jid=from_jid,
+                    message_type=message_type,
+                    url=toml_url,
+                    room_jid=room_jid or None,
+                    sender_jid=sender_jid or None,
+                )
+                if response_text:
+                    self._send_chunked(
+                        target_jid,
+                        response_text,
+                        message_type=target_message_type,
+                    )
+
             if audio_url:
                 response_text = self.router.handle_audio_message(
                     jid=from_jid,
                     message_type=message_type,
                     audio_url=audio_url,
+                    room_jid=room_jid or None,
                 )
                 if response_text:
-                    self._send_chunked(from_jid, response_text)
+                    self._send_chunked(
+                        target_jid,
+                        response_text,
+                        message_type=target_message_type,
+                    )
             if _should_process_text_body(audio_url=audio_url, body=body):
                 response_text = self.router.handle_text_message(
                     jid=from_jid,
                     message_type=message_type,
                     body=body,
+                    room_jid=room_jid or None,
+                    sender_jid=sender_jid or None,
                 )
                 if response_text:
-                    self._send_chunked(from_jid, response_text)
+                    self._send_chunked(
+                        target_jid,
+                        response_text,
+                        message_type=target_message_type,
+                    )
 
-        self._enqueue_for_jid(from_jid, _task)
+        self._enqueue_for_jid(queue_key, _task)
 
     def _enqueue_for_jid(self, jid: str, task: Callable[[], None]) -> None:
         if jid not in self._jid_queues:
@@ -149,7 +198,7 @@ class XMPPDaemonService:
             finally:
                 jid_queue.task_done()
 
-    def _send_chunked(self, jid: str, text: str) -> None:
+    def _send_chunked(self, jid: str, text: str, *, message_type: str = "chat") -> None:
         parts = chunk_text(text, XMPP_RESPONSE_CHUNK_CHARS)
         total = len(parts)
         for index, part in enumerate(parts, start=1):
@@ -157,14 +206,22 @@ class XMPPDaemonService:
                 body = f"[part {index}/{total}]\n{part}"
             else:
                 body = part
-            self._client.send_chat_message(jid, body)
+            if str(message_type or "").strip().lower() == "groupchat":
+                self._client.send_group_message(jid, body)
+            else:
+                self._client.send_chat_message(jid, body)
 
     def _on_transcription_complete(self, payload: dict) -> None:
         result = self.router.handle_transcription_result(payload)
         if not result:
             return
         jid, message = result
-        self._send_chunked(jid, message)
+        message_type = "groupchat" if self.command_executor.is_room_bound(jid) else "chat"
+        self._send_chunked(jid, message, message_type=message_type)
+
+    def _on_xmpp_session_start(self) -> None:
+        for room_jid in self.command_executor.list_bound_room_jids():
+            self._client.join_room(room_jid)
 
 
 def run_xmpp_daemon_foreground() -> None:
@@ -194,3 +251,39 @@ def _is_url_only_text(value: str) -> bool:
         return False
     parsed = urlparse(normalized)
     return parsed.scheme in {"http", "https"} and bool(parsed.netloc)
+
+
+def _resolve_queue_key(payload: dict, *, fallback_jid: str) -> str:
+    message_type = str(payload.get("type", "") or "").strip().lower()
+    if message_type == "groupchat":
+        room_jid = str(payload.get("room_jid", "") or "").strip().lower()
+        if room_jid:
+            return room_jid
+    return fallback_jid
+
+
+def _resolve_reply_target(
+    *,
+    from_jid: str,
+    message_type: str,
+    room_jid: str,
+) -> tuple[str, str]:
+    if str(message_type or "").strip().lower() == "groupchat":
+        if room_jid:
+            return room_jid, "groupchat"
+    return from_jid, "chat"
+
+
+def _extract_toml_urls(payload: dict) -> list[str]:
+    raw_urls = payload.get("oob_urls", []) or []
+    urls: list[str] = []
+    for value in raw_urls:
+        normalized = str(value or "").strip()
+        if not normalized:
+            continue
+        parsed = urlparse(normalized)
+        path = str(parsed.path or "").lower()
+        if not path.endswith(".toml"):
+            continue
+        urls.append(normalized)
+    return urls

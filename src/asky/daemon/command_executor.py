@@ -4,11 +4,18 @@ from __future__ import annotations
 
 import argparse
 import io
-from contextlib import redirect_stderr, redirect_stdout
+import os
+import re
+import threading
+from contextlib import contextmanager, redirect_stderr, redirect_stdout
 from typing import Optional
+from urllib.parse import urlparse
 
+import requests
+
+from asky import summarization
 from asky.api import AskyClient, AskyConfig, AskyTurnRequest
-from asky.cli import history, prompts, sessions, utils
+from asky.cli import history, sessions, utils
 from asky.cli.main import (
     _manual_corpus_query_arg,
     _manual_section_query_arg,
@@ -17,7 +24,7 @@ from asky.cli.main import (
     research_commands,
     section_commands,
 )
-from asky.config import DEFAULT_MODEL, USER_PROMPTS
+from asky.config import DEFAULT_MODEL
 from asky.daemon.transcript_manager import TranscriptManager
 from asky.storage import init_db
 
@@ -29,6 +36,17 @@ TRANSCRIPT_HELP = (
     "  transcript use <id>\n"
     "  transcript clear"
 )
+SESSION_COMMAND_TOKEN = "/session"
+SESSION_LIST_LIMIT = 20
+SESSION_HELP = (
+    "Session commands:\n"
+    "  /session                Show this help + latest sessions\n"
+    "  /session new            Create and switch to a new session\n"
+    "  /session child          Create and switch to a child session (inherit current overrides)\n"
+    "  /session <id|name>      Switch to an existing session by id or exact name"
+)
+MAX_TOML_DOWNLOAD_BYTES = 256 * 1024
+TOML_DOWNLOAD_TIMEOUT_SECONDS = 30
 REMOTE_BLOCKED_FLAGS_MESSAGE = (
     "Remote policy blocked this command in daemon mode."
 )
@@ -48,13 +66,18 @@ REMOTE_BLOCKED_FLAGS = (
     "--xmpp-daemon",
     "--completion-script",
 )
+INLINE_TOML_PATTERN = re.compile(
+    r"(?is)(?P<filename>[a-zA-Z0-9_\-]+\.(?:toml))\s*```toml\s*(?P<content>.*?)```"
+)
+_SUMMARIZATION_MODEL_OVERRIDE_LOCK = threading.Lock()
 
 
 class CommandExecutor:
-    """Execute parsed asky commands for one authorized sender."""
+    """Execute parsed asky commands for one authorized sender or room."""
 
     def __init__(self, transcript_manager: TranscriptManager):
         self.transcript_manager = transcript_manager
+        self.session_profile_manager = transcript_manager.session_profile_manager
 
     def get_interface_command_reference(self) -> str:
         """Return command-surface guidance for interface planner prompting."""
@@ -62,6 +85,7 @@ class CommandExecutor:
             "Remote command surface (emit as command_text):",
             "- history: --history <count>, --print-answer <ids>",
             "- sessions: --print-session <selector>, --session-history [count]",
+            "- daemon session switch: /session, /session new, /session child, /session <id|name>",
             "- research/manual corpus: --query-corpus <query> [--query-corpus-max-sources N] [--query-corpus-max-chunks N]",
             "- section summary: --summarize-section [SECTION_QUERY] [--section-source SOURCE] [--section-id ID] [--section-detail balanced|max|compact] [--section-max-chunks N]",
             "- research/profile toggles: -r [CORPUS_POINTER], --shortlist auto|on|off, -L",
@@ -72,25 +96,89 @@ class CommandExecutor:
         ]
         return "\n".join(lines)
 
-    def execute_command_text(self, *, jid: str, command_text: str) -> str:
+    def execute_session_command(
+        self,
+        *,
+        jid: str,
+        room_jid: Optional[str],
+        command_text: str,
+    ) -> str:
+        """Execute /session command surface scoped to current conversation."""
+        tokens = _split_command_tokens(command_text)
+        if not tokens or tokens[0] != SESSION_COMMAND_TOKEN:
+            return "Error: invalid /session command."
+        if len(tokens) == 1:
+            return self._render_session_help()
+
+        action = str(tokens[1] or "").strip().lower()
+        if action == "new":
+            session_id = self.session_profile_manager.create_new_conversation_session(
+                room_jid=room_jid,
+                jid=jid,
+                inherit_current=False,
+            )
+            return f"Switched to new session {session_id}."
+        if action == "child":
+            session_id = self.session_profile_manager.create_new_conversation_session(
+                room_jid=room_jid,
+                jid=jid,
+                inherit_current=True,
+            )
+            return f"Switched to child session {session_id} (inherited overrides)."
+
+        selector = " ".join(tokens[1:]).strip()
+        session_id, error = self.session_profile_manager.switch_conversation_session(
+            room_jid=room_jid,
+            jid=jid,
+            selector=selector,
+        )
+        if error:
+            return f"Error: {error}"
+        return f"Switched to session {session_id}."
+
+    def execute_command_text(
+        self,
+        *,
+        jid: str,
+        command_text: str,
+        room_jid: Optional[str] = None,
+    ) -> str:
         """Execute one command text and return response string."""
         tokens = _split_command_tokens(command_text)
         if not tokens:
             return "Error: empty command."
         if tokens[0] == TRANSCRIPT_COMMAND:
-            return self._handle_transcript_command(jid=jid, tokens=tokens[1:])
-        return self._execute_asky_tokens(jid=jid, tokens=tokens)
+            return self._handle_transcript_command(
+                jid=jid,
+                room_jid=room_jid,
+                tokens=tokens[1:],
+            )
+        return self._execute_asky_tokens(
+            jid=jid,
+            room_jid=room_jid,
+            tokens=tokens,
+        )
 
-    def execute_query_text(self, *, jid: str, query_text: str) -> str:
-        """Execute a plain query in sender-scoped persistent session."""
+    def execute_query_text(
+        self,
+        *,
+        jid: str,
+        query_text: str,
+        room_jid: Optional[str] = None,
+    ) -> str:
+        """Execute a plain query in sender/room-scoped persistent session."""
+        session_id = self._resolve_session_id(jid=jid, room_jid=room_jid)
+        profile = self.session_profile_manager.get_effective_profile(session_id=session_id)
         prepared_query, immediate_response = self._prepare_query_text(
             raw_query=query_text,
             verbose=False,
+            prompt_map=profile.user_prompts,
         )
         if immediate_response is not None:
             return immediate_response
         return self._run_query_with_args(
             jid=jid,
+            room_jid=room_jid,
             args=argparse.Namespace(
                 model=None,
                 summarize=False,
@@ -113,9 +201,114 @@ class CommandExecutor:
                 terminal_lines=None,
             ),
             query_text=prepared_query or "",
+            session_id=session_id,
+            profile=profile,
         )
 
-    def _execute_asky_tokens(self, *, jid: str, tokens: list[str]) -> str:
+    def ensure_room_binding(self, room_jid: str) -> int:
+        """Ensure room has a persisted bound session and return session id."""
+        return self.transcript_manager.get_or_create_room_session_id(room_jid)
+
+    def is_room_bound(self, room_jid: str) -> bool:
+        """Return whether room has a persisted bound session."""
+        return self.transcript_manager.is_room_bound(room_jid)
+
+    def list_bound_room_jids(self) -> list[str]:
+        """List persisted bound room JIDs."""
+        return self.transcript_manager.list_bound_room_jids()
+
+    def apply_toml_content(
+        self,
+        *,
+        jid: str,
+        room_jid: Optional[str],
+        filename: str,
+        content: str,
+    ) -> str:
+        """Apply inline/uploaded TOML override content for current conversation."""
+        session_id = self._resolve_session_id(jid=jid, room_jid=room_jid)
+        result = self.session_profile_manager.apply_override_file(
+            session_id=session_id,
+            filename=filename,
+            content=content,
+        )
+        if result.error:
+            return f"Error: {result.error}"
+
+        lines = [
+            f"Applied {result.filename} override to session {session_id}.",
+        ]
+        if result.applied_keys:
+            lines.append("Applied keys: " + ", ".join(result.applied_keys))
+        else:
+            lines.append("Applied keys: (none)")
+        if result.ignored_keys:
+            lines.append("Ignored keys: " + ", ".join(result.ignored_keys))
+        return "\n".join(lines)
+
+    def apply_toml_url(
+        self,
+        *,
+        jid: str,
+        room_jid: Optional[str],
+        url: str,
+    ) -> str:
+        """Download TOML from URL and apply as conversation-scoped override."""
+        normalized_url = str(url or "").strip()
+        if not normalized_url:
+            return "Error: TOML URL is required."
+        filename = _filename_from_url(normalized_url)
+        if not filename:
+            return "Error: Could not determine TOML filename from URL."
+        if not filename.endswith(".toml"):
+            return "Error: Uploaded URL does not reference a .toml file."
+        try:
+            content = _download_text_file(
+                normalized_url,
+                timeout_seconds=TOML_DOWNLOAD_TIMEOUT_SECONDS,
+                max_bytes=MAX_TOML_DOWNLOAD_BYTES,
+            )
+        except Exception as exc:
+            return f"Error: failed to download TOML file: {exc}"
+        return self.apply_toml_content(
+            jid=jid,
+            room_jid=room_jid,
+            filename=filename,
+            content=content,
+        )
+
+    def apply_inline_toml_if_present(
+        self,
+        *,
+        jid: str,
+        room_jid: Optional[str],
+        body: str,
+    ) -> Optional[str]:
+        """Detect inline TOML payload and apply it when present."""
+        normalized = str(body or "").strip()
+        if not normalized:
+            return None
+        match = INLINE_TOML_PATTERN.search(normalized)
+        if not match:
+            return None
+        filename = str(match.group("filename") or "").strip()
+        content = str(match.group("content") or "")
+        if not filename:
+            return "Error: Inline TOML filename is required."
+        return self.apply_toml_content(
+            jid=jid,
+            room_jid=room_jid,
+            filename=filename,
+            content=content,
+        )
+
+    def _execute_asky_tokens(
+        self,
+        *,
+        jid: str,
+        room_jid: Optional[str],
+        tokens: list[str],
+    ) -> str:
         try:
             args = parse_args(tokens)
         except SystemExit:
@@ -149,12 +342,13 @@ class CommandExecutor:
 
         manual_corpus_query = _manual_corpus_query_arg(args)
         manual_section_query = _manual_section_query_arg(args)
+        session_id = self._resolve_session_id(jid=jid, room_jid=room_jid)
+        profile = self.session_profile_manager.get_effective_profile(session_id=session_id)
 
         init_db()
 
         if getattr(args, "prompts", False):
-            utils.load_custom_prompts()
-            return _capture_output(prompts.list_prompts_command)
+            return self._render_prompt_list(prompt_map=profile.user_prompts)
         if getattr(args, "history", None) is not None:
             return _capture_output(history.show_history, args.history)
         if getattr(args, "print_ids", None):
@@ -201,20 +395,31 @@ class CommandExecutor:
         query_text, immediate_response = self._prepare_query_text(
             raw_query=raw_query,
             verbose=bool(args.verbose),
+            prompt_map=profile.user_prompts,
         )
         if immediate_response is not None:
             return immediate_response
-        return self._run_query_with_args(jid=jid, args=args, query_text=query_text or "")
+        return self._run_query_with_args(
+            jid=jid,
+            room_jid=room_jid,
+            args=args,
+            query_text=query_text or "",
+            session_id=session_id,
+            profile=profile,
+        )
 
     def _run_query_with_args(
         self,
         *,
         jid: str,
+        room_jid: Optional[str],
         args: argparse.Namespace,
         query_text: str,
+        session_id: int,
+        profile,
     ) -> str:
-        session_id = self.transcript_manager.get_or_create_session_id(jid)
-        model_alias = getattr(args, "model", None) or DEFAULT_MODEL
+        _ = room_jid  # explicit for readability in callsites; session_id already resolved.
+        model_alias = getattr(args, "model", None) or profile.default_model or DEFAULT_MODEL
         client = AskyClient(
             AskyConfig(
                 model_alias=model_alias,
@@ -245,7 +450,8 @@ class CommandExecutor:
             ),
             shortlist_override=str(getattr(args, "shortlist", "auto")),
         )
-        result = client.run_turn(request)
+        with _summarization_model_override(profile.summarization_model):
+            result = client.run_turn(request)
         if result.halted:
             reason = result.halt_reason or "unknown"
             notices = "\n".join(result.notices) if result.notices else ""
@@ -259,22 +465,53 @@ class CommandExecutor:
         *,
         raw_query: str,
         verbose: bool,
+        prompt_map: dict[str, str],
     ) -> tuple[Optional[str], Optional[str]]:
         query = str(raw_query or "")
         if "/" in query:
-            utils.load_custom_prompts()
-        expanded_query = utils.expand_query_text(query, verbose=bool(verbose))
+            utils.load_custom_prompts(prompt_map=prompt_map)
+        expanded_query = utils.expand_query_text(
+            query,
+            verbose=bool(verbose),
+            prompt_map=prompt_map,
+        )
         if expanded_query.startswith("/"):
             first_part = expanded_query.split(maxsplit=1)[0]
             if first_part == "/":
-                return None, _capture_output(prompts.list_prompts_command)
+                return None, self._render_prompt_list(prompt_map=prompt_map)
             prefix = first_part[1:]
-            if prefix and prefix not in USER_PROMPTS:
-                return None, _capture_output(
-                    prompts.list_prompts_command,
+            if prefix and prefix not in prompt_map:
+                return None, self._render_prompt_list(
+                    prompt_map=prompt_map,
                     filter_prefix=prefix,
                 )
         return expanded_query, None
+
+    def _render_prompt_list(
+        self,
+        *,
+        prompt_map: dict[str, str],
+        filter_prefix: Optional[str] = None,
+    ) -> str:
+        if not prompt_map:
+            return "No prompt aliases configured."
+        if filter_prefix:
+            filtered = {
+                key: value
+                for key, value in prompt_map.items()
+                if str(key).startswith(filter_prefix)
+            }
+            if not filtered:
+                filtered = prompt_map
+        else:
+            filtered = prompt_map
+        lines = ["Prompt Aliases:"]
+        for key in sorted(filtered.keys()):
+            value = str(filtered[key] or "").strip().replace("\n", " ")
+            if len(value) > 90:
+                value = value[:87] + "..."
+            lines.append(f"  /{key}: {value}")
+        return "\n".join(lines)
 
     def _validate_remote_policy(self, args: argparse.Namespace) -> Optional[str]:
         blocked = any(
@@ -298,7 +535,16 @@ class CommandExecutor:
             return f"Error: {REMOTE_BLOCKED_FLAGS_MESSAGE}"
         return None
 
-    def _handle_transcript_command(self, *, jid: str, tokens: list[str]) -> str:
+    def _handle_transcript_command(
+        self,
+        *,
+        jid: str,
+        room_jid: Optional[str],
+        tokens: list[str],
+    ) -> str:
+        conversation_id = str(room_jid or jid or "").strip()
+        if not conversation_id:
+            return "Error: conversation identifier is missing."
         if not tokens:
             return TRANSCRIPT_HELP
 
@@ -310,7 +556,7 @@ class CommandExecutor:
                     limit = max(1, int(tokens[1]))
                 except ValueError:
                     return "Error: transcript list limit must be an integer."
-            records = self.transcript_manager.list_for_jid(jid, limit=limit)
+            records = self.transcript_manager.list_for_jid(conversation_id, limit=limit)
             if not records:
                 return "No transcripts found."
             lines = ["Transcripts:"]
@@ -330,7 +576,7 @@ class CommandExecutor:
                 transcript_id = int(tokens[1])
             except ValueError:
                 return "Error: transcript id must be an integer."
-            record = self.transcript_manager.get_for_jid(jid, transcript_id)
+            record = self.transcript_manager.get_for_jid(conversation_id, transcript_id)
             if not record:
                 return f"Error: transcript {transcript_id} not found."
             return (
@@ -345,21 +591,41 @@ class CommandExecutor:
                 transcript_id = int(tokens[1])
             except ValueError:
                 return "Error: transcript id must be an integer."
-            record = self.transcript_manager.get_for_jid(jid, transcript_id)
+            record = self.transcript_manager.get_for_jid(conversation_id, transcript_id)
             if not record:
                 return f"Error: transcript {transcript_id} not found."
             if record.status != "completed":
                 return f"Error: transcript {transcript_id} is not completed."
-            self.transcript_manager.mark_used(jid=jid, transcript_id=transcript_id)
+            self.transcript_manager.mark_used(jid=conversation_id, transcript_id=transcript_id)
             if not record.transcript_text.strip():
                 return f"Error: transcript {transcript_id} has no text."
-            return self.execute_query_text(jid=jid, query_text=record.transcript_text)
+            return self.execute_query_text(
+                jid=jid,
+                room_jid=room_jid,
+                query_text=record.transcript_text,
+            )
 
         if command == "clear":
-            deleted = self.transcript_manager.clear_for_jid(jid)
+            deleted = self.transcript_manager.clear_for_jid(conversation_id)
             return f"Deleted {len(deleted)} transcript(s)."
 
         return TRANSCRIPT_HELP
+
+    def _resolve_session_id(self, *, jid: str, room_jid: Optional[str]) -> int:
+        return self.session_profile_manager.resolve_conversation_session_id(
+            room_jid=room_jid,
+            jid=jid,
+        )
+
+    def _render_session_help(self) -> str:
+        listed = self.session_profile_manager.list_recent_sessions(limit=SESSION_LIST_LIMIT)
+        lines = [SESSION_HELP, "", f"Latest {SESSION_LIST_LIMIT} Sessions:"]
+        if not listed:
+            lines.append("  (none)")
+            return "\n".join(lines)
+        for item in listed:
+            lines.append(f"  {item.id}: {item.name or '(unnamed)'}")
+        return "\n".join(lines)
 
 
 def _split_command_tokens(command_text: str) -> list[str]:
@@ -376,3 +642,41 @@ def _capture_output(fn, *args, **kwargs) -> str:
     with redirect_stdout(buffer), redirect_stderr(buffer):
         fn(*args, **kwargs)
     return buffer.getvalue().strip() or "(ok)"
+
+
+def _filename_from_url(url: str) -> str:
+    parsed = urlparse(str(url or "").strip())
+    path = os.path.basename(parsed.path or "")
+    return str(path or "").strip().lower()
+
+
+def _download_text_file(url: str, *, timeout_seconds: int, max_bytes: int) -> str:
+    with requests.get(url, stream=True, timeout=timeout_seconds) as response:
+        response.raise_for_status()
+        chunks: list[bytes] = []
+        total = 0
+        for chunk in response.iter_content(chunk_size=8192):
+            if not chunk:
+                continue
+            total += len(chunk)
+            if total > max_bytes:
+                raise RuntimeError(
+                    f"file exceeds size limit ({total} > {max_bytes} bytes)"
+                )
+            chunks.append(chunk)
+    return b"".join(chunks).decode("utf-8")
+
+
+@contextmanager
+def _summarization_model_override(alias: str):
+    normalized = str(alias or "").strip()
+    if not normalized:
+        yield
+        return
+    with _SUMMARIZATION_MODEL_OVERRIDE_LOCK:
+        original = summarization.SUMMARIZATION_MODEL
+        summarization.SUMMARIZATION_MODEL = normalized
+        try:
+            yield
+        finally:
+            summarization.SUMMARIZATION_MODEL = original

@@ -98,6 +98,25 @@ class TranscriptRecord:
     used: bool = False
 
 
+@dataclass
+class RoomSessionBinding:
+    """Represents one persistent group-room to session mapping."""
+
+    room_jid: str
+    session_id: int
+    updated_at: str
+
+
+@dataclass
+class SessionOverrideFile:
+    """Represents one persisted session-scoped override TOML file."""
+
+    session_id: int
+    filename: str
+    content: str
+    updated_at: str
+
+
 class HistoryRepository(ABC):
     """Abstract interface for message and session storage."""
 
@@ -294,4 +313,55 @@ class HistoryRepository(ABC):
         keep: int,
     ) -> List[TranscriptRecord]:
         """Prune old transcripts for a session and return deleted records."""
+        pass
+
+    @abstractmethod
+    def set_room_session_binding(self, *, room_jid: str, session_id: int) -> None:
+        """Create or update persistent room -> session binding."""
+        pass
+
+    @abstractmethod
+    def get_room_session_binding(self, *, room_jid: str) -> Optional[RoomSessionBinding]:
+        """Fetch one room binding by room JID."""
+        pass
+
+    @abstractmethod
+    def list_room_session_bindings(self) -> List[RoomSessionBinding]:
+        """List all persisted room bindings."""
+        pass
+
+    @abstractmethod
+    def save_session_override_file(
+        self,
+        *,
+        session_id: int,
+        filename: str,
+        content: str,
+    ) -> None:
+        """Create or replace one session-scoped override file snapshot."""
+        pass
+
+    @abstractmethod
+    def get_session_override_file(
+        self,
+        *,
+        session_id: int,
+        filename: str,
+    ) -> Optional[SessionOverrideFile]:
+        """Fetch one session-scoped override file snapshot."""
+        pass
+
+    @abstractmethod
+    def list_session_override_files(self, *, session_id: int) -> List[SessionOverrideFile]:
+        """List override file snapshots for a session."""
+        pass
+
+    @abstractmethod
+    def copy_session_override_files(
+        self,
+        *,
+        source_session_id: int,
+        target_session_id: int,
+    ) -> int:
+        """Copy all override file snapshots from source session to target session."""
         pass

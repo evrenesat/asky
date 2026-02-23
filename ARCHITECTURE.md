@@ -45,6 +45,7 @@ graph TB
         daemon_xmpp["xmpp_client.py<br/>Slixmpp Transport Wrapper"]
         daemon_router["router.py<br/>Ingress Routing + Policy"]
         daemon_exec["command_executor.py<br/>Command/Query Bridge"]
+        daemon_profiles["session_profile_manager.py<br/>Room/Session Bindings + Session Overrides"]
         daemon_planner["interface_planner.py<br/>Interface Model Planner"]
         daemon_voice["voice_transcriber.py<br/>Async Voice Jobs"]
         daemon_transcripts["transcript_manager.py<br/>Transcript Lifecycle"]
@@ -107,9 +108,11 @@ graph TB
     daemon_service --> daemon_chunking
     daemon_router --> daemon_planner
     daemon_router --> daemon_exec
+    daemon_router --> daemon_profiles
     daemon_router --> daemon_voice
     daemon_router --> daemon_transcripts
     daemon_exec --> api_client
+    daemon_exec --> daemon_profiles
     daemon_transcripts --> sqlite
     registry --> tools
     config_init --> loader
@@ -129,7 +132,7 @@ graph TB
 src/asky/
 ├── api/                # Programmatic library API surface (run_turn orchestration)
 ├── cli/                # Command-line interface → see cli/AGENTS.md
-├── daemon/             # Optional XMPP daemon runtime (transport/router/planner/voice)
+├── daemon/             # Optional XMPP daemon runtime (transport/router/planner/voice/group sessions)
 ├── core/               # Conversation engine → see core/AGENTS.md
 ├── storage/            # Data persistence → see storage/AGENTS.md
 ├── research/           # Research mode RAG → see research/AGENTS.md
@@ -158,7 +161,7 @@ For test organization, see `tests/AGENTS.md`.
 | Package     | Documentation                                     | Key Components                                   |
 | ----------- | ------------------------------------------------- | ------------------------------------------------ |
 | `cli/`      | [cli/AGENTS.md](src/asky/cli/AGENTS.md)           | Entry point, chat flow, commands                 |
-| `daemon/`   | (package docs inline)                              | XMPP transport, router, planner, voice pipeline  |
+| `daemon/`   | (package docs inline)                              | XMPP transport, group/direct router, session profile manager, voice pipeline  |
 | `api/`      | [api/AGENTS.md](src/asky/api/AGENTS.md)           | `AskyClient`, turn orchestration services        |
 | `core/`     | [core/AGENTS.md](src/asky/core/AGENTS.md)         | ConversationEngine, ToolRegistry, API client     |
 | `storage/`  | [storage/AGENTS.md](src/asky/storage/AGENTS.md)   | SQLite repository, data model                    |
@@ -270,13 +273,23 @@ daemon/service.py (foreground)
     ↓
 xmpp_client.py message callback payload
     ↓
-per-JID queue (serialized processing)
+per-conversation queue (serialized processing)
     ↓
 router.py guards:
-  - only type=chat
-  - sender allowlist (bare JID wildcard or exact full-JID)
+  - chat: sender allowlist (bare JID wildcard or exact full-JID)
+  - groupchat: room must be pre-bound or trusted-invited
     ↓
 Routing:
+  - trusted room invite:
+      auto-bind room -> persistent session
+      auto-join room
+  - uploaded config TOML (OOB URL or inline fenced TOML):
+      validate supported files (`general.toml`, `user.toml`)
+      apply session-scoped overrides (last write wins, no merge)
+      ignore unsupported keys with warning
+  - /session command surface:
+      /session, /session new, /session child, /session <id|name>
+      switches conversation's active session
   - with interface model:
       prefixed text -> direct command
       non-prefixed text -> interface planner (configurable system prompt + command reference) -> command/query action
@@ -297,6 +310,7 @@ chunked outbound chat replies
 
 Command presets are expanded at ingress (`\\name`, `\\presets`) before command execution, and remote policy is enforced after expansion/planning so blocked flags cannot be bypassed.
 XMPP query ingress applies the same recursive slash-expansion behavior as CLI (`/alias`, `/cp`) before model execution, and unresolved slash queries follow CLI prompt-list semantics (`/` lists all prompts, unknown `/prefix` returns filtered prompt listing). This shared query-prep path is used by direct text queries, interface-planned query actions, and `transcript use` query execution.
+Room bindings and session override files are persisted in SQLite; on daemon startup/session-start, previously bound rooms are auto-rejoined and continue with their last active bound sessions.
 
 ### Session Flow
 

@@ -163,6 +163,39 @@ class _FakeMessage:
         self.xml = xml
 
 
+class _MucPlugin:
+    def __init__(self):
+        self.join_calls = []
+
+    def join_muc(self, room_jid, nick, wait=False):
+        self.join_calls.append((room_jid, nick, wait))
+
+
+class _ClientWithMucSupport:
+    def __init__(self, jid, password):
+        self.jid = jid
+        self.password = password
+        self.handlers = {}
+        self.loop = _Loop()
+        self.plugin = {"xep_0045": _MucPlugin()}
+
+    def add_event_handler(self, name, callback):
+        self.handlers[name] = callback
+
+    def register_plugin(self, _name):
+        return None
+
+    def connect(self, host=None, port=None):
+        _ = (host, port)
+        return True
+
+    def process(self, forever=True):
+        _ = forever
+
+    def send_message(self, **kwargs):
+        _ = kwargs
+
+
 def test_start_foreground_uses_process_api(monkeypatch):
     module = SimpleNamespace(ClientXMPP=_ClientWithProcess)
     monkeypatch.setattr(xmpp_client, "slixmpp", module)
@@ -303,3 +336,32 @@ def test_send_chat_message_uses_loop_threadsafe_dispatch(monkeypatch):
     assert client._client.sent_messages == [
         {"mto": "u@example.com/resource", "mbody": "hello", "mtype": "chat"}
     ]
+
+
+def test_extract_group_invite_from_muc_user_extension():
+    root = ET.Element("message")
+    x = ET.SubElement(root, "{http://jabber.org/protocol/muc#user}x")
+    invite = ET.SubElement(x, "{http://jabber.org/protocol/muc#user}invite")
+    invite.set("from", "owner@example.com/resource")
+    msg = SimpleNamespace(xml=root)
+    msg.get = lambda key, default=None: "room@conference.example.com/inviter" if key == "from" else default
+
+    room_jid, inviter = xmpp_client._extract_group_invite(msg)
+    assert room_jid == "room@conference.example.com"
+    assert inviter == "owner@example.com/resource"
+
+
+def test_join_room_uses_xep0045_plugin(monkeypatch):
+    module = SimpleNamespace(ClientXMPP=_ClientWithMucSupport)
+    monkeypatch.setattr(xmpp_client, "slixmpp", module)
+    client = xmpp_client.AskyXMPPClient(
+        jid="bot@example.com",
+        password="secret",
+        host="xmpp.example.com",
+        port=5222,
+        resource="asky",
+        message_callback=lambda _payload: None,
+    )
+    client.join_room("room@conference.example.com")
+    plugin = client._client.plugin["xep_0045"]
+    assert plugin.join_calls == [("room@conference.example.com", "asky", False)]

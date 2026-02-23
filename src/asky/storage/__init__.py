@@ -2,7 +2,13 @@
 
 from typing import Optional, Union
 from asky.config import DB_PATH
-from asky.storage.interface import Interaction, HistoryRepository, TranscriptRecord
+from asky.storage.interface import (
+    Interaction,
+    HistoryRepository,
+    RoomSessionBinding,
+    SessionOverrideFile,
+    TranscriptRecord,
+)
 from asky.storage.sqlite import SQLiteHistoryRepository, Session
 
 # Default repository instance
@@ -209,3 +215,58 @@ def get_transcript(
 def prune_transcripts(*, session_id: int, keep: int) -> list[TranscriptRecord]:
     """Prune oldest transcript rows for one session."""
     return _repo.prune_transcripts(session_id=session_id, keep=keep)
+
+
+def set_room_session_binding(*, room_jid: str, session_id: int) -> None:
+    """Create or update persistent room -> session mapping."""
+    _repo.set_room_session_binding(room_jid=room_jid, session_id=session_id)
+
+
+def get_room_session_binding(*, room_jid: str) -> RoomSessionBinding | None:
+    """Get one room -> session mapping."""
+    return _repo.get_room_session_binding(room_jid=room_jid)
+
+
+def list_room_session_bindings() -> list[RoomSessionBinding]:
+    """List all persistent room -> session mappings."""
+    return _repo.list_room_session_bindings()
+
+
+def save_session_override_file(
+    *,
+    session_id: int,
+    filename: str,
+    content: str,
+) -> None:
+    """Create or replace one session-scoped override file snapshot."""
+    _repo.save_session_override_file(
+        session_id=session_id,
+        filename=filename,
+        content=content,
+    )
+
+
+def get_session_override_file(
+    *,
+    session_id: int,
+    filename: str,
+) -> SessionOverrideFile | None:
+    """Fetch one session-scoped override file snapshot."""
+    return _repo.get_session_override_file(session_id=session_id, filename=filename)
+
+
+def list_session_override_files(*, session_id: int) -> list[SessionOverrideFile]:
+    """List session-scoped override file snapshots."""
+    return _repo.list_session_override_files(session_id=session_id)
+
+
+def copy_session_override_files(
+    *,
+    source_session_id: int,
+    target_session_id: int,
+) -> int:
+    """Copy all override file snapshots from source to target session."""
+    return _repo.copy_session_override_files(
+        source_session_id=source_session_id,
+        target_session_id=target_session_id,
+    )

@@ -10,7 +10,9 @@ from asky.config import DB_PATH
 from asky.storage.interface import (
     HistoryRepository,
     Interaction,
+    RoomSessionBinding,
     Session,
+    SessionOverrideFile,
     TranscriptRecord,
 )
 
@@ -140,6 +142,23 @@ class SQLiteHistoryRepository(HistoryRepository):
             used=bool(row["used"] or 0),
         )
 
+    def _room_binding_from_row(self, row: sqlite3.Row) -> RoomSessionBinding:
+        """Build a room-binding dataclass from a sqlite row."""
+        return RoomSessionBinding(
+            room_jid=str(row["room_jid"] or ""),
+            session_id=int(row["session_id"]),
+            updated_at=str(row["updated_at"] or ""),
+        )
+
+    def _session_override_from_row(self, row: sqlite3.Row) -> SessionOverrideFile:
+        """Build a session override file dataclass from a sqlite row."""
+        return SessionOverrideFile(
+            session_id=int(row["session_id"]),
+            filename=str(row["filename"] or ""),
+            content=str(row["content"] or ""),
+            updated_at=str(row["updated_at"] or ""),
+        )
+
     def init_db(self) -> None:
         """Initialize the SQLite database and create tables if they don't exist."""
         os.makedirs(DB_PATH.parent, exist_ok=True)
@@ -206,6 +225,30 @@ class SQLiteHistoryRepository(HistoryRepository):
                 used INTEGER DEFAULT 0,
                 FOREIGN KEY (session_id) REFERENCES sessions(id),
                 UNIQUE (session_id, session_transcript_id)
+            )
+            """
+        )
+
+        c.execute(
+            """
+            CREATE TABLE IF NOT EXISTS room_session_bindings (
+                room_jid TEXT PRIMARY KEY,
+                session_id INTEGER NOT NULL,
+                updated_at TEXT NOT NULL,
+                FOREIGN KEY (session_id) REFERENCES sessions(id)
+            )
+            """
+        )
+
+        c.execute(
+            """
+            CREATE TABLE IF NOT EXISTS session_override_files (
+                session_id INTEGER NOT NULL,
+                filename TEXT NOT NULL,
+                content TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                PRIMARY KEY (session_id, filename),
+                FOREIGN KEY (session_id) REFERENCES sessions(id)
             )
             """
         )
@@ -1190,6 +1233,161 @@ class SQLiteHistoryRepository(HistoryRepository):
             conn.commit()
         conn.close()
         return deleted
+
+    def set_room_session_binding(self, *, room_jid: str, session_id: int) -> None:
+        """Create or update one room -> session binding."""
+        normalized_room = str(room_jid or "").strip().lower()
+        if not normalized_room:
+            raise ValueError("room_jid is required")
+        now = datetime.now().isoformat()
+        conn = self._get_conn()
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            INSERT INTO room_session_bindings (room_jid, session_id, updated_at)
+            VALUES (?, ?, ?)
+            ON CONFLICT(room_jid) DO UPDATE
+            SET session_id = excluded.session_id,
+                updated_at = excluded.updated_at
+            """,
+            (normalized_room, int(session_id), now),
+        )
+        conn.commit()
+        conn.close()
+
+    def get_room_session_binding(self, *, room_jid: str) -> Optional[RoomSessionBinding]:
+        """Fetch one room binding by room JID."""
+        normalized_room = str(room_jid or "").strip().lower()
+        if not normalized_room:
+            return None
+        conn = self._get_conn()
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            SELECT room_jid, session_id, updated_at
+            FROM room_session_bindings
+            WHERE room_jid = ?
+            LIMIT 1
+            """,
+            (normalized_room,),
+        )
+        row = cursor.fetchone()
+        conn.close()
+        if row is None:
+            return None
+        return self._room_binding_from_row(row)
+
+    def list_room_session_bindings(self) -> List[RoomSessionBinding]:
+        """List all room bindings."""
+        conn = self._get_conn()
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            SELECT room_jid, session_id, updated_at
+            FROM room_session_bindings
+            ORDER BY updated_at DESC
+            """
+        )
+        rows = cursor.fetchall()
+        conn.close()
+        return [self._room_binding_from_row(row) for row in rows]
+
+    def save_session_override_file(
+        self,
+        *,
+        session_id: int,
+        filename: str,
+        content: str,
+    ) -> None:
+        """Persist one session override file snapshot (replace semantics)."""
+        normalized_name = str(filename or "").strip().lower()
+        if not normalized_name:
+            raise ValueError("filename is required")
+        now = datetime.now().isoformat()
+        conn = self._get_conn()
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            INSERT INTO session_override_files (session_id, filename, content, updated_at)
+            VALUES (?, ?, ?, ?)
+            ON CONFLICT(session_id, filename) DO UPDATE
+            SET content = excluded.content,
+                updated_at = excluded.updated_at
+            """,
+            (int(session_id), normalized_name, str(content or ""), now),
+        )
+        conn.commit()
+        conn.close()
+
+    def get_session_override_file(
+        self,
+        *,
+        session_id: int,
+        filename: str,
+    ) -> Optional[SessionOverrideFile]:
+        """Fetch one override file for a session."""
+        normalized_name = str(filename or "").strip().lower()
+        if not normalized_name:
+            return None
+        conn = self._get_conn()
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            SELECT session_id, filename, content, updated_at
+            FROM session_override_files
+            WHERE session_id = ? AND filename = ?
+            LIMIT 1
+            """,
+            (int(session_id), normalized_name),
+        )
+        row = cursor.fetchone()
+        conn.close()
+        if row is None:
+            return None
+        return self._session_override_from_row(row)
+
+    def list_session_override_files(self, *, session_id: int) -> List[SessionOverrideFile]:
+        """List all override files for one session."""
+        conn = self._get_conn()
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            SELECT session_id, filename, content, updated_at
+            FROM session_override_files
+            WHERE session_id = ?
+            ORDER BY filename ASC
+            """,
+            (int(session_id),),
+        )
+        rows = cursor.fetchall()
+        conn.close()
+        return [self._session_override_from_row(row) for row in rows]
+
+    def copy_session_override_files(
+        self,
+        *,
+        source_session_id: int,
+        target_session_id: int,
+    ) -> int:
+        """Copy all override file snapshots from source to target session."""
+        source_id = int(source_session_id)
+        target_id = int(target_session_id)
+        if source_id == target_id:
+            return 0
+        existing = self.list_session_override_files(session_id=source_id)
+        copied = 0
+        for item in existing:
+            self.save_session_override_file(
+                session_id=target_id,
+                filename=item.filename,
+                content=item.content,
+            )
+            copied += 1
+        return copied
 
     def get_interaction_by_id(self, interaction_id: int) -> Optional[Interaction]:
         """Fetch a single interaction (assistant message id) with its details."""
