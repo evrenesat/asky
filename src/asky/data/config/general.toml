@@ -47,10 +47,13 @@ request_timeout = 60
 default_context_size = 4096
 
 # Default model used when no model is specified via CLI (-m).
-default_model = "lfm"
+default_model = ""
 
 # Model used specifically for internal text summarization tasks.
-summarization_model = "lfm"
+summarization_model = ""
+
+# Model used for interface planning in remote daemon mode.
+interface_model = ""
 
 # User-Agent string to be used for search and content retrieval requests.
 user_agent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36"

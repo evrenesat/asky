@@ -25,8 +25,9 @@ uv run pytest tests/test_cli.py::test_function_name
 | File | Coverage |
 |------|----------|
 | `test_cli.py` | Argument parsing, command handlers |
+| `test_presets.py` | Command preset parsing/substitution/listing behavior |
 | `test_completion.py` | Shell completion logic |
-| `test_models_cli.py` | Model add/edit commands |
+| `test_models_cli.py` | Model add/edit commands and role assignment actions (main/summarization/interface) |
 
 ### Core Tests
 
@@ -65,6 +66,12 @@ uv run pytest tests/test_cli.py::test_function_name
 | File | Coverage |
 |------|----------|
 | `test_config.py` | Configuration loading |
+| `test_xmpp_daemon.py` | XMPP daemon lifecycle, per-JID queueing, chunking |
+| `test_xmpp_router.py` | Allowlist and hybrid router behavior |
+| `test_xmpp_commands.py` | Remote command policy, transcript command surface, preset routing |
+| `test_xmpp_client.py` | slixmpp runtime API compatibility (`process` vs loop fallback) |
+| `test_interface_planner.py` | Interface model prompt contract, command-reference injection, JSON fallback behavior |
+| `test_voice_transcription.py` | Background voice job pipeline and platform gating |
 | `test_api_model_parameter_override.py` | API config parameter override merge behavior |
 | `test_email.py` | Email sending |
 | `test_html.py` | HTML stripping |

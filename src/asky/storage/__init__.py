@@ -2,7 +2,7 @@
 
 from typing import Optional, Union
 from asky.config import DB_PATH
-from asky.storage.interface import Interaction, HistoryRepository
+from asky.storage.interface import Interaction, HistoryRepository, TranscriptRecord
 from asky.storage.sqlite import SQLiteHistoryRepository, Session
 
 # Default repository instance
@@ -141,3 +141,71 @@ def list_sessions(limit: int) -> list[Session]:
 def get_first_message_preview(session_id: int, max_chars: int = 50) -> str:
     """Get the first user message preview from a session."""
     return _repo.get_first_message_preview(session_id, max_chars)
+
+
+def create_transcript(
+    *,
+    session_id: int,
+    jid: str,
+    audio_url: str,
+    audio_path: str,
+    status: str,
+    transcript_text: str = "",
+    error: str = "",
+    duration_seconds: float | None = None,
+) -> TranscriptRecord:
+    """Create a transcript row for daemon voice ingestion."""
+    return _repo.create_transcript(
+        session_id=session_id,
+        jid=jid,
+        audio_url=audio_url,
+        audio_path=audio_path,
+        status=status,
+        transcript_text=transcript_text,
+        error=error,
+        duration_seconds=duration_seconds,
+    )
+
+
+def update_transcript(
+    *,
+    session_id: int,
+    session_transcript_id: int,
+    status: str,
+    transcript_text: str | None = None,
+    error: str | None = None,
+    duration_seconds: float | None = None,
+    used: bool | None = None,
+) -> TranscriptRecord | None:
+    """Update transcript fields."""
+    return _repo.update_transcript(
+        session_id=session_id,
+        session_transcript_id=session_transcript_id,
+        status=status,
+        transcript_text=transcript_text,
+        error=error,
+        duration_seconds=duration_seconds,
+        used=used,
+    )
+
+
+def list_transcripts(*, session_id: int, limit: int = 20) -> list[TranscriptRecord]:
+    """List transcript rows for one session."""
+    return _repo.list_transcripts(session_id=session_id, limit=limit)
+
+
+def get_transcript(
+    *,
+    session_id: int,
+    session_transcript_id: int,
+) -> TranscriptRecord | None:
+    """Get one transcript row by session-scoped transcript ID."""
+    return _repo.get_transcript(
+        session_id=session_id,
+        session_transcript_id=session_transcript_id,
+    )
+
+
+def prune_transcripts(*, session_id: int, keep: int) -> list[TranscriptRecord]:
+    """Prune oldest transcript rows for one session."""
+    return _repo.prune_transcripts(session_id=session_id, keep=keep)

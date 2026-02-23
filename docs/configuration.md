@@ -10,6 +10,7 @@ This file controls the primary behavior of the CLI and its core limits.
 
 - `default_model`: The model used if `-m` is not provided (e.g., `"step35"`).
 - `summarization_model`: The model used to compress conversation history (more on this below).
+- `interface_model`: Optional planner model alias used by XMPP daemon routing for non-prefixed remote messages.
 - `max_turns`: The maximum number of tool-call iterations the model can take before it is forced to yield a final answer (default `30`).
 - `log_level`: Set to `"DEBUG"`, `"INFO"`, etc. (Logs go to `~/.config/asky/asky.log` by default).
 
@@ -107,7 +108,67 @@ asky --add-model
 asky --edit-model my-alias
 ```
 
-## 7. Output Actions (`push_data.toml`)
+## 7. Command Presets (`user.toml`)
+
+You can define reusable CLI command templates under `[command_presets]`:
+
+```toml
+[command_presets]
+daily = "--shortlist on Give me a concise daily briefing about $*"
+research_local = "-r $1 Summarize the local corpus and answer: $*"
+```
+
+Invocation format:
+
+- Local CLI: `asky \\daily ai regulation`
+- XMPP daemon: `\\daily ai regulation`
+- List presets: `\\presets`
+
+Expansion behavior:
+
+- Preset invocation is first-token only.
+- `$1..$9` map positional arguments.
+- `$*` expands to all trailing arguments.
+- Unreferenced extra args are appended automatically.
+
+## 8. XMPP Daemon Settings (`xmpp.toml`)
+
+Daemon mode is configured through `xmpp.toml` and started with `asky --xmpp-daemon`.
+
+Key options:
+
+- `enabled`: master switch for daemon startup.
+- `jid`, `password_env`/`password`, `host`, `port`, `resource`: transport credentials/connection.
+- `allowed_jids`: sender allowlist supporting both:
+  - bare JID (`user@domain`) to allow any resource
+  - full JID (`user@domain/resource`) for strict resource pinning
+- `command_prefix`: command marker when `general.interface_model` is configured (default `/asky`).
+- `interface_planner_include_command_reference`: when `true`, asky appends a generated command/policy reference to the planner system prompt.
+- `response_chunk_chars`: max outbound chunk length.
+- `transcript_max_per_session`: transcript retention cap per sender session.
+
+Voice controls (phase 1 macOS):
+
+- `voice_enabled`
+- `voice_workers`
+- `voice_max_size_mb`
+- `voice_model`
+- `voice_language`
+- `voice_storage_dir`
+- `voice_hf_token_env`
+- `voice_hf_token`
+- `voice_auto_yes_without_interface_model` (default `true`)
+- `voice_allowed_mime_types`
+
+Install extras as needed:
+
+```bash
+uv pip install "asky-cli[xmpp]"
+uv pip install "asky-cli[voice]"
+uv pip install "asky-cli[daemon]"
+```
+
+## 9. Output Actions (`push_data.toml`)
 
 Automate your workflow by pushing results directly from `asky` to external services.
 
@@ -120,7 +181,7 @@ Automate your workflow by pushing results directly from `asky` to external servi
   asky --push-data https://my-webhook.com/endpoint "Analyze this log output"
   ```
 
-## 8. Terminal Context Integration
+## 10. Terminal Context Integration
 
 If you are an **iTerm2** user on macOS, you can include the last N lines of your terminal screen as auto-appended context for your query. Very useful for "why am I getting this error?" moments.
 
@@ -132,7 +193,7 @@ If you are an **iTerm2** user on macOS, you can include the last N lines of your
 - **Configuration**: Set `terminal_context_lines = 10` in `general.toml` to change the default `-tl` capture depth.
 - **Prerequisite**: Ensure you have the iTerm2 Python API enabled in your iTerm2 settings.
 
-## 9. Shell Auto-Completion
+## 11. Shell Auto-Completion
 
 Enable tab completion for flags and dynamic values (like model aliases, history IDs, and session names):
 
@@ -146,11 +207,13 @@ asky --completion-script zsh >> ~/.zshrc
 source ~/.zshrc
 ```
 
-## 10. Prompt and Tool Text Overrides
+## 12. Prompt and Tool Text Overrides
 
 You can override built-in prompt text without forking the project.
 
 - Global/research prompts live under `[prompts]` in `prompts.toml`.
+- Interface planner prompt text is configurable via:
+  - `prompts.interface_planner_system`
 - Retrieval-only research guidance is configurable via:
   - `prompts.research_retrieval_only_guidance`
 - Built-in tool descriptions/guidelines can be overridden via:
@@ -162,6 +225,7 @@ Example:
 ```toml
 [prompts]
 research_retrieval_only_guidance = """Use preloaded corpus first. Query memory, then retrieve evidence."""
+interface_planner_system = """Return strict JSON action plan for remote routing."""
 
 [prompts.tool_overrides.web_search]
 description = "Search the web only when local/retrieval corpus is insufficient."

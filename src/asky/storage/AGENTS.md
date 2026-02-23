@@ -6,7 +6,7 @@ Data persistence layer using SQLite for message history and sessions.
 
 | Module | Purpose |
 |--------|---------|
-| `interface.py` | `HistoryRepository` ABC, `Interaction` and `Session` dataclasses |
+| `interface.py` | `HistoryRepository` ABC, `Interaction` / `Session` / `TranscriptRecord` dataclasses |
 | `sqlite.py` | `SQLiteHistoryRepository` implementation |
 
 ## Data Model (`interface.py`)
@@ -38,6 +38,21 @@ class Session:
     research_mode: bool
     research_source_mode: Optional[str]
     research_local_corpus_paths: List[str]
+
+@dataclass
+class TranscriptRecord:
+    id: int
+    session_id: int
+    session_transcript_id: int
+    jid: str
+    created_at: str
+    status: str
+    audio_url: str
+    audio_path: str
+    transcript_text: str
+    error: str
+    duration_seconds: Optional[float]
+    used: bool
 ```
 
 ## Database Schema
@@ -67,6 +82,18 @@ class Session:
 - `research_source_mode`: `web_only|local_only|mixed`
 - `research_local_corpus_paths`: JSON list of persisted corpus pointers
 
+**`transcripts`** - Daemon voice transcript records:
+- `id`: Primary key
+- `session_id`: Owning session
+- `session_transcript_id`: Numeric ID scoped to session
+- `jid`: Sender full JID
+- `status`: `pending|completed|failed`
+- `audio_url`, `audio_path`: Source/media artifact metadata
+- `transcript_text`: Completed transcript text
+- `error`: Failure details
+- `duration_seconds`: Transcription runtime
+- `used`: Whether transcript has been consumed via `transcript use`
+
 ## SQLiteHistoryRepository (`sqlite.py`)
 
 ### History Methods
@@ -93,6 +120,11 @@ class Session:
 | `delete_sessions()` | Delete sessions and messages |
 | `update_session_research_profile()` | Persist session research profile metadata |
 | `convert_history_to_session()` | Convert interaction to session (session names strip terminal-context wrapper prefixes) |
+| `create_transcript()` | Insert transcript row with session-scoped incrementing ID |
+| `update_transcript()` | Update status/text/error/usage fields |
+| `list_transcripts()` | List newest transcript rows for one session |
+| `get_transcript()` | Lookup transcript by `(session_id, session_transcript_id)` |
+| `prune_transcripts()` | Delete oldest transcripts beyond retention cap |
 
 ## Design Decisions
 

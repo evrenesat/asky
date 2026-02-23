@@ -58,6 +58,16 @@ asky = "asky.cli:main"
 iterm = [
     "iterm2>=2.13",
 ]
+xmpp = [
+    "slixmpp>=1.11.0",
+]
+voice = [
+    "mlx-whisper>=0.4.2",
+]
+daemon = [
+    "slixmpp>=1.11.0",
+    "mlx-whisper>=0.4.2",
+]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/asky"]

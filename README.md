@@ -31,6 +31,7 @@ asky embraces this philosophy. It does not take over your screen. It feels like 
 The extensive details of asky's operation are documented in the following guides:
 
 - [Configuration and Setup](./docs/configuration.md): Managing TOML config files, API keys, Model aliases, and Sessions.
+- [XMPP Daemon Mode](./docs/xmpp_daemon.md): Remote daemon setup, allowlists, presets, voice transcription, and transcript commands.
 - [Deep Research Mode (`-r`)](./docs/research_mode.md): Advanced web and local document research workflow.
 - [User Memory & Elephant Mode (`-em`)](./docs/elephant_mode.md): Persistent cross-session global and session-scoped memory.
 - [Custom Tools](./docs/custom_tools.md): Extending asky by allowing the LLM to run local CLI commands.
@@ -57,6 +58,19 @@ pip install "asky-cli[iterm]"
 uv tool install "asky-cli[iterm]"
 ```
 
+Optional daemon extras:
+
+```bash
+# XMPP daemon text mode
+uv pip install "asky-cli[xmpp]"
+
+# Voice transcription (mlx-whisper, macOS phase 1)
+uv pip install "asky-cli[voice]"
+
+# Combined daemon extras
+uv pip install "asky-cli[daemon]"
+```
+
 ## Basic Usage
 
 ```bash
@@ -74,6 +88,9 @@ asky -ss "Project X" "Let's brainstorm architectures"
 
 # Use a specific model
 asky -m gf "Explain quantum entanglement"
+
+# Run foreground XMPP daemon mode (optional)
+asky --xmpp-daemon
 ```
 
 ```console

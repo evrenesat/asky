@@ -66,6 +66,20 @@ type = "string"
 description = "The directory path to search in."
 default = "."
 
+[command_presets]
+# Command-line presets are invoked with "\" as the first token.
+# Examples:
+#   asky \daily "topic"
+#   XMPP message: \daily "topic"
+#
+# Placeholders:
+#   $1..$9 = positional arguments
+#   $*     = all trailing arguments
+#
+# Remaining arguments that are not explicitly referenced are appended automatically.
+daily = "--shortlist on Give me a concise daily briefing about $*"
+research_local = "-r $1 Summarize the local corpus and answer: $*"
+
 # -----------------------------------------------------------------------------
 # Optional prompt/tool override knobs (examples, commented out by default).
 # Copy these into your own ~/.config/asky/*.toml and adjust as needed.
@@ -75,6 +89,9 @@ default = "."
 # research_retrieval_only_guidance = """A research corpus has already been preloaded.
 # Prioritize query_research_memory + get_relevant_content.
 # Do not discover new URLs unless the user explicitly asks."""
+# interface_planner_system = """You are an asky interface planner.
+# Return ONLY JSON with action_type, command_text, query_text.
+# Emit command_text without /asky prefix."""
 #
 # [prompts.tool_overrides.web_search]
 # description = "Search for candidate sources when local corpus is insufficient."

@@ -19,6 +19,8 @@ _EXPORTS: Dict[str, Tuple[str, Optional[str]]] = {
     "build_messages": ("asky.cli.chat", "build_messages"),
     "expand_query_text": ("asky.cli.utils", "expand_query_text"),
     "print_config": ("asky.cli.utils", "print_config"),
+    "expand_preset_invocation": ("asky.cli.presets", "expand_preset_invocation"),
+    "list_presets_text": ("asky.cli.presets", "list_presets_text"),
     "openrouter": ("asky.cli.openrouter", None),
 }
 
@@ -36,11 +38,11 @@ def _main_entrypoint() -> None:
     main_impl()
 
 
-def parse_args():
+def parse_args(argv=None):
     from asky.cli.main import parse_args as parse_args_impl
 
     _restore_main_entrypoint()
-    return parse_args_impl()
+    return parse_args_impl(argv)
 
 
 def handle_print_answer_implicit(args):

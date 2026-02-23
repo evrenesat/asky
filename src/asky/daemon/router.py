@@ -1,0 +1,286 @@
+"""Ingress routing and policy enforcement for daemon messages."""
+
+from __future__ import annotations
+
+import hashlib
+import logging
+from pathlib import Path
+from typing import Optional
+
+from asky.config import (
+    XMPP_ALLOWED_JIDS,
+    XMPP_COMMAND_PREFIX,
+    XMPP_VOICE_STORAGE_DIR,
+)
+from asky.daemon.command_executor import CommandExecutor
+from asky.daemon.interface_planner import (
+    ACTION_COMMAND,
+    InterfacePlanner,
+)
+from asky.daemon.transcript_manager import TranscriptManager
+from asky.daemon.voice_transcriber import TranscriptionJob, VoiceTranscriber
+from asky.cli.presets import expand_preset_invocation, list_presets_text
+
+logger = logging.getLogger(__name__)
+YES_TOKENS = {"yes", "y"}
+NO_TOKENS = {"no", "n"}
+
+
+class DaemonRouter:
+    """Routes authorized messages to command/query execution paths."""
+
+    def __init__(
+        self,
+        *,
+        transcript_manager: TranscriptManager,
+        command_executor: CommandExecutor,
+        interface_planner: InterfacePlanner,
+        voice_transcriber: VoiceTranscriber,
+        command_prefix: str = XMPP_COMMAND_PREFIX,
+        allowed_jids: Optional[list[str]] = None,
+        voice_auto_yes_without_interface_model: bool = True,
+    ):
+        self.transcript_manager = transcript_manager
+        self.command_executor = command_executor
+        self.interface_planner = interface_planner
+        self.voice_transcriber = voice_transcriber
+        self.command_prefix = str(command_prefix or XMPP_COMMAND_PREFIX).strip()
+        self.voice_auto_yes_without_interface_model = bool(
+            voice_auto_yes_without_interface_model
+        )
+        self.allowed_full_jids: set[str] = set()
+        self.allowed_bare_jids: set[str] = set()
+        for raw_jid in allowed_jids or XMPP_ALLOWED_JIDS:
+            normalized = _normalize_jid(raw_jid)
+            if not normalized:
+                continue
+            bare_value = _bare_jid(normalized)
+            if "/" in normalized and bare_value != normalized:
+                self.allowed_full_jids.add(normalized)
+            else:
+                self.allowed_bare_jids.add(bare_value)
+        self._pending_transcript_confirmation: dict[str, int] = {}
+
+    def is_authorized(self, jid: str) -> bool:
+        normalized = _normalize_jid(jid)
+        if not normalized:
+            return False
+        if normalized in self.allowed_full_jids:
+            return True
+        bare_value = _bare_jid(normalized)
+        return bare_value in self.allowed_bare_jids
+
+    def handle_text_message(
+        self,
+        *,
+        jid: str,
+        message_type: str,
+        body: str,
+    ) -> Optional[str]:
+        """Handle one text message and return response body."""
+        if message_type != "chat":
+            return None
+        if not self.is_authorized(jid):
+            return None
+
+        text = str(body or "").strip()
+        if not text:
+            return "Error: empty message."
+
+        confirmation_result = self._handle_confirmation_shortcut(jid, text)
+        if confirmation_result is not None:
+            return confirmation_result
+
+        if text.startswith("\\"):
+            return self._handle_preset_invocation(jid, text)
+
+        if self.interface_planner.enabled:
+            if self.command_prefix and text.startswith(self.command_prefix):
+                command_text = text[len(self.command_prefix) :].strip()
+                if not command_text:
+                    return "Error: command body is required after prefix."
+                return self.command_executor.execute_command_text(
+                    jid=jid,
+                    command_text=command_text,
+                )
+            action = self.interface_planner.plan(text)
+            if action.action_type == ACTION_COMMAND:
+                return self.command_executor.execute_command_text(
+                    jid=jid,
+                    command_text=action.command_text,
+                )
+            return self.command_executor.execute_query_text(jid=jid, query_text=action.query_text)
+
+        if _looks_like_command(text):
+            return self.command_executor.execute_command_text(jid=jid, command_text=text)
+
+        return self.command_executor.execute_query_text(jid=jid, query_text=text)
+
+    def handle_audio_message(
+        self,
+        *,
+        jid: str,
+        message_type: str,
+        audio_url: str,
+    ) -> Optional[str]:
+        """Queue voice transcription job and return immediate acknowledgement."""
+        if message_type != "chat":
+            return None
+        if not self.is_authorized(jid):
+            return None
+        if not self.voice_transcriber.enabled:
+            return "Voice transcription is disabled."
+
+        audio_url = str(audio_url or "").strip()
+        if not audio_url:
+            return "Error: audio URL is required."
+
+        digest = hashlib.sha1(audio_url.encode("utf-8")).hexdigest()[:16]
+        artifact_path = Path(XMPP_VOICE_STORAGE_DIR).expanduser() / jid.replace("/", "_")
+        file_path = artifact_path / f"transcript_{digest}.audio"
+        pending = self.transcript_manager.create_pending_transcript(
+            jid=jid,
+            audio_url=audio_url,
+            audio_path=str(file_path),
+        )
+        self.voice_transcriber.enqueue(
+            TranscriptionJob(
+                jid=jid,
+                transcript_id=pending.session_transcript_id,
+                audio_url=audio_url,
+                audio_path=str(file_path),
+            )
+        )
+        return (
+            f"Queued transcription job #{pending.session_transcript_id}. "
+            "I will notify you when it is ready."
+        )
+
+    def handle_transcription_result(self, payload: dict) -> Optional[tuple[str, str]]:
+        """Persist transcription completion and build user-facing notification."""
+        jid = str(payload.get("jid", "") or "").strip()
+        if not jid:
+            return None
+        transcript_id = int(payload.get("transcript_id", 0) or 0)
+        status = str(payload.get("status", "") or "").strip().lower()
+        if status == "completed":
+            text = str(payload.get("transcript_text", "") or "").strip()
+            duration_seconds = payload.get("duration_seconds")
+            record = self.transcript_manager.mark_transcript_completed(
+                jid=jid,
+                transcript_id=transcript_id,
+                transcript_text=text,
+                duration_seconds=duration_seconds,
+            )
+            if record is None:
+                return None
+            if self._should_auto_run_completed_transcript():
+                self.transcript_manager.mark_used(jid=jid, transcript_id=transcript_id)
+                if not text:
+                    return (
+                        jid,
+                        (
+                            f"Transcript #{transcript_id} is empty. "
+                            f"Use `transcript show {transcript_id}` to inspect."
+                        ),
+                    )
+                answer = self.command_executor.execute_query_text(
+                    jid=jid,
+                    query_text=text,
+                )
+                return (jid, answer)
+            self._pending_transcript_confirmation[jid] = transcript_id
+            preview = record.transcript_text or ""
+            return (
+                jid,
+                (
+                    f"Transcript #{transcript_id} ready.\n"
+                    f"{preview}\n\n"
+                    f"Reply 'yes' to run transcript #{transcript_id} as a query now.\n"
+                    f"Reply 'no' to keep it for later.\n"
+                    f"Or run: transcript use {transcript_id}"
+                ),
+            )
+
+        error_text = str(payload.get("error", "") or "Unknown transcription error")
+        self.transcript_manager.mark_transcript_failed(
+            jid=jid,
+            transcript_id=transcript_id,
+            error=error_text,
+        )
+        return (jid, f"Transcript #{transcript_id} failed: {error_text}")
+
+    def _handle_confirmation_shortcut(self, jid: str, text: str) -> Optional[str]:
+        pending_id = self._pending_transcript_confirmation.get(jid)
+        if pending_id is None:
+            return None
+        normalized = text.strip().lower()
+        if normalized in YES_TOKENS:
+            self._pending_transcript_confirmation.pop(jid, None)
+            return self.command_executor.execute_command_text(
+                jid=jid,
+                command_text=f"transcript use {pending_id}",
+            )
+        if normalized in NO_TOKENS:
+            self._pending_transcript_confirmation.pop(jid, None)
+            return (
+                f"Transcript #{pending_id} kept without running. "
+                f"Use `transcript use {pending_id}` anytime."
+            )
+        return None
+
+    def _should_auto_run_completed_transcript(self) -> bool:
+        if not self.voice_auto_yes_without_interface_model:
+            return False
+        return not self.interface_planner.enabled
+
+    def _handle_preset_invocation(self, jid: str, text: str) -> str:
+        expansion = expand_preset_invocation(text)
+        if not expansion.matched:
+            return self.command_executor.execute_query_text(jid=jid, query_text=text)
+        if expansion.command_text == "\\presets":
+            return list_presets_text()
+        if expansion.error:
+            return f"Error: {expansion.error}"
+        command_text = str(expansion.command_text or "").strip()
+        if not command_text:
+            return "Error: preset expansion produced an empty command."
+        return self.command_executor.execute_command_text(jid=jid, command_text=command_text)
+
+
+def _looks_like_command(text: str) -> bool:
+    stripped = str(text or "").strip()
+    if not stripped:
+        return False
+    first_token = stripped.split(maxsplit=1)[0].lower()
+    command_tokens = {
+        "transcript",
+        "history",
+        "session",
+        "--history",
+        "-h",
+        "--print-answer",
+        "-pa",
+        "--print-session",
+        "-ps",
+        "--query-corpus",
+        "--summarize-section",
+        "-r",
+        "--research",
+        "-ss",
+        "--sticky-session",
+        "-rs",
+        "--resume-session",
+    }
+    return first_token.startswith("-") or first_token in command_tokens
+
+
+def _normalize_jid(value: str) -> str:
+    return str(value or "").strip()
+
+
+def _bare_jid(value: str) -> str:
+    normalized = _normalize_jid(value)
+    if "/" in normalized:
+        return normalized.split("/", 1)[0].strip()
+    return normalized

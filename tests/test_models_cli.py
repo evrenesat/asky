@@ -16,7 +16,13 @@ FAKE_MODELS = {
     }
 }
 
-FAKE_CONFIG = {"general": {"default_model": "other", "summarization_model": "other"}}
+FAKE_CONFIG = {
+    "general": {
+        "default_model": "other",
+        "summarization_model": "other",
+        "interface_model": "other",
+    }
+}
 
 
 def _prepare_models_file(tmp_path: Path) -> Path:
@@ -120,6 +126,23 @@ def test_edit_model_action_s_sets_summarization_model(tmp_path):
         edit_model_command("mymodel")
 
     mock_update.assert_called_once_with("summarization_model", "mymodel")
+    mock_save.assert_not_called()
+
+
+def test_edit_model_action_i_sets_interface_model(tmp_path):
+    """Choosing 'i' updates interface_model and returns without touching model config."""
+    _prepare_models_file(tmp_path)
+
+    with (
+        patch("asky.cli.models.MODELS", FAKE_MODELS),
+        patch("asky.cli.models.load_config", return_value=FAKE_CONFIG),
+        patch("asky.cli.models.Prompt.ask", return_value="i"),
+        patch("asky.cli.models.update_general_config") as mock_update,
+        patch("asky.cli.models.save_model_config") as mock_save,
+    ):
+        edit_model_command("mymodel")
+
+    mock_update.assert_called_once_with("interface_model", "mymodel")
     mock_save.assert_not_called()
 
 

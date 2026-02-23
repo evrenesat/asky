@@ -140,6 +140,9 @@ Behavior:
 - `--section-id` provides deterministic section selection and bypasses title matching.
 - `--section-detail` supports `compact`, `balanced` (default), and `max`.
 - Section rows now include `section_ref` in the form `corpus://cache/<id>#section=<section-id>`.
+- If a requested section ID points to a tiny TOC/alias slice, summarization auto-promotes
+  to the canonical body section when available.
+- Tiny resolved sections are rejected with actionable errors instead of being summarized.
 
 ## Research Toolset
 
@@ -167,3 +170,24 @@ Section scoping contract:
 - Preferred: pass explicit `section_ref` or `section_id`.
 - Compatibility: legacy source suffixes like `corpus://cache/<id>/<section-id>` are accepted.
 - For retrieval/full-content section scope, do not invent path hacks when `section_ref` is available.
+
+## Recommended Tool Call Pattern (Model)
+
+For section-bounded research answers in local corpus:
+
+1. Call `list_sections(source=\"corpus://cache/<id>\")`.
+2. Choose one section using returned `section_ref`.
+3. Call `summarize_section(source=\"corpus://cache/<id>\", section_ref=\"...\", detail=\"max\")`.
+4. If more depth is needed, call `get_relevant_content` or `get_full_content` with the same `section_ref`.
+
+Example retrieval call shapes:
+
+```json
+{"query":"arguments and evidence","urls":["corpus://cache/247"],"section_ref":"corpus://cache/247#section=why-learning-is-still-a-slog-after-fifty-years-o-038"}
+```
+
+```json
+{"urls":["corpus://cache/247/why-learning-is-still-a-slog-after-fifty-years-o-014"],"query":"examples and caveats"}
+```
+
+The second shape is legacy compatibility and still supported, but `section_ref` is preferred.

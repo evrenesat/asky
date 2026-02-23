@@ -66,7 +66,7 @@ DEFAULT_MANUAL_QUERY_MAX_CHUNKS = 3
 DEFAULT_SECTION_DETAIL = "balanced"
 
 
-def parse_args() -> argparse.Namespace:
+def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
     """Parse command-line arguments."""
     from asky.cli.completion import (
         complete_answer_ids,
@@ -429,6 +429,11 @@ def parse_args() -> argparse.Namespace:
         choices=["bash", "zsh"],
         help="Print shell setup snippet for argcomplete and exit.",
     )
+    parser.add_argument(
+        "--xmpp-daemon",
+        action="store_true",
+        help="Run foreground XMPP daemon mode.",
+    )
     parser.add_argument("query", nargs="*", help="The query string")
 
     model_action.completer = complete_model_aliases
@@ -440,7 +445,7 @@ def parse_args() -> argparse.Namespace:
     parser._option_string_actions["--tool-off"].completer = complete_tool_names
 
     enable_argcomplete(parser)
-    parsed_args = parser.parse_args()
+    parsed_args = parser.parse_args(argv)
     parsed_args.verbose_level = int(getattr(parsed_args, "verbose_level", 0) or 0)
     parsed_args.verbose = parsed_args.verbose_level >= 1
     parsed_args.double_verbose = parsed_args.verbose_level >= 2
@@ -668,6 +673,24 @@ def _resolve_research_corpus(
 def main() -> None:
     """Main entry point."""
     args = parse_args()
+    raw_initial_query = " ".join(getattr(args, "query", []) or [])
+    if raw_initial_query.startswith("\\"):
+        from asky.cli.presets import expand_preset_invocation, list_presets_text
+
+        preset_expansion = expand_preset_invocation(raw_initial_query)
+        if preset_expansion.matched:
+            if preset_expansion.command_text == "\\presets":
+                print(list_presets_text())
+                return
+            if preset_expansion.error:
+                print(f"Error: {preset_expansion.error}")
+                return
+            expanded_tokens = list(preset_expansion.command_tokens or [])
+            if not expanded_tokens:
+                print("Error: Preset expansion produced an empty command.")
+                return
+            args = parse_args(expanded_tokens)
+
     manual_corpus_query = _manual_corpus_query_arg(args)
     manual_section_query = _manual_section_query_arg(args)
 
@@ -784,6 +807,12 @@ def main() -> None:
         from asky.cli.completion import build_completion_script
 
         print(build_completion_script(args.completion_script))
+        return
+
+    if getattr(args, "xmpp_daemon", False) is True:
+        from asky.daemon.service import run_xmpp_daemon_foreground
+
+        run_xmpp_daemon_foreground()
         return
 
     if args.add_model:

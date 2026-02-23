@@ -596,6 +596,89 @@ def test_parse_args_completion_script():
         assert args.completion_script == "zsh"
 
 
+def test_parse_args_xmpp_daemon_flag():
+    with patch("sys.argv", ["asky", "--xmpp-daemon"]):
+        args = parse_args()
+        assert args.xmpp_daemon is True
+
+
+@patch("asky.cli.main.parse_args")
+@patch("asky.daemon.service.run_xmpp_daemon_foreground")
+def test_main_xmpp_daemon_early_exit(mock_run_daemon, mock_parse):
+    mock_parse.return_value = argparse.Namespace(
+        model="gf",
+        history=None,
+        continue_ids=None,
+        summarize=False,
+        delete_messages=None,
+        delete_sessions=None,
+        all=False,
+        print_session=None,
+        print_ids=None,
+        prompts=False,
+        query=[],
+        verbose=False,
+        open=False,
+        mail_recipients=None,
+        subject=None,
+        sticky_session=None,
+        resume_session=None,
+        session_end=False,
+        session_history=None,
+        terminal_lines=None,
+        add_model=False,
+        edit_model=None,
+        reply=False,
+        session_from_message=None,
+        completion_script=None,
+        xmpp_daemon=True,
+    )
+
+    main()
+    mock_run_daemon.assert_called_once()
+
+
+@patch("asky.cli.main.parse_args")
+@patch("asky.cli.main.setup_logging")
+def test_main_preset_list_command_prints(mock_setup_logging, mock_parse, capsys):
+    mock_parse.side_effect = [
+        argparse.Namespace(
+            model="gf",
+            history=None,
+            continue_ids=None,
+            summarize=False,
+            delete_messages=None,
+            delete_sessions=None,
+            all=False,
+            print_session=None,
+            print_ids=None,
+            prompts=False,
+            query=[r"\presets"],
+            verbose=False,
+            open=False,
+            mail_recipients=None,
+            subject=None,
+            sticky_session=None,
+            resume_session=None,
+            session_end=False,
+            session_history=None,
+            terminal_lines=None,
+            add_model=False,
+            edit_model=None,
+            reply=False,
+            session_from_message=None,
+            completion_script=None,
+            xmpp_daemon=False,
+            research=False,
+        ),
+    ]
+
+    with patch("asky.cli.presets.COMMAND_PRESETS", {"daily": "foo bar"}):
+        main()
+    captured = capsys.readouterr()
+    assert "Command Presets:" in captured.out
+
+
 @patch("asky.cli.history.get_history")
 def test_show_history(mock_get_history, capsys):
     mock_get_history.return_value = [

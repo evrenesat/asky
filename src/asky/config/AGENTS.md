@@ -21,6 +21,7 @@ Located in `data/config/`:
 | `prompts.toml` | System prompts, summarization templates |
 | `research.toml` | Research mode settings, embeddings, shortlist |
 | `user.toml` | User-defined prompt shortcuts |
+| `xmpp.toml` | Optional XMPP daemon and voice-transcription settings |
 | `push_data.toml` | HTTP endpoint definitions for data push |
 
 ## Loading Flow (`loader.py`)
@@ -56,6 +57,7 @@ Persist model changes using `tomlkit` to preserve formatting.
 |----------|-------------|
 | `MODELS` | Dict of all model definitions |
 | `SUMMARIZATION_MODEL` | Model for summarization tasks |
+| `INTERFACE_MODEL` | Optional interface planner model alias for daemon routing |
 
 ### Prompts
 
@@ -64,6 +66,7 @@ Persist model changes using `tomlkit` to preserve formatting.
 | `SYSTEM_PROMPT` | `prompts.system_prefix` |
 | `SEARCH_SUFFIX` | `prompts.search_suffix` |
 | `RESEARCH_SYSTEM_PROMPT` | `prompts.research_system` |
+| `INTERFACE_PLANNER_SYSTEM_PROMPT` | `prompts.interface_planner_system` |
 
 ### Research Settings
 
@@ -85,7 +88,16 @@ candidate pools while keeping fetch cost bounded.
 |----------|-------------|
 | `CUSTOM_TOOLS` | User-defined tool configs |
 | `USER_PROMPTS` | Prompt shortcuts |
+| `COMMAND_PRESETS` | Backslash command preset templates from `[command_presets]` |
 | `PUSH_DATA_ENDPOINTS` | Push data endpoints |
+
+### XMPP/Daemon Settings
+
+| Constant Group | Description |
+|----------|-------------|
+| `XMPP_*` | Daemon transport/auth/allowlist/chunking/transcript caps |
+| `XMPP_VOICE_*` | Voice transcription feature flags/limits/model/storage settings, including Hugging Face token env/key wiring |
+| `XMPP_INTERFACE_*` | Interface planner prompt-reference injection toggles in daemon mode |
 
 ## Environment Variables
 

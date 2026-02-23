@@ -174,6 +174,10 @@ Section-reference contract for tool calls:
   retrieval/full-content flows.
 - `list_sections` defaults to canonical body sections and includes `section_ref` in
   each row. Use `include_toc=true` only when TOC/debug rows are needed.
+- `summarize_section` resolves aliases to canonical section IDs and can return
+  `requested_section_id`, `resolved_section_id`, and `auto_promoted`.
+- When resolved section text is too small, `summarize_section` returns structured
+  error output instead of generating a low-quality summary.
 
 ## Minimal vs Full APIs
 
@@ -309,3 +313,11 @@ print(resume_result.session_id)
 - Tool disable names are exact string matches.
 - `run_turn(save_history=False)` lets you use asky as a stateless inference step.
 - On resumed sessions, effective research mode/profile is derived from persisted session metadata when no explicit override is supplied.
+
+## Daemon Integration Note
+
+XMPP daemon mode is exposed through CLI (`asky --xmpp-daemon`) and currently uses internal modules under `asky.daemon.*`.
+
+- Programmatic integrations should continue to use `AskyClient.run_turn(...)` as the stable API.
+- Daemon routing/planner behavior is configured through `general.interface_model`, `xmpp.toml`, `prompts.interface_planner_system`, and `[command_presets]` in `user.toml`.
+- See `docs/xmpp_daemon.md` for operational details and remote safety policy.

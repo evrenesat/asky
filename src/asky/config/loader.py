@@ -50,6 +50,7 @@ def load_config() -> Dict[str, Any]:
         "api.toml",
         "prompts.toml",
         "user.toml",
+        "xmpp.toml",
         "push_data.toml",
         "research.toml",
         "models.toml",
@@ -67,6 +68,8 @@ def load_config() -> Dict[str, Any]:
         "push_data": {},
         "research": {},
         "memory": {},
+        "xmpp": {},
+        "command_presets": {},
     }
 
     # Helper to merge dictionaries

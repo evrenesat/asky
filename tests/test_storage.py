@@ -224,3 +224,58 @@ def test_session_research_profile_roundtrip(mock_db_path):
     assert updated.research_mode is True
     assert updated.research_source_mode == "web_only"
     assert updated.research_local_corpus_paths == []
+
+
+def test_transcript_crud_and_prune(mock_db_path):
+    from asky.storage.sqlite import SQLiteHistoryRepository
+
+    repo = SQLiteHistoryRepository()
+    init_db()
+    session_id = repo.create_session("model", name="xmpp:test@example.com")
+
+    t1 = repo.create_transcript(
+        session_id=session_id,
+        jid="user@example.com/resource",
+        audio_url="https://example.com/a1.m4a",
+        audio_path="/tmp/a1.m4a",
+        status="pending",
+    )
+    assert t1.session_transcript_id == 1
+    assert t1.status == "pending"
+
+    t2 = repo.create_transcript(
+        session_id=session_id,
+        jid="user@example.com/resource",
+        audio_url="https://example.com/a2.m4a",
+        audio_path="/tmp/a2.m4a",
+        status="pending",
+    )
+    assert t2.session_transcript_id == 2
+
+    updated = repo.update_transcript(
+        session_id=session_id,
+        session_transcript_id=2,
+        status="completed",
+        transcript_text="hello world",
+        duration_seconds=1.2,
+        used=True,
+    )
+    assert updated is not None
+    assert updated.status == "completed"
+    assert updated.used is True
+    assert updated.transcript_text == "hello world"
+
+    listed = repo.list_transcripts(session_id=session_id, limit=10)
+    assert [item.session_transcript_id for item in listed] == [2, 1]
+
+    got = repo.get_transcript(session_id=session_id, session_transcript_id=2)
+    assert got is not None
+    assert got.audio_url.endswith("a2.m4a")
+
+    deleted = repo.prune_transcripts(session_id=session_id, keep=1)
+    assert len(deleted) == 1
+    assert deleted[0].session_transcript_id == 1
+
+    remaining = repo.list_transcripts(session_id=session_id, limit=10)
+    assert len(remaining) == 1
+    assert remaining[0].session_transcript_id == 2

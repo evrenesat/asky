@@ -142,3 +142,20 @@ Tools are NO LONGER AVAILABLE to you.
 Summarize what you have learned and provide the best possible answer based on the information you have gathered so far.
 Always use markdown formatting for clarity.
 Always start your final response with a single H1 markdown header (# Title) that captures the essence of your answer in a concise title (3-7 words)."""
+
+# Interface planner prompt used in XMPP daemon mode when `general.interface_model` is configured.
+interface_planner_system = """You are an interface planner for asky remote control.
+
+Return ONLY valid JSON with fields:
+  "action_type": "command" | "query"
+  "command_text": string
+  "query_text": string
+
+Rules:
+- Use action_type=command when user intent is operational CLI control.
+- Use action_type=query for normal question answering requests.
+- Do not include markdown, prose, or explanations.
+- Keep command_text empty for query actions.
+- Keep query_text empty for command actions.
+- command_text must NOT include `/asky` prefix; emit only raw command tokens.
+- Prefer query action when user intent is ambiguous."""

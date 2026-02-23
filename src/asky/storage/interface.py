@@ -80,6 +80,24 @@ class Session:
     research_local_corpus_paths: List[str] | None = None
 
 
+@dataclass
+class TranscriptRecord:
+    """Represents one persisted voice transcript for daemon sessions."""
+
+    id: int
+    session_id: int
+    session_transcript_id: int
+    jid: str
+    created_at: str
+    status: str
+    audio_url: str
+    audio_path: str
+    transcript_text: str
+    error: str
+    duration_seconds: Optional[float]
+    used: bool = False
+
+
 class HistoryRepository(ABC):
     """Abstract interface for message and session storage."""
 
@@ -215,4 +233,65 @@ class HistoryRepository(ABC):
         research_local_corpus_paths: Optional[List[str]],
     ) -> None:
         """Update persisted research profile metadata for a session."""
+        pass
+
+    @abstractmethod
+    def create_transcript(
+        self,
+        *,
+        session_id: int,
+        jid: str,
+        audio_url: str,
+        audio_path: str,
+        status: str,
+        transcript_text: str = "",
+        error: str = "",
+        duration_seconds: Optional[float] = None,
+    ) -> TranscriptRecord:
+        """Create and return a transcript record."""
+        pass
+
+    @abstractmethod
+    def update_transcript(
+        self,
+        *,
+        session_id: int,
+        session_transcript_id: int,
+        status: str,
+        transcript_text: Optional[str] = None,
+        error: Optional[str] = None,
+        duration_seconds: Optional[float] = None,
+        used: Optional[bool] = None,
+    ) -> Optional[TranscriptRecord]:
+        """Update transcript fields and return updated record."""
+        pass
+
+    @abstractmethod
+    def list_transcripts(
+        self,
+        *,
+        session_id: int,
+        limit: int = 20,
+    ) -> List[TranscriptRecord]:
+        """List transcript records for one session (newest first)."""
+        pass
+
+    @abstractmethod
+    def get_transcript(
+        self,
+        *,
+        session_id: int,
+        session_transcript_id: int,
+    ) -> Optional[TranscriptRecord]:
+        """Retrieve one transcript by session-scoped transcript ID."""
+        pass
+
+    @abstractmethod
+    def prune_transcripts(
+        self,
+        *,
+        session_id: int,
+        keep: int,
+    ) -> List[TranscriptRecord]:
+        """Prune old transcripts for a session and return deleted records."""
         pass

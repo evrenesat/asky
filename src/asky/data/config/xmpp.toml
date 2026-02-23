@@ -1,0 +1,55 @@
+[xmpp]
+enabled = false
+
+# XMPP account JID for daemon client
+jid = ""
+
+# Password should be sourced from environment in production usage.
+password_env = "ASKY_XMPP_PASSWORD"
+password = ""
+
+# Optional override if auto-derived host from JID is not desired.
+host = ""
+port = 5222
+resource = "asky"
+
+# Allowed sender JIDs:
+# - "user@domain" allows any resource for that bare JID.
+# - "user@domain/resource" allows only that exact full JID.
+allowed_jids = []
+
+# Hybrid routing prefix for direct command mode when interface model is configured.
+command_prefix = "/asky"
+
+# Include generated command/reference surface in interface planner system prompt.
+interface_planner_include_command_reference = true
+
+# Maximum characters per outbound message chunk.
+response_chunk_chars = 3000
+
+# Transcript retention cap per session.
+transcript_max_per_session = 200
+
+# Voice/transcription controls (phase 1: macOS support only).
+voice_enabled = false
+voice_workers = 1
+voice_max_size_mb = 500
+voice_model = "mlx-community/whisper-tiny"
+voice_language = ""
+voice_storage_dir = "~/.config/asky/voice"
+# Hugging Face token source for mlx-whisper model downloads.
+# Recommended: set env var and keep token out of config files.
+voice_hf_token_env = "HF_TOKEN"
+voice_hf_token = ""
+# Auto-run transcript as query when interface model is not configured.
+voice_auto_yes_without_interface_model = true
+voice_allowed_mime_types = [
+    "audio/mpeg",
+    "audio/mp4",
+    "audio/x-m4a",
+    "audio/wav",
+    "audio/x-wav",
+    "audio/webm",
+    "audio/ogg",
+    "audio/flac",
+]

@@ -20,6 +20,7 @@ SEARXNG_URL = _gen["searxng_url"]
 MAX_TURNS = _gen["max_turns"]
 DEFAULT_MODEL = _gen["default_model"]
 SUMMARIZATION_MODEL = _gen["summarization_model"]
+INTERFACE_MODEL = _gen.get("interface_model", DEFAULT_MODEL)
 SEARCH_PROVIDER = _gen.get("search_provider", "searxng")
 SERPER_API_URL = _gen.get("serper_api_url", "https://google.serper.dev/search")
 SERPER_API_KEY_ENV = _gen.get("serper_api_key_env", "SERPER_API_KEY")
@@ -100,6 +101,16 @@ _prompts = _CONFIG["prompts"]
 SYSTEM_PROMPT = _prompts["system_prefix"]
 SEARCH_SUFFIX = _prompts["search_suffix"]
 SYSTEM_PROMPT_SUFFIX = _prompts["system_suffix"]
+INTERFACE_PLANNER_SYSTEM_PROMPT = _prompts.get(
+    "interface_planner_system",
+    (
+        "You are an interface planner for asky remote control.\n"
+        "Return ONLY valid JSON with fields:\n"
+        '  "action_type": "command" | "query"\n'
+        '  "command_text": string\n'
+        '  "query_text": string\n'
+    ),
+)
 SUMMARIZE_QUERY_PROMPT_TEMPLATE = _prompts.get(
     "summarize_query",
     "Summarize the following query into a single short sentence.",
@@ -143,6 +154,7 @@ SESSION_COMPACTION_STRATEGY = _session.get("compaction_strategy", "summary_conca
 SESSION_IDLE_TIMEOUT_MINUTES = _session.get("idle_timeout_minutes", 5)
 
 USER_PROMPTS = _CONFIG.get("user_prompts", {})
+COMMAND_PRESETS = _CONFIG.get("command_presets", {})
 
 # Custom Tools
 CUSTOM_TOOLS = _CONFIG.get("tool", {})
@@ -275,3 +287,53 @@ _smtp_password_env = _email.get("smtp_password_env", "ASKY_SMTP_PASSWORD")
 SMTP_PASSWORD = os.environ.get(_smtp_password_env) or _email.get("smtp_password")
 
 EMAIL_FROM_ADDRESS = _email.get("from_address") or SMTP_USER
+
+# XMPP / Daemon
+_xmpp = _CONFIG.get("xmpp", {})
+XMPP_ENABLED = bool(_xmpp.get("enabled", False))
+XMPP_JID = str(_xmpp.get("jid", "") or "").strip()
+XMPP_PASSWORD_ENV = str(_xmpp.get("password_env", "ASKY_XMPP_PASSWORD") or "").strip()
+XMPP_PASSWORD = (
+    os.environ.get(XMPP_PASSWORD_ENV)
+    or str(_xmpp.get("password", "") or "").strip()
+)
+XMPP_HOST = str(_xmpp.get("host", "") or "").strip()
+XMPP_PORT = int(_xmpp.get("port", 5222) or 5222)
+XMPP_RESOURCE = str(_xmpp.get("resource", "asky") or "asky").strip()
+XMPP_ALLOWED_JIDS = [
+    str(raw_jid).strip()
+    for raw_jid in _xmpp.get("allowed_jids", [])
+    if str(raw_jid).strip()
+]
+XMPP_COMMAND_PREFIX = str(_xmpp.get("command_prefix", "/asky") or "/asky").strip()
+XMPP_INTERFACE_PLANNER_INCLUDE_COMMAND_REFERENCE = bool(
+    _xmpp.get("interface_planner_include_command_reference", True)
+)
+XMPP_RESPONSE_CHUNK_CHARS = int(_xmpp.get("response_chunk_chars", 3000) or 3000)
+XMPP_TRANSCRIPT_MAX_PER_SESSION = int(
+    _xmpp.get("transcript_max_per_session", 200) or 200
+)
+
+XMPP_VOICE_ENABLED = bool(_xmpp.get("voice_enabled", False))
+XMPP_VOICE_WORKERS = int(_xmpp.get("voice_workers", 1) or 1)
+XMPP_VOICE_MAX_SIZE_MB = int(_xmpp.get("voice_max_size_mb", 500) or 500)
+XMPP_VOICE_MODEL = str(
+    _xmpp.get("voice_model", "mlx-community/whisper-tiny") or "mlx-community/whisper-tiny"
+).strip()
+XMPP_VOICE_LANGUAGE = str(_xmpp.get("voice_language", "") or "").strip()
+XMPP_VOICE_STORAGE_DIR = Path(
+    _xmpp.get("voice_storage_dir", "~/.config/asky/voice")
+).expanduser()
+XMPP_VOICE_HF_TOKEN_ENV = str(_xmpp.get("voice_hf_token_env", "HF_TOKEN") or "HF_TOKEN").strip()
+XMPP_VOICE_HF_TOKEN = (
+    os.environ.get(XMPP_VOICE_HF_TOKEN_ENV)
+    or str(_xmpp.get("voice_hf_token", "") or "").strip()
+)
+XMPP_VOICE_AUTO_YES_WITHOUT_INTERFACE_MODEL = bool(
+    _xmpp.get("voice_auto_yes_without_interface_model", True)
+)
+XMPP_VOICE_ALLOWED_MIME_TYPES = [
+    str(value).strip().lower()
+    for value in _xmpp.get("voice_allowed_mime_types", [])
+    if str(value).strip()
+]

@@ -241,6 +241,9 @@ def add_model_command():
     if Confirm.ask("Set as summarization model?", default=False):
         update_general_config("summarization_model", nickname)
 
+    if Confirm.ask("Set as interface model?", default=False):
+        update_general_config("interface_model", nickname)
+
 
 def edit_model_command(model_alias: Optional[str] = None):
     """Interactively edit an existing model definition."""
@@ -251,10 +254,13 @@ def edit_model_command(model_alias: Optional[str] = None):
         general = config.get("general", {})
         def_model = general.get("default_model")
         sum_model = general.get("summarization_model")
+        interface_model = general.get("interface_model")
 
         console.print("[bold]Existing Models:[/bold]")
         console.print(
-            f"  [green]* Main Model: {def_model}[/green]   [blue]* Summarization Model: {sum_model}[/blue]\n"
+            f"  [green]* Main Model: {def_model}[/green]   "
+            f"[blue]* Summarization Model: {sum_model}[/blue]   "
+            f"[magenta]* Interface Model: {interface_model}[/magenta]\n"
         )
 
         table = Table(show_header=True)
@@ -303,12 +309,15 @@ def edit_model_command(model_alias: Optional[str] = None):
     general = config.get("general", {})
     def_model = general.get("default_model")
     sum_model = general.get("summarization_model")
+    interface_model = general.get("interface_model")
 
     role_tags = []
     if model_alias == def_model:
         role_tags.append("[green]main[/green]")
     if model_alias == sum_model:
         role_tags.append("[blue]summarization[/blue]")
+    if model_alias == interface_model:
+        role_tags.append("[magenta]interface[/magenta]")
     role_str = ", ".join(role_tags) if role_tags else "none"
 
     console.print(f"\n[bold]Model: {model_alias}[/bold]  (current role: {role_str})")
@@ -323,11 +332,12 @@ def edit_model_command(model_alias: Optional[str] = None):
     console.print("\n[bold]Perform action:[/bold]")
     console.print("  [green]m[/green] - set as [bold]main[/bold] model")
     console.print("  [blue]s[/blue] - set as [bold]summarization[/bold] model")
+    console.print("  [magenta]i[/magenta] - set as [bold]interface[/bold] model")
     console.print("  [yellow]e[/yellow] - edit parameters")
 
     action = Prompt.ask(
         "\nSelect action",
-        choices=["m", "s", "e"],
+        choices=["m", "s", "i", "e"],
         default="e",
     )
 
@@ -337,6 +347,10 @@ def edit_model_command(model_alias: Optional[str] = None):
 
     if action == "s":
         update_general_config("summarization_model", model_alias)
+        return
+
+    if action == "i":
+        update_general_config("interface_model", model_alias)
         return
 
     # action == "e": proceed to full parameter edit

@@ -1,5 +1,147 @@
 # DEVLOG
 
+## 2026-02-23 - Model Editor Action for Interface Role
+
+Added interface-model role assignment to interactive model management.
+
+- **Changed**:
+  - `src/asky/cli/models.py`:
+    - Added new edit action:
+      - `i` -> set selected model as `general.interface_model`.
+    - Updated model-role display to include interface role in:
+      - existing model overview header,
+      - selected model current-role tags.
+    - Added optional prompt in add-model flow:
+      - "Set as interface model?" after save.
+  - `tests/test_models_cli.py`:
+    - Added coverage for `i` action to ensure it updates `interface_model`.
+  - `src/asky/cli/AGENTS.md`, `tests/AGENTS.md`:
+    - Updated CLI/tests package docs to mention interface-role action coverage.
+- **Why**:
+  - `asky -me` should support setting all model roles from the same menu, including the interface planner model.
+- **Validation**:
+  - `uv run pytest tests/test_models_cli.py` -> passed.
+  - `uv run pytest` -> passed.
+
+## 2026-02-23 - XMPP Runtime Compatibility Fix (`process` vs asyncio loop)
+
+Fixed daemon startup failure on environments where `slixmpp.ClientXMPP` no longer exposes `.process(...)`.
+
+- **Changed**:
+  - `src/asky/daemon/xmpp_client.py`:
+    - Added runtime compatibility path:
+      - prefer `client.process(forever=True)` when available
+      - fallback to `client.loop.run_forever()` when `process` is missing
+      - fallback to `client.disconnected.wait()` when loop runner is unavailable
+    - Added connect-call compatibility for host overrides across slixmpp variants:
+      - uses `connect(host=..., port=...)` when supported
+      - falls back to legacy address-style connect otherwise
+    - Updated connection outcome handling:
+      - daemon now treats only explicit `False` as immediate connection failure
+      - async `connect()` coroutines are scheduled on the slixmpp loop before foreground processing
+      - task/future-like awaitables returned by `connect()` are now treated as already scheduled and are not re-wrapped with `create_task()`
+    - Added awaitable connect-result normalization for async connect variants.
+    - Reworked OOB URL parsing to inspect message XML directly (no stanza-interface lookup), avoiding noisy `Unknown stanza interface: oob` warnings while preserving audio attachment URL extraction.
+    - Relaxed allowlist matching:
+      - bare JID entries (`user@domain`) now authorize any resource
+      - full JID entries (`user@domain/resource`) remain exact-match
+    - Fixed outbound send dispatch from daemon worker threads:
+      - responses are now posted onto the slixmpp loop via `call_soon_threadsafe(...)`
+      - prevents delayed delivery where replies appeared only after subsequent inbound activity woke the loop
+    - Improved voice MIME validation for attachment downloads:
+      - `application/octet-stream` now falls back to extension-based MIME inference (`.m4a`, `.mp4`, `.webm`, `.flac`, etc.)
+      - common platform MIME aliases (`audio/mp4a-latm`, `video/mp4`, `video/webm`, `audio/x-flac`, etc.) are normalized to allowed audio MIME values
+    - Prevented accidental model calls for audio-share URLs:
+      - when a message includes an audio OOB URL, URL-only text bodies are ignored in daemon routing
+      - keeps the flow in transcript-only mode until explicit confirmation/command
+    - Clarified transcript confirmation UX:
+      - ready notification now explicitly states `yes` runs transcript as query, `no` keeps it for later
+    - Added Hugging Face token configuration for voice models:
+      - new `xmpp.toml` keys: `voice_hf_token_env`, `voice_hf_token`
+      - daemon now exports token to `HF_TOKEN` and `HUGGING_FACE_HUB_TOKEN` before `mlx-whisper` transcription calls
+    - Added `voice_auto_yes_without_interface_model` (default `true`):
+      - when interface model is not configured, completed voice transcripts are auto-run as queries without waiting for manual `yes`
+      - when interface model is configured, confirmation flow remains manual (`yes`/`no` or `transcript use <id>`)
+- **Why**:
+  - Real run failed with:
+    - `AttributeError: 'ClientXMPP' object has no attribute 'process'`
+  - Daemon must support both classic and asyncio-driven slixmpp runtime APIs.
+- **Tests Added**:
+  - `tests/test_xmpp_client.py`:
+    - `process` path coverage
+    - loop fallback coverage
+    - connect failure error path
+- **Validation**:
+  - `uv run pytest tests/test_xmpp_client.py tests/test_xmpp_daemon.py tests/test_xmpp_router.py tests/test_xmpp_commands.py` -> passed.
+
+## 2026-02-23 - Research Docs Clarification Pass (Section Contracts)
+
+Clarified research documentation to match finalized local-corpus section behavior.
+
+- **Changed**:
+  - `docs/research_mode.md`:
+    - Added explicit notes for canonical alias auto-promotion and tiny-section refusal.
+    - Added recommended model tool-call sequence for section workflows.
+    - Added section-scoped retrieval examples for preferred `section_ref` and legacy compatibility form.
+  - `docs/library_usage.md`:
+    - Added API contract notes for resolved section metadata (`requested_section_id`, `resolved_section_id`, `auto_promoted`).
+    - Added tiny-section structured-error behavior notes for `summarize_section`.
+- **Why**:
+  - Ensure users can reliably reason about section references and retrieval behavior.
+  - Reduce ambiguity between preferred section references and compatibility parsing.
+
+## 2026-02-23 - XMPP Daemon Mode + Voice Transcription + Interface Planner + Command Presets
+
+Implemented the final daemon feature set: optional XMPP foreground runtime, command presets, background voice transcription, interface-model routing, and transcript persistence/commands.
+
+- **Changed**:
+  - `pyproject.toml`:
+    - Added optional dependency extras:
+      - `xmpp` (`slixmpp`)
+      - `voice` (`mlx-whisper`)
+      - `daemon` (combined)
+  - `src/asky/config/loader.py`, `src/asky/config/__init__.py`, `src/asky/data/config/general.toml`, `src/asky/data/config/xmpp.toml`, `src/asky/data/config/user.toml`:
+    - Added `xmpp.toml` loading and exported daemon/voice constants (`XMPP_*`, `XMPP_VOICE_*`).
+    - Added `general.interface_model`.
+    - Added `[command_presets]` config section support.
+  - `src/asky/cli/presets.py`, `src/asky/cli/__init__.py`, `src/asky/cli/main.py`:
+    - Added first-token backslash preset expansion/listing (`\\name`, `\\presets`) for local CLI.
+    - Added `--xmpp-daemon` flag and foreground service bootstrap path.
+  - `src/asky/storage/interface.py`, `src/asky/storage/sqlite.py`, `src/asky/storage/__init__.py`:
+    - Added transcript persistence model and repository methods:
+      - `create_transcript`, `update_transcript`, `list_transcripts`, `get_transcript`, `prune_transcripts`.
+    - Added `transcripts` SQLite table with session-scoped numeric transcript IDs.
+  - `src/asky/daemon/*` (new package):
+    - `service.py`: daemon lifecycle, per-JID serialized workers, chunked outbound responses.
+    - `xmpp_client.py`: slixmpp transport wrapper and OOB URL extraction.
+    - `router.py`: allowlist/direct-chat gate, hybrid routing, preset handling, confirmation shortcuts.
+    - `command_executor.py`: command/query execution bridge plus remote policy enforcement.
+    - `interface_planner.py`: strict JSON action planning using configured interface model.
+    - `voice_transcriber.py`: async transcription queue, streamed downloads, macOS gate.
+    - `transcript_manager.py`: transcript lifecycle, retention pruning, artifact cleanup.
+    - `chunking.py`: deterministic message chunking.
+- **Behavior**:
+  - Unauthorized senders and non-chat stanza types are ignored silently.
+  - Per-JID message processing is serialized.
+  - Hybrid routing supports interface-model and non-interface-model modes.
+  - Voice transcription is async and does not block text handling.
+  - Transcript workflow supports list/show/use/clear and yes/no shortcuts.
+  - Remote safety policy blocks unsafe flags even after preset/planner expansion.
+- **Tests Added/Updated**:
+  - Added:
+    - `tests/test_presets.py`
+    - `tests/test_xmpp_daemon.py`
+    - `tests/test_xmpp_router.py`
+    - `tests/test_xmpp_commands.py`
+    - `tests/test_voice_transcription.py`
+  - Updated:
+    - `tests/test_cli.py`
+    - `tests/test_config.py`
+    - `tests/test_storage.py`
+- **Validation**:
+  - Full suite:
+    - `uv run pytest` -> `667 passed in 7.04s`
+
 ## 2026-02-23 - Canonical Section Refs + Section-Scoped Retrieval Compatibility
 
 Hardened local-corpus section workflows after observed failures where models selected tiny TOC aliases and malformed section-scoped corpus URLs.

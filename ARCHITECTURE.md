@@ -4,7 +4,7 @@ This document provides a high-level overview of the **asky** codebase architectu
 
 ## Overview
 
-asky is an AI-powered CLI tool that combines LLM capabilities with web search and tool-calling to provide intelligent, research-backed answers to queries.
+asky is an AI-powered CLI tool that combines LLM capabilities with web search and tool-calling to provide intelligent, research-backed answers to queries. It also includes an optional XMPP foreground daemon mode for remote command/query handling.
 
 ```mermaid
 graph TB
@@ -20,6 +20,7 @@ graph TB
     subgraph CLI["CLI Layer (cli/)"]
         main["main.py<br/>Entry Point"]
         chat["chat.py<br/>Chat Flow"]
+        presets_cli["presets.py<br/>Backslash Preset Expansion"]
         local_ingest["local_ingestion_flow.py<br/>Pre-LLM Local Corpus Ingestion"]
         research_cmd["research_commands.py<br/>Manual No-LLM Corpus Query"]
         section_cmd["section_commands.py<br/>Manual No-LLM Section Summary"]
@@ -37,6 +38,17 @@ graph TB
         llm_client["api_client.py<br/>LLM API Client"]
         session_mgr["session_manager.py<br/>SessionManager"]
         prompts_core["prompts.py<br/>Prompt Construction"]
+    end
+
+    subgraph Daemon["Daemon Layer (daemon/)"]
+        daemon_service["service.py<br/>XMPPDaemonService"]
+        daemon_xmpp["xmpp_client.py<br/>Slixmpp Transport Wrapper"]
+        daemon_router["router.py<br/>Ingress Routing + Policy"]
+        daemon_exec["command_executor.py<br/>Command/Query Bridge"]
+        daemon_planner["interface_planner.py<br/>Interface Model Planner"]
+        daemon_voice["voice_transcriber.py<br/>Async Voice Jobs"]
+        daemon_transcripts["transcript_manager.py<br/>Transcript Lifecycle"]
+        daemon_chunking["chunking.py<br/>Outbound Chunking"]
     end
 
     subgraph Storage["Storage Layer (storage/)"]
@@ -73,8 +85,10 @@ graph TB
     api_preload -.-> local_ingest
     api_preload -.-> shortlist
     main --> chat
+    main --> daemon_service
     main --> research_cmd
     main --> section_cmd
+    main --> presets_cli
     chat --> api_client
     main --> history
     main --> sessions_cli
@@ -88,6 +102,15 @@ graph TB
     session_mgr --> sqlite
     history --> sqlite
     sessions_cli --> sqlite
+    daemon_service --> daemon_xmpp
+    daemon_service --> daemon_router
+    daemon_service --> daemon_chunking
+    daemon_router --> daemon_planner
+    daemon_router --> daemon_exec
+    daemon_router --> daemon_voice
+    daemon_router --> daemon_transcripts
+    daemon_exec --> api_client
+    daemon_transcripts --> sqlite
     registry --> tools
     config_init --> loader
     shortlist_flow -.-> shortlist
@@ -106,6 +129,7 @@ graph TB
 src/asky/
 ├── api/                # Programmatic library API surface (run_turn orchestration)
 ├── cli/                # Command-line interface → see cli/AGENTS.md
+├── daemon/             # Optional XMPP daemon runtime (transport/router/planner/voice)
 ├── core/               # Conversation engine → see core/AGENTS.md
 ├── storage/            # Data persistence → see storage/AGENTS.md
 ├── research/           # Research mode RAG → see research/AGENTS.md
@@ -134,6 +158,7 @@ For test organization, see `tests/AGENTS.md`.
 | Package     | Documentation                                     | Key Components                                   |
 | ----------- | ------------------------------------------------- | ------------------------------------------------ |
 | `cli/`      | [cli/AGENTS.md](src/asky/cli/AGENTS.md)           | Entry point, chat flow, commands                 |
+| `daemon/`   | (package docs inline)                              | XMPP transport, router, planner, voice pipeline  |
 | `api/`      | [api/AGENTS.md](src/asky/api/AGENTS.md)           | `AskyClient`, turn orchestration services        |
 | `core/`     | [core/AGENTS.md](src/asky/core/AGENTS.md)         | ConversationEngine, ToolRegistry, API client     |
 | `storage/`  | [storage/AGENTS.md](src/asky/storage/AGENTS.md)   | SQLite repository, data model                    |
@@ -235,6 +260,42 @@ the model not to refetch the same URL unless freshness/completeness checks are
 explicitly needed. In this direct-answer mode, standard retrieval tools
 (`web_search`, `get_url_content`, `get_url_details`) are also disabled for that
 turn to enforce single-pass answering from preloaded seed content.
+
+### XMPP Daemon Flow
+
+```
+asky --xmpp-daemon
+    ↓
+daemon/service.py (foreground)
+    ↓
+xmpp_client.py message callback payload
+    ↓
+per-JID queue (serialized processing)
+    ↓
+router.py guards:
+  - only type=chat
+  - sender allowlist (bare JID wildcard or exact full-JID)
+    ↓
+Routing:
+  - with interface model:
+      prefixed text -> direct command
+      non-prefixed text -> interface planner (configurable system prompt + command reference) -> command/query action
+  - without interface model:
+      command-like text -> command
+      otherwise -> query
+    ↓
+command_executor.py
+  - remote policy gate
+  - transcript command namespace
+  - AskyClient.run_turn() for query execution
+    ↓
+optional voice pipeline:
+  oob audio URL -> background worker -> mlx-whisper -> transcript persistence
+    ↓
+chunked outbound chat replies
+```
+
+Command presets are expanded at ingress (`\\name`, `\\presets`) before command execution, and remote policy is enforced after expansion/planning so blocked flags cannot be bypassed.
 
 ### Session Flow
 
@@ -478,6 +539,7 @@ A simplified "retrieval-only" system prompt guidance is injected in these cases 
 
 - **Python**: 3.10+
 - **Key Dependencies**: `requests`, `rich`, `pyperclip`, `markdown`
+- **Optional Daemon Dependencies**: `slixmpp` (XMPP), `mlx-whisper` (voice transcription, macOS phase 1)
 - **Storage**: SQLite (local file at `~/.config/asky/history.db`)
 - **Configuration**: TOML format
 

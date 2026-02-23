@@ -8,6 +8,7 @@ Command-line interface layer handling argument parsing, command routing, and use
 | ------------------------- | ------------------------------------------------------------------------------- |
 | `main.py`                 | Entry point, argument parsing, command routing                                  |
 | `chat.py`                 | Chat conversation orchestration                                                 |
+| `presets.py`              | Backslash command preset expansion/listing (`\\name`, `\\presets`)              |
 | `local_ingestion_flow.py` | Pre-LLM local source preload for research mode (path-redacted local KB context) |
 | `research_commands.py`    | Manual corpus query commands (no-LLM retrieval inspection)                      |
 | `section_commands.py`     | Manual section listing/summarization for local corpus (no main model call)      |
@@ -17,7 +18,7 @@ Command-line interface layer handling argument parsing, command routing, and use
 | `history.py`              | History viewing/deletion commands                                               |
 | `sessions.py`             | Session management commands                                                     |
 | `prompts.py`              | User prompt listing                                                             |
-| `models.py`               | Interactive model add/edit commands                                             |
+| `models.py`               | Interactive model add/edit commands, including role assignment (main/summarization/interface) |
 | `openrouter.py`           | OpenRouter API client for model discovery                                       |
 | `terminal.py`             | Terminal context fetching                                                       |
 | `utils.py`                | Query expansion, config printing                                                |
@@ -54,6 +55,12 @@ Command-line interface layer handling argument parsing, command routing, and use
 | `--shortlist auto\|on\|off`    | Per-run shortlist override                                      |
 | `-sfm, --session-from-message` | `history.py`                                                   |
 | `--clean-session-research`     | `sessions.py`                                                  |
+| `--xmpp-daemon`                | `daemon/service.py` foreground XMPP runtime                    |
+
+Preset invocation notes:
+
+- first-token `\\name ...` expands using `[command_presets]` from config before normal CLI parsing.
+- `\\presets` lists configured command presets and exits.
 
 ### Chat Flow (`chat.py`)
 
@@ -119,6 +126,7 @@ Section CLI behavior:
 ```
 main.py
 ├── chat.py → api/client.py
+├── presets.py → config/
 ├── local_ingestion_flow.py → research/adapters.py, research/cache.py, research/vector_store.py
 ├── research_commands.py → research/tools.py, research/cache.py, local_ingestion_flow.py
 ├── section_commands.py → research/sections.py, summarization.py, research/cache.py, local_ingestion_flow.py

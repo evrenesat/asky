@@ -7,7 +7,12 @@ from datetime import datetime
 from typing import List, Optional
 
 from asky.config import DB_PATH
-from asky.storage.interface import HistoryRepository, Interaction, Session
+from asky.storage.interface import (
+    HistoryRepository,
+    Interaction,
+    Session,
+    TranscriptRecord,
+)
 
 
 # Session dataclass (kept from session.py)
@@ -118,6 +123,23 @@ class SQLiteHistoryRepository(HistoryRepository):
             ),
         )
 
+    def _transcript_from_row(self, row: sqlite3.Row) -> TranscriptRecord:
+        """Build a transcript dataclass from a sqlite row."""
+        return TranscriptRecord(
+            id=int(row["id"]),
+            session_id=int(row["session_id"]),
+            session_transcript_id=int(row["session_transcript_id"]),
+            jid=str(row["jid"] or ""),
+            created_at=str(row["created_at"] or ""),
+            status=str(row["status"] or ""),
+            audio_url=str(row["audio_url"] or ""),
+            audio_path=str(row["audio_path"] or ""),
+            transcript_text=str(row["transcript_text"] or ""),
+            error=str(row["error"] or ""),
+            duration_seconds=row["duration_seconds"],
+            used=bool(row["used"] or 0),
+        )
+
     def init_db(self) -> None:
         """Initialize the SQLite database and create tables if they don't exist."""
         os.makedirs(DB_PATH.parent, exist_ok=True)
@@ -165,6 +187,27 @@ class SQLiteHistoryRepository(HistoryRepository):
                 research_local_corpus_paths TEXT
             )
         """
+        )
+
+        c.execute(
+            """
+            CREATE TABLE IF NOT EXISTS transcripts (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                session_id INTEGER NOT NULL,
+                session_transcript_id INTEGER NOT NULL,
+                jid TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                status TEXT NOT NULL,
+                audio_url TEXT,
+                audio_path TEXT,
+                transcript_text TEXT,
+                error TEXT,
+                duration_seconds REAL,
+                used INTEGER DEFAULT 0,
+                FOREIGN KEY (session_id) REFERENCES sessions(id),
+                UNIQUE (session_id, session_transcript_id)
+            )
+            """
         )
 
         # Schema migration: add memory_auto_extract column to existing sessions tables
@@ -963,6 +1006,190 @@ class SQLiteHistoryRepository(HistoryRepository):
             content = row[0]
             return content[:max_chars] + "..." if len(content) > max_chars else content
         return ""
+
+    def _next_session_transcript_id(self, conn: sqlite3.Connection, session_id: int) -> int:
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT COALESCE(MAX(session_transcript_id), 0) FROM transcripts WHERE session_id = ?",
+            (session_id,),
+        )
+        row = cursor.fetchone()
+        return int((row[0] if row else 0) or 0) + 1
+
+    def create_transcript(
+        self,
+        *,
+        session_id: int,
+        jid: str,
+        audio_url: str,
+        audio_path: str,
+        status: str,
+        transcript_text: str = "",
+        error: str = "",
+        duration_seconds: Optional[float] = None,
+    ) -> TranscriptRecord:
+        """Create a session-scoped transcript row."""
+        self.init_db()
+        conn = self._get_conn()
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        session_transcript_id = self._next_session_transcript_id(conn, session_id)
+        now = datetime.now().isoformat()
+        cursor.execute(
+            """
+            INSERT INTO transcripts
+            (session_id, session_transcript_id, jid, created_at, status, audio_url, audio_path, transcript_text, error, duration_seconds, used)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
+            """,
+            (
+                session_id,
+                session_transcript_id,
+                jid,
+                now,
+                status,
+                audio_url,
+                audio_path,
+                transcript_text,
+                error,
+                duration_seconds,
+            ),
+        )
+        transcript_row_id = int(cursor.lastrowid)
+        conn.commit()
+        cursor.execute("SELECT * FROM transcripts WHERE id = ?", (transcript_row_id,))
+        row = cursor.fetchone()
+        conn.close()
+        if row is None:
+            raise RuntimeError("Failed to create transcript record")
+        return self._transcript_from_row(row)
+
+    def update_transcript(
+        self,
+        *,
+        session_id: int,
+        session_transcript_id: int,
+        status: str,
+        transcript_text: Optional[str] = None,
+        error: Optional[str] = None,
+        duration_seconds: Optional[float] = None,
+        used: Optional[bool] = None,
+    ) -> Optional[TranscriptRecord]:
+        """Update transcript status/content for one session-scoped ID."""
+        conn = self._get_conn()
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        fields = ["status = ?"]
+        values: list[object] = [status]
+
+        if transcript_text is not None:
+            fields.append("transcript_text = ?")
+            values.append(transcript_text)
+        if error is not None:
+            fields.append("error = ?")
+            values.append(error)
+        if duration_seconds is not None:
+            fields.append("duration_seconds = ?")
+            values.append(float(duration_seconds))
+        if used is not None:
+            fields.append("used = ?")
+            values.append(1 if used else 0)
+
+        values.extend([session_id, session_transcript_id])
+        cursor.execute(
+            f"UPDATE transcripts SET {', '.join(fields)} WHERE session_id = ? AND session_transcript_id = ?",
+            tuple(values),
+        )
+        conn.commit()
+        cursor.execute(
+            "SELECT * FROM transcripts WHERE session_id = ? AND session_transcript_id = ?",
+            (session_id, session_transcript_id),
+        )
+        row = cursor.fetchone()
+        conn.close()
+        if row is None:
+            return None
+        return self._transcript_from_row(row)
+
+    def list_transcripts(self, *, session_id: int, limit: int = 20) -> List[TranscriptRecord]:
+        """List transcripts for a session in newest-first order."""
+        conn = self._get_conn()
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            SELECT * FROM transcripts
+            WHERE session_id = ?
+            ORDER BY session_transcript_id DESC
+            LIMIT ?
+            """,
+            (session_id, int(limit)),
+        )
+        rows = cursor.fetchall()
+        conn.close()
+        return [self._transcript_from_row(row) for row in rows]
+
+    def get_transcript(
+        self,
+        *,
+        session_id: int,
+        session_transcript_id: int,
+    ) -> Optional[TranscriptRecord]:
+        """Get one transcript by session-scoped identifier."""
+        conn = self._get_conn()
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            SELECT * FROM transcripts
+            WHERE session_id = ? AND session_transcript_id = ?
+            LIMIT 1
+            """,
+            (session_id, session_transcript_id),
+        )
+        row = cursor.fetchone()
+        conn.close()
+        if row is None:
+            return None
+        return self._transcript_from_row(row)
+
+    def prune_transcripts(self, *, session_id: int, keep: int) -> List[TranscriptRecord]:
+        """Prune oldest transcripts beyond the keep threshold."""
+        keep_count = max(0, int(keep))
+        conn = self._get_conn()
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT COUNT(*) FROM transcripts WHERE session_id = ?",
+            (session_id,),
+        )
+        total_row = cursor.fetchone()
+        total = int((total_row[0] if total_row else 0) or 0)
+        if total <= keep_count:
+            conn.close()
+            return []
+
+        delete_count = total - keep_count
+        cursor.execute(
+            """
+            SELECT * FROM transcripts
+            WHERE session_id = ?
+            ORDER BY session_transcript_id ASC
+            LIMIT ?
+            """,
+            (session_id, delete_count),
+        )
+        rows = cursor.fetchall()
+        deleted = [self._transcript_from_row(row) for row in rows]
+        if deleted:
+            ids = [record.id for record in deleted]
+            placeholder = ",".join("?" for _ in ids)
+            cursor.execute(
+                f"DELETE FROM transcripts WHERE id IN ({placeholder})",
+                tuple(ids),
+            )
+            conn.commit()
+        conn.close()
+        return deleted
 
     def get_interaction_by_id(self, interaction_id: int) -> Optional[Interaction]:
         """Fetch a single interaction (assistant message id) with its details."""

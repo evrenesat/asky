@@ -22,6 +22,30 @@ def test_default_context_size():
     assert DEFAULT_CONTEXT_SIZE > 0
 
 
+def test_xmpp_and_interface_config_params():
+    from asky.config import (
+        INTERFACE_PLANNER_SYSTEM_PROMPT,
+        INTERFACE_MODEL,
+        XMPP_COMMAND_PREFIX,
+        XMPP_INTERFACE_PLANNER_INCLUDE_COMMAND_REFERENCE,
+        XMPP_RESPONSE_CHUNK_CHARS,
+        XMPP_VOICE_AUTO_YES_WITHOUT_INTERFACE_MODEL,
+        XMPP_VOICE_HF_TOKEN_ENV,
+    )
+
+    assert isinstance(INTERFACE_MODEL, str)
+    assert isinstance(INTERFACE_PLANNER_SYSTEM_PROMPT, str)
+    assert INTERFACE_PLANNER_SYSTEM_PROMPT.strip()
+    assert isinstance(XMPP_COMMAND_PREFIX, str)
+    assert XMPP_COMMAND_PREFIX
+    assert isinstance(XMPP_INTERFACE_PLANNER_INCLUDE_COMMAND_REFERENCE, bool)
+    assert isinstance(XMPP_RESPONSE_CHUNK_CHARS, int)
+    assert XMPP_RESPONSE_CHUNK_CHARS >= 64
+    assert isinstance(XMPP_VOICE_HF_TOKEN_ENV, str)
+    assert XMPP_VOICE_HF_TOKEN_ENV
+    assert isinstance(XMPP_VOICE_AUTO_YES_WITHOUT_INTERFACE_MODEL, bool)
+
+
 def test_invalid_config_exits(tmp_path):
     """Ensure invalid TOML raises SystemExit."""
     from unittest.mock import patch
