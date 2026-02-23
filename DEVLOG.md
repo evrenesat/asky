@@ -1,5 +1,88 @@
 # DEVLOG
 
+## 2026-02-23 - Fix Daemon -vv Console Output and Add XMPP Log File
+
+- **`daemon/command_executor.py`**: `CommandExecutor.__init__` now accepts `double_verbose: bool`. `_run_query_with_args` reads `self.double_verbose` (OR-ed with any value in `args`) instead of relying on `args` alone. This ensures that queries arriving via `execute_query_text` (which creates a hardcoded args Namespace with `verbose=False`) still get the verbose callback when the daemon was started with `-vv`.
+- **`daemon/service.py`**: `XMPPDaemonService.__init__` and `run_xmpp_daemon_foreground` now accept and forward `double_verbose`. `run_xmpp_daemon_foreground` also calls `setup_xmpp_logging()` on startup.
+- **`cli/main.py`**: `run_xmpp_daemon_foreground` call now passes `double_verbose=bool(getattr(args, "double_verbose", False))`.
+- **`logger.py`**: Added `setup_xmpp_logging()` which attaches a dedicated `RotatingFileHandler` to the `asky.daemon` logger, writing to `~/.config/asky/logs/xmpp.log`. The root logger is not changed - other asky logs continue going to `asky.log`.
+- **Validation**: 773 tests pass.
+
+## 2026-02-23 - XMPP Daemon Double-Verbose Output Using CLI Pipeline
+
+Replaced the incorrect raw `StreamHandler` logging approach with the same structured rich-panel pipeline used by the CLI's `-vv` mode.
+
+- **Changed**:
+  - `src/asky/cli/verbose_output.py` [NEW]:
+    - Extracted all verbose rendering helpers from `chat.py`: `print_main_model_request_payload`, `print_main_model_response_payload`, `print_preload_provenance`, `print_transport_metadata`, `_format_message_payload`, `_to_pretty_json`, `VERBOSE_BORDER_STYLE_BY_ROLE`.
+    - Added `build_verbose_output_callback(console)` factory that returns a callback with the same trace-merging logic as the CLI, but without live-banner awareness.
+  - `src/asky/cli/chat.py`:
+    - Removed the duplicate helper implementations and replaced them with imports from `verbose_output`.
+  - `src/asky/daemon/command_executor.py`:
+    - In `_run_query_with_args`, detect `double_verbose` from args, build a `verbose_output_callback` using `build_verbose_output_callback`, and pass it to `client.run_turn()`.
+    - Pass `double_verbose=True` to `AskyConfig` so the engine emits structured payloads.
+  - `src/asky/cli/main.py`:
+    - Removed the `StreamHandler(sys.stdout)` block from to the double-verbose daemon path.
+- **Why**: The raw `StreamHandler` produced unformatted log lines. The correct approach is to pass a structured callback so the daemon gets the same rich panels (request metadata, message tables, tool calls) that the CLI shows.
+- **Validation**: Full suite pass - `773 passed`.
+
+## 2026-02-23 - XMPP /h Help Command
+
+Added `/h` (and `/help` alias) as an XMPP daemon command that prints detailed documentation of all available commands.
+
+- **Changed**:
+  - `src/asky/daemon/command_executor.py`:
+    - Added `HELP_COMMAND_TOKENS = {"/h", "/help"}` constant.
+    - Added `_HELP_TEXT` module-level string with all command categories: session management, transcripts, media pointers, asky CLI flags, prompt aliases, command presets, and config override TOML syntax.
+    - Added `build_help_text() -> str` pure function returning that string.
+    - Added dispatch at the top of `execute_command_text()`: first token matching `/h` or `/help` (case-insensitive) returns `build_help_text()`.
+  - `src/asky/daemon/router.py`:
+    - Added `/h` and `/help` to the `command_tokens` set in `_looks_like_command()` so they route as commands in no-interface-model mode.
+  - `tests/test_xmpp_commands.py`:
+    - Added `test_help_command_returns_help_text` - verifies all section headers are present.
+    - Added `test_help_alias_returns_same_text` - verifies `/h` and `/help` return identical output.
+    - Added `test_help_command_token_recognized_by_router` - verifies `_looks_like_command` returns `True` for `/h`, `/help`, `/HELP`.
+- **Why**:
+  - The XMPP interface had no self-documenting help command. Users had to refer to external docs to discover session, transcript, or CLI command syntax.
+- **Validation**:
+  - `uv run pytest tests/test_xmpp_commands.py tests/test_xmpp_router.py` -> 30 passed.
+  - `uv run pytest` -> 773 passed.
+
+## 2026-02-23 - Fixed XMPP Daemon Verbose Logging
+
+Fixed issues where XMPP daemon verbose (`-v`) and double-verbose (`-vv`) flags were not respected on macOS or did not behave as expected in foreground mode.
+
+- **Changed**:
+  - `src/asky/cli/main.py`:
+    - Updated macOS menubar child spawn to forward `-v` and `-vv` flags, ensuring the child process uses the correct timestamped log file.
+    - Added a guard to bypass background daemonization when `-vv` is set, keeping the application in the foreground as requested.
+    - Added a `StreamHandler` to stdout in double-verbose mode so communication is printed to the terminal.
+    - Fixed `UnboundLocalError` by removing shadowing local `import logging` and `import sys` calls inside `main()`.
+- **Why**:
+  - macOS child processes did not inherit verbose flags from the parent, making it difficult to debug daemon behavior.
+  - Double-verbose mode lacked the "foreground + print" behavior needed for interactive debugging.
+- **Validation**:
+  - Added regression coverage in `tests/test_daemon_verbose.py`.
+  - Full suite pass: 774 passed.
+
+## 2026-02-23 - Fixed XMPP Audio Transcription Reply
+
+Fixed a bug in XMPP daemon where audio transcription text was not returned to the user when auto-running transcripts (i.e., when no interface model is configured).
+
+- **Changed**:
+  - `src/asky/daemon/router.py`:
+    - Converted `handle_transcription_result` and `handle_image_transcription_result` into generators (`Iterable`).
+    - In the auto-run path, it now yields the transcription immediately before calling the model, then yields the model's answer as a separate item.
+  - `src/asky/daemon/service.py`:
+    - Updated `_on_transcription_complete` and `_on_image_transcription_complete` to iterate over the items yielded by the router and send them as distinct XMPP messages.
+  - `tests/test_xmpp_router.py`:
+    - Refactored tests to handle the new iterable return types and verified the sequence of messages in the auto-run case.
+- **Why**:
+  - Improved responsiveness: users now see the transcribed text immediately without waiting for the LLM to process and generate an answer. This matches the specification of returning the transcription the moment it's available.
+- **Validation**:
+  - Targeted: `uv run pytest tests/test_xmpp_router.py` -> passed.
+  - Full suite: `uv run pytest` -> passed.
+
 ## 2026-02-23 - Removed Menubar XMPP Credential Editor
 
 Removed the menubar-based XMPP configuration UI and made daemon-start validation CLI-driven only.

@@ -533,8 +533,6 @@ def ResearchCache(*args, **kwargs):
 
 def _run_research_cache_cleanup() -> None:
     """Best-effort cleanup of expired research cache entries."""
-    import logging
-
     try:
         ResearchCache().cleanup_expired()
     except Exception as e:
@@ -641,7 +639,9 @@ def _resolve_research_corpus(
             continue
 
         expanded_token = os.path.expanduser(token)
-        absolute_candidate = Path(expanded_token).resolve() if os.path.isabs(expanded_token) else None
+        absolute_candidate = (
+            Path(expanded_token).resolve() if os.path.isabs(expanded_token) else None
+        )
 
         if absolute_candidate is not None and (
             absolute_candidate.is_file() or absolute_candidate.is_dir()
@@ -723,7 +723,9 @@ def main() -> None:
         ) = _resolve_research_corpus(research_arg)
         args.research = research_enabled
         args.local_corpus = corpus_paths
-        args.research_flag_provided = research_arg is not False and research_arg is not None
+        args.research_flag_provided = (
+            research_arg is not False and research_arg is not None
+        )
         args.research_source_mode = source_mode
         args.replace_research_corpus = replace_corpus
         if leftover:
@@ -801,8 +803,6 @@ def main() -> None:
                 # uses it for context injection if needed (though session resumption
                 # will also bring in the converted messages).
         except Exception as e:
-            import logging
-
             logging.getLogger(__name__).debug(
                 f"Failed to auto-convert continue to session: {e}"
             )
@@ -812,8 +812,6 @@ def main() -> None:
         # Verbose: Timestamped file, DEBUG level
         session_log_file = generate_timestamped_log_path(LOG_FILE)
         setup_logging("DEBUG", session_log_file)
-        import logging
-
         logging.debug("Verbose mode enabled. Log level set to DEBUG.")
     else:
         # Default: Standard file, Configured level
@@ -834,6 +832,7 @@ def main() -> None:
 
     if getattr(args, "xmpp_menubar_child", False) is True:
         from asky.daemon.errors import DaemonUserError
+
         logger.info("dispatching xmpp menubar child mode")
         from asky.daemon.menubar import run_menubar_app
 
@@ -851,6 +850,7 @@ def main() -> None:
 
     if getattr(args, "xmpp_daemon", False) is True:
         from asky.daemon.errors import DaemonUserError
+
         logger.info("dispatching xmpp daemon mode")
         is_macos = platform.system().lower() == "darwin"
         logger.debug("xmpp daemon platform gate is_macos=%s", is_macos)
@@ -863,7 +863,8 @@ def main() -> None:
                     run_menubar_app,
                 )
 
-                if has_rumps():
+                # In double-verbose mode, skip menubar and stay in foreground
+                if has_rumps() and not getattr(args, "double_verbose", False):
                     logger.info("rumps detected; using menubar bootstrap flow")
                     if is_menubar_instance_running():
                         logger.warning(
@@ -885,6 +886,11 @@ def main() -> None:
                             "--xmpp-daemon",
                             "--xmpp-menubar-child",
                         ]
+                        if getattr(args, "double_verbose", False):
+                            command.append("-vv")
+                        elif getattr(args, "verbose", False):
+                            command.append("-v")
+
                         logger.debug(
                             "spawning menubar child command=%s log_path=%s",
                             command,
@@ -900,12 +906,16 @@ def main() -> None:
                     return
             except Exception:
                 # Fallback to foreground daemon mode when menubar flow cannot start.
-                logger.exception("menubar bootstrap failed; falling back to foreground daemon")
+                logger.exception(
+                    "menubar bootstrap failed; falling back to foreground daemon"
+                )
         logger.info("running foreground xmpp daemon fallback")
         from asky.daemon.service import run_xmpp_daemon_foreground
 
         try:
-            run_xmpp_daemon_foreground()
+            run_xmpp_daemon_foreground(
+                double_verbose=bool(getattr(args, "double_verbose", False))
+            )
         except DaemonUserError as exc:
             logger.error("foreground daemon failed: %s", exc.user_message)
             print(f"Error: {exc.user_message}")
@@ -1081,9 +1091,7 @@ def main() -> None:
             section_source=getattr(args, "section_source", None),
             section_id=getattr(args, "section_id", None),
             section_include_toc=bool(getattr(args, "section_include_toc", False)),
-            section_detail=str(
-                getattr(args, "section_detail", DEFAULT_SECTION_DETAIL)
-            ),
+            section_detail=str(getattr(args, "section_detail", DEFAULT_SECTION_DETAIL)),
             section_max_chunks=getattr(args, "section_max_chunks", None),
             explicit_targets=getattr(args, "local_corpus", None),
         )

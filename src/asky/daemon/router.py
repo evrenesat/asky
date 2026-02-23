@@ -5,7 +5,7 @@ from __future__ import annotations
 import hashlib
 import logging
 from pathlib import Path
-from typing import Optional
+from typing import Iterable, Optional
 
 from asky.config import (
     XMPP_ALLOWED_JIDS,
@@ -121,7 +121,9 @@ class DaemonRouter:
                 command_text=text,
             )
 
-        confirmation_result = self._handle_confirmation_shortcut(confirmation_key, text, actor_jid)
+        confirmation_result = self._handle_confirmation_shortcut(
+            confirmation_key, text, actor_jid
+        )
         if confirmation_result is not None:
             return confirmation_result
 
@@ -241,9 +243,9 @@ class DaemonRouter:
 
         effective_sender = _normalize_jid(sender_jid or jid)
         digest = hashlib.sha1(audio_url.encode("utf-8")).hexdigest()[:16]
-        artifact_path = (
-            Path(XMPP_VOICE_STORAGE_DIR).expanduser() / conversation_id.replace("/", "_")
-        )
+        artifact_path = Path(
+            XMPP_VOICE_STORAGE_DIR
+        ).expanduser() / conversation_id.replace("/", "_")
         file_path = artifact_path / f"transcript_{digest}.audio"
         pending = self.transcript_manager.create_pending_transcript(
             jid=conversation_id,
@@ -295,9 +297,9 @@ class DaemonRouter:
             return "Error: image URL is required."
 
         digest = hashlib.sha1(image_url.encode("utf-8")).hexdigest()[:16]
-        artifact_path = (
-            Path(XMPP_IMAGE_STORAGE_DIR).expanduser() / conversation_id.replace("/", "_")
-        )
+        artifact_path = Path(
+            XMPP_IMAGE_STORAGE_DIR
+        ).expanduser() / conversation_id.replace("/", "_")
         file_path = artifact_path / f"image_{digest}.bin"
         pending = self.transcript_manager.create_pending_image_transcript(
             jid=conversation_id,
@@ -317,11 +319,11 @@ class DaemonRouter:
             "I will notify you when it is ready."
         )
 
-    def handle_transcription_result(self, payload: dict) -> Optional[tuple[str, str]]:
-        """Persist transcription completion and build user-facing notification."""
+    def handle_transcription_result(self, payload: dict) -> Iterable[tuple[str, str]]:
+        """Persist transcription completion and yield user-facing notification(s)."""
         jid = str(payload.get("jid", "") or "").strip()
         if not jid:
-            return None
+            return
         sender_jid = str(payload.get("sender_jid", "") or "").strip()
         transcript_id = int(payload.get("transcript_id", 0) or 0)
         status = str(payload.get("status", "") or "").strip().lower()
@@ -335,26 +337,36 @@ class DaemonRouter:
                 duration_seconds=duration_seconds,
             )
             if record is None:
-                return None
+                return
             if self._should_auto_run_completed_transcript():
                 self.transcript_manager.mark_used(jid=jid, transcript_id=transcript_id)
                 if not text:
-                    return (
+                    yield (
                         jid,
                         (
                             f"Transcript #at{transcript_id} is empty. "
                             f"Use `transcript show #at{transcript_id}` to inspect."
                         ),
                     )
+                    return
+
+                # First, send the transcription immediately
+                yield (jid, f"Transcript #at{transcript_id}:\n{text}")
+
+                # Then, run the query and send the answer
                 answer = self.command_executor.execute_query_text(
                     jid=jid,
-                    room_jid=(jid if self.command_executor.is_room_bound(jid) else None),
+                    room_jid=(
+                        jid if self.command_executor.is_room_bound(jid) else None
+                    ),
                     query_text=text,
                 )
-                return (jid, answer)
+                yield (jid, answer)
+                return
+
             self._pending_transcript_confirmation[(jid, sender_jid)] = transcript_id
             preview = record.transcript_text or ""
-            return (
+            yield (
                 jid,
                 (
                     f"Transcript #at{transcript_id} of audio #a{transcript_id} ready.\n"
@@ -364,6 +376,7 @@ class DaemonRouter:
                     f"Or run: transcript use #at{transcript_id}"
                 ),
             )
+            return
 
         error_text = str(payload.get("error", "") or "Unknown transcription error")
         self.transcript_manager.mark_transcript_failed(
@@ -371,13 +384,15 @@ class DaemonRouter:
             transcript_id=transcript_id,
             error=error_text,
         )
-        return (jid, f"Transcript #at{transcript_id} failed: {error_text}")
+        yield (jid, f"Transcript #at{transcript_id} failed: {error_text}")
 
-    def handle_image_transcription_result(self, payload: dict) -> Optional[tuple[str, str]]:
-        """Persist image transcription completion and build user-facing notification."""
+    def handle_image_transcription_result(
+        self, payload: dict
+    ) -> Iterable[tuple[str, str]]:
+        """Persist image transcription completion and yield user-facing notification."""
         jid = str(payload.get("jid", "") or "").strip()
         if not jid:
-            return None
+            return
         image_id = int(payload.get("image_id", 0) or 0)
         status = str(payload.get("status", "") or "").strip().lower()
         if status == "completed":
@@ -390,19 +405,22 @@ class DaemonRouter:
                 duration_seconds=duration_seconds,
             )
             if record is None:
-                return None
-            return (
+                return
+            yield (
                 jid,
                 f"transcript #it{image_id} of image #i{image_id}:\n{text}",
             )
+            return
 
-        error_text = str(payload.get("error", "") or "Unknown image transcription error")
+        error_text = str(
+            payload.get("error", "") or "Unknown image transcription error"
+        )
         self.transcript_manager.mark_image_transcript_failed(
             jid=jid,
             image_id=image_id,
             error=error_text,
         )
-        return (jid, f"Transcript #it{image_id} failed: {error_text}")
+        yield (jid, f"Transcript #it{image_id} failed: {error_text}")
 
     def _handle_confirmation_shortcut(
         self,
@@ -475,6 +493,8 @@ def _looks_like_command(text: str) -> bool:
     first_token = stripped.split(maxsplit=1)[0].lower()
     command_tokens = {
         "/session",
+        "/h",
+        "/help",
         "transcript",
         "history",
         "session",

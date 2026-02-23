@@ -51,6 +51,7 @@ from asky.daemon.transcript_manager import TranscriptManager
 from asky.daemon.voice_transcriber import VoiceTranscriber
 from asky.daemon.xmpp_client import AskyXMPPClient
 from asky.storage import init_db
+from asky.logger import setup_xmpp_logging
 
 logger = logging.getLogger(__name__)
 URL_PATTERN = re.compile(r"https?://[^\s<>\"]+")
@@ -61,13 +62,15 @@ IMAGE_EXTENSIONS = (".jpg", ".jpeg", ".png", ".webp", ".gif")
 class XMPPDaemonService:
     """Coordinates daemon router, background workers, and XMPP transport."""
 
-    def __init__(self):
+    def __init__(self, double_verbose: bool = False):
         logger.debug("initializing XMPPDaemonService")
         init_db()
         self.transcript_manager = TranscriptManager(
             transcript_cap=XMPP_TRANSCRIPT_MAX_PER_SESSION
         )
-        self.command_executor = CommandExecutor(self.transcript_manager)
+        self.command_executor = CommandExecutor(
+            self.transcript_manager, double_verbose=double_verbose
+        )
         self.interface_planner = InterfacePlanner(
             INTERFACE_MODEL,
             system_prompt=INTERFACE_PLANNER_SYSTEM_PROMPT,
@@ -162,7 +165,9 @@ class XMPPDaemonService:
             room_jid = str(payload.get("room_jid", "") or "").strip().lower()
             sender_jid = str(payload.get("sender_jid", "") or "").strip()
             sender_nick = str(payload.get("sender_nick", "") or "").strip()
-            invite_room_jid = str(payload.get("invite_room_jid", "") or "").strip().lower()
+            invite_room_jid = (
+                str(payload.get("invite_room_jid", "") or "").strip().lower()
+            )
             invite_from_jid = str(payload.get("invite_from_jid", "") or "").strip()
             target_jid, target_message_type = _resolve_reply_target(
                 from_jid=from_jid,
@@ -293,34 +298,35 @@ class XMPPDaemonService:
                 self._client.send_chat_message(jid, body)
 
     def _on_transcription_complete(self, payload: dict) -> None:
-        result = self.router.handle_transcription_result(payload)
-        if not result:
-            return
-        jid, message = result
-        message_type = "groupchat" if self.command_executor.is_room_bound(jid) else "chat"
-        self._send_chunked(jid, message, message_type=message_type)
+        results = self.router.handle_transcription_result(payload)
+        for jid, message in results:
+            message_type = (
+                "groupchat" if self.command_executor.is_room_bound(jid) else "chat"
+            )
+            self._send_chunked(jid, message, message_type=message_type)
 
     def _on_image_transcription_complete(self, payload: dict) -> None:
-        result = self.router.handle_image_transcription_result(payload)
-        if not result:
-            return
-        jid, message = result
-        message_type = "groupchat" if self.command_executor.is_room_bound(jid) else "chat"
-        self._send_chunked(jid, message, message_type=message_type)
+        results = self.router.handle_image_transcription_result(payload)
+        for jid, message in results:
+            message_type = (
+                "groupchat" if self.command_executor.is_room_bound(jid) else "chat"
+            )
+            self._send_chunked(jid, message, message_type=message_type)
 
     def _on_xmpp_session_start(self) -> None:
         for room_jid in self.command_executor.list_bound_room_jids():
             self._client.join_room(room_jid)
 
 
-def run_xmpp_daemon_foreground() -> None:
+def run_xmpp_daemon_foreground(double_verbose: bool = False) -> None:
     """Entry point used by CLI flag."""
     if not XMPP_ENABLED:
         raise DaemonUserError(
             "XMPP daemon is disabled in xmpp.toml (xmpp.enabled=false).",
             hint="Run asky --edit-daemon to enable it.",
         )
-    service = XMPPDaemonService()
+    setup_xmpp_logging()
+    service = XMPPDaemonService(double_verbose=double_verbose)
     service.run_foreground()
 
 

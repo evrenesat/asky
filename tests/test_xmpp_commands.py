@@ -267,7 +267,9 @@ def test_transcript_use_path_inherits_query_alias_preparation():
     ):
         mock_client = mock_client_cls.return_value
         mock_client.run_turn.return_value = _turn_result("transcript answer")
-        response = executor.execute_command_text(jid="jid", command_text="transcript use 1")
+        response = executor.execute_command_text(
+            jid="jid", command_text="transcript use 1"
+        )
 
     assert response == "transcript answer"
     assert manager.used == [("jid", 1)]
@@ -363,3 +365,29 @@ def test_apply_inline_toml_if_present_uses_current_session():
     )
     assert "Applied general.toml override to session 1." in str(response)
     assert manager.session_profile_manager.apply_calls[0][1] == "general.toml"
+
+
+def test_help_command_returns_help_text():
+    executor = CommandExecutor(_FakeTranscriptManager())
+    response = executor.execute_command_text(jid="jid", command_text="/h")
+    assert "Session" in response
+    assert "Transcript" in response
+    assert "Asky Commands" in response
+    assert "Prompt Aliases" in response
+    assert "Command Presets" in response
+    assert "Config Override" in response
+
+
+def test_help_alias_returns_same_text():
+    executor = CommandExecutor(_FakeTranscriptManager())
+    h_response = executor.execute_command_text(jid="jid", command_text="/h")
+    help_response = executor.execute_command_text(jid="jid", command_text="/help")
+    assert h_response == help_response
+
+
+def test_help_command_token_recognized_by_router():
+    from asky.daemon.router import _looks_like_command
+
+    assert _looks_like_command("/h") is True
+    assert _looks_like_command("/help") is True
+    assert _looks_like_command("/HELP") is True

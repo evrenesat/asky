@@ -23,7 +23,9 @@ class _FakeTranscriptManager:
         )
         return rec
 
-    def mark_transcript_completed(self, *, jid, transcript_id, transcript_text, duration_seconds):
+    def mark_transcript_completed(
+        self, *, jid, transcript_id, transcript_text, duration_seconds
+    ):
         rec = self.records[(jid, transcript_id)]
         rec.transcript_text = transcript_text
         rec.status = "completed"
@@ -60,7 +62,9 @@ class _FakeTranscriptManager:
         )
         return rec
 
-    def mark_image_transcript_completed(self, *, jid, image_id, transcript_text, duration_seconds):
+    def mark_image_transcript_completed(
+        self, *, jid, image_id, transcript_text, duration_seconds
+    ):
         rec = self.records[(jid, "i", image_id)]
         rec.transcript_text = transcript_text
         rec.status = "completed"
@@ -257,17 +261,19 @@ def test_router_transcript_ready_message_clarifies_yes_no_action():
         message_type="chat",
         audio_url="https://example.com/audio.m4a",
     )
-    result = router.handle_transcription_result(
-        {
-            "jid": "u@example.com/resource",
-            "transcript_id": 1,
-            "status": "completed",
-            "transcript_text": "hello transcript",
-            "duration_seconds": 1.2,
-        }
+    results = list(
+        router.handle_transcription_result(
+            {
+                "jid": "u@example.com/resource",
+                "transcript_id": 1,
+                "status": "completed",
+                "transcript_text": "hello transcript",
+                "duration_seconds": 1.2,
+            }
+        )
     )
-    assert result is not None
-    _jid, message = result
+    assert len(results) == 1
+    _jid, message = results[0]
     assert "Reply 'yes' to run transcript #at1 as a query now." in message
     assert "Reply 'no' to keep it for later." in message
 
@@ -279,16 +285,26 @@ def test_router_auto_runs_transcript_when_interface_model_disabled():
         message_type="chat",
         audio_url="https://example.com/audio.m4a",
     )
-    result = router.handle_transcription_result(
-        {
-            "jid": "u@example.com/resource",
-            "transcript_id": 1,
-            "status": "completed",
-            "transcript_text": "how is weather in rijswijk today",
-            "duration_seconds": 1.1,
-        }
+    results = list(
+        router.handle_transcription_result(
+            {
+                "jid": "u@example.com/resource",
+                "transcript_id": 1,
+                "status": "completed",
+                "transcript_text": "how is weather in rijswijk today",
+                "duration_seconds": 1.1,
+            }
+        )
     )
-    assert result == ("u@example.com/resource", "query:how is weather in rijswijk today:-")
+    assert len(results) == 2
+    assert results[0] == (
+        "u@example.com/resource",
+        "Transcript #at1:\nhow is weather in rijswijk today",
+    )
+    assert results[1] == (
+        "u@example.com/resource",
+        "query:how is weather in rijswijk today:-",
+    )
 
 
 def test_router_auto_run_can_be_disabled_explicitly():
@@ -298,17 +314,19 @@ def test_router_auto_run_can_be_disabled_explicitly():
         message_type="chat",
         audio_url="https://example.com/audio.m4a",
     )
-    result = router.handle_transcription_result(
-        {
-            "jid": "u@example.com/resource",
-            "transcript_id": 1,
-            "status": "completed",
-            "transcript_text": "how is weather in rijswijk today",
-            "duration_seconds": 1.1,
-        }
+    results = list(
+        router.handle_transcription_result(
+            {
+                "jid": "u@example.com/resource",
+                "transcript_id": 1,
+                "status": "completed",
+                "transcript_text": "how is weather in rijswijk today",
+                "duration_seconds": 1.1,
+            }
+        )
     )
-    assert result is not None
-    _jid, message = result
+    assert len(results) == 1
+    _jid, message = results[0]
     assert "Reply 'yes' to run transcript #at1 as a query now." in message
 
 
@@ -319,16 +337,19 @@ def test_router_image_transcript_completion_message():
         message_type="chat",
         image_url="https://example.com/image.jpg",
     )
-    result = router.handle_image_transcription_result(
-        {
-            "jid": "u@example.com/resource",
-            "image_id": 1,
-            "status": "completed",
-            "transcript_text": "a flower in sunlight",
-            "duration_seconds": 0.8,
-        }
+    results = list(
+        router.handle_image_transcription_result(
+            {
+                "jid": "u@example.com/resource",
+                "image_id": 1,
+                "status": "completed",
+                "transcript_text": "a flower in sunlight",
+                "duration_seconds": 0.8,
+            }
+        )
     )
-    assert result == (
+    assert len(results) == 1
+    assert results[0] == (
         "u@example.com/resource",
         "transcript #it1 of image #i1:\na flower in sunlight",
     )

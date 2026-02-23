@@ -25,6 +25,7 @@ from asky.cli.main import (
     research_commands,
     section_commands,
 )
+from asky.cli.verbose_output import build_verbose_output_callback
 from asky.config import DEFAULT_MODEL
 from asky.daemon.transcript_manager import TranscriptManager
 from asky.storage import init_db
@@ -46,11 +47,10 @@ SESSION_HELP = (
     "  /session child          Create and switch to a child session (inherit current overrides)\n"
     "  /session <id|name>      Switch to an existing session by id or exact name"
 )
+HELP_COMMAND_TOKENS = {"/h", "/help"}
 MAX_TOML_DOWNLOAD_BYTES = 256 * 1024
 TOML_DOWNLOAD_TIMEOUT_SECONDS = 30
-REMOTE_BLOCKED_FLAGS_MESSAGE = (
-    "Remote policy blocked this command in daemon mode."
-)
+REMOTE_BLOCKED_FLAGS_MESSAGE = "Remote policy blocked this command in daemon mode."
 REMOTE_BLOCKED_FLAGS = (
     "--mail",
     "--open",
@@ -75,13 +75,83 @@ INLINE_TOML_PATTERN = re.compile(
 POINTER_PATTERN = re.compile(r"#(it|i|at|a)(\d+)\b", re.IGNORECASE)
 _SUMMARIZATION_MODEL_OVERRIDE_LOCK = threading.Lock()
 
+_HELP_TEXT = """\
+asky XMPP Help
+
+--- Session ---
+/session                            Show session help + recent sessions
+/session new                        Create and switch to a new session
+/session child                      Create child session (inherit current overrides)
+/session <id|name>                  Switch to existing session by id or name
+
+--- Transcripts ---
+transcript list [N]                 List recent audio/image transcripts (default 20)
+transcript show <id|#atN>           Show full transcript text
+transcript use <id|#atN>            Run transcript as a query
+transcript clear                    Delete all transcripts for this conversation
+
+--- Media Pointers (use in queries) ---
+#aN                                 Audio file N as file path
+#atN                                Audio transcript N as text
+#iN                                 Image file N as file path
+#itN                                Image transcript N as text
+
+--- Asky Commands ---
+-H [N], --history [N]               Show last N query summaries (default 10)
+-pa ID, --print-answer ID           Print full answer for history ID(s)
+-ps SEL, --print-session SEL        Print session content by ID or name
+-sh [N], --session-history [N]      List recent sessions (default 10)
+-ss NAME, --sticky-session NAME     Create and activate a named session
+-rs NAME, --resume-session NAME     Resume existing session by ID or name
+-r [CORPUS], --research [CORPUS]    Enable research mode (optional local corpus pointer)
+-s, --summarize                     Enable summarize mode
+-L, --lean                          Disable pre-LLM source shortlisting
+-t N, --turns N                     Set max turn count for this session
+-em, --elephant-mode                Enable automatic memory extraction
+-sp TEXT, --system-prompt TEXT      Override system prompt for this run
+-m ALIAS, --model ALIAS             Select model alias
+-c [ID], --continue-chat [ID]       Continue from history ID (omit for last)
+--shortlist auto|on|off             Control source shortlisting behavior
+-off TOOL, --tool-off TOOL          Disable a specific LLM tool for this run
+--list-tools                        List all available tools
+--query-corpus QUERY                Query research corpus directly (no model)
+--summarize-section [QUERY]         Summarize a corpus section (no model)
+--list-memories                     List saved user memories
+
+--- Prompt Aliases ---
+/                                   List all configured prompt aliases
+/name [query]                       Expand alias and run as query
+/prefix                             List aliases matching that prefix
+
+--- Command Presets ---
+\\presets                           List configured command presets
+\\name [args]                       Run named command preset with optional args
+
+--- Config Override ---
+Send a TOML block to apply session-scoped config overrides:
+  general.toml
+  ```toml
+  [general]
+  default_model = "gpt-4o"
+  ```
+Supported files: general.toml, user.toml\
+"""
+
+
+def build_help_text() -> str:
+    """Return the full XMPP command help text."""
+    return _HELP_TEXT
+
 
 class CommandExecutor:
     """Execute parsed asky commands for one authorized sender or room."""
 
-    def __init__(self, transcript_manager: TranscriptManager):
+    def __init__(
+        self, transcript_manager: TranscriptManager, double_verbose: bool = False
+    ):
         self.transcript_manager = transcript_manager
         self.session_profile_manager = transcript_manager.session_profile_manager
+        self.double_verbose = double_verbose
 
     def get_interface_command_reference(self) -> str:
         """Return command-surface guidance for interface planner prompting."""
@@ -152,6 +222,8 @@ class CommandExecutor:
         tokens = _split_command_tokens(command_text)
         if not tokens:
             return "Error: empty command."
+        if tokens[0].lower() in HELP_COMMAND_TOKENS:
+            return build_help_text()
         if tokens[0] == TRANSCRIPT_COMMAND:
             return self._handle_transcript_command(
                 jid=jid,
@@ -173,7 +245,9 @@ class CommandExecutor:
     ) -> str:
         """Execute a plain query in sender/room-scoped persistent session."""
         session_id = self._resolve_session_id(jid=jid, room_jid=room_jid)
-        profile = self.session_profile_manager.get_effective_profile(session_id=session_id)
+        profile = self.session_profile_manager.get_effective_profile(
+            session_id=session_id
+        )
         prepared_query, immediate_response = self._prepare_query_text(
             raw_query=query_text,
             verbose=False,
@@ -349,7 +423,9 @@ class CommandExecutor:
         manual_corpus_query = _manual_corpus_query_arg(args)
         manual_section_query = _manual_section_query_arg(args)
         session_id = self._resolve_session_id(jid=jid, room_jid=room_jid)
-        profile = self.session_profile_manager.get_effective_profile(session_id=session_id)
+        profile = self.session_profile_manager.get_effective_profile(
+            session_id=session_id
+        )
 
         init_db()
 
@@ -375,7 +451,9 @@ class CommandExecutor:
                 None,
             )
         if getattr(args, "session_history", None) is not None:
-            return _capture_output(sessions.show_session_history_command, args.session_history)
+            return _capture_output(
+                sessions.show_session_history_command, args.session_history
+            )
         if manual_corpus_query:
             return _capture_output(
                 research_commands.run_manual_corpus_query_command,
@@ -426,12 +504,18 @@ class CommandExecutor:
         profile,
     ) -> str:
         _ = room_jid  # explicit for readability in callsites; session_id already resolved.
-        model_alias = getattr(args, "model", None) or profile.default_model or DEFAULT_MODEL
+        model_alias = (
+            getattr(args, "model", None) or profile.default_model or DEFAULT_MODEL
+        )
+        double_verbose = self.double_verbose or bool(
+            getattr(args, "double_verbose", False)
+        )
         client = AskyClient(
             AskyConfig(
                 model_alias=model_alias,
                 summarize=bool(getattr(args, "summarize", False)),
-                verbose=bool(getattr(args, "verbose", False)),
+                verbose=bool(getattr(args, "verbose", False)) or double_verbose,
+                double_verbose=double_verbose,
                 open_browser=False,
                 research_mode=bool(getattr(args, "research", False)),
                 disabled_tools=set(),
@@ -448,17 +532,22 @@ class CommandExecutor:
             save_history=True,
             elephant_mode=bool(getattr(args, "elephant_mode", False)),
             max_turns=getattr(args, "turns", None),
-            research_flag_provided=bool(
-                getattr(args, "research_flag_provided", False)
-            ),
+            research_flag_provided=bool(getattr(args, "research_flag_provided", False)),
             research_source_mode=getattr(args, "research_source_mode", None),
             replace_research_corpus=bool(
                 getattr(args, "replace_research_corpus", False)
             ),
             shortlist_override=str(getattr(args, "shortlist", "auto")),
         )
+        from rich.console import Console
+
+        verbose_output_cb = (
+            build_verbose_output_callback(Console(highlight=False))
+            if double_verbose
+            else None
+        )
         with _summarization_model_override(profile.summarization_model):
-            result = client.run_turn(request)
+            result = client.run_turn(request, verbose_output_callback=verbose_output_cb)
         if result.halted:
             reason = result.halt_reason or "unknown"
             notices = "\n".join(result.notices) if result.notices else ""
@@ -689,7 +778,9 @@ class CommandExecutor:
                 return f"Error: transcript {transcript_id} not found."
             if record.status != "completed":
                 return f"Error: transcript {transcript_id} is not completed."
-            self.transcript_manager.mark_used(jid=conversation_id, transcript_id=transcript_id)
+            self.transcript_manager.mark_used(
+                jid=conversation_id, transcript_id=transcript_id
+            )
             if not record.transcript_text.strip():
                 return f"Error: transcript {transcript_id} has no text."
             return self.execute_query_text(
@@ -711,7 +802,9 @@ class CommandExecutor:
         )
 
     def _render_session_help(self) -> str:
-        listed = self.session_profile_manager.list_recent_sessions(limit=SESSION_LIST_LIMIT)
+        listed = self.session_profile_manager.list_recent_sessions(
+            limit=SESSION_LIST_LIMIT
+        )
         lines = [SESSION_HELP, "", f"Latest {SESSION_LIST_LIMIT} Sessions:"]
         if not listed:
             lines.append("  (none)")

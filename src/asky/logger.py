@@ -28,7 +28,9 @@ def generate_timestamped_log_path(base_path: str) -> Path:
     return path.parent / f"{timestamp}_{path.name}"
 
 
-def setup_logging(level_name: str = "INFO", log_file: Optional[Union[str, Path]] = None) -> None:
+def setup_logging(
+    level_name: str = "INFO", log_file: Optional[Union[str, Path]] = None
+) -> None:
     """Configure logging to write to a file."""
     level = getattr(logging, level_name.upper(), logging.INFO)
 
@@ -76,3 +78,32 @@ def setup_logging(level_name: str = "INFO", log_file: Optional[Union[str, Path]]
     ]
     for lib in noisy_libraries:
         logging.getLogger(lib).setLevel(logging.WARNING)
+
+
+XMPP_LOG_FILE = "~/.config/asky/logs/xmpp.log"
+
+
+def setup_xmpp_logging(level_name: str = "DEBUG") -> None:
+    """Attach a dedicated log handler for asky.daemon.* to a separate xmpp.log file.
+
+    This does not affect the root logger - other asky logs continue going to the
+    main log file. Only the asky.daemon namespace is captured here.
+    """
+    level = getattr(logging, level_name.upper(), logging.DEBUG)
+    log_path = Path(XMPP_LOG_FILE).expanduser()
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+
+    handler = RotatingFileHandler(
+        log_path,
+        mode="a",
+        maxBytes=MAX_LOG_FILE_BYTES,
+        backupCount=LOG_BACKUP_COUNT,
+        encoding="utf-8",
+    )
+    handler.setFormatter(
+        logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
+    )
+    handler.setLevel(level)
+
+    daemon_logger = logging.getLogger("asky.daemon")
+    daemon_logger.addHandler(handler)
