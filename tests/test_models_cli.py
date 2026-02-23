@@ -21,6 +21,7 @@ FAKE_CONFIG = {
         "default_model": "other",
         "summarization_model": "other",
         "interface_model": "other",
+        "default_image_model": "other",
     }
 }
 
@@ -147,6 +148,23 @@ def test_edit_model_action_i_sets_interface_model(tmp_path):
         edit_model_command("mymodel")
 
     mock_update.assert_called_once_with("interface_model", "mymodel")
+    mock_save.assert_not_called()
+
+
+def test_edit_model_action_g_sets_default_image_model(tmp_path):
+    """Choosing 'g' updates default_image_model and returns without touching model config."""
+    _prepare_models_file(tmp_path)
+
+    with (
+        patch("asky.cli.models.MODELS", FAKE_MODELS),
+        patch("asky.cli.models.load_config", return_value=FAKE_CONFIG),
+        patch("asky.cli.models.Prompt.ask", return_value="g"),
+        patch("asky.cli.models.update_general_config") as mock_update,
+        patch("asky.cli.models.save_model_config") as mock_save,
+    ):
+        edit_model_command("mymodel")
+
+    mock_update.assert_called_once_with("default_image_model", "mymodel")
     mock_save.assert_not_called()
 
 

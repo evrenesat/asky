@@ -1,5 +1,25 @@
 # DEVLOG
 
+## 2026-02-23 - Model Dialog Support for `default_image_model`
+
+Extended the interactive model management dialogs so users can set `general.default_image_model` directly, matching the existing main/summarization/interface role assignment UX.
+
+- **Changed**:
+  - `src/asky/cli/models.py`:
+    - `add_model_command()` now asks whether to set the saved model as `default_image_model`.
+    - `edit_model_command()` now:
+      - reads current `default_image_model`,
+      - shows `image` in role tags when applicable,
+      - adds a new action (`g`) to set `default_image_model` directly from the role-action menu.
+  - `tests/test_models_cli.py`:
+    - Added coverage for the new `g` action path.
+    - Updated fixtures to include `default_image_model`.
+- **Why**:
+  - Keeps model-role assignment consistent across all role-like config keys and removes the need to manually edit TOML for image model defaults.
+- **Validation**:
+  - `uv run pytest tests/test_models_cli.py` -> passed.
+  - `uv run pytest` -> passed (`738 passed`).
+
 ## 2026-02-23 - High-Severity Security and Reliability Fixes
 
 Addressed 15 high-severity issues from the P1 code review.

@@ -273,6 +273,9 @@ def add_model_command():
     if Confirm.ask("Set as interface model?", default=False):
         update_general_config("interface_model", nickname)
 
+    if Confirm.ask("Set as default image model?", default=False):
+        update_general_config("default_image_model", nickname)
+
 
 def edit_model_command(model_alias: Optional[str] = None):
     """Interactively edit an existing model definition."""
@@ -339,6 +342,7 @@ def edit_model_command(model_alias: Optional[str] = None):
     def_model = general.get("default_model")
     sum_model = general.get("summarization_model")
     interface_model = general.get("interface_model")
+    image_model = general.get("default_image_model")
 
     role_tags = []
     if model_alias == def_model:
@@ -347,6 +351,8 @@ def edit_model_command(model_alias: Optional[str] = None):
         role_tags.append("[blue]summarization[/blue]")
     if model_alias == interface_model:
         role_tags.append("[magenta]interface[/magenta]")
+    if model_alias == image_model:
+        role_tags.append("[yellow]image[/yellow]")
     role_str = ", ".join(role_tags) if role_tags else "none"
 
     console.print(f"\n[bold]Model: {model_alias}[/bold]  (current role: {role_str})")
@@ -366,11 +372,12 @@ def edit_model_command(model_alias: Optional[str] = None):
     console.print("  [green]m[/green] - set as [bold]main[/bold] model")
     console.print("  [blue]s[/blue] - set as [bold]summarization[/bold] model")
     console.print("  [magenta]i[/magenta] - set as [bold]interface[/bold] model")
+    console.print("  [yellow]g[/yellow] - set as [bold]default image[/bold] model")
     console.print("  [yellow]e[/yellow] - edit parameters")
 
     action = Prompt.ask(
         "\nSelect action",
-        choices=["m", "s", "i", "e"],
+        choices=["m", "s", "i", "g", "e"],
         default="e",
     )
 
@@ -384,6 +391,10 @@ def edit_model_command(model_alias: Optional[str] = None):
 
     if action == "i":
         update_general_config("interface_model", model_alias)
+        return
+
+    if action == "g":
+        update_general_config("default_image_model", model_alias)
         return
 
     # action == "e": proceed to full parameter edit
