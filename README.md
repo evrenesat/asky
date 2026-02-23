@@ -3,7 +3,7 @@
 <!-- <font size="6">**asky**</font> -->
 <img src="https://github.com/evrenesat/asky/raw/main/assets/title.png" alt="asky title">
 
-asky is an AI-powered web search CLI with LLM tool-calling capabilities.
+asky is an AI-powered web search CLI with LLM tool-calling capabilities and an optional XMPP remote-chat mode.
 
 It (invoked as `asky` or `ask`) provides a command-line interface that brings AI-powered search and research capabilities directly to your terminal. It uses LLMs and tools to synthesize answers from the web (or from local files and CLI commands).
 
@@ -20,11 +20,22 @@ asky embraces this philosophy. It does not take over your screen. It feels like 
 - **Multi-Model Support**: Easily define and switch between various LLMs and providers that support OpenAI compatible APIs.
 - **Deep Research Mode**: A specialized mode for an iterative, RAG-backed investigation across web sources and local data.
 - **Tool-Calling Integration**: Models autonomously search the web, fetch URLs, and use the current date/time to provide accurate answers.
+- **XMPP Remote Daemon (Optional)**: Run asky as a foreground XMPP client daemon (`asky --xmpp-daemon`) so authorized contacts can use asky from mobile/desktop XMPP apps.
+- **Voice Transcription & Voice Commands (Optional)**: In XMPP daemon mode, voice attachments can be transcribed (`mlx-whisper`, macOS phase 1) and routed as transcript-driven commands/queries.
 - **Custom Tools**: Expose any CLI command as a tool for the LLM.
 - **User Memory (Elephant Mode)**: Cross-session persistent memory that allows the LLM to learn facts and preferences about you across different conversations.
 - **Smart Context Management**: Automatically summarizes older conversation history to maximize context window usage.
 - **File Prompts**: Load complex prompts directly from files using `file://` URIs.
 - **Token Efficient**: It counts token usage and keeps the model informed about remaining context capacity.
+
+## What XMPP Daemon Mode Means
+
+When you run `asky --xmpp-daemon`, asky logs into an XMPP account and waits for direct chat messages.
+
+- It behaves as an XMPP **client daemon** (not a full XMPP server).
+- It only processes messages from configured allowlisted JIDs.
+- It exposes asky command/query flows over chat, including presets.
+- With voice enabled, audio attachments are transcribed and can be used as commands/queries.
 
 ## Documentation Index
 

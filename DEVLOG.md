@@ -1,5 +1,23 @@
 # DEVLOG
 
+## 2026-02-23 - README Clarity for XMPP Daemon + Voice
+
+Clarified the top-level README so new users immediately understand what XMPP daemon mode is and why it matters.
+
+- **Changed**:
+  - `README.md`:
+    - Updated project summary line to mention optional XMPP remote-chat mode.
+    - Added XMPP daemon and voice transcription/voice command bullets to **Key Features**.
+    - Added new section: **What XMPP Daemon Mode Means** with concrete behavior:
+      - foreground XMPP client daemon (not an XMPP server),
+      - allowlist-only direct-message handling,
+      - command/query + preset usage over chat,
+      - optional voice transcription flow.
+- **Why**:
+  - Prior wording was too vague for first-time readers and did not surface one of the strongest practical features.
+- **Validation**:
+  - `uv run pytest` -> passed.
+
 ## 2026-02-23 - Model Editor Action for Interface Role
 
 Added interface-model role assignment to interactive model management.
