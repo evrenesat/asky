@@ -1,332 +1,354 @@
-# Plugin System API Specification
+# Plugin System API Specification (Revised)
 
-Companion to [plugin-system.md](plugin-system.md). This document defines the exact classes, protocols, and contracts that implementors must follow.
+Companion to [plugin-system.md](plugin-system.md). This file defines the concrete runtime contracts for implementation.
 
 ---
 
-## AskyPlugin Base Class
+## Version Scope
+
+This spec is for plugin-system v1 (initial rollout). It is intentionally strict on determinism and failure isolation.
+
+---
+
+## Terminology
+
+- **Plugin manifest**: one roster entry from `plugins.toml`.
+- **Plugin runtime**: active `PluginManager` + `HookRegistry` passed through chat/daemon flows.
+- **Hook context**: typed payload object for a hook call.
+- **Capability**: declared permission bucket for what a plugin can do.
+
+---
+
+## Manifest Contract
+
+`plugins.toml` lives at `~/.config/asky/plugins.toml`.
+
+### Required Fields
+
+- `enabled` (`bool`)
+- `module` (`str`)
+
+### Recommended/Optional Fields
+
+- `class` (`str`) - recommended for deterministic class loading
+- `dependencies` (`list[str]`)
+- `capabilities` (`list[str]`)
+- `config_file` (`str`) - defaults to `plugins/<name>.toml`
+
+### Example
+
+```toml
+[plugin.manual_persona_creator]
+enabled = true
+module = "asky.plugins.persona_creator.plugin"
+class = "ManualPersonaCreatorPlugin"
+dependencies = []
+capabilities = ["tool_registry", "prompt", "preload"]
+config_file = "plugins/manual_persona_creator.toml"
+
+[plugin.gui_server]
+enabled = false
+module = "asky.plugins.gui_server.plugin"
+class = "GUIServerPlugin"
+dependencies = []
+capabilities = ["daemon_server"]
+```
+
+### Dataclass
+
+```python
+@dataclass(frozen=True)
+class PluginManifest:
+    name: str
+    enabled: bool
+    module: str
+    class_name: str | None = None
+    dependencies: tuple[str, ...] = ()
+    capabilities: tuple[str, ...] = ()
+    config_file: str | None = None
+```
+
+---
+
+## Capability Constants
+
+```python
+CAP_TOOL_REGISTRY = "tool_registry"
+CAP_PROMPT = "prompt"
+CAP_PRELOAD = "preload"
+CAP_LLM_IO = "llm_io"
+CAP_TOOL_EXEC = "tool_exec"
+CAP_DAEMON_SERVER = "daemon_server"
+CAP_TURN_LIFECYCLE = "turn_lifecycle"
+```
+
+Manager must warn when plugin registers hook points outside declared capabilities.
+
+---
+
+## Plugin Base Contract
 
 ```python
 # src/asky/plugins/base.py
-
 from __future__ import annotations
 from abc import ABC, abstractmethod
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Mapping
 import logging
 
 
-@dataclass
+@dataclass(frozen=True)
 class PluginContext:
-    """Passed to plugin.activate(). Provides access to Asky internals."""
-
-    config: Dict[str, Any]
-    """Plugin-specific config from plugins/<name>.toml."""
-
-    global_config: Dict[str, Any]
-    """Read-only snapshot of the full Asky config."""
-
+    manifest: PluginManifest
+    plugin_config: Mapping[str, Any]
+    global_config: Mapping[str, Any]
     data_dir: Path
-    """Plugin-specific persistent data directory (~/.config/asky/plugins/<name>/)."""
-
     hooks: "HookRegistry"
-    """Hook registry for subscribing to pipeline events."""
-
     logger: logging.Logger
-    """Logger scoped to this plugin (asky.plugins.<name>)."""
 
 
 class AskyPlugin(ABC):
-    """Base class for all Asky plugins."""
-
     @property
     @abstractmethod
     def name(self) -> str:
-        """Unique plugin identifier. Must match the key in plugins.toml."""
+        """Must match manifest name."""
 
     @property
     def version(self) -> str:
-        """Semantic version string."""
         return "0.1.0"
 
     @property
-    def dependencies(self) -> List[str]:
-        """List of plugin names this plugin depends on (loaded first)."""
-        return []
+    def dependencies(self) -> tuple[str, ...]:
+        return ()
+
+    @property
+    def capabilities(self) -> tuple[str, ...]:
+        return ()
 
     @abstractmethod
     def activate(self, context: PluginContext) -> None:
-        """Called once at startup. Register hooks, tools, servers here."""
+        """Register hooks, initialize state, validate config."""
 
     def deactivate(self) -> None:
-        """Called at shutdown. Clean up resources. Optional override."""
+        """Best-effort cleanup. Must not raise fatal errors."""
 ```
 
 ---
 
-## PluginManager
+## Plugin Runtime and Manager
 
 ```python
-# src/asky/plugins/manager.py (key interface — not full implementation)
+@dataclass(frozen=True)
+class PluginRuntime:
+    manager: "PluginManager"
+    hooks: "HookRegistry"
+
 
 class PluginManager:
-    """Discovers, loads, orders, and manages plugin lifecycles."""
-
-    def __init__(self, config: Dict[str, Any], config_dir: Path) -> None:
-        """
-        Args:
-            config: The full Asky config dict (result of load_config()).
-            config_dir: Path to ~/.config/asky/ (for plugin config/data dirs).
-        """
+    def __init__(self, *, global_config: Mapping[str, Any], config_dir: Path) -> None: ...
 
     @property
-    def hook_registry(self) -> HookRegistry:
-        """The shared hook registry used by all plugins."""
+    def hook_registry(self) -> "HookRegistry": ...
 
-    def discover_and_load(self) -> None:
-        """
-        Read plugins.toml, import plugin modules, instantiate AskyPlugin subclasses.
-        Skips disabled plugins. Logs errors for bad modules without raising.
-        """
+    def load_roster(self) -> list[PluginManifest]: ...
+    def discover_and_import(self) -> None: ...
+    def activate_all(self) -> None: ...
+    def deactivate_all(self) -> None: ...
 
-    def activate_all(self) -> None:
-        """
-        Topologically sort by dependencies, then call activate(context) on each.
-        Creates data dirs on first activation.
-        If a plugin raises during activate(), log error, mark it failed, continue.
-        """
+    def get_plugin(self, name: str) -> AskyPlugin | None: ...
+    def is_active(self, name: str) -> bool: ...
+    def list_status(self) -> list["PluginStatus"]: ...
+```
 
-    def deactivate_all(self) -> None:
-        """Call deactivate() on all active plugins in reverse activation order."""
+### Deterministic Ordering
 
-    def get_plugin(self, name: str) -> Optional[AskyPlugin]:
-        """Retrieve an active plugin by name. Returns None if not found/failed."""
+Activation order is:
 
-    def is_active(self, name: str) -> bool:
-        """Check if a plugin is loaded and successfully activated."""
+1. topological dependency order,
+2. then plugin name ascending for ties.
+
+### Plugin Status Contract
+
+```python
+@dataclass(frozen=True)
+class PluginStatus:
+    name: str
+    state: str  # discovered|loaded|active|failed|disabled|skipped_dependency
+    reason: str | None = None
+    version: str | None = None
 ```
 
 ---
 
-## HookRegistry
+## Hook Registry Contract
 
 ```python
-# src/asky/plugins/hooks.py (key interface)
-
-from typing import Any, Callable, Dict, List, Optional
-from dataclasses import dataclass
-
-# Hook point constants
-TOOL_REGISTRY_BUILD = "tool_registry_build"
-SYSTEM_PROMPT_EXTEND = "system_prompt_extend"
-PRE_LLM_CALL = "pre_llm_call"
-POST_LLM_RESPONSE = "post_llm_response"
-PRE_TOOL_EXECUTE = "pre_tool_execute"
-POST_TOOL_EXECUTE = "post_tool_execute"
-DAEMON_SERVER_REGISTER = "daemon_server_register"
-CONFIG_LOADED = "config_loaded"
-SESSION_START = "session_start"
-SESSION_END = "session_end"
-PRE_PRELOAD = "pre_preload"
-POST_PRELOAD = "post_preload"
-
 HookCallback = Callable[..., Any]
+
+@dataclass(frozen=True)
+class HookSubscription:
+    hook_point: str
+    callback: HookCallback
+    priority: int
+    plugin_name: str
+    order: int
 
 
 class HookRegistry:
-    """Central registry for pipeline hook subscriptions."""
-
     def register(
         self,
         hook_point: str,
         callback: HookCallback,
+        *,
         priority: int = 100,
-        plugin_name: Optional[str] = None,
-    ) -> None:
-        """
-        Subscribe to a hook point.
+        plugin_name: str,
+    ) -> None: ...
 
-        Args:
-            hook_point: One of the hook point constants.
-            callback: Callable invoked when the hook fires.
-            priority: Lower = earlier execution. Default 100.
-            plugin_name: For debugging/logging. Auto-set during plugin activation.
-        """
-
-    def unregister(self, hook_point: str, callback: HookCallback) -> None:
-        """Remove a subscription."""
-
-    def invoke(self, hook_point: str, **payload: Any) -> None:
-        """
-        Fire a hook point. All subscribers called in priority order.
-        Exceptions in callbacks are logged but don't propagate.
-
-        Usage: hooks.invoke(TOOL_REGISTRY_BUILD, registry=registry)
-        """
-
-    def invoke_chain(self, hook_point: str, data: Any, **context: Any) -> Any:
-        """
-        Sequential pipeline invocation. Each callback receives the output
-        of the previous one as its first argument.
-
-        Usage: prompt = hooks.invoke_chain(SYSTEM_PROMPT_EXTEND, data=prompt, config=config)
-
-        Returns:
-            The final transformed data value.
-        """
-
-    def freeze(self) -> None:
-        """
-        Called after all plugins are activated. Prevents further registrations.
-        Invocation remains unlocked (thread-safe reads on frozen data).
-        """
+    def unregister(self, hook_point: str, callback: HookCallback) -> None: ...
+    def invoke(self, hook_point: str, **payload: Any) -> None: ...
+    def invoke_chain(self, hook_point: str, data: Any, **context: Any) -> Any: ...
+    def freeze(self) -> None: ...
 ```
+
+### Ordering Rules
+
+Callbacks execute in ascending order of:
+
+1. `priority`
+2. `plugin_name`
+3. registration `order`
+
+### Error Rules
+
+- Callback exceptions are logged with plugin + hook metadata.
+- Other callbacks for the same hook continue.
+- Exceptions do not propagate to user-facing turn execution.
 
 ---
 
-## Plugin Configuration Contract
+## Integration Contracts (Call Sites)
 
-### `plugins.toml` (main plugin roster)
-
-Location: `~/.config/asky/plugins.toml`
-
-```toml
-# Each [plugin.<name>] section declares a plugin.
-# "module" is the Python dotted path to the package containing the AskyPlugin subclass.
-# "enabled" controls whether the plugin is loaded.
-
-[plugin.manual_persona_creator]
-enabled = true
-module = "asky.plugins.persona_creator"
-
-[plugin.persona_manager]
-enabled = true
-module = "asky.plugins.persona_manager"
-
-[plugin.gui_server]
-enabled = false
-module = "asky.plugins.gui_server"
-
-[plugin.puppeteer_browser]
-enabled = false
-module = "asky.plugins.puppeteer_browser"
-```
-
-### Per-plugin config: `~/.config/asky/plugins/<name>.toml`
-
-Each plugin can have its own TOML file. The contents are passed as `PluginContext.config`.
-
-```toml
-# Example: ~/.config/asky/plugins/gui_server.toml
-host = "127.0.0.1"
-port = 8765
-auth_enabled = false
-```
-
-### Plugin module contract
-
-Each plugin module (e.g., `asky.plugins.persona_creator`) must contain exactly one class that subclasses `AskyPlugin`. The `PluginManager` finds it via:
+## AskyClient
 
 ```python
-for obj in vars(module).values():
-    if isinstance(obj, type) and issubclass(obj, AskyPlugin) and obj is not AskyPlugin:
-        return obj()
+class AskyClient:
+    def __init__(
+        self,
+        config: AskyConfig,
+        *,
+        usage_tracker: UsageTracker | None = None,
+        summarization_tracker: UsageTracker | None = None,
+        plugin_runtime: PluginRuntime | None = None,
+    ) -> None: ...
 ```
 
-If multiple subclasses exist, the first found is used (non-deterministic — avoid this). If none found, the module is skipped with a warning.
+Hook call sites in `src/asky/api/client.py`:
+
+- `SESSION_RESOLVED`
+- `PRE_PRELOAD`
+- `POST_PRELOAD`
+- `SYSTEM_PROMPT_EXTEND` (chain)
+- `TURN_COMPLETED`
+
+## Tool Registry Factory
+
+Factory functions accept optional hook registry:
+
+```python
+def create_tool_registry(..., hook_registry: HookRegistry | None = None) -> ToolRegistry: ...
+def create_research_tool_registry(..., hook_registry: HookRegistry | None = None) -> ToolRegistry: ...
+```
+
+Call `TOOL_REGISTRY_BUILD` after built-ins/custom tools are registered and before return.
+
+## Conversation Engine
+
+`src/asky/core/engine.py` invokes:
+
+- `PRE_LLM_CALL`
+- `POST_LLM_RESPONSE`
+
+## Tool Dispatch
+
+`src/asky/core/registry.py` invokes:
+
+- `PRE_TOOL_EXECUTE`
+- `POST_TOOL_EXECUTE`
+
+## Daemon Service
+
+`src/asky/daemon/service.py` invokes:
+
+- `DAEMON_SERVER_REGISTER`
 
 ---
 
-## Tool Registration via Plugin
+## Plugin Config and Data Contract
 
-Plugins register tools during `TOOL_REGISTRY_BUILD`. The callback receives the `ToolRegistry` instance.
+For plugin `<name>`:
 
-```python
-class MyPlugin(AskyPlugin):
-    name = "my_plugin"
+- config file: `~/.config/asky/plugins/<name>.toml`
+- data directory: `~/.config/asky/plugins/<name>/`
 
-    def activate(self, ctx: PluginContext) -> None:
-        ctx.hooks.register(TOOL_REGISTRY_BUILD, self._register_tools)
+`PluginContext.plugin_config` receives parsed TOML mapping (or `{}` if missing).
 
-    def _register_tools(self, registry: ToolRegistry) -> None:
-        registry.register(
-            name="my_tool",
-            schema={
-                "name": "my_tool",
-                "description": "Does something useful.",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "query": {"type": "string", "description": "The query."}
-                    },
-                    "required": ["query"],
-                },
-                "system_prompt_guideline": "Use my_tool when the user asks about X.",
-            },
-            executor=self._execute_my_tool,
-        )
-
-    def _execute_my_tool(self, args: Dict[str, Any]) -> Dict[str, Any]:
-        return {"result": f"Processed: {args['query']}"}
-```
+`PluginContext.global_config` is read-only and must not mutate `asky.config` module exports.
 
 ---
 
-## Daemon Server Registration via Plugin
+## Class Resolution Contract
 
-Plugins register additional servers during `DAEMON_SERVER_REGISTER`. The callback receives a `DaemonContext` with methods to register servers.
+Preferred:
 
-```python
-@dataclass
-class DaemonServerSpec:
-    """Specification for a daemon server to be started alongside XMPP."""
+- use manifest `class` field and resolve exact class by name.
 
-    name: str
-    """Unique server name for logging/status."""
+Fallback (only when `class` missing):
 
-    start: Callable[[], None]
-    """Called to start the server (should be non-blocking or run in a thread)."""
+- module must contain exactly one `AskyPlugin` subclass.
+- 0 or >1 matches -> plugin load error.
 
-    stop: Callable[[], None]
-    """Called to stop the server on shutdown."""
-
-    is_running: Callable[[], bool]
-    """Health check."""
-
-
-class GUIServerPlugin(AskyPlugin):
-    name = "gui_server"
-
-    def activate(self, ctx: PluginContext) -> None:
-        self._ctx = ctx
-        ctx.hooks.register(DAEMON_SERVER_REGISTER, self._register_server)
-
-    def _register_server(self, daemon_service: Any, servers: List[DaemonServerSpec]) -> None:
-        servers.append(DaemonServerSpec(
-            name="gui_server",
-            start=self._start_gui,
-            stop=self._stop_gui,
-            is_running=self._is_gui_running,
-        ))
-```
+This avoids non-deterministic "first class found" behavior.
 
 ---
 
 ## Error Handling Contract
 
-1. **Plugin loading errors** (import failures, missing class): logged at ERROR level, plugin skipped, other plugins unaffected.
-2. **Plugin activation errors**: logged at ERROR level, plugin marked as failed, dependents also skipped.
-3. **Hook callback errors**: logged at WARNING level, other callbacks for the same hook still execute.
-4. **Plugin deactivation errors**: logged at WARNING level, deactivation continues for remaining plugins.
+1. **Roster parse/import/class resolution** errors -> plugin marked `failed`, startup continues.
+2. **Activation** error -> plugin marked `failed`, dependents marked `skipped_dependency`.
+3. **Hook callback** error -> warning log, continue same hook chain/invoke sequence.
+4. **Deactivation** error -> warning log, continue reverse shutdown.
 
-No plugin error ever raises to the user or crashes Asky.
+No plugin exception should crash normal turn execution.
 
 ---
 
-## Thread Safety Contract
+## Thread-Safety Contract
 
-- `HookRegistry.register()` and `unregister()` are protected by a `threading.Lock`.
-- After `freeze()`, the internal data structures are immutable. `invoke()` and `invoke_chain()` are lock-free.
-- Plugin `activate()` is called from the main thread, sequentially.
-- Hook callbacks may be invoked from daemon worker threads. Plugins must handle their own internal thread safety if they maintain mutable state.
+1. `register`/`unregister` are lock-protected.
+2. After `freeze`, subscription lists are immutable snapshots.
+3. `invoke`/`invoke_chain` are lock-free reads over frozen snapshots.
+4. Hook callbacks may run on daemon worker threads; plugin internals must guard mutable shared state.
+
+---
+
+## Test Contract
+
+Minimum dedicated tests:
+
+- `tests/test_plugin_manager.py`
+- `tests/test_plugin_hooks.py`
+- `tests/test_plugin_integration.py`
+- `tests/test_plugin_daemon_integration.py`
+- `tests/test_plugin_config.py`
+
+All run commands use `uv`:
+
+```bash
+uv run pytest tests/test_plugin_manager.py -v
+uv run pytest tests/test_plugin_hooks.py -v
+uv run pytest tests/test_plugin_integration.py -v
+uv run pytest tests/test_plugin_daemon_integration.py -v
+uv run pytest tests/test_plugin_config.py -v
+uv run pytest
+```

@@ -1,336 +1,476 @@
-# Plan: Asky Plugin System
+# Plan: Asky Plugin System (Revised)
 
-## Overview
+## Goal
 
-Introduce a plugin architecture that allows extending Asky's capabilities without enlarging the core. Plugins can register tools, add daemon servers, inject pipeline hooks, contribute configuration, and provide CLI commands. The system must:
+Build a deterministic plugin architecture that lets Asky grow through optional extensions without bloating core modules. Plugins must be able to:
 
-- **Not break** any existing functionality — all current features continue working without plugins installed.
-- **Be specific and deterministic** — small local models power the pipeline, so hooks must be precise, not open-ended.
-- **Support the proposed plugins** — GUI Server, Puppeteer Browser, Manual Persona Creator, Persona Manager & Chat, and eventually Automatic Persona Creator.
-- **Enable future extraction** — existing features (XMPP daemon, research tools, memory, email/push) can be gradually migrated to plugins.
+- register tools,
+- extend prompt/preload/turn behavior through typed hooks,
+- attach additional daemon servers,
+- keep their own config + persistent data,
+- fail safely without taking down the host.
 
-Companion documents:
-- [Plugin API Specification](plugin-system-api.md) — classes, protocols, lifecycle, configuration contract
-- [Hook Points & Extraction Map](plugin-system-hooks.md) — every hook point, what it intercepts, and which existing features map to which hooks
+This revision is aligned to the *current* code paths in:
+
+- `src/asky/api/client.py`
+- `src/asky/core/tool_registry_factory.py`
+- `src/asky/core/registry.py`
+- `src/asky/core/engine.py`
+- `src/asky/daemon/service.py`
+- `src/asky/daemon/command_executor.py`
+
+Companion docs:
+
+- [Plugin API Specification](plugin-system-api.md)
+- [Hook Points & Extraction Map](plugin-system-hooks.md)
 
 ---
 
-## Phases
+## Definition of Done
 
-### Phase 1: Core Plugin Infrastructure
+The plugin initiative is complete when all of the following are true:
 
-**Goal**: A working `PluginManager` that can discover, load, validate, and lifecycle-manage plugins. No hooks yet — just the skeleton.
+1. Asky runs exactly as today when no plugins are configured.
+2. Plugins can be discovered, dependency-sorted, activated, deactivated, and inspected.
+3. Hook contracts are typed, deterministic, and tied to real call sites.
+4. Plugin failures are isolated (load/activate/hook/deactivate).
+5. Plugin config/data are isolated under `~/.config/asky/plugins/`.
+6. At least one real plugin (Manual Persona Creator) ships on top of the system.
+7. Full pytest suite passes after each phase gate.
 
-**Files to create**:
-- `src/asky/plugins/__init__.py` — public re-exports
-- `src/asky/plugins/base.py` — `AskyPlugin` abstract base class (see [API spec](plugin-system-api.md#askyPlugin-base-class))
-- `src/asky/plugins/manager.py` — `PluginManager` (discovery, loading, ordering, lifecycle)
-- `src/asky/plugins/errors.py` — plugin-specific exceptions
-- `src/asky/plugins/types.py` — shared type aliases and dataclasses for hook payloads
+---
+
+## Current-State Constraints (From Codebase)
+
+1. `asky.config` is imported early and exports module-level constants; plugin bootstrap must not depend on mutating config loader globals.
+2. `AskyClient` is instantiated in both CLI and daemon (`command_executor.py`), so runtime injection must work for both.
+3. Tool execution interception belongs in `ToolRegistry.dispatch()`, not in `ConversationEngine`.
+4. Daemon runs per-conversation worker threads; hook invocation must be thread-safe for read paths.
+5. Some proposed hooks in earlier drafts (for example global `CONFIG_LOADED` from `config/loader.py`) create bootstrap-order problems and are deferred.
+
+---
+
+## Open Questions (Need Decision Before Phase 3)
+
+1. Trust model for third-party plugins:
+   - Recommended: only local Python modules explicitly listed in `plugins.toml`, no remote auto-install.
+2. Plugin class resolution:
+   - Recommended: require explicit `class` in `plugins.toml` for deterministic loading.
+3. Hook mutability policy:
+   - Recommended: mutable context objects for pre/post hooks, chain-return only for text transforms (`SYSTEM_PROMPT_EXTEND`).
+4. Plugin dependency packaging:
+   - Recommended: plugin deps stay optional extras; no new hard dependency in core.
+5. Persona artifact format scope:
+   - Recommended: v1 persona export contains prompt + metadata + raw/source-derived chunks; not raw vector DB internals.
+6. GUI framework choice:
+   - Recommended: lock one (`NiceGUI` or `Gradio`) before implementation; do not support both in first pass.
+
+---
+
+## Suggested Improvements Over Prior Draft
+
+1. Add a dedicated Phase 0 for decision lock + test harness scaffolding before runtime code.
+2. Split daemon integration from turn-pipeline integration (separate risk profiles).
+3. Remove bootstrap-cyclic config hook from initial milestone.
+4. Define deterministic ordering explicitly: dependency order, then hook priority, then plugin name.
+5. Add plugin state/health inspection surface for troubleshooting.
+6. Gate all new plugin features behind optional runtime presence.
+
+---
+
+## Phase Plan
+
+## Phase 0: Decision Lock + Scaffolding
+
+**Objective**: finalize unresolved contracts so implementation cannot drift.
 
 **Files to modify**:
-- `src/asky/config/loader.py` — add `[plugins]` section loading from `plugins.toml`
-- `src/asky/config/__init__.py` — export `PLUGINS_CONFIG`
 
-**Tasks**:
-1. Define `AskyPlugin` ABC with: `name`, `version`, `dependencies`, `activate(context)`, `deactivate()`.
-2. Define `PluginContext` dataclass passed to `activate()` — gives plugins access to: config dict, logger, data directory path, hook registry reference.
-3. Implement `PluginManager`:
-   - Discovery: scan `plugins.toml` for `[plugin.<name>]` entries with `enabled = true` and `module = "dotted.path"`.
-   - Loading: `importlib.import_module(module)` → find subclass of `AskyPlugin` → instantiate.
-   - Dependency ordering: topological sort on `dependencies` list (plugin names).
-   - Lifecycle: `activate_all()` called once at startup, `deactivate_all()` on shutdown (reverse order).
-   - Error isolation: a failing plugin logs error and is skipped, never crashes the host.
-4. Create `~/.config/asky/plugins.toml` default template (empty, commented examples).
-5. Write unit tests:
-   - Plugin discovery with valid/invalid modules.
-   - Dependency ordering (diamond, cycle detection).
-   - Activate/deactivate lifecycle.
-   - Error isolation (bad plugin doesn't crash manager).
+- `plans/plugin-system.md`
+- `plans/plugin-system-api.md`
+- `plans/plugin-system-hooks.md`
 
-**Expected outcome**: `PluginManager` can load a no-op test plugin, activate it, and deactivate it. No integration with the rest of Asky yet.
+**Steps**:
+
+1. Lock hook list for v1 and defer unstable hooks.
+2. Lock plugin manifest schema and deterministic class loading strategy.
+3. Lock order/priority/error semantics.
+4. Lock verification gates for each phase.
+
+**Exit criteria**:
+
+- Team can start coding without API ambiguity.
 
 **Verification**:
+
 ```bash
-pytest tests/test_plugin_manager.py -v
+uv run pytest
 ```
 
 ---
 
-### Phase 2: Hook Registry
+## Phase 1: Plugin Runtime Foundation
 
-**Goal**: A typed hook system that plugins use to attach to Asky's pipeline. Hooks are defined centrally; plugins subscribe during `activate()`.
+**Objective**: working plugin runtime without touching chat/daemon call paths yet.
 
 **Files to create**:
-- `src/asky/plugins/hooks.py` — `HookRegistry` class + hook point enum/constants
+
+- `src/asky/plugins/__init__.py`
+- `src/asky/plugins/base.py`
+- `src/asky/plugins/errors.py`
+- `src/asky/plugins/manifest.py`
+- `src/asky/plugins/manager.py`
+- `src/asky/plugins/runtime.py`
 
 **Files to modify**:
-- `src/asky/plugins/base.py` — `PluginContext` gains `.hooks: HookRegistry`
-- `src/asky/plugins/manager.py` — `PluginManager` owns a `HookRegistry`, passes it via context
 
-**Tasks**:
-1. Define hook point constants (see [Hook Points doc](plugin-system-hooks.md) for the full list). Initial set:
-   - `TOOL_REGISTRY_BUILD` — called after default tools are registered, before registry is finalized.
-   - `SYSTEM_PROMPT_EXTEND` — called after system prompt is constructed, allows appending sections.
-   - `PRE_LLM_CALL` — called before each LLM API call with messages payload (read-only inspection or mutation).
-   - `POST_LLM_RESPONSE` — called after LLM response is received, before tool dispatch.
-   - `PRE_TOOL_EXECUTE` — called before a tool executor runs, can modify args or short-circuit.
-   - `POST_TOOL_EXECUTE` — called after a tool executor returns, can modify result.
-   - `DAEMON_SERVER_REGISTER` — called during daemon startup to register additional server protocols.
-   - `CONFIG_LOADED` — called after config is loaded, allows plugins to register their own config sections.
-   - `SESSION_START` — called when a session begins or resumes.
-   - `SESSION_END` — called when a session ends.
-   - `PRE_PRELOAD` — called before the preload pipeline runs.
-   - `POST_PRELOAD` — called after preload pipeline, before message assembly.
-2. Implement `HookRegistry`:
-   - `register(hook_point, callback, priority=100)` — subscribe.
-   - `unregister(hook_point, callback)` — unsubscribe.
-   - `invoke(hook_point, **payload)` — call all subscribers in priority order, passing payload as kwargs.
-   - `invoke_chain(hook_point, data, **context)` — sequential pipeline where each callback receives the previous output (for mutation hooks like `SYSTEM_PROMPT_EXTEND`).
-   - Priority: lower number = earlier execution. Default 100.
-3. Type each hook point's payload signature in `types.py` (using `TypedDict` or `dataclass`).
-4. Write unit tests:
-   - Register/unregister/invoke basic flow.
-   - Priority ordering.
-   - Chain invocation (data flows through).
-   - Error in one hook doesn't block others.
+- `src/asky/config/loader.py` (only to ensure `plugins.toml` bootstrap copy behavior if adopted)
 
-**Expected outcome**: `HookRegistry` is functional, documented with typed payloads, but not yet wired into Asky's pipeline.
+**Files to add**:
 
-**Verification**:
-```bash
-pytest tests/test_plugin_hooks.py -v
-```
+- `tests/test_plugin_manager.py`
 
----
+**Before/After**:
 
-### Phase 3: Pipeline Integration
+- Before: no plugin package/runtime exists.
+- After: runtime can read roster, import plugin classes, topologically order them, activate/deactivate safely.
 
-**Goal**: Wire hooks into the actual Asky pipeline so plugins can affect real behavior.
+**Steps**:
 
-**Files to modify**:
-- `src/asky/cli/main.py` — initialize `PluginManager` at startup, call `activate_all()`. Pass manager to `chat` and `daemon` flows.
-- `src/asky/core/tool_registry_factory.py` — invoke `TOOL_REGISTRY_BUILD` hook after building default tools.
-- `src/asky/api/client.py` — invoke `SYSTEM_PROMPT_EXTEND`, `PRE_PRELOAD`, `POST_PRELOAD` hooks.
-- `src/asky/core/engine.py` — invoke `PRE_LLM_CALL`, `POST_LLM_RESPONSE`, `PRE_TOOL_EXECUTE`, `POST_TOOL_EXECUTE` hooks.
-- `src/asky/daemon/service.py` — invoke `DAEMON_SERVER_REGISTER` during startup.
-- `src/asky/config/loader.py` — invoke `CONFIG_LOADED` hook.
-
-**Tasks**:
-1. Add `plugin_manager: Optional[PluginManager]` parameter to `AskyClient.__init__()` (default `None` for backward compatibility).
-2. In `create_tool_registry()` and `create_research_tool_registry()`, accept optional `hook_registry` parameter. After registering all built-in tools, call `hook_registry.invoke("TOOL_REGISTRY_BUILD", registry=registry)`.
-3. In `AskyClient.build_messages()`, after constructing system prompt, call `hook_registry.invoke_chain("SYSTEM_PROMPT_EXTEND", data=system_prompt, config=self.config)`.
-4. In `ConversationEngine.run()`, wrap the LLM call with `PRE_LLM_CALL` / `POST_LLM_RESPONSE` hooks.
-5. In `ToolRegistry.dispatch()`, wrap executor calls with `PRE_TOOL_EXECUTE` / `POST_TOOL_EXECUTE` hooks.
-6. In `XMPPDaemonService.__init__()`, store `plugin_manager` reference. In `run_foreground()`, invoke `DAEMON_SERVER_REGISTER` passing self (service context).
-7. Ensure all hook invocations are guarded: if no `plugin_manager` or `hook_registry`, skip (zero overhead when no plugins).
-8. Write integration tests:
-   - A test plugin that registers a custom tool via `TOOL_REGISTRY_BUILD` → verify tool appears in registry.
-   - A test plugin that extends system prompt via `SYSTEM_PROMPT_EXTEND` → verify prompt contains extension.
-   - A test plugin that modifies tool args via `PRE_TOOL_EXECUTE` → verify modified args reach executor.
+1. Define manifest dataclasses and roster parser (`plugins.toml`).
+2. Define `AskyPlugin` base class + `PluginContext`.
+3. Implement `PluginManager` with state tracking and dependency ordering.
+4. Implement `PluginRuntime` container (`manager` + `hook_registry`).
+5. Add default `plugins.toml` creation template (commented examples only).
+6. Add unit tests for discovery, ordering, cycles, and failure isolation.
 
 **Constraints**:
-- Every hook call site must be wrapped in `if self._hook_registry:` guard — no perf overhead for non-plugin users.
-- No existing test should break.
-- No change to public CLI interface.
 
-**Expected outcome**: A test plugin can register a tool and extend the system prompt in a real Asky turn.
+- No hook call-site integration yet.
+- No core behavior change when runtime is absent.
 
 **Verification**:
+
 ```bash
-pytest tests/ -v  # full suite must pass
-pytest tests/test_plugin_integration.py -v
+uv run pytest tests/test_plugin_manager.py -v
+uv run pytest
 ```
 
 ---
 
-### Phase 4: Plugin Configuration & Data Directories
+## Phase 2: Typed Hook Kernel
 
-**Goal**: Each plugin gets its own config section and data directory, managed by the plugin system.
-
-**Files to modify**:
-- `src/asky/plugins/manager.py` — create per-plugin data dirs, load per-plugin config
-- `src/asky/config/loader.py` — support `plugins/<plugin_name>.toml` config files
-
-**Tasks**:
-1. Each plugin gets a data directory at `~/.config/asky/plugins/<plugin_name>/`.
-2. Plugin config: `~/.config/asky/plugins/<plugin_name>.toml` merged into `PluginContext.config`.
-3. `PluginContext` provides:
-   - `.config: dict` — plugin-specific config section
-   - `.data_dir: Path` — plugin-specific data directory
-   - `.global_config: dict` — read-only access to global Asky config
-4. `PluginManager` creates data dirs on first activation.
-5. Write tests for config loading and data dir creation.
-
-**Expected outcome**: Plugins have isolated config and storage.
-
-**Verification**:
-```bash
-pytest tests/test_plugin_config.py -v
-```
-
----
-
-### Phase 5: First Plugin — Manual Persona Creator
-
-**Goal**: Implement the Manual Persona Creator as the first real plugin, validating the plugin architecture.
+**Objective**: implement deterministic hook registry and typed contexts.
 
 **Files to create**:
+
+- `src/asky/plugins/hooks.py`
+- `src/asky/plugins/hook_types.py`
+
+**Files to modify**:
+
+- `src/asky/plugins/base.py`
+- `src/asky/plugins/manager.py`
+- `src/asky/plugins/runtime.py`
+
+**Files to add**:
+
+- `tests/test_plugin_hooks.py`
+
+**Before/After**:
+
+- Before: plugins can activate but cannot subscribe to lifecycle events.
+- After: plugins can register/unregister/invoke/invoke_chain hooks with stable ordering.
+
+**Steps**:
+
+1. Add hook name constants (see `plugin-system-hooks.md`).
+2. Implement registry with:
+   - registration lock,
+   - deterministic ordering: `(priority, plugin_name, registration_index)`,
+   - exception isolation,
+   - freeze-after-startup option.
+3. Add typed context dataclasses for each hook payload.
+4. Wire registry into `PluginContext`.
+5. Add unit tests for ordering, chaining, freeze behavior, and callback failures.
+
+**Constraints**:
+
+- Hook registry exists, but core pipeline still not invoking hooks.
+
+**Verification**:
+
+```bash
+uv run pytest tests/test_plugin_hooks.py -v
+uv run pytest
+```
+
+---
+
+## Phase 3: Turn Pipeline Integration (API + Core)
+
+**Objective**: make plugins able to affect real turns.
+
+**Files to modify**:
+
+- `src/asky/api/client.py`
+- `src/asky/api/types.py`
+- `src/asky/core/tool_registry_factory.py`
+- `src/asky/core/registry.py`
+- `src/asky/core/engine.py`
+- `src/asky/cli/chat.py`
+- `src/asky/daemon/command_executor.py`
+
+**Files to add**:
+
+- `tests/test_plugin_integration.py`
+
+**Before/After**:
+
+- Before: hook system exists but not connected to turn execution.
+- After: plugins can register tools, modify system prompt/preload context, intercept tool execution, and observe LLM I/O.
+
+**Steps**:
+
+1. Extend `AskyClient` constructor with optional `plugin_runtime` / `hook_registry`.
+2. Pass optional hooks into registry factory functions.
+3. Add `TOOL_REGISTRY_BUILD` invocation at end of both registry factory builders.
+4. Add `SESSION_RESOLVED`, `PRE_PRELOAD`, `POST_PRELOAD`, `SYSTEM_PROMPT_EXTEND`, `TURN_COMPLETED` call sites in `AskyClient`.
+5. Add `PRE_LLM_CALL` and `POST_LLM_RESPONSE` in `ConversationEngine.run()`.
+6. Add `PRE_TOOL_EXECUTE` and `POST_TOOL_EXECUTE` inside `ToolRegistry.dispatch()`.
+7. Thread runtime injection through CLI and daemon query execution (`chat.py`, `command_executor.py`).
+8. Add integration tests with a minimal test plugin exercising all wired hooks.
+
+**Constraints**:
+
+- Guard every call site (`if hook_registry is not None`).
+- No existing public CLI argument behavior changes.
+- No performance regression when plugins are disabled.
+
+**Verification**:
+
+```bash
+uv run pytest tests/test_plugin_integration.py -v
+uv run pytest
+```
+
+---
+
+## Phase 4: Daemon Server Integration
+
+**Objective**: allow plugins to register extra long-running servers when daemon starts.
+
+**Files to modify**:
+
+- `src/asky/daemon/service.py`
+- `src/asky/daemon/command_executor.py`
+- `src/asky/cli/main.py`
+
+**Files to add**:
+
+- `tests/test_plugin_daemon_integration.py`
+
+**Before/After**:
+
+- Before: daemon always starts only XMPP pipeline.
+- After: daemon can host additional plugin servers with start/stop lifecycle integration.
+
+**Steps**:
+
+1. Add optional plugin runtime to daemon service constructor.
+2. Invoke `DAEMON_SERVER_REGISTER` during daemon startup.
+3. Start registered servers before entering foreground loop.
+4. Ensure stop/cleanup runs even on daemon errors.
+5. Add tests for server registration and teardown ordering.
+
+**Constraints**:
+
+- Existing XMPP behavior unchanged when no plugins are active.
+- Plugin server failures are logged and isolated.
+
+**Verification**:
+
+```bash
+uv run pytest tests/test_plugin_daemon_integration.py -v
+uv run pytest
+```
+
+---
+
+## Phase 5: Plugin Config + Data Isolation + Diagnostics
+
+**Objective**: per-plugin config/data directories and basic runtime introspection.
+
+**Files to modify**:
+
+- `src/asky/plugins/manager.py`
+- `src/asky/plugins/base.py`
+- `src/asky/cli/main.py` (optional diagnostics command)
+
+**Files to add**:
+
+- `tests/test_plugin_config.py`
+
+**Before/After**:
+
+- Before: plugin runtime exists but no clear per-plugin config/data ownership.
+- After: each plugin gets isolated config (`plugins/<name>.toml`) and data dir (`plugins/<name>/`).
+
+**Steps**:
+
+1. Load plugin-local TOML into `PluginContext.plugin_config`.
+2. Create `data_dir` on activation.
+3. Make `global_config` read-only in context.
+4. Add plugin status listing API (`active`, `failed`, `skipped`, reason).
+5. Add tests for config merge and dir creation behavior.
+
+**Constraints**:
+
+- No mutation of module-level exported constants in `asky.config`.
+
+**Verification**:
+
+```bash
+uv run pytest tests/test_plugin_config.py -v
+uv run pytest
+```
+
+---
+
+## Phase 6: First Real Plugin - Manual Persona Creator
+
+**Objective**: validate architecture with a real, deterministic plugin.
+
+**Files to create**:
+
 - `src/asky/plugins/persona_creator/__init__.py`
-- `src/asky/plugins/persona_creator/plugin.py` — `ManualPersonaCreatorPlugin(AskyPlugin)`
-- `src/asky/plugins/persona_creator/ingestion.py` — file ingestion logic (reuse local loader patterns)
-- `src/asky/plugins/persona_creator/persona_format.py` — persona ZIP format creation
-- `src/asky/plugins/persona_creator/tools.py` — LLM tool definitions
+- `src/asky/plugins/persona_creator/plugin.py`
+- `src/asky/plugins/persona_creator/ingestion.py`
+- `src/asky/plugins/persona_creator/storage.py`
+- `src/asky/plugins/persona_creator/tools.py`
 
-**Plugin capabilities** (using hooks):
-- `TOOL_REGISTRY_BUILD`: registers `create_persona`, `add_to_persona`, `list_personas`, `export_persona` tools.
-- `CONFIG_LOADED`: registers `[persona_creator]` config section (supported file types, max corpus size, etc.).
+**Files to add**:
 
-**Tool definitions**:
-- `create_persona(name, description, system_prompt?)` → creates a new persona skeleton
-- `add_to_persona(persona_name, source)` → adds content from file/folder/URL to persona corpus. Uses existing local loader for txt/html/md/json/csv/pdf/epub. Chunks and embeds into persona-scoped vector collection.
-- `list_personas()` → lists available personas with stats
-- `export_persona(persona_name, output_path?)` → creates ZIP file (system_prompt.txt, user_prompts/, embeddings.json, metadata.json)
+- `tests/test_persona_creator.py`
 
-**Persona storage**:
-- `~/.config/asky/plugins/persona_creator/personas/<name>/`
-- Each persona dir contains: `metadata.json`, `system_prompt.txt`, raw source files, and a Chroma collection scoped to `persona_<name>`.
+**Before/After**:
+
+- Before: plugin system is infrastructure only.
+- After: plugin adds persona creation/import/export tools and persistent persona assets.
+
+**Steps**:
+
+1. Implement persona schema + storage layout.
+2. Reuse existing local ingestion pathways for content acquisition.
+3. Register persona tools via `TOOL_REGISTRY_BUILD`.
+4. Add tests covering creation, ingestion, export, and error paths.
 
 **Verification**:
+
 ```bash
-pytest tests/test_persona_creator.py -v
-# Manual: asky --persona-tools "create a persona named 'TestPerson'"
+uv run pytest tests/test_persona_creator.py -v
+uv run pytest
 ```
 
 ---
 
-### Phase 6: Persona Manager & Chat Plugin
+## Phase 7: Persona Manager & Chat Plugin
 
-**Goal**: Load a persona into an Asky session so the model adopts that persona's voice and knowledge.
+**Objective**: bind personas to sessions and apply persona behavior/context during turns.
 
 **Files to create**:
+
 - `src/asky/plugins/persona_manager/__init__.py`
-- `src/asky/plugins/persona_manager/plugin.py` — `PersonaManagerPlugin(AskyPlugin)`
-- `src/asky/plugins/persona_manager/loader.py` — persona loading and session binding
-- `src/asky/plugins/persona_manager/tools.py` — LLM tool definitions
-- `src/asky/plugins/persona_manager/hub.py` — persona hub client (fetch persona index, download)
+- `src/asky/plugins/persona_manager/plugin.py`
+- `src/asky/plugins/persona_manager/session_binding.py`
+- `src/asky/plugins/persona_manager/tools.py`
+- `src/asky/plugins/persona_manager/hub_client.py`
 
-**Plugin capabilities** (using hooks):
-- `TOOL_REGISTRY_BUILD`: registers `load_persona`, `unload_persona`, `query_persona_knowledge`, `import_persona` tools.
-- `SYSTEM_PROMPT_EXTEND`: when a persona is loaded, prepends persona's system prompt.
-- `SESSION_START`: checks if session has a bound persona, auto-loads it.
-- `PRE_PRELOAD`: injects persona vector data into the preload pipeline.
+**Files to add**:
 
-**Tool definitions**:
-- `load_persona(name_or_path)` → activates persona for current session (loads system prompt, user prompts, vector data)
-- `unload_persona()` → deactivates current persona
-- `query_persona_knowledge(query)` → searches persona's vector store, returns relevant chunks
-- `import_persona(path_or_url)` → imports a persona ZIP into local storage
-- `browse_persona_hub(hub_url?)` → lists personas available on a hub
-- `install_from_hub(hub_url, persona_name)` → downloads and imports persona
+- `tests/test_persona_manager.py`
 
-**Persona Hub API contract** (simple JSON):
-```
-GET /personas → [{"name": "...", "description": "...", "version": "...", "download_url": "..."}]
-GET /personas/<name>/download → ZIP file
-```
+**Before/After**:
 
-**Dependencies**: Depends on `persona_creator` plugin (for format/storage conventions).
+- Before: personas can exist but cannot be loaded into active conversation behavior.
+- After: persona loading/unloading, prompt injection, and persona knowledge retrieval work per session.
+
+**Steps**:
+
+1. Add session-binding persistence for active persona id/name.
+2. Add `SYSTEM_PROMPT_EXTEND` + preload hooks for persona context.
+3. Add tools for load/unload/query/import.
+4. Add minimal hub API client contract.
 
 **Verification**:
+
 ```bash
-pytest tests/test_persona_manager.py -v
+uv run pytest tests/test_persona_manager.py -v
+uv run pytest
 ```
 
 ---
 
-### Phase 7: GUI Server Plugin (NiceGUI/Gradio)
+## Phase 8: GUI Server + Browser Retrieval Plugins (Parallel Track)
 
-**Goal**: A plugin that adds a web-based GUI server to the Asky daemon, providing basic configuration and data manipulation widgets.
+**Objective**: deliver optional high-value plugins without expanding core dependency footprint.
 
-**Files to create**:
-- `src/asky/plugins/gui_server/__init__.py`
-- `src/asky/plugins/gui_server/plugin.py` — `GUIServerPlugin(AskyPlugin)`
-- `src/asky/plugins/gui_server/server.py` — web server (NiceGUI or Gradio)
-- `src/asky/plugins/gui_server/pages/` — page modules (config editor, persona browser, session viewer)
+**Subphase A - GUI Server**
 
-**Plugin capabilities** (using hooks):
-- `DAEMON_SERVER_REGISTER`: starts a web server alongside XMPP daemon.
-- `CONFIG_LOADED`: registers `[gui_server]` config (port, host, auth).
-- `TOOL_REGISTRY_BUILD`: optionally registers GUI-related tools.
+- `src/asky/plugins/gui_server/*`
+- uses `DAEMON_SERVER_REGISTER`
+- dependency approval required before adding framework
 
-**Library choice**: NiceGUI (mature, Pythonic, supports custom widgets, SSE for live updates).
+**Subphase B - Browser Retrieval**
 
-**Building blocks provided**:
-- Config editor page (read/write TOML sections)
-- Session browser (list/switch/delete sessions)
-- Persona browser (if persona plugins are active)
-- Chat widget (simple text input → AskyClient → response display)
-- Log viewer (tail asky.log)
+- `src/asky/plugins/puppeteer_browser/*` (Playwright-backed)
+- uses `TOOL_REGISTRY_BUILD` and `PRE_TOOL_EXECUTE`
+- dependency approval required before adding Playwright
 
 **Verification**:
+
 ```bash
-pytest tests/test_gui_server.py -v
-# Manual: asky --xmpp-daemon → open browser at http://localhost:8765
+uv run pytest tests/test_gui_server.py -v
+uv run pytest tests/test_puppeteer_browser.py -v
+uv run pytest
 ```
 
 ---
 
-### Phase 8: Puppeteer Browser Plugin
+## Phase 9: Optional Core Feature Extractions
 
-**Goal**: A plugin that provides real-browser web retrieval via Playwright (Python), replacing basic `requests` when enabled.
+**Objective**: progressively move suitable core features to plugins once plugin runtime is proven.
 
-**Files to create**:
-- `src/asky/plugins/puppeteer_browser/__init__.py`
-- `src/asky/plugins/puppeteer_browser/plugin.py` — `PuppeteerBrowserPlugin(AskyPlugin)`
-- `src/asky/plugins/puppeteer_browser/browser.py` — Playwright browser management
-- `src/asky/plugins/puppeteer_browser/profiles.py` — site profile management (cookies, credentials)
-- `src/asky/plugins/puppeteer_browser/tools.py` — LLM tool definitions
+Candidate order:
 
-**Plugin capabilities** (using hooks):
-- `TOOL_REGISTRY_BUILD`: registers `browser_fetch`, `browser_login`, `list_browser_profiles` tools.
-- `PRE_TOOL_EXECUTE`: intercepts `get_url_content` calls and routes through Playwright when a matching profile exists or when the basic fetch fails with 403.
-- `CONFIG_LOADED`: registers `[puppeteer_browser]` config (headless mode, profile storage path, timeout).
+1. Push Data
+2. Email Sender
+3. Rendering
+4. Research tool registration split
+5. XMPP daemon (long-term)
 
-**Library**: `playwright` (Python bindings, mature, supports profiles/cookies/storage state).
+Each extraction must:
 
-**Tool definitions**:
-- `browser_fetch(url, wait_for?, extract_selector?)` → fetch page content via real browser
-- `browser_login(profile_name, url)` → opens browser for manual login, saves storage state
-- `list_browser_profiles()` → lists saved browser profiles with sites
-
-**Profile storage**: `~/.config/asky/plugins/puppeteer_browser/profiles/<name>.json` (Playwright storage state).
-
-**Verification**:
-```bash
-pytest tests/test_puppeteer_browser.py -v
-```
+- preserve backward compatibility,
+- keep a fallback path,
+- ship with explicit migration notes.
 
 ---
 
-### Phase 9: Extract Existing Features (Optional, Incremental)
+## Global Constraints
 
-**Goal**: Gradually move existing features to plugins to validate the architecture and reduce core size. Each extraction is independent and optional.
-
-See [Hook Points & Extraction Map](plugin-system-hooks.md#extraction-candidates) for the full mapping.
-
-**Candidates** (in order of risk/effort):
-
-1. **Push Data** → plugin using `TOOL_REGISTRY_BUILD` (lowest risk, already isolated in `push_data.py` + `push_data.toml`)
-2. **Email Sender** → plugin using `TOOL_REGISTRY_BUILD` (already isolated in `email_sender.py`)
-3. **Browser Rendering** → plugin using `POST_TOOL_EXECUTE` or new `RENDER_OUTPUT` hook (already in `rendering.py`)
-4. **XMPP Daemon** → plugin using `DAEMON_SERVER_REGISTER` (high effort, but daemon is already modular)
-
-**Constraints**:
-- Each extraction must be behind a feature flag: if plugin is not installed, the built-in version is used.
-- No extraction is required — the plugin system works alongside built-in features.
+1. No new mandatory dependency in core plugin runtime.
+2. No behavior changes for users without plugin config.
+3. No silent hook failures (must log with plugin + hook name).
+4. Full suite must stay green at every phase boundary.
+5. New dependencies require explicit user approval before implementation.
 
 ---
 
-## Notes
+## Final Checklist (Per Implementation PR)
 
-- **No new dependencies in core**: Plugin infrastructure uses only stdlib (`importlib`, `inspect`, `pathlib`). Individual plugins declare their own deps.
-- **Entry points alternative**: Phase 1 uses config-driven discovery (`plugins.toml`). A future enhancement could use `setuptools` entry points for third-party plugin distribution, but that's out of scope for now.
-- **Thread safety**: Hook invocations must be thread-safe since the daemon uses per-JID worker threads. `HookRegistry` should use a lock for registration but not for invocation (registry is frozen after startup).
-- **Performance**: All hook call sites are guarded by `if hook_registry:` checks. Zero overhead when no plugins are configured.
-- **Testing strategy**: Each phase has its own test file. Integration tests use a minimal test plugin that exercises the hooks.
+1. Full suite passes (`uv run pytest`).
+2. New tests added for new behavior.
+3. Plugin runtime disabled path validated.
+4. No debug artifacts.
+5. Docs updated (`ARCHITECTURE.md`, `DEVLOG.md`, relevant `AGENTS.md` files when code changes land).

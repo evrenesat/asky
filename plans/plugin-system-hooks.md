@@ -1,389 +1,445 @@
-# Hook Points & Extraction Map
+# Hook Points & Extraction Map (Revised)
 
-Companion to [plugin-system.md](plugin-system.md). This document defines every hook point with its exact signature, call site, and use cases. It also maps existing features to hooks for potential extraction.
+Companion to [plugin-system.md](plugin-system.md) and [plugin-system-api.md](plugin-system-api.md).
+
+This document defines v1 hook points, exact call sites, payload contracts, and extraction mapping.
 
 ---
 
-## Hook Point Reference
+## v1 Hook Lifecycle Order
 
-### `TOOL_REGISTRY_BUILD`
+For a normal turn, expected order is:
 
-**When**: After `create_tool_registry()` or `create_research_tool_registry()` builds the default tool set, before the registry is returned to callers.
+1. `TOOL_REGISTRY_BUILD`
+2. `SESSION_RESOLVED`
+3. `PRE_PRELOAD`
+4. `POST_PRELOAD`
+5. `SYSTEM_PROMPT_EXTEND`
+6. `PRE_LLM_CALL`
+7. `POST_LLM_RESPONSE`
+8. `PRE_TOOL_EXECUTE`
+9. `POST_TOOL_EXECUTE`
+10. `TURN_COMPLETED`
 
-**Call site**: `src/asky/core/tool_registry_factory.py` — end of `create_tool_registry()` and `create_research_tool_registry()`.
+For daemon startup, `DAEMON_SERVER_REGISTER` runs during service boot.
+
+---
+
+## Hook Reference
+
+## `TOOL_REGISTRY_BUILD`
+
+**When**: after built-in/custom tools are registered, before factory returns.
+
+**Call sites**:
+
+- `src/asky/core/tool_registry_factory.py:create_tool_registry`
+- `src/asky/core/tool_registry_factory.py:create_research_tool_registry`
 
 **Payload**:
+
 ```python
-def callback(
-    registry: ToolRegistry,
-    mode: str,  # "standard" or "research"
-    disabled_tools: Set[str],  # tools already disabled by user
-) -> None:
+@dataclass
+class ToolRegistryBuildContext:
+    registry: ToolRegistry
+    mode: Literal["standard", "research"]
+    disabled_tools: set[str]
+    session_id: str | None = None
+    research_source_mode: str | None = None
 ```
 
-**Plugin actions**: Call `registry.register(name, schema, executor)` to add tools. Check `disabled_tools` to respect user preferences. Check `mode` to only register in appropriate modes.
+**Mutability**:
 
-**Used by**:
-- Manual Persona Creator: registers `create_persona`, `add_to_persona`, `list_personas`, `export_persona`
-- Persona Manager: registers `load_persona`, `unload_persona`, `query_persona_knowledge`, `import_persona`
-- Puppeteer Browser: registers `browser_fetch`, `browser_login`, `list_browser_profiles`
-- GUI Server: optionally registers GUI-related tools
+- `registry` is mutable (register additional tools).
+- `disabled_tools` is read-only input.
+
+**Primary use**:
+
+- plugin tool registration.
 
 ---
 
-### `SYSTEM_PROMPT_EXTEND`
+## `SESSION_RESOLVED`
 
-**When**: After the system prompt is fully constructed (including tool guidelines), before it's sent to the model.
+**When**: session resolution is complete for `run_turn()` and effective profile is known.
 
-**Call site**: `src/asky/api/client.py` — in `build_messages()`, after `_append_enabled_tool_guidelines()`.
+**Call site**:
 
-**Payload (chain)**:
-```python
-def callback(
-    data: str,  # current system prompt text
-    config: AskyConfig,
-    session_id: Optional[str],
-) -> str:  # return modified prompt
-```
-
-**Plugin actions**: Append persona instructions, add plugin-specific guidance sections.
-
-**Used by**:
-- Persona Manager: prepends persona's system prompt and behavioral instructions when a persona is loaded.
-
----
-
-### `PRE_LLM_CALL`
-
-**When**: Before each LLM API call within the conversation engine's multi-turn loop.
-
-**Call site**: `src/asky/core/engine.py` — in `ConversationEngine.run()`, before calling `get_llm_msg()`.
+- `src/asky/api/client.py:run_turn`
 
 **Payload**:
+
 ```python
-def callback(
-    messages: List[Dict[str, Any]],  # mutable message list
-    model: str,
-    turn_number: int,
-) -> None:
+@dataclass
+class SessionResolvedContext:
+    request: AskyTurnRequest
+    session_resolution: SessionResolution
+    session_id: str | None
+    research_mode: bool
+    research_source_mode: str | None
 ```
 
-**Plugin actions**: Inspect or mutate messages (e.g., inject context, filter content). Use with care — mutations affect model behavior.
+**Mutability**:
 
-**Used by**: Advanced plugins that need to dynamically adjust context per turn.
+- observation-oriented in v1; no mutation guarantees.
+
+**Primary use**:
+
+- session-bound plugin state load/check.
 
 ---
 
-### `POST_LLM_RESPONSE`
+## `PRE_PRELOAD`
 
-**When**: After the LLM returns a response, before tool calls are dispatched.
+**When**: immediately before `run_preload_pipeline(...)`.
 
-**Call site**: `src/asky/core/engine.py` — in `ConversationEngine.run()`, after receiving response.
+**Call site**:
+
+- `src/asky/api/client.py:run_turn`
 
 **Payload**:
+
 ```python
-def callback(
-    response: Dict[str, Any],  # raw LLM response
-    tool_calls: List[Dict[str, Any]],  # parsed tool calls (may be empty)
-    turn_number: int,
-) -> None:
+@dataclass
+class PrePreloadContext:
+    query_text: str
+    research_mode: bool
+    local_corpus_paths: list[str] | None
+    additional_source_context: str | None
 ```
 
-**Plugin actions**: Log responses, collect analytics, detect patterns.
+**Mutability**:
+
+- mutable fields; plugin may update values in-place.
+
+**Primary use**:
+
+- add extra preload source hints.
 
 ---
 
-### `PRE_TOOL_EXECUTE`
+## `POST_PRELOAD`
 
-**When**: Before a tool executor is called.
+**When**: after preload resolution, before message assembly.
 
-**Call site**: `src/asky/core/registry.py` — in `ToolRegistry.dispatch()`, before calling the executor.
+**Call site**:
+
+- `src/asky/api/client.py:run_turn`
 
 **Payload**:
+
+```python
+@dataclass
+class PostPreloadContext:
+    preload: PreloadResolution
+    query_text: str
+    session_id: str | None
+    research_mode: bool
+```
+
+**Mutability**:
+
+- `preload` is mutable (`combined_context`, extra source handles, etc).
+
+**Primary use**:
+
+- inject plugin-generated context blocks.
+
+---
+
+## `SYSTEM_PROMPT_EXTEND` (Chain)
+
+**When**: after base prompt + tool guidelines are assembled, before model call.
+
+**Call site**:
+
+- `src/asky/api/client.py:run_messages`
+
+**Signature**:
+
+```python
+def callback(
+    data: str,
+    *,
+    session_id: str | None,
+    research_mode: bool,
+    model_alias: str,
+) -> str:
+    ...
+```
+
+**Mutability**:
+
+- chain return value becomes next prompt value.
+
+**Primary use**:
+
+- persona/system instruction augmentation.
+
+---
+
+## `PRE_LLM_CALL`
+
+**When**: before each `get_llm_msg(...)` call in engine loop.
+
+**Call site**:
+
+- `src/asky/core/engine.py:ConversationEngine.run`
+
+**Payload**:
+
+```python
+@dataclass
+class PreLLMCallContext:
+    turn_number: int
+    model_id: str
+    messages: list[dict[str, Any]]
+    use_tools: bool
+```
+
+**Mutability**:
+
+- `messages` mutable (advanced use only).
+
+**Primary use**:
+
+- turn-level instrumentation or guarded message shaping.
+
+---
+
+## `POST_LLM_RESPONSE`
+
+**When**: after model response is received and parsed, before tool dispatch.
+
+**Call site**:
+
+- `src/asky/core/engine.py:ConversationEngine.run`
+
+**Payload**:
+
+```python
+@dataclass
+class PostLLMResponseContext:
+    turn_number: int
+    response_message: dict[str, Any]
+    parsed_tool_calls: list[dict[str, Any]]
+```
+
+**Mutability**:
+
+- `parsed_tool_calls` may be edited (use cautiously).
+
+**Primary use**:
+
+- response analytics or guarded tool-call filtering.
+
+---
+
+## `PRE_TOOL_EXECUTE`
+
+**When**: before executor invocation in tool dispatch.
+
+**Call site**:
+
+- `src/asky/core/registry.py:ToolRegistry.dispatch`
+
+**Payload**:
+
 ```python
 @dataclass
 class ToolExecutionContext:
     tool_name: str
-    args: Dict[str, Any]  # mutable — plugins can modify
-    skip: bool = False  # set True to skip execution, provide result instead
-    result: Optional[Dict[str, Any]] = None  # pre-filled result when skip=True
-
-def callback(ctx: ToolExecutionContext) -> None:
+    args: dict[str, Any]
+    skip: bool = False
+    result: dict[str, Any] | None = None
 ```
 
-**Plugin actions**:
-- Modify tool arguments before execution.
-- Short-circuit tool execution by setting `skip=True` and providing a `result`.
-- Route calls to alternative implementations (e.g., Puppeteer intercepts `get_url_content`).
+**Mutability**:
 
-**Used by**:
-- Puppeteer Browser: intercepts `get_url_content` when a browser profile matches the target URL domain, or when basic fetch returns 403.
+- `args` mutable.
+- may short-circuit execution via `skip=True` and `result`.
+
+**Primary use**:
+
+- alternative execution routing (browser fetch plugin).
 
 ---
 
-### `POST_TOOL_EXECUTE`
+## `POST_TOOL_EXECUTE`
 
-**When**: After a tool executor returns its result.
+**When**: after executor returns.
 
-**Call site**: `src/asky/core/registry.py` — in `ToolRegistry.dispatch()`, after the executor returns.
+**Call site**:
+
+- `src/asky/core/registry.py:ToolRegistry.dispatch`
 
 **Payload**:
+
 ```python
 @dataclass
 class ToolResultContext:
     tool_name: str
-    args: Dict[str, Any]  # original args
-    result: Dict[str, Any]  # mutable — plugins can modify
+    args: dict[str, Any]
+    result: dict[str, Any]
     execution_time_ms: float
-
-def callback(ctx: ToolResultContext) -> None:
 ```
 
-**Plugin actions**: Transform results, add metadata, cache results, trigger side effects.
+**Mutability**:
+
+- `result` mutable.
+
+**Primary use**:
+
+- result transformation, caching metadata, side-channel observability.
 
 ---
 
-### `DAEMON_SERVER_REGISTER`
+## `TURN_COMPLETED`
 
-**When**: During daemon startup, after XMPP client is initialized but before the event loop starts.
+**When**: after final answer is produced and turn result assembled.
 
-**Call site**: `src/asky/daemon/service.py` — in `run_foreground()`, before `asyncio.get_event_loop().run_forever()`.
+**Call site**:
+
+- `src/asky/api/client.py:run_turn`
 
 **Payload**:
+
 ```python
+@dataclass
+class TurnCompletedContext:
+    request: AskyTurnRequest
+    result: AskyTurnResult
+    session_id: str | None
+```
+
+**Mutability**:
+
+- read-only intent in v1.
+
+**Primary use**:
+
+- plugin post-turn side effects (logging/indexing/non-blocking tasks).
+
+---
+
+## `DAEMON_SERVER_REGISTER`
+
+**When**: during daemon startup before entering foreground loop.
+
+**Call site**:
+
+- `src/asky/daemon/service.py:XMPPDaemonService.run_foreground`
+
+**Payload**:
+
+```python
+@dataclass
+class DaemonServerSpec:
+    name: str
+    start: Callable[[], None]
+    stop: Callable[[], None]
+    is_running: Callable[[], bool]
+
+
 def callback(
     daemon_service: XMPPDaemonService,
-    servers: List[DaemonServerSpec],  # mutable list — append your server specs
-    event_loop: asyncio.AbstractEventLoop,
+    servers: list[DaemonServerSpec],
 ) -> None:
+    ...
 ```
 
-**Plugin actions**: Append `DaemonServerSpec` objects. The daemon service will call `spec.start()` for each and `spec.stop()` on shutdown.
+**Mutability**:
 
-**Used by**:
-- GUI Server: starts NiceGUI web server on configured port.
+- append server specs to `servers` list.
+
+**Primary use**:
+
+- GUI server registration.
 
 ---
 
-### `CONFIG_LOADED`
+## Deferred Hooks (Not in v1)
 
-**When**: After all TOML config files are loaded and merged, before constants are exported.
+These are intentionally deferred until core runtime is stable:
 
-**Call site**: `src/asky/config/loader.py` — at the end of `load_config()`.
-
-**Payload**:
-```python
-def callback(config: Dict[str, Any]) -> None:  # mutable config dict
-```
-
-**Plugin actions**: Register default values for plugin-specific config keys. Validate required config.
-
-**Note**: This hook fires very early (before plugins are activated). It's invoked by the `PluginManager` during a special pre-activation config pass where only the `CONFIG_LOADED` hooks from plugins' `__init__` module-level registrations are called. Alternatively, plugins can simply define their defaults in their own TOML files.
-
-**Recommendation**: Most plugins should use their own `plugins/<name>.toml` file for config rather than mutating global config. This hook is for plugins that need to influence global Asky behavior.
-
----
-
-### `SESSION_START`
-
-**When**: When a session is created or resumed.
-
-**Call site**: `src/asky/api/session.py` — in `resolve_session_for_turn()`, after session is resolved.
-
-**Payload**:
-```python
-def callback(
-    session_id: str,
-    session_name: Optional[str],
-    is_new: bool,
-    research_mode: bool,
-) -> None:
-```
-
-**Plugin actions**: Load session-scoped data (e.g., persona bindings). Initialize session state.
-
-**Used by**:
-- Persona Manager: loads persona bound to session.
-
----
-
-### `SESSION_END`
-
-**When**: When a session is explicitly ended or when the process exits cleanly.
-
-**Call site**: `src/asky/api/client.py` — after `run_turn()` completes (for CLI mode), or on daemon shutdown.
-
-**Payload**:
-```python
-def callback(session_id: str) -> None:
-```
-
-**Plugin actions**: Persist session-scoped data, clean up resources.
-
----
-
-### `PRE_PRELOAD`
-
-**When**: Before the preload pipeline runs (local ingestion + shortlist).
-
-**Call site**: `src/asky/api/client.py` — in `run_turn()`, before calling `run_preload_pipeline()`.
-
-**Payload**:
-```python
-@dataclass
-class PreloadContext:
-    config: AskyConfig
-    session_id: Optional[str]
-    research_mode: bool
-    extra_sources: List[str]  # mutable — plugins can add sources to preload
-
-def callback(ctx: PreloadContext) -> None:
-```
-
-**Plugin actions**: Inject additional sources into the preload pipeline (e.g., persona corpus URLs).
-
-**Used by**:
-- Persona Manager: adds persona's vector data references to preload sources.
-
----
-
-### `POST_PRELOAD`
-
-**When**: After the preload pipeline completes, before messages are assembled.
-
-**Call site**: `src/asky/api/client.py` — in `run_turn()`, after preload pipeline returns.
-
-**Payload**:
-```python
-@dataclass
-class PostPreloadContext:
-    preload_result: PreloadResolution  # the resolved preload data
-    extra_context: List[str]  # mutable — plugins can append context blocks
-
-def callback(ctx: PostPreloadContext) -> None:
-```
-
-**Plugin actions**: Inject additional context blocks into the message assembly (e.g., persona knowledge chunks).
-
-**Used by**:
-- Persona Manager: injects persona-relevant chunks into the context.
+1. `CONFIG_LOADED` (global config bootstrap ordering risk)
+2. `SESSION_END` (ambiguous semantics across CLI/API/daemon)
+3. `POST_TURN_RENDER` (render pipeline extraction can use `TURN_COMPLETED` first)
 
 ---
 
 ## Extraction Candidates
 
-These are existing Asky features that could be moved to plugins. Each entry shows the current location, the hooks it would use, and the extraction complexity.
+## 1. Push Data (Low Risk)
 
-### 1. Push Data (Low Risk, Low Effort)
+- Current: `src/asky/push_data.py` + registry factory wiring
+- Hooks: `TOOL_REGISTRY_BUILD`
+- Migration: plugin registers push endpoints; retain fallback for compatibility window
 
-**Current location**: `src/asky/push_data.py` + `push_data.toml` config
-**Current integration**: `tool_registry_factory.py` registers `push_data_*` tools dynamically
-**Hooks needed**: `TOOL_REGISTRY_BUILD`, `CONFIG_LOADED`
-**Extraction plan**:
-- Move `push_data.py` to `src/asky/plugins/push_data/`
-- Plugin reads `push_data.toml` in its own config, registers tools via `TOOL_REGISTRY_BUILD`
-- Remove push_data tool registration from `tool_registry_factory.py`
-- Fallback: if plugin not loaded but `push_data.toml` exists, factory still registers (backward compat)
+## 2. Email Sender (Low Risk)
 
-### 2. Email Sender (Low Risk, Low Effort)
+- Current: `src/asky/email_sender.py`
+- Hooks: `TOOL_REGISTRY_BUILD`
+- Migration: plugin-owned tool registration
 
-**Current location**: `src/asky/email_sender.py`
-**Current integration**: registered as tool in `tool_registry_factory.py` via custom tools config
-**Hooks needed**: `TOOL_REGISTRY_BUILD`
-**Extraction plan**:
-- Move `email_sender.py` to `src/asky/plugins/email_sender/`
-- Plugin registers `send_email` tool via `TOOL_REGISTRY_BUILD`
-- Remove email tool registration from factory
+## 3. Rendering (Low/Medium Risk)
 
-### 3. Browser Rendering (Low Risk, Medium Effort)
+- Current: `src/asky/rendering.py` called from chat flow
+- Hooks: `TURN_COMPLETED`
+- Migration: plugin-driven render action on final answer
 
-**Current location**: `src/asky/rendering.py`
-**Current integration**: called from `chat.py` when `--render` flag is set
-**Hooks needed**: New `POST_TURN` hook or `POST_TOOL_EXECUTE` on final answer
-**Extraction plan**:
-- Move `rendering.py` to `src/asky/plugins/renderer/`
-- Plugin subscribes to a `POST_TURN` hook (new hook needed)
-- Plugin reads config for whether to auto-render
+## 4. Research Tool Registration (Medium Risk)
 
-### 4. XMPP Daemon (High Risk, High Effort — Future)
+- Current: research tool registration in `tool_registry_factory.py`
+- Hooks: `TOOL_REGISTRY_BUILD` (research mode)
+- Migration: keep research infra core, move registration surface
 
-**Current location**: `src/asky/daemon/` (entire package)
-**Current integration**: deeply integrated into `main.py` and daemon flow
-**Hooks needed**: `DAEMON_SERVER_REGISTER` (would become the primary server, not an addition)
-**Extraction plan**:
-- This is a long-term goal, not for initial phases
-- Would require the daemon service to become a plugin that registers itself as the XMPP server
-- The `DAEMON_SERVER_REGISTER` hook was designed with this in mind
+## 5. Memory Behavior Split (Medium Risk)
 
-### 5. Research Tools (Medium Risk, Medium Effort — Future)
+- Current: memory recall/extraction mixed in core turn flow
+- Hooks: `SYSTEM_PROMPT_EXTEND`, `TOOL_REGISTRY_BUILD`, `TURN_COMPLETED`
+- Migration: staged extraction, keep storage/vector infra core
 
-**Current location**: `src/asky/research/tools.py`, `tool_registry_factory.py`
-**Current integration**: `create_research_tool_registry()` in factory
-**Hooks needed**: `TOOL_REGISTRY_BUILD` (mode="research")
-**Extraction plan**:
-- Move research tool definitions to a plugin
-- Keep research infrastructure (vector store, cache) in core since many features depend on it
-- Plugin only handles tool schema registration and executor wiring
+## 6. XMPP Daemon (High Risk, Long-Term)
 
-### 6. Memory System (Medium Risk, Medium Effort — Future)
-
-**Current location**: `src/asky/memory/`
-**Current integration**: recall injected in `client.py`, tools in factory, auto-extract in `chat.py`
-**Hooks needed**: `SYSTEM_PROMPT_EXTEND` (for recall injection), `TOOL_REGISTRY_BUILD` (for save_memory tool), `SESSION_END` (for auto-extract)
-**Extraction plan**:
-- Memory recall → `SYSTEM_PROMPT_EXTEND` hook
-- Memory tools → `TOOL_REGISTRY_BUILD` hook
-- Auto-extract → `SESSION_END` hook
-- Keep `memory/store.py` and `memory/vector_ops.py` as core infrastructure
+- Current: deeply integrated daemon package
+- Hooks: `DAEMON_SERVER_REGISTER` as precursor
+- Migration: only after plugin runtime is proven in production
 
 ---
 
-## Hook Invocation Patterns
+## Invocation Guard Pattern
 
-### Guard Pattern (zero overhead without plugins)
-
-Every hook call site must follow this pattern:
+Every call site must guard for absent runtime:
 
 ```python
-# In engine.py, client.py, etc.
-if self._hook_registry:
-    self._hook_registry.invoke(HOOK_NAME, arg1=val1, arg2=val2)
+if hook_registry is not None:
+    hook_registry.invoke(HOOK_NAME, context=context)
 ```
 
-Or for chain hooks:
+Chain hooks:
 
 ```python
-if self._hook_registry:
-    system_prompt = self._hook_registry.invoke_chain(
-        SYSTEM_PROMPT_EXTEND, data=system_prompt, config=config
+if hook_registry is not None:
+    prompt = hook_registry.invoke_chain(
+        SYSTEM_PROMPT_EXTEND,
+        data=prompt,
+        session_id=session_id,
+        research_mode=research_mode,
+        model_alias=model_alias,
     )
 ```
-
-### Passing HookRegistry Through the Stack
-
-The `HookRegistry` flows from `PluginManager` → `AskyClient` → `ConversationEngine` → `ToolRegistry`:
-
-```
-main.py
-  └── PluginManager (owns HookRegistry)
-        └── passes to AskyClient(hook_registry=...)
-              └── passes to create_tool_registry(hook_registry=...)
-              └── passes to ConversationEngine(hook_registry=...)
-                    └── ToolRegistry already has it from factory
-```
-
-All parameters are `Optional[HookRegistry]` with default `None` for backward compatibility.
 
 ---
 
 ## Priority Guidelines
 
-| Priority Range | Intended Use |
-|---------------|--------------|
-| 0–49 | Core/infrastructure hooks (config validation, logging) |
-| 50–99 | Pre-processing hooks (input transformation) |
-| 100 | Default (most plugins) |
-| 101–149 | Post-processing hooks (output transformation) |
-| 150–199 | Monitoring/analytics hooks (read-only observation) |
+| Range | Intent |
+| --- | --- |
+| 0-49 | infrastructure/validation |
+| 50-99 | preprocess/overrides |
+| 100 | default |
+| 101-149 | postprocess |
+| 150-199 | analytics/observers |
 
-Plugins should document their chosen priorities to avoid conflicts.
+Tie-breakers are deterministic (`plugin_name`, then registration order).
