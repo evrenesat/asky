@@ -31,6 +31,13 @@ Persistent cross-session user memory. Memories are global (not session-scoped), 
 | `USER_MEMORY_DEDUP_THRESHOLD`   | `0.90`  | Cosine score above which a save is treated as an update |
 | `USER_MEMORY_CHROMA_COLLECTION` | `"asky_user_memories"` | Chroma collection name         |
 
+### Threshold Interpretation
+
+Cosine similarity scores for normalized vectors range from 0 (orthogonal / unrelated) to 1 (identical). The two thresholds above mean:
+
+- **0.35 (recall cutoff)**: "moderately related" — the memory text shares enough conceptual overlap with the query to be worth injecting. Below this, the memory is considered too far off-topic.
+- **0.90 (dedup threshold)**: "near-duplicate" — the new text is nearly identical to an existing memory, so an update is performed instead of a new insert. This prevents accumulating slight rephrasing of the same fact.
+
 ## Recall Pipeline (per turn)
 
 1. `has_any_memories()` — short-circuit if no embedded memories exist.

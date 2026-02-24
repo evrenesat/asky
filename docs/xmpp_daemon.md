@@ -131,6 +131,16 @@ Planner guidance/invariants:
 - for `action_type=query`, `command_text` must be empty
 - if planner output is invalid JSON or invalid action, router falls back to query behavior
 
+### Planner Fallback Behavior
+
+When the planner cannot resolve a valid action, the original message is routed as a plain query. This covers:
+
+- **Malformed JSON**: LLM output cannot be parsed.
+- **Unknown `action_type`**: value is neither `command` nor `query`.
+- **Empty `command_text`** for a `command` action.
+
+The fallback means messages that confuse the planner are silently processed as queries rather than dropped. If you observe unexpected query behavior for commands, verify the planner's output against the JSON contract above.
+
 Generated command reference includes:
 
 - supported remote command categories (`history`, `session`, `transcript`, corpus/section commands, research flags)
@@ -185,17 +195,36 @@ transcript clear
 
 IDs are numeric and session-scoped per sender session.
 
+### Confirmation Scope in Group Chats
+
+Transcript confirmation (`yes` / `no`) is keyed by **conversation**, not by the individual user who sent the audio:
+
+- In a **direct chat**, confirmation is scoped to the sender JID — only that contact can confirm.
+- In a **group chat**, confirmation is scoped to the room JID — any occupant can confirm any pending transcript in the room.
+
+There is at most one pending transcript per conversation at a time. A new audio message arriving before confirmation replaces the pending state.
+
 ## Remote Safety Policy
 
 After planning and preset expansion, daemon command execution still enforces policy.
 
-Blocked remotely:
+Blocked remotely (authoritative list from `command_executor.REMOTE_BLOCKED_FLAGS`):
 
 - `--mail`
 - `--open`
 - `-tl` / `--terminal-lines`
-- destructive/history/session deletion and model mutation commands
-- daemon bootstrap and local mutation flags (`--xmpp-daemon`, `--xmpp-menubar-child`, `--edit-daemon`, completion script output)
+- `--delete-messages`
+- `--delete-sessions`
+- `--all`
+- `--clean-session-research`
+- `--add-model`
+- `--edit-model`
+- `--clear-memories`
+- `--delete-memory`
+- `--xmpp-daemon`
+- `--xmpp-menubar-child`
+- `--edit-daemon`
+- `--completion-script`
 
 Allowed remotely:
 

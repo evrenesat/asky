@@ -1,5 +1,23 @@
 # DEVLOG
 
+## 2026-02-24 - Documentation Improvements
+
+Addressed documentation discrepancies and coverage gaps identified in a code review:
+
+- **`src/asky/daemon/AGENTS.md`** [NEW]: Comprehensive package documentation covering per-JID queue/worker lifecycle, authorization model, command routing order, interface planner fallback behavior, voice transcription pipeline, transcript confirmation scope, session override file contract (allowed keys, last-write-wins semantics), and known limitations.
+- **`ARCHITECTURE.md`**:
+  - Fixed out-of-order Decision numbering: Decision 17 (Cross-Session User Memory) and Decision 16 (Evidence-Focused Extraction) were swapped; corrected to 16 and 17 respectively.
+  - Updated Decision 7 (Lazy Loading) to accurately distinguish truly deferred imports (research cache, argcomplete) from eager-registration-with-closure-captured-imports (tool executors).
+  - Updated package table to reference the new `daemon/AGENTS.md`.
+- **`src/asky/core/AGENTS.md`**: Clarified the lazy loading section with the same eager-vs-deferred distinction.
+- **`src/asky/storage/AGENTS.md`**: Added documentation for the shell-sticky lock file mechanism (`/tmp/asky_session_{PID}`), stale file behavior, and manual cleanup.
+- **`src/asky/research/AGENTS.md`**: Added explicit priority rule for `section_ref` vs `section_id` parameters in `get_relevant_content`.
+- **`src/asky/memory/AGENTS.md`**: Added cosine similarity range explanation for the 0.35 (recall) and 0.90 (dedup) thresholds.
+- **`README.md`**: Updated installation section to lead with `uv tool install asky-cli` per project conventions; pip kept as secondary option.
+- **`docs/xmpp_daemon.md`**: Added "Planner Fallback Behavior" subsection, added group chat transcript confirmation scope note, and updated the blocked flags list to match the authoritative `REMOTE_BLOCKED_FLAGS` constant.
+- **`docs/configuration.md`**: Added "Environment Variable Overrides" section documenting `ASKY_DB_PATH`, `ASKY_SMTP_USER`, `ASKY_SMTP_PASSWORD`, `ASKY_XMPP_PASSWORD`, `HF_TOKEN`, and related API key variables.
+- **`docs/library_usage.md`**: Expanded the Error Handling section to document all exception types that `run_turn()` can raise (`ContextOverflowError`, network exceptions from `requests`).
+
 ## 2026-02-24 - macOS App Bundle Spotlight Integration
 
 Implemented automatic creation of a macOS `.app` bundle for the XMPP daemon to allow launching from Spotlight/Finder.

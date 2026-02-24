@@ -199,6 +199,16 @@ Both history and session messages share the `messages` table:
 
 This consolidation simplifies storage while maintaining clear separation.
 
+### Shell-Sticky Lock File Mechanism
+
+Sessions are tied to the current terminal via a lock file: `/tmp/asky_session_{PID}`.
+
+- Written atomically (write to `.tmp` then `os.replace`) when a shell session is activated.
+- Cleaned up via `atexit` handler on normal exit.
+- On startup, if the lock file's PID is dead (no live process), the stale file is ignored.
+- To manually clear a stuck session: `asky --end-session` or delete `/tmp/asky_session_<PID>`.
+- PID reuse is an inherent risk: if a new process reuses the PID of a previously crashed asky, it could inherit the wrong session. The atexit handler mitigates this for clean exits.
+
 ### Interaction ID Semantics
 
 For history, the "interaction ID" refers to the **assistant message row ID**, as history is stored as user/assistant pairs with the assistant ID being the higher value.

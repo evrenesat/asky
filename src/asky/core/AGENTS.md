@@ -44,9 +44,11 @@ class ConversationEngine:
 
 ### Lazy Loading
 
-- Research cache instantiated only when compaction needs cached summaries
-- Tool executors imported on first use via factory/wrapper helpers
-- Research tool schemas/executors imported only for research mode
+Two distinct patterns are in use:
+
+- **Truly deferred**: Research cache — imported and instantiated only when compaction calls for cached summaries.
+- **Eager registration, closure-captured imports**: Tool executors — registered at registry construction time as closures. The module containing the executor is imported at construction time; the executor logic runs only when the tool is actually called by the engine.
+- Research tool schemas/executors are only imported when building a research registry.
 
 ### Runtime I/O Boundary
 

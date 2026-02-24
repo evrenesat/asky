@@ -164,7 +164,7 @@ For test organization, see `tests/AGENTS.md`.
 | Package     | Documentation                                     | Key Components                                                                      |
 | ----------- | ------------------------------------------------- | ----------------------------------------------------------------------------------- |
 | `cli/`      | [cli/AGENTS.md](src/asky/cli/AGENTS.md)           | Entry point, chat flow, commands                                                    |
-| `daemon/`   | (package docs inline)                             | XMPP transport, group/direct router, session profile manager, voice+image pipelines |
+| `daemon/`   | [daemon/AGENTS.md](src/asky/daemon/AGENTS.md)     | XMPP transport, group/direct router, session profile manager, voice+image pipelines |
 | `api/`      | [api/AGENTS.md](src/asky/api/AGENTS.md)           | `AskyClient`, turn orchestration services                                           |
 | `core/`     | [core/AGENTS.md](src/asky/core/AGENTS.md)         | ConversationEngine, ToolRegistry, API client                                        |
 | `storage/`  | [storage/AGENTS.md](src/asky/storage/AGENTS.md)   | SQLite repository, data model                                                       |
@@ -498,12 +498,12 @@ Single implementation reused by research and standard chat modes with per-mode e
 
 ### 7. Lazy Loading
 
-Imports deferred until needed:
+Imports deferred until needed, with two distinct patterns:
 
-- Research cache only on compaction
-- Tool executors on first use
-- Argcomplete only when completing
-- Shared helper utilities (`lazy_imports.py`) keep lazy bindings consistent across modules
+- **Truly deferred**: `research_cache` — imported and instantiated only when compaction calls for cached summaries.
+- **Eager registration, closure-captured imports**: tool executors — registered at registry construction time as closures; the closure body captures module-level imports, so the module is loaded at construction, but the executor logic runs only when the tool is actually called.
+- **Truly deferred**: `argcomplete` — imported only when the `_ARGCOMPLETE` env var is present.
+- Shared helper utilities (`lazy_imports.py`) keep lazy bindings consistent across modules.
 
 ### 8. Shared URL Normalization
 
@@ -582,7 +582,7 @@ A simplified "retrieval-only" system prompt guidance is injected in these cases 
   - LLM mode (optional) uses a small structured-output call.
   - `PreloadResolution` stores sub-queries; shortlist and local ingestion use them for multi-pass retrieval.
 
-### Decision 17: Cross-Session User Memory
+### Decision 16: Cross-Session User Memory
 
 - **Context**: Users want the LLM to remember persistent preferences and facts across separate invocations.
 - **Decision**: Global `user_memories` table + separate Chroma collection (`asky_user_memories`) decoupled from session/research state.
@@ -598,7 +598,7 @@ A simplified "retrieval-only" system prompt guidance is injected in these cases 
   - Auto-extraction runs in a daemon thread; never blocks response delivery.
   - `--elephant-mode` requires an active session (`-ss` / `-rs`); otherwise ignored with a warning.
 
-### Decision 16: Evidence-Focused Extraction
+### Decision 17: Evidence-Focused Extraction
 
 - **Context**: Raw chunks are often noisy; smaller models benefit from structured facts.
 - **Decision**: Add a post-retrieval fact extraction step using a focused LLM prompt.

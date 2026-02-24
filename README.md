@@ -54,20 +54,24 @@ The extensive details of asky's operation are documented in the following guides
 ## Installation
 
 ```bash
-pip install asky-cli
+uv tool install asky-cli
 ```
 
 Or install from source:
 
 ```bash
-pip install -e .
+uv pip install -e .
+```
+
+Alternatively, using pip:
+
+```bash
+pip install asky-cli
 ```
 
 To enable the optional iTerm2 context integration:
 
 ```bash
-pip install "asky-cli[iterm2]"
-# Or via uv
 uv tool install "asky-cli[iterm2]"
 ```
 

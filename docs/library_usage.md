@@ -229,6 +229,15 @@ If you are building a web/backend service, usually omit these and manage session
 
 ## Error Handling
 
+`run_turn()` can raise the following exceptions:
+
+| Exception              | Source                              | Description                                                   |
+| ---------------------- | ----------------------------------- | ------------------------------------------------------------- |
+| `ContextOverflowError` | `asky.api`                          | Model context window exceeded. Contains compacted fallback context in `exc.compacted_messages`. |
+| `requests.exceptions.ConnectionError` | network layer         | XMPP/API host unreachable.                                    |
+| `requests.exceptions.Timeout`         | network layer         | LLM or web-fetch call exceeded timeout.                       |
+| `requests.exceptions.HTTPError`       | network layer         | Non-retryable HTTP error from the LLM API.                    |
+
 Handle overflow explicitly:
 
 ```python
@@ -239,7 +248,11 @@ try:
 except ContextOverflowError as exc:
     print("Context overflow:", exc)
     # exc.compacted_messages contains compacted fallback context
+except Exception as exc:
+    print("Unexpected error:", exc)
 ```
+
+Network exceptions propagate from the underlying `requests` library. The built-in retry logic handles transient failures (rate limits, temporary 5xx), but permanent errors (invalid API key, host unreachable) will propagate to the caller.
 
 ## End-to-End Examples
 

@@ -56,6 +56,11 @@ Section-scoped retrieval contract:
 - Compatibility: legacy `corpus://cache/<id>/<section-id>` source suffixes are accepted.
 - `list_sections` defaults to canonical body sections and emits `section_ref` for each row.
 
+Parameter priority in `get_relevant_content`:
+
+- If both `section_ref` and `section_id` are provided, `section_ref` takes precedence.
+- If only `section_id` is provided alongside a source URL, it is applied as a section filter on that source.
+
 ### Tool Sets by Stage
 
 Tools are grouped into constants to support per-stage exposure:

@@ -200,7 +200,29 @@ If you are an **iTerm2** user on macOS, you can include the last N lines of your
 - **Configuration**: Set `terminal_context_lines = 10` in `general.toml` to change the default `-tl` capture depth.
 - **Prerequisite**: Ensure you have the iTerm2 Python API enabled in your iTerm2 settings.
 
-## 11. Shell Auto-Completion
+## 11. Environment Variable Overrides
+
+Several configuration values can be set via environment variables. Environment variables take precedence over the equivalent TOML config file values.
+
+| Environment Variable    | Config file equivalent           | Description                                        |
+| ----------------------- | -------------------------------- | -------------------------------------------------- |
+| `ASKY_DB_PATH`          | `general.db_path`                | Override the SQLite database path.                 |
+| `ASKY_SMTP_USER`        | `email.smtp_user`                | SMTP username for `--mail` output.                 |
+| `ASKY_SMTP_PASSWORD`    | `email.smtp_password`            | SMTP password (prefer env over config file).       |
+| `ASKY_XMPP_PASSWORD`    | `xmpp.password`                  | XMPP account password (prefer env over config).    |
+| `HF_TOKEN`              | `xmpp.voice_hf_token`            | Hugging Face token for voice model downloads.      |
+| `GOOGLE_API_KEY`        | `api.gemini.api_key`             | Google / Gemini API key.                           |
+| `OPENAI_API_KEY`        | `api.<alias>.api_key`            | OpenAI-compatible API key.                         |
+| `SERPER_API_KEY`        | `api.serper.api_key`             | Serper web search API key.                         |
+
+Notes:
+
+- The env var name for `ASKY_DB_PATH` is configurable: set `db_path_env_var` in `general.toml` to use a different variable name.
+- The env var names for `ASKY_SMTP_USER` and `ASKY_SMTP_PASSWORD` are configurable via `smtp_user_env` and `smtp_password_env` in `push_data.toml` / `email.toml`.
+- The env var name for `ASKY_XMPP_PASSWORD` is configurable via `xmpp.password_env` in `xmpp.toml`.
+- The env var name for the Hugging Face token is configurable via `xmpp.voice_hf_token_env` (default `HF_TOKEN`).
+
+## 12. Shell Auto-Completion
 
 Enable tab completion for flags and dynamic values (like model aliases, history IDs, and session names):
 
@@ -214,7 +236,7 @@ asky --completion-script zsh >> ~/.zshrc
 source ~/.zshrc
 ```
 
-## 12. Prompt and Tool Text Overrides
+## 13. Prompt and Tool Text Overrides
 
 You can override built-in prompt text without forking the project.
 
