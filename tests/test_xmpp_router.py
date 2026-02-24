@@ -427,3 +427,59 @@ def test_router_session_clear_confirmation_flow():
     resp3 = router.handle_text_message(jid=jid, message_type="chat", body="no")
     assert "cancelled" in resp3.lower()
     assert "u@example.com/resource" not in router.command_executor._pending_clear
+
+
+def test_router_help_command_bypasses_planner_with_interface_enabled():
+    router = _build_router(interface_enabled=True)
+    response = router.handle_text_message(
+        jid="u@example.com/resource",
+        message_type="chat",
+        body="/h",
+    )
+    assert response == "command:/h:-"
+    assert len(router.interface_planner.actions) == 0
+
+
+def test_router_help_long_form_bypasses_planner_with_interface_enabled():
+    router = _build_router(interface_enabled=True)
+    response = router.handle_text_message(
+        jid="u@example.com/resource",
+        message_type="chat",
+        body="/help",
+    )
+    assert response == "command:/help:-"
+    assert len(router.interface_planner.actions) == 0
+
+
+def test_router_transcript_command_bypasses_planner_with_interface_enabled():
+    router = _build_router(interface_enabled=True)
+    response = router.handle_text_message(
+        jid="u@example.com/resource",
+        message_type="chat",
+        body="transcript list",
+    )
+    assert response == "command:transcript list:-"
+    assert len(router.interface_planner.actions) == 0
+
+
+def test_router_flag_command_bypasses_planner_with_interface_enabled():
+    router = _build_router(interface_enabled=True)
+    response = router.handle_text_message(
+        jid="u@example.com/resource",
+        message_type="chat",
+        body="-H 5",
+    )
+    assert response == "command:-H 5:-"
+    assert len(router.interface_planner.actions) == 0
+
+
+def test_router_natural_language_still_goes_through_planner():
+    router = _build_router(interface_enabled=True)
+    response = router.handle_text_message(
+        jid="u@example.com/resource",
+        message_type="chat",
+        body="what is the news today",
+    )
+    assert response == "query:planned:what is the news today:-"
+    assert len(router.interface_planner.actions) == 1
+    assert router.interface_planner.actions[0] == "what is the news today"

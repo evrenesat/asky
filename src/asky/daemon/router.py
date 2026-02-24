@@ -145,6 +145,12 @@ class DaemonRouter:
                     command_text=command_text,
                     room_jid=normalized_room or None,
                 )
+            if _looks_like_command(text):
+                return self.command_executor.execute_command_text(
+                    jid=actor_jid,
+                    command_text=text,
+                    room_jid=normalized_room or None,
+                )
             action = self.interface_planner.plan(text)
             if action.action_type == ACTION_COMMAND:
                 return self.command_executor.execute_command_text(

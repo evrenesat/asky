@@ -9,6 +9,7 @@ import pytest
 
 from asky.daemon.app_bundle_macos import (
     BUNDLE_NAME,
+    LAUNCHER_VERSION,
     bundle_is_current,
     create_bundle,
     ensure_bundle_exists,
@@ -39,13 +40,23 @@ def test_bundle_is_current_wrong_python(mock_bundle_path):
 
 
 def test_bundle_is_current_correct_python(mock_bundle_path):
-    """bundle_is_current returns True when the Python path matches."""
+    """bundle_is_current returns True when the Python path and version both match."""
+    macos_dir = mock_bundle_path / "Contents" / "MacOS"
+    macos_dir.mkdir(parents=True)
+    marker = macos_dir / ".bundle_meta"
+    marker.write_text(f"/current/python\n{LAUNCHER_VERSION}")
+
+    assert bundle_is_current("/current/python") is True
+
+
+def test_bundle_is_current_old_format_triggers_rebuild(mock_bundle_path):
+    """bundle_is_current returns False for old single-line markers (forces rebuild)."""
     macos_dir = mock_bundle_path / "Contents" / "MacOS"
     macos_dir.mkdir(parents=True)
     marker = macos_dir / ".bundle_meta"
     marker.write_text("/current/python")
 
-    assert bundle_is_current("/current/python") is True
+    assert bundle_is_current("/current/python") is False
 
 
 def test_create_bundle_creates_all_paths(mock_bundle_path):
@@ -69,13 +80,17 @@ def test_create_bundle_creates_all_paths(mock_bundle_path):
     assert marker.exists()
 
     # Verify marker content
-    assert marker.read_text() == python_path
+    lines = marker.read_text().splitlines()
+    assert lines[0] == python_path
+    assert lines[1] == LAUNCHER_VERSION
 
     # Verify launcher content
     launcher_content = launcher.read_text()
     assert python_path in launcher_content
     assert "--xmpp-daemon" in launcher_content
     assert "--xmpp-menubar-child" in launcher_content
+    assert ".zshrc" in launcher_content
+    assert ".zprofile" in launcher_content
 
     # Verify launcher is executable
     assert os.access(launcher, os.X_OK)

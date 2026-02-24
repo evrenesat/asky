@@ -13,6 +13,9 @@ BUNDLE_NAME = "AskyDaemon"
 BUNDLE_IDENTIFIER = "com.evren.asky.daemon"
 BUNDLE_PATH = Path.home() / "Applications" / f"{BUNDLE_NAME}.app"
 
+# Bump when the launcher script template changes to force recreation of existing bundles.
+LAUNCHER_VERSION = "2"
+
 
 def bundle_is_current(python_path: str) -> bool:
     """Check if the existing bundle matches the current Python interpreter."""
@@ -24,8 +27,8 @@ def bundle_is_current(python_path: str) -> bool:
         return False
 
     try:
-        content = marker.read_text().strip()
-        return content == python_path
+        lines = marker.read_text().splitlines()
+        return len(lines) >= 2 and lines[0] == python_path and lines[1] == LAUNCHER_VERSION
     except Exception:
         return False
 
@@ -61,9 +64,17 @@ def create_bundle(python_path: str) -> Path:
         plistlib.dump(plist, f)
 
     # 2. Launcher script
+    # Source shell config files so that environment variables (API keys, PATH
+    # extensions, etc.) set in the user's ZSH profile are available when the
+    # app is launched from Spotlight or Finder, which provides only a minimal
+    # macOS environment with no shell config.
     launcher = macos_dir / BUNDLE_NAME
     launcher.write_text(
-        f'#!/bin/bash\nexec "{python_path}" -m asky --xmpp-daemon --xmpp-menubar-child "$@"\n'
+        "#!/bin/zsh\n"
+        "[ -f \"$HOME/.zshenv\" ] && source \"$HOME/.zshenv\" 2>/dev/null\n"
+        "[ -f \"$HOME/.zprofile\" ] && source \"$HOME/.zprofile\" 2>/dev/null\n"
+        "[ -f \"$HOME/.zshrc\" ] && source \"$HOME/.zshrc\" 2>/dev/null\n"
+        f'exec "{python_path}" -m asky --xmpp-daemon --xmpp-menubar-child "$@"\n'
     )
     launcher.chmod(0o755)
 
@@ -85,9 +96,11 @@ def create_bundle(python_path: str) -> Path:
     elif png_fallback.exists():
         shutil.copy2(png_fallback, icns_dest)
 
-    # 4. Marker
+    # 4. Marker: python_path on line 1, LAUNCHER_VERSION on line 2.
+    #    bundle_is_current() checks both, so bumping LAUNCHER_VERSION forces
+    #    existing bundles to be recreated when the script template changes.
     marker = macos_dir / ".bundle_meta"
-    marker.write_text(python_path)
+    marker.write_text(f"{python_path}\n{LAUNCHER_VERSION}")
 
     # 5. Touch to invalidate Spotlight index
     subprocess.run(["touch", str(BUNDLE_PATH)], capture_output=True)

@@ -1,5 +1,15 @@
 # DEVLOG
 
+## 2026-02-24 - XMPP Help Command Regression and Routing Fix
+
+Fixed a bug where XMPP command-like messages (such as `/help`, `/h`, `transcript list`, or flags like `-H`) were being incorrectly routed to the LLM interface planner, causing delays and incorrect responses (showing only prompt aliases instead of full help).
+
+- **`src/asky/daemon/router.py`**: Added a short-circuit check using `_looks_like_command` in `handle_text_message` when the interface planner is enabled. This ensures that direct commands bypass the LLM and execute immediately.
+- **`tests/test_xmpp_router.py`**: Added five regression tests verifying that help commands, transcript commands, and CLI flags bypass the planner while natural language query messages still use it.
+- **Validation**:
+  - Full test suite passed (793 passed).
+  - Verified that `/h` and `/help` correctly bypass planning and return the full help text.
+
 ## 2026-02-24 - Documentation Improvements
 
 Addressed documentation discrepancies and coverage gaps identified in a code review:
@@ -17,6 +27,22 @@ Addressed documentation discrepancies and coverage gaps identified in a code rev
 - **`docs/xmpp_daemon.md`**: Added "Planner Fallback Behavior" subsection, added group chat transcript confirmation scope note, and updated the blocked flags list to match the authoritative `REMOTE_BLOCKED_FLAGS` constant.
 - **`docs/configuration.md`**: Added "Environment Variable Overrides" section documenting `ASKY_DB_PATH`, `ASKY_SMTP_USER`, `ASKY_SMTP_PASSWORD`, `ASKY_XMPP_PASSWORD`, `HF_TOKEN`, and related API key variables.
 - **`docs/library_usage.md`**: Expanded the Error Handling section to document all exception types that `run_turn()` can raise (`ContextOverflowError`, network exceptions from `requests`).
+
+## 2026-02-24 - macOS App Bundle: Environment Variable Fix
+
+When launched from Spotlight or Finder, macOS provides only a minimal environment — no shell
+config files are sourced, so ZSH env vars (API keys, custom PATH, etc.) are absent.
+
+- **`src/asky/daemon/app_bundle_macos.py`**:
+  - Launcher script changed from `#!/bin/bash` to `#!/bin/zsh` and now sources
+    `~/.zshenv`, `~/.zprofile`, and `~/.zshrc` (with `2>/dev/null`) before exec-ing Python.
+  - Added `LAUNCHER_VERSION = "2"` constant. The `.bundle_meta` marker now stores
+    `python_path\nLAUNCHER_VERSION` so bumping the version forces existing bundles
+    (created without env sourcing) to be automatically recreated on next daemon start.
+- **`tests/test_app_bundle_macos.py`**:
+  - Updated marker assertions to the two-line format.
+  - Added `test_bundle_is_current_old_format_triggers_rebuild` covering the migration case.
+  - Added assertion that launcher content includes `.zshrc` / `.zprofile`.
 
 ## 2026-02-24 - macOS App Bundle Spotlight Integration
 
