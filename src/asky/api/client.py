@@ -22,6 +22,7 @@ from asky.core.tool_registry_factory import (
     create_research_tool_registry,
 )
 from asky.lazy_imports import call_attr
+from asky.plugins.hooks import HookRegistry
 from asky.storage import save_interaction
 
 from .context import load_context_from_history
@@ -44,6 +45,9 @@ from .types import (
     PreloadResolution,
     SessionResolution,
 )
+
+if TYPE_CHECKING:
+    from asky.plugins.runtime import PluginRuntime
 
 
 @dataclass
@@ -72,6 +76,7 @@ class AskyClient:
         *,
         usage_tracker: Optional[UsageTracker] = None,
         summarization_tracker: Optional[UsageTracker] = None,
+        plugin_runtime: Optional["PluginRuntime"] = None,
     ) -> None:
         if config.model_alias not in MODELS:
             raise ValueError(f"Unknown model alias: {config.model_alias}")
@@ -86,6 +91,13 @@ class AskyClient:
         self.model_config = base_model_config
         self.usage_tracker = usage_tracker or UsageTracker()
         self.summarization_tracker = summarization_tracker or UsageTracker()
+        self.plugin_runtime = plugin_runtime
+
+    def _get_hook_registry(self) -> Optional[HookRegistry]:
+        runtime = self.plugin_runtime
+        if runtime is None:
+            return None
+        return runtime.hooks
 
     def build_messages(
         self,
@@ -386,34 +398,45 @@ class AskyClient:
         effective_disabled_tools = (
             disabled_tools if disabled_tools is not None else self.config.disabled_tools
         )
+        hook_registry = self._get_hook_registry()
 
         if effective_research_mode:
-            registry = create_research_tool_registry(
-                usage_tracker=self.usage_tracker,
-                disabled_tools=effective_disabled_tools,
-                session_id=research_session_id,
-                corpus_preloaded=preload.is_corpus_preloaded if preload else False,
-                preloaded_corpus_urls=(
+            research_registry_kwargs: Dict[str, Any] = {
+                "usage_tracker": self.usage_tracker,
+                "disabled_tools": effective_disabled_tools,
+                "session_id": research_session_id,
+                "corpus_preloaded": preload.is_corpus_preloaded if preload else False,
+                "preloaded_corpus_urls": (
                     list(preload.preloaded_source_urls) if preload else []
                 ),
-                research_source_mode=research_source_mode,
-                summarization_tracker=self.summarization_tracker,
-                tool_trace_callback=(
+                "research_source_mode": research_source_mode,
+                "summarization_tracker": self.summarization_tracker,
+                "tool_trace_callback": (
                     verbose_output_callback if self.config.verbose else None
                 ),
+            }
+            if hook_registry is not None:
+                research_registry_kwargs["hook_registry"] = hook_registry
+            registry = create_research_tool_registry(
+                **research_registry_kwargs,
             )
         else:
+            standard_registry_kwargs: Dict[str, Any] = {
+                "usage_tracker": self.usage_tracker,
+                "summarization_tracker": self.summarization_tracker,
+                "summarization_status_callback": summarization_status_callback,
+                "summarization_verbose_callback": (
+                    verbose_output_callback if self.config.verbose else None
+                ),
+                "disabled_tools": effective_disabled_tools,
+                "tool_trace_callback": (
+                    verbose_output_callback if self.config.verbose else None
+                ),
+            }
+            if hook_registry is not None:
+                standard_registry_kwargs["hook_registry"] = hook_registry
             registry = create_tool_registry(
-                usage_tracker=self.usage_tracker,
-                summarization_tracker=self.summarization_tracker,
-                summarization_status_callback=summarization_status_callback,
-                summarization_verbose_callback=(
-                    verbose_output_callback if self.config.verbose else None
-                ),
-                disabled_tools=effective_disabled_tools,
-                tool_trace_callback=(
-                    verbose_output_callback if self.config.verbose else None
-                ),
+                **standard_registry_kwargs,
             )
 
         self._append_enabled_tool_guidelines(
@@ -421,19 +444,25 @@ class AskyClient:
             registry.get_system_prompt_guidelines(),
         )
 
+        engine_kwargs: Dict[str, Any] = {
+            "model_config": self.model_config,
+            "tool_registry": registry,
+            "summarize": self.config.summarize,
+            "verbose": self.config.verbose,
+            "double_verbose": self.config.double_verbose,
+            "usage_tracker": self.usage_tracker,
+            "open_browser": self.config.open_browser,
+            "session_manager": session_manager,
+            "verbose_output_callback": verbose_output_callback,
+            "event_callback": event_callback,
+            "lean": lean,
+            "max_turns": max_turns,
+        }
+        if hook_registry is not None:
+            engine_kwargs["hook_registry"] = hook_registry
+
         engine = ConversationEngine(
-            model_config=self.model_config,
-            tool_registry=registry,
-            summarize=self.config.summarize,
-            verbose=self.config.verbose,
-            double_verbose=self.config.double_verbose,
-            usage_tracker=self.usage_tracker,
-            open_browser=self.config.open_browser,
-            session_manager=session_manager,
-            verbose_output_callback=verbose_output_callback,
-            event_callback=event_callback,
-            lean=lean,
-            max_turns=max_turns,
+            **engine_kwargs,
         )
         return engine.run(messages, display_callback=display_callback)
 
@@ -517,6 +546,17 @@ class AskyClient:
         """Run a full API-orchestrated turn including context/session/preload."""
         notices: List[str] = []
         context = ContextResolution()
+        hook_registry = self._get_hook_registry()
+
+        def finalize_turn_result(result: AskyTurnResult) -> AskyTurnResult:
+            if hook_registry is not None:
+                from asky.plugins.hook_types import TURN_COMPLETED, TurnCompletedContext
+
+                hook_registry.invoke(
+                    TURN_COMPLETED,
+                    TurnCompletedContext(request=request, result=result),
+                )
+            return result
 
         if request.continue_ids:
             context = load_context_from_history(
@@ -548,6 +588,22 @@ class AskyClient:
             clear_shell_session_fn=clear_shell_session_fn,
         )
         notices.extend(session_resolution.notices)
+
+        if session_resolved_callback and session_manager:
+            session_resolved_callback(session_manager)
+
+        if hook_registry is not None:
+            from asky.plugins.hook_types import SESSION_RESOLVED, SessionResolvedContext
+
+            session_hook_context = SessionResolvedContext(
+                request=request,
+                session_manager=session_manager,
+                session_resolution=session_resolution,
+            )
+            hook_registry.invoke(SESSION_RESOLVED, session_hook_context)
+            session_manager = session_hook_context.session_manager
+            session_resolution = session_hook_context.session_resolution
+
         resolved_research_mode = getattr(session_resolution, "research_mode", None)
         effective_research_mode = (
             resolved_research_mode
@@ -569,9 +625,6 @@ class AskyClient:
             else request.local_corpus_paths
         )
 
-        if session_resolved_callback and session_manager:
-            session_resolved_callback(session_manager)
-
         if effective_research_mode:
             notices.insert(
                 0, "Research mode enabled - using link extraction and RAG tools"
@@ -579,23 +632,25 @@ class AskyClient:
 
         halted = bool(session_resolution.halt_reason)
         if halted:
-            return AskyTurnResult(
-                final_answer="",
-                query_summary="",
-                answer_summary="",
-                messages=[],
-                model_alias=self.config.model_alias,
-                session_id=(
-                    str(session_resolution.session_id)
-                    if session_resolution.session_id is not None
-                    else None
-                ),
-                halted=True,
-                halt_reason=session_resolution.halt_reason,
-                notices=notices,
-                context=context,
-                session=session_resolution,
-                preload=PreloadResolution(),
+            return finalize_turn_result(
+                AskyTurnResult(
+                    final_answer="",
+                    query_summary="",
+                    answer_summary="",
+                    messages=[],
+                    model_alias=self.config.model_alias,
+                    session_id=(
+                        str(session_resolution.session_id)
+                        if session_resolution.session_id is not None
+                        else None
+                    ),
+                    halted=True,
+                    halt_reason=session_resolution.halt_reason,
+                    notices=notices,
+                    context=context,
+                    session=session_resolution,
+                    preload=PreloadResolution(),
+                )
             )
 
         capture_global_memory = False
@@ -625,16 +680,63 @@ class AskyClient:
                 initial_notice_callback(notice)
             notices.clear()
 
+        preload_query_text = effective_query_text
+        preload_local_sources = bool(request.preload_local_sources)
+        preload_shortlist = bool(request.preload_shortlist)
+        preload_shortlist_override = request.shortlist_override
+        preload_additional_source_context = request.additional_source_context
+
+        if hook_registry is not None:
+            from asky.plugins.hook_types import PRE_PRELOAD, PrePreloadContext
+
+            pre_preload_context = PrePreloadContext(
+                request=request,
+                query_text=preload_query_text,
+                research_mode=bool(effective_research_mode),
+                research_source_mode=effective_source_mode,
+                local_corpus_paths=(
+                    list(effective_local_corpus_paths)
+                    if isinstance(effective_local_corpus_paths, list)
+                    else effective_local_corpus_paths
+                ),
+                preload_local_sources=preload_local_sources,
+                preload_shortlist=preload_shortlist,
+                shortlist_override=preload_shortlist_override,
+                additional_source_context=preload_additional_source_context,
+            )
+            hook_registry.invoke(PRE_PRELOAD, pre_preload_context)
+            preload_query_text = str(pre_preload_context.query_text or "").strip()
+            if not preload_query_text:
+                preload_query_text = effective_query_text
+            effective_research_mode = bool(pre_preload_context.research_mode)
+            effective_source_mode = pre_preload_context.research_source_mode
+            effective_local_corpus_paths = pre_preload_context.local_corpus_paths
+            if (
+                effective_local_corpus_paths is not None
+                and not isinstance(effective_local_corpus_paths, list)
+            ):
+                logger.warning(
+                    "PRE_PRELOAD hook returned invalid local_corpus_paths type: %s",
+                    type(effective_local_corpus_paths).__name__,
+                )
+                effective_local_corpus_paths = request.local_corpus_paths
+            preload_local_sources = bool(pre_preload_context.preload_local_sources)
+            preload_shortlist = bool(pre_preload_context.preload_shortlist)
+            preload_shortlist_override = pre_preload_context.shortlist_override
+            preload_additional_source_context = (
+                pre_preload_context.additional_source_context
+            )
+
         # Process preload with *potentially modified* query text
         preload = run_preload_pipeline(
-            query_text=effective_query_text,
+            query_text=preload_query_text,
             research_mode=effective_research_mode,
             model_config=self.model_config,
             lean=request.lean,
-            preload_local_sources=request.preload_local_sources,
-            preload_shortlist=request.preload_shortlist,
-            shortlist_override=request.shortlist_override,
-            additional_source_context=request.additional_source_context,
+            preload_local_sources=preload_local_sources,
+            preload_shortlist=preload_shortlist,
+            shortlist_override=preload_shortlist_override,
+            additional_source_context=preload_additional_source_context,
             local_corpus_paths=effective_local_corpus_paths,
             status_callback=preload_status_callback,
             shortlist_executor=shortlist_executor or shortlist_prompt_sources,
@@ -648,35 +750,56 @@ class AskyClient:
             ),
             trace_callback=(verbose_output_callback if self.config.verbose else None),
         )
+        effective_query_text = preload_query_text
+
+        if hook_registry is not None:
+            from asky.plugins.hook_types import POST_PRELOAD, PostPreloadContext
+
+            post_preload_context = PostPreloadContext(
+                request=request,
+                preload=preload,
+                query_text=effective_query_text,
+                research_mode=bool(effective_research_mode),
+                research_source_mode=effective_source_mode,
+            )
+            hook_registry.invoke(POST_PRELOAD, post_preload_context)
+            preload = post_preload_context.preload
+            effective_query_text = str(post_preload_context.query_text or "").strip()
+            if not effective_query_text:
+                effective_query_text = preload_query_text
+            effective_research_mode = bool(post_preload_context.research_mode)
+            effective_source_mode = post_preload_context.research_source_mode
 
         local_ingested = len(preload.local_payload.get("ingested", []) or [])
         if (
             effective_research_mode
             and effective_source_mode in {"local_only", "mixed"}
-            and request.preload_local_sources
+            and preload_local_sources
         ):
             if not effective_local_corpus_paths:
                 notices.append(
                     "Research session requires local corpus sources, but no corpus paths are configured. "
                     "Re-run with -r and local corpus pointers."
                 )
-                return AskyTurnResult(
-                    final_answer="",
-                    query_summary="",
-                    answer_summary="",
-                    messages=[],
-                    model_alias=self.config.model_alias,
-                    session_id=(
-                        str(session_resolution.session_id)
-                        if session_resolution.session_id is not None
-                        else None
-                    ),
-                    halted=True,
-                    halt_reason="local_corpus_missing",
-                    notices=notices,
-                    context=context,
-                    session=session_resolution,
-                    preload=preload,
+                return finalize_turn_result(
+                    AskyTurnResult(
+                        final_answer="",
+                        query_summary="",
+                        answer_summary="",
+                        messages=[],
+                        model_alias=self.config.model_alias,
+                        session_id=(
+                            str(session_resolution.session_id)
+                            if session_resolution.session_id is not None
+                            else None
+                        ),
+                        halted=True,
+                        halt_reason="local_corpus_missing",
+                        notices=notices,
+                        context=context,
+                        session=session_resolution,
+                        preload=preload,
+                    )
                 )
             if local_ingested == 0:
                 warning_text = ""
@@ -688,23 +811,25 @@ class AskyClient:
                     "Check local_document_roots and corpus pointers, then re-run with updated -r corpus paths."
                     + warning_text
                 )
-                return AskyTurnResult(
-                    final_answer="",
-                    query_summary="",
-                    answer_summary="",
-                    messages=[],
-                    model_alias=self.config.model_alias,
-                    session_id=(
-                        str(session_resolution.session_id)
-                        if session_resolution.session_id is not None
-                        else None
-                    ),
-                    halted=True,
-                    halt_reason="local_corpus_ingestion_failed",
-                    notices=notices,
-                    context=context,
-                    session=session_resolution,
-                    preload=preload,
+                return finalize_turn_result(
+                    AskyTurnResult(
+                        final_answer="",
+                        query_summary="",
+                        answer_summary="",
+                        messages=[],
+                        model_alias=self.config.model_alias,
+                        session_id=(
+                            str(session_resolution.session_id)
+                            if session_resolution.session_id is not None
+                            else None
+                        ),
+                        halted=True,
+                        halt_reason="local_corpus_ingestion_failed",
+                        notices=notices,
+                        context=context,
+                        session=session_resolution,
+                        preload=preload,
+                    )
                 )
 
         local_targets = preload.local_payload.get("targets") or []
@@ -751,6 +876,21 @@ class AskyClient:
             section_tools_enabled=section_tools_enabled,
             research_mode=effective_research_mode,
         )
+        if hook_registry is not None and messages and messages[0].get("role") == "system":
+            from asky.plugins.hook_types import SYSTEM_PROMPT_EXTEND
+
+            current_system_prompt = str(messages[0].get("content", ""))
+            extended_system_prompt = hook_registry.invoke_chain(
+                SYSTEM_PROMPT_EXTEND,
+                current_system_prompt,
+            )
+            if isinstance(extended_system_prompt, str):
+                messages[0]["content"] = extended_system_prompt
+            else:
+                logger.warning(
+                    "SYSTEM_PROMPT_EXTEND hook returned invalid prompt type: %s",
+                    type(extended_system_prompt).__name__,
+                )
         self._emit_preload_provenance(
             preload=preload,
             query_text=effective_query_text,
@@ -885,23 +1025,25 @@ class AskyClient:
                         answer_summary,
                     )
 
-        return AskyTurnResult(
-            final_answer=final_answer,
-            query_summary=query_summary,
-            answer_summary=answer_summary,
-            messages=messages,
-            model_alias=self.config.model_alias,
-            session_id=(
-                str(session_manager.current_session.id)
-                if session_manager and session_manager.current_session
-                else None
-            ),
-            halted=False,
-            halt_reason=None,
-            notices=notices,
-            context=context,
-            session=session_resolution,
-            preload=preload,
+        return finalize_turn_result(
+            AskyTurnResult(
+                final_answer=final_answer,
+                query_summary=query_summary,
+                answer_summary=answer_summary,
+                messages=messages,
+                model_alias=self.config.model_alias,
+                session_id=(
+                    str(session_manager.current_session.id)
+                    if session_manager and session_manager.current_session
+                    else None
+                ),
+                halted=False,
+                halt_reason=None,
+                notices=notices,
+                context=context,
+                session=session_resolution,
+                preload=preload,
+            )
         )
 
     def finalize_turn_history(

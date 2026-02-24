@@ -929,10 +929,13 @@ def main() -> None:
                 )
         logger.info("running foreground xmpp daemon fallback")
         from asky.daemon.service import run_xmpp_daemon_foreground
+        from asky.plugins.runtime import get_or_create_plugin_runtime
 
         try:
+            plugin_runtime = get_or_create_plugin_runtime()
             run_xmpp_daemon_foreground(
-                double_verbose=bool(getattr(args, "double_verbose", False))
+                double_verbose=bool(getattr(args, "double_verbose", False)),
+                plugin_runtime=plugin_runtime,
             )
         except DaemonUserError as exc:
             logger.error("foreground daemon failed: %s", exc.user_message)
@@ -1187,7 +1190,10 @@ def main() -> None:
     cleanup_thread = _start_research_cache_cleanup_thread()
     # Give the cleanup worker a brief head-start without blocking startup.
     cleanup_thread.join(timeout=CACHE_CLEANUP_JOIN_TIMEOUT_SECONDS)
-    chat.run_chat(args, query_text)
+    from asky.plugins.runtime import get_or_create_plugin_runtime
+
+    plugin_runtime = get_or_create_plugin_runtime()
+    chat.run_chat(args, query_text, plugin_runtime=plugin_runtime)
 
 
 if __name__ == "__main__":

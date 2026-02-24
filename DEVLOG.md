@@ -1,5 +1,109 @@
 # DEVLOG
 
+## 2026-02-24 - Plugin User Documentation and Entry-Point Clarification
+
+Clarified plugin user entry points and current limitations, especially for persona plugins.
+
+- Added dedicated user-facing plugin documentation:
+  - **`docs/plugins.md`** [NEW]
+    - Runtime start conditions
+    - Built-in plugin list
+    - Exact GUI URLs and daemon dependency
+    - Current persona entry points (tool-based only)
+    - Practical usage prompt patterns
+    - Current limitations and what is not exposed yet
+- Updated plugin references:
+  - **`README.md`**:
+    - Added docs index link to `docs/plugins.md`
+    - Replaced inline plugin summary block with pointer to dedicated plugin doc
+  - **`docs/configuration.md`**:
+    - Plugin section now points to `docs/plugins.md` for entry-point and limitation details
+- Updated plugin AGENTS docs for future agent clarity:
+  - **`src/asky/plugins/AGENTS.md`**
+  - **`src/asky/plugins/manual_persona_creator/AGENTS.md`**
+  - **`src/asky/plugins/persona_manager/AGENTS.md`**
+  - **`src/asky/plugins/gui_server/AGENTS.md`**
+  - Added explicit “User Entry Points (Current)” sections and noted persona plugins are tool-call based for now.
+- Validation:
+  - `uv run pytest` -> `821 passed`
+
+## 2026-02-24 - Default Built-in Plugin Roster Enabled
+
+Updated plugin bootstrap defaults so built-in plugins are enabled automatically on fresh installs.
+
+- Added bundled default config: **`src/asky/data/config/plugins.toml`** with:
+  - `manual_persona_creator` enabled
+  - `persona_manager` enabled
+  - `gui_server` enabled
+- Updated **`src/asky/plugins/manager.py`** `MANIFEST_TEMPLATE` to generate the same enabled roster when `~/.config/asky/plugins.toml` is missing and plugin runtime initializes before config copy.
+- Updated **`src/asky/config/loader.py`** to include `plugins.toml` in split-config bootstrap copy list.
+- Updated **`tests/test_plugin_manager.py`** to assert the new default generated roster entries.
+- Updated docs in **`docs/configuration.md`** to clarify default-enabled built-ins and current manual persona creator UI status.
+- Validation:
+  - `uv run pytest tests/test_plugin_manager.py tests/test_config.py` -> passed
+  - `uv run pytest` -> `821 passed`
+
+## 2026-02-24 - Updated asky.icns from Simplified Mono Icon
+
+Converted the simplified mono bold icon from `.ico` to a full multi-resolution Apple `.icns` file to replace the existing asset.
+
+- **`src/asky/data/icons/asky.icns`** [MODIFY]: Replaced with a new version generated from `/Users/evren/code/asky/temp/assets/asky_icon_mono_simplified_bold.ico`.
+- **Process**:
+  - Extracted 256x256 base PNG from `.ico`.
+  - Generated a complete iconset with sizes: 16x16, 32x32, 64x64, 128x128, 256x256, 512x512, and 1024x1024 (upscaled).
+  - Compiled into `.icns` using macOS `iconutil`.
+- **Validation**:
+  - Verified as `com.apple.icns` with `file` and `sips`.
+  - Confirmed 1024x1024 maximum resolution.
+
+## 2026-02-24 - Plugin Runtime v1 + Persona Plugins + GUI Sidecar
+
+Implemented the first full plugin runtime slice with deterministic hooks, lifecycle isolation, built-in persona plugins, and a daemon-integrated NiceGUI sidecar plugin.
+
+- **New plugin runtime package (`src/asky/plugins/`)**:
+  - Added manifest schema + parsing (`manifest.py`) for `~/.config/asky/plugins.toml`.
+  - Added deterministic hook registry (`hooks.py`) and hook payload contracts (`hook_types.py`).
+  - Added plugin manager/lifecycle (`manager.py`) with dependency ordering, cycle detection, and failure isolation.
+  - Added runtime container + process-level bootstrap cache (`runtime.py`).
+- **Core/API hook integration**:
+  - `AskyClient` now accepts optional `plugin_runtime`; when absent, behavior is unchanged.
+  - Added turn lifecycle hooks in `api/client.py`: `SESSION_RESOLVED`, `PRE_PRELOAD`, `POST_PRELOAD`, `SYSTEM_PROMPT_EXTEND`, `TURN_COMPLETED`.
+  - Added registry/engine hook support:
+    - `TOOL_REGISTRY_BUILD` in `core/tool_registry_factory.py`
+    - `PRE_LLM_CALL` / `POST_LLM_RESPONSE` in `core/engine.py`
+    - `PRE_TOOL_EXECUTE` / `POST_TOOL_EXECUTE` in `core/registry.py`
+- **CLI + daemon runtime threading**:
+  - CLI query path now initializes runtime once and injects it into chat client construction.
+  - Daemon service now accepts plugin runtime, injects it into `CommandExecutor`/`AskyClient`, and supports `DAEMON_SERVER_REGISTER` for sidecar servers.
+  - Daemon now starts/stops registered plugin sidecar servers with per-server failure isolation.
+- **Manual Persona Creator plugin** (`src/asky/plugins/manual_persona_creator/`):
+  - Added canonical persona storage layout + schema versioning.
+  - Added source ingestion to normalized chunks with partial-warning surfacing.
+  - Added ZIP export format with metadata/prompt/chunks and checksum metadata.
+  - Registered tool surface via `TOOL_REGISTRY_BUILD`.
+- **Persona Manager plugin** (`src/asky/plugins/persona_manager/`):
+  - Added persona package importer with path-traversal checks and schema validation.
+  - Added embedding rebuild on import from normalized chunk payloads.
+  - Added persistent session-to-persona bindings and deterministic resume behavior.
+  - Added prompt/preload injection hooks for active persona context.
+- **GUI Server plugin** (`src/asky/plugins/gui_server/`):
+  - Added NiceGUI sidecar server lifecycle wrapper (background thread, health, stop).
+  - Added general settings page helpers (`general.toml` read/validate/safe-write).
+  - Added plugin page extension registry contract and page mounting isolation.
+  - Registered GUI sidecar through `DAEMON_SERVER_REGISTER`.
+- **Dependency update**:
+  - Added `nicegui>=2.0.0` to base dependencies in `pyproject.toml`.
+  - Regenerated `uv.lock`.
+- **Tests**:
+  - Added:
+    - `tests/test_plugin_manager.py`
+    - `tests/test_plugin_hooks.py`
+    - `tests/test_plugin_integration.py`
+    - `tests/test_manual_persona_creator.py`
+    - `tests/test_persona_manager.py`
+    - `tests/test_gui_server_plugin.py`
+  - Full suite pass: **821 passed**.
+
 ## 2026-02-24 - XMPP Help Command Regression and Routing Fix
 
 Fixed a bug where XMPP command-like messages (such as `/help`, `/h`, `transcript list`, or flags like `-H`) were being incorrectly routed to the LLM interface planner, causing delays and incorrect responses (showing only prompt aliases instead of full help).
@@ -2771,3 +2875,29 @@ For older logs, see [DEVLOG_ARCHIVE.md](DEVLOG_ARCHIVE.md).
 - **Tests**:
   - Added/updated tests for CLI user-error surfacing and env-backed daemon readiness.
   - Full suite passes.
+
+### Plugin System Detailed Handoff Blueprint (Execution-Oriented Plan)
+
+**Summary**: Added an implementation-grade, decision-complete plugin-system blueprint designed for safe handoff to smaller agents without ambiguity or room for shortcutting.
+
+- **What changed**:
+  - Added new detailed plan file:
+    - `plans/plugin-system-implementation-detailed.md`
+  - The blueprint includes:
+    - locked product decisions,
+    - explicit in/out scope,
+    - full file inventory (create/modify/avoid),
+    - exact public API/type changes,
+    - strict hook contracts and ordering rules,
+    - sequential atomic phase steps,
+    - per-step and per-phase verification commands,
+    - edge-case requirements,
+    - binary final checklist.
+
+- **Why**:
+  - Existing plan docs were directionally strong but not sufficiently prescriptive for constrained/smaller agents.
+  - This blueprint minimizes implementation drift and eliminates implicit decision points.
+
+- **Gotchas / Follow-ups**:
+  - This is a docs/planning deliverable only; runtime implementation has not started.
+  - The new detailed file should be treated as the implementation authority during handoff execution.

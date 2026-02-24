@@ -6,7 +6,7 @@ import logging
 import queue
 import re
 import threading
-from typing import Callable
+from typing import Any, Callable, Optional
 from urllib.parse import parse_qs, urlparse
 
 from asky.config import (
@@ -50,6 +50,12 @@ from asky.daemon.router import DaemonRouter
 from asky.daemon.transcript_manager import TranscriptManager
 from asky.daemon.voice_transcriber import VoiceTranscriber
 from asky.daemon.xmpp_client import AskyXMPPClient
+from asky.plugins.hook_types import (
+    DAEMON_SERVER_REGISTER,
+    DaemonServerRegisterContext,
+    DaemonServerSpec,
+)
+from asky.plugins.runtime import get_or_create_plugin_runtime
 from asky.storage import init_db
 from asky.logger import setup_xmpp_logging
 
@@ -62,14 +68,21 @@ IMAGE_EXTENSIONS = (".jpg", ".jpeg", ".png", ".webp", ".gif")
 class XMPPDaemonService:
     """Coordinates daemon router, background workers, and XMPP transport."""
 
-    def __init__(self, double_verbose: bool = False):
+    def __init__(
+        self,
+        double_verbose: bool = False,
+        plugin_runtime: Optional[Any] = None,
+    ):
         logger.debug("initializing XMPPDaemonService")
         init_db()
+        self.plugin_runtime = plugin_runtime or get_or_create_plugin_runtime()
         self.transcript_manager = TranscriptManager(
             transcript_cap=XMPP_TRANSCRIPT_MAX_PER_SESSION
         )
         self.command_executor = CommandExecutor(
-            self.transcript_manager, double_verbose=double_verbose
+            self.transcript_manager,
+            double_verbose=double_verbose,
+            plugin_runtime=self.plugin_runtime,
         )
         self.interface_planner = InterfacePlanner(
             INTERFACE_MODEL,
@@ -122,6 +135,8 @@ class XMPPDaemonService:
             session_start_callback=self._on_xmpp_session_start,
         )
         self._running = False
+        self._plugin_servers: list[DaemonServerSpec] = []
+        self._register_plugin_servers()
         logger.debug(
             "XMPPDaemonService initialized host=%s port=%s resource=%s allowed_count=%s",
             XMPP_HOST,
@@ -133,9 +148,13 @@ class XMPPDaemonService:
     def run_foreground(self) -> None:
         logger.info("daemon foreground loop starting")
         self._running = True
+        self._start_plugin_servers()
         try:
             self._client.start_foreground()
         finally:
+            self._stop_plugin_servers()
+            if self.plugin_runtime is not None:
+                self.plugin_runtime.shutdown()
             self._running = False
             logger.info("daemon foreground loop exited")
 
@@ -317,8 +336,48 @@ class XMPPDaemonService:
         for room_jid in self.command_executor.list_bound_room_jids():
             self._client.join_room(room_jid)
 
+    def _register_plugin_servers(self) -> None:
+        runtime = self.plugin_runtime
+        if runtime is None:
+            return
+        context = DaemonServerRegisterContext(service=self)
+        runtime.hooks.invoke(DAEMON_SERVER_REGISTER, context)
+        for spec in context.servers:
+            self.register_plugin_server(spec)
 
-def run_xmpp_daemon_foreground(double_verbose: bool = False) -> None:
+    def register_plugin_server(self, spec: DaemonServerSpec) -> None:
+        """Register a plugin-provided daemon sidecar server."""
+        if not isinstance(spec, DaemonServerSpec):
+            logger.warning(
+                "Ignoring invalid plugin server spec type: %s",
+                type(spec).__name__,
+            )
+            return
+        self._plugin_servers.append(spec)
+
+    def _start_plugin_servers(self) -> None:
+        for spec in self._plugin_servers:
+            try:
+                spec.start()
+                logger.info("Started plugin server '%s'", spec.name)
+            except Exception:
+                logger.exception("Plugin server '%s' failed to start", spec.name)
+
+    def _stop_plugin_servers(self) -> None:
+        for spec in reversed(self._plugin_servers):
+            stop_fn = spec.stop
+            if stop_fn is None:
+                continue
+            try:
+                stop_fn()
+            except Exception:
+                logger.exception("Plugin server '%s' failed to stop", spec.name)
+
+
+def run_xmpp_daemon_foreground(
+    double_verbose: bool = False,
+    plugin_runtime: Optional[Any] = None,
+) -> None:
     """Entry point used by CLI flag."""
     if not XMPP_ENABLED:
         raise DaemonUserError(
@@ -326,7 +385,10 @@ def run_xmpp_daemon_foreground(double_verbose: bool = False) -> None:
             hint="Run asky --edit-daemon to enable it.",
         )
     setup_xmpp_logging()
-    service = XMPPDaemonService(double_verbose=double_verbose)
+    service = XMPPDaemonService(
+        double_verbose=double_verbose,
+        plugin_runtime=plugin_runtime,
+    )
     service.run_foreground()
 
 

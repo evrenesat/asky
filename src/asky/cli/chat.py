@@ -12,6 +12,7 @@ from rich.console import Console
 
 if TYPE_CHECKING:
     from asky.api.types import PreloadResolution
+    from asky.plugins.runtime import PluginRuntime
 from rich.panel import Panel
 from rich.table import Table
 
@@ -432,7 +433,12 @@ def _check_idle_session_timeout(session_id: int, console: Console) -> str:
         return "continue"
 
 
-def run_chat(args: argparse.Namespace, query_text: str) -> None:
+def run_chat(
+    args: argparse.Namespace,
+    query_text: str,
+    *,
+    plugin_runtime: Optional["PluginRuntime"] = None,
+) -> None:
     """Run the chat conversation flow."""
     from asky.core import clear_shell_session
     from asky.storage.sqlite import SQLiteHistoryRepository
@@ -670,6 +676,7 @@ def run_chat(args: argparse.Namespace, query_text: str) -> None:
             ),
             usage_tracker=usage_tracker,
             summarization_tracker=summarization_tracker,
+            plugin_runtime=plugin_runtime,
         )
 
         has_session = bool(

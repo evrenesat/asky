@@ -7,9 +7,7 @@ asky is an AI-powered web search CLI with LLM tool-calling capabilities and an o
 
 It (invoked as `asky` or `ask`) provides a command-line interface that brings AI-powered search and research capabilities directly to your terminal. It uses LLMs and tools to synthesize answers from the web (or from local files and CLI commands).
 
-## The asky Mindset
-
-**asky is a single-command application.** You provide a command, and you receive an output.
+asky is a single-command application.\*\* You provide a command, and you receive an output.
 
 It intentionally avoids being a Terminal User Interface (TUI). While TUIs have their place, they can sometimes feel confusing and unintuitive for text-based conversational tasks. When using a terminal, the expectation is a straightforward, streamlined experience: input a command, read the output, and move on.
 
@@ -20,6 +18,7 @@ asky embraces this philosophy. It does not take over your screen. It feels like 
 - **Multi-Model Support**: Easily define and switch between various LLMs and providers that support OpenAI compatible APIs.
 - **Deep Research Mode**: A specialized mode for an iterative, RAG-backed investigation across web sources and local data.
 - **Tool-Calling Integration**: Models autonomously search the web, fetch URLs, and use the current date/time to provide accurate answers.
+- **Plugin Runtime (v1)**: Optional local plugin roster (`~/.config/asky/plugins.toml`) with deterministic hooks and failure-isolated activation.
 - **XMPP Remote Daemon (Optional)**: Run asky as an XMPP client daemon (`asky --xmpp-daemon`) so authorized contacts can use asky from mobile/desktop XMPP apps.
 - **macOS Menubar Daemon (Optional)**: On macOS with `rumps` installed, `asky --xmpp-daemon` launches a menubar app and runs daemon lifecycle controls from the status bar.
 - **Voice Transcription & Voice Commands (Optional)**: In XMPP daemon mode, voice attachments can be transcribed (`mlx-whisper`) and routed as transcript-driven commands/queries.
@@ -44,12 +43,16 @@ When you run `asky --xmpp-daemon`, asky logs into an XMPP account and waits for 
 The extensive details of asky's operation are documented in the following guides:
 
 - [Configuration and Setup](./docs/configuration.md): Managing TOML config files, API keys, Model aliases, and Sessions.
+- [Plugin Runtime and Built-in Plugins](./docs/plugins.md): Plugin entry points, current GUI paths, persona tool workflows, and limitations.
 - [XMPP Daemon Mode](./docs/xmpp_daemon.md): Remote daemon setup, allowlists, presets, voice transcription, and transcript commands.
 - [Deep Research Mode (`-r`)](./docs/research_mode.md): Advanced web and local document research workflow.
 - [User Memory & Elephant Mode (`-em`)](./docs/elephant_mode.md): Persistent cross-session global and session-scoped memory.
 - [Custom Tools](./docs/custom_tools.md): Extending asky by allowing the LLM to run local CLI commands.
 - [Library Usage Guide](./docs/library_usage.md): Programmatic usage (`asky.api`), including full configuration and request options.
 - [Research Evaluation](./docs/research_eval.md): Guide for evaluating retrieval quality across models and parameters.
+
+Plugin details, entry points, and current limitations are documented in
+[`docs/plugins.md`](./docs/plugins.md).
 
 ## Installation
 

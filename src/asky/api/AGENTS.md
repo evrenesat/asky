@@ -20,7 +20,9 @@ Use `AskyClient.run_turn(request)` for CLI-equivalent orchestration:
 1. Resolve history context (`context.py`)
 2. Resolve session state (`session.py`)
 3. Run pre-LLM preload pipeline (`preload.py`)
-4. Build messages (with local-target query redaction + optional local-KB system hint) and execute `ConversationEngine`
+4. Emit plugin hooks (`SESSION_RESOLVED`, `PRE_PRELOAD`, `POST_PRELOAD`) when plugin runtime is attached
+5. Build messages (with local-target query redaction + optional local-KB system hint), apply `SYSTEM_PROMPT_EXTEND`, and execute `ConversationEngine`
+6. Emit `TURN_COMPLETED` plugin hook
 5. Generate summaries and persist session/history turns
 
 Research mode is resolved per turn from effective session state:
@@ -71,6 +73,8 @@ Research mode is resolved per turn from effective session state:
 - Callers pass optional callbacks for status/events/display integration.
 - Shell-sticky session lock behavior is injected via optional callbacks, so API
   callers can opt in/out of CLI lock-file semantics.
+- `AskyClient` accepts optional `plugin_runtime`; when `None`, behavior remains
+  identical to pre-plugin execution.
 - `AskyConfig.double_verbose` enables full main-model request/response payload
   emissions (`llm_request_messages`, `llm_response_message`) through the
   configured verbose output callback.

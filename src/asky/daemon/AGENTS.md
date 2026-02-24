@@ -24,6 +24,13 @@ Optional XMPP client daemon runtime. When `asky --xmpp-daemon` is run, this pack
 | `startup_windows.py`        | Windows Startup folder launcher script                                      |
 | `errors.py`                 | Daemon-specific exception types                                             |
 
+Plugin integration:
+
+- `XMPPDaemonService` accepts optional plugin runtime and invokes
+  `DAEMON_SERVER_REGISTER` hook during startup to collect sidecar server specs.
+- Registered sidecar servers are started before XMPP foreground loop and
+  stopped on daemon shutdown; failures are isolated per server.
+
 ---
 
 ## Per-JID Queue and Worker Lifecycle

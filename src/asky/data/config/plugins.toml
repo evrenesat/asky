@@ -1,0 +1,23 @@
+# Asky plugin roster
+#
+# Built-in plugins are enabled by default.
+
+[plugin.manual_persona_creator]
+enabled = true
+module = "asky.plugins.manual_persona_creator.plugin"
+class = "ManualPersonaCreatorPlugin"
+capabilities = ["tool_registry", "preload", "prompt"]
+
+[plugin.persona_manager]
+enabled = true
+module = "asky.plugins.persona_manager.plugin"
+class = "PersonaManagerPlugin"
+capabilities = ["tool_registry", "prompt", "preload", "session"]
+
+[plugin.gui_server]
+enabled = true
+module = "asky.plugins.gui_server.plugin"
+class = "GUIServerPlugin"
+capabilities = ["daemon_server", "gui"]
+# Optional plugin config file for host/port overrides:
+# config_file = "plugins/gui_server.toml"

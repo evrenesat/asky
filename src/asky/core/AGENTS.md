@@ -41,6 +41,9 @@ class ConversationEngine:
 - **Error Handling**: Raises `ContextOverflowError` for HTTP 400 context overflow
 - **Event Hooks**: Optional structured `event_callback(name, payload)` emissions
   - `tool_start` payload includes `tool_name` and raw `tool_arguments` for downstream instrumentation.
+- **Plugin Hooks**: optional hook registry emissions
+  - `PRE_LLM_CALL` before each model request,
+  - `POST_LLM_RESPONSE` after parsing model output and before tool dispatch.
 
 ### Lazy Loading
 
@@ -63,6 +66,9 @@ Builds `ToolRegistry` instances used by chat flow:
 - `create_default_tool_registry()`: standard web/content/detail/custom/push-data tools
 - `create_research_tool_registry()`: research-mode schemas/executors + custom tools
   Both factories accept runtime `disabled_tools` to skip tool registration per request.
+- Both factories accept optional `hook_registry`; when provided they emit
+  `TOOL_REGISTRY_BUILD` with mutable payload (`mode`, registry instance,
+  disabled tool set).
 - `get_all_available_tool_names()`: standalone helper to aggregate names from default,
   research, custom, and push-data sources. Used by CLI for listing and autocompletion.
 - Research factory also accepts optional `session_id`; when set, it auto-injects that ID
@@ -90,6 +96,10 @@ class ToolRegistry:
     def get_system_prompt_guidelines() -> List[str]: ...  # Enabled-tool guidance lines
     def dispatch(call, summarize, usage_tracker, ...): ...
 ```
+
+`ToolRegistry` accepts optional `hook_registry`; dispatch emits mutable
+`PRE_TOOL_EXECUTE` and `POST_TOOL_EXECUTE` payloads (timing included). Hook
+errors are isolated and never crash normal tool dispatch flow.
 
 ### Schema Metadata
 

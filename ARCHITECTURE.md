@@ -74,6 +74,15 @@ graph TB
         shortlist_ops["shortlist_collect.py<br/>shortlist_score.py"]
     end
 
+    subgraph Plugins["Plugin Runtime (plugins/)"]
+        plugin_runtime["runtime.py<br/>Process Runtime Bootstrap"]
+        plugin_manager["manager.py<br/>Manifest + Lifecycle"]
+        plugin_hooks["hooks.py<br/>Deterministic Hook Registry"]
+        persona_creator["manual_persona_creator/*<br/>Persona Build/Export Tools"]
+        persona_manager["persona_manager/*<br/>Import/Bind/Inject Persona Context"]
+        gui_plugin["gui_server/*<br/>NiceGUI Daemon Sidecar"]
+    end
+
     subgraph Tools["Tool Execution"]
         tools["tools.py<br/>Web Search, URL Fetch"]
     end
@@ -92,6 +101,7 @@ graph TB
     main --> research_cmd
     main --> section_cmd
     main --> presets_cli
+    main --> plugin_runtime
     chat --> api_client
     main --> history
     main --> sessions_cli
@@ -118,6 +128,16 @@ graph TB
     daemon_exec --> daemon_profiles
     daemon_transcripts --> sqlite
     registry --> tools
+    plugin_runtime --> plugin_manager
+    plugin_manager --> plugin_hooks
+    plugin_manager --> persona_creator
+    plugin_manager --> persona_manager
+    plugin_manager --> gui_plugin
+    api_client --> plugin_hooks
+    tool_factory --> plugin_hooks
+    engine --> plugin_hooks
+    registry --> plugin_hooks
+    daemon_service --> plugin_hooks
     config_init --> loader
     shortlist_flow -.-> shortlist
     shortlist -.-> shortlist_ops
@@ -140,6 +160,7 @@ src/asky/
 ├── storage/            # Data persistence → see storage/AGENTS.md
 ├── research/           # Research mode RAG → see research/AGENTS.md
 ├── memory/             # Cross-session user memory → see memory/AGENTS.md
+├── plugins/            # Optional plugin runtime + built-in plugins (persona/gui)
 ├── evals/              # Manual integration eval harnesses (research + standard)
 ├── config/             # Configuration → see config/AGENTS.md
 ├── tools.py            # Tool execution (web search, URL fetch, custom)
@@ -170,6 +191,7 @@ For test organization, see `tests/AGENTS.md`.
 | `storage/`  | [storage/AGENTS.md](src/asky/storage/AGENTS.md)   | SQLite repository, data model                                                       |
 | `research/` | [research/AGENTS.md](src/asky/research/AGENTS.md) | Cache, vector store, embeddings                                                     |
 | `memory/`   | [memory/AGENTS.md](src/asky/memory/AGENTS.md)     | Cross-session user memory store, recall, tools                                      |
+| `plugins/`  | [plugins/AGENTS.md](src/asky/plugins/AGENTS.md)   | Plugin manager/runtime, hook registry, persona plugins, GUI server plugin           |
 | `evals/`    | (manual harness)                                  | Dual-mode research integration evaluation runner                                    |
 | `config/`   | [config/AGENTS.md](src/asky/config/AGENTS.md)     | TOML loading, constants                                                             |
 | `tests/`    | [tests/AGENTS.md](tests/AGENTS.md)                | Test organization, patterns                                                         |
@@ -185,6 +207,8 @@ User Query
     ↓
 CLI (main.py) → parse args (`-r` corpus pointers + `--shortlist` override)
     ↓
+optional plugin runtime init (`plugins/runtime.py`) from `~/.config/asky/plugins.toml`
+    ↓
 chat.py → build AskyTurnRequest + UI callbacks
     ↓
 AskyClient.run_turn()
@@ -193,13 +217,21 @@ context.py → resolve history selectors + context payload
     ↓
 session.py → resolve create/resume/auto/research session state
     ↓
+emit `SESSION_RESOLVED` plugin hook
+    ↓
 preload.py → optional local_ingestion + shortlist pipeline
            → research-mode deterministic bootstrap retrieval over preloaded corpus handles
            → standard-mode seed URL content preload (budget-aware)
     ↓
+emit `PRE_PRELOAD` / `POST_PRELOAD` plugin hooks
+    ↓
 build_messages() (inside AskyClient)
     ↓
+apply `SYSTEM_PROMPT_EXTEND` chain hook
+    ↓
 create ToolRegistry (mode-aware + runtime tool exclusions)
+    ↓
+emit `TOOL_REGISTRY_BUILD` plugin hook
     ↓
 apply optional config-driven prompt text overrides for built-in tools
     ↓
@@ -210,11 +242,14 @@ ConversationEngine.run()
 ┌─────────────────────────────────────┐
 │ Multi-Turn Loop:                    │
 │   1. Send messages to LLM           │
-│   2. Parse tool calls (if any)      │
-│   3. Dispatch via ToolRegistry      │
-│   4. Append results to messages     │
-│   5. Repeat until no more calls     │
+│   2. `PRE_LLM_CALL` / `POST_LLM_RESPONSE` hooks
+│   3. Parse tool calls (if any)      │
+│   4. Dispatch via ToolRegistry (`PRE_TOOL_EXECUTE` / `POST_TOOL_EXECUTE`) │
+│   5. Append results to messages     │
+│   6. Repeat until no more calls     │
 └─────────────────────────────────────┘
+    ↓
+emit `TURN_COMPLETED` plugin hook
     ↓
 generate_summaries() → persist (session/history)
     ↓
@@ -619,3 +654,19 @@ A simplified "retrieval-only" system prompt guidance is injected in these cases 
 - **Key invariants**:
   - Passing `-t` / `--turns` while a session is active (or being created) overwrites the persisted setting for that session.
   - Subsequent resumes of that session automatically use the last-set turn limit.
+
+### Decision 19: Local-Only Plugin Runtime (v1)
+
+- **Context**: Feature extensions (persona workflows, daemon sidecars, future extractions) should be composable without hard-coding every capability into core CLI/daemon loops.
+- **Decision**: Introduce an optional local-only plugin runtime loaded from `~/.config/asky/plugins.toml`, with deterministic hook ordering and per-plugin failure isolation.
+- **Implementation**:
+  - `plugins/manifest.py` + `plugins/manager.py` — roster parsing, dependency graph ordering, import/activation/deactivation.
+  - `plugins/hooks.py` + `plugins/hook_types.py` — thread-safe ordered registry and typed mutable hook payloads.
+  - `plugins/runtime.py` — process-level runtime bootstrap + cache.
+  - Hook plumbing across `api/client.py`, `core/tool_registry_factory.py`, `core/engine.py`, and `core/registry.py`.
+  - CLI/daemon runtime injection in `cli/main.py`, `cli/chat.py`, `daemon/command_executor.py`, `daemon/service.py`.
+- **Key invariants**:
+  - No enabled plugins means behavior stays identical to pre-plugin baseline.
+  - Plugin load/activation failures never crash normal chat/daemon execution.
+  - Hook order is deterministic: `(priority, plugin_name, registration_index)`.
+  - Deferred hooks (`CONFIG_LOADED`, `POST_TURN_RENDER`, `SESSION_END`) remain unimplemented in v1.

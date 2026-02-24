@@ -9,7 +9,7 @@ import re
 import threading
 import time
 from contextlib import contextmanager, redirect_stderr, redirect_stdout
-from typing import Optional
+from typing import Optional, TYPE_CHECKING
 from urllib.parse import urlparse
 
 import requests
@@ -29,6 +29,9 @@ from asky.cli.verbose_output import build_verbose_output_callback
 from asky.config import DEFAULT_MODEL
 from asky.daemon.transcript_manager import TranscriptManager
 from asky.storage import init_db
+
+if TYPE_CHECKING:
+    from asky.plugins.runtime import PluginRuntime
 
 TRANSCRIPT_COMMAND = "transcript"
 TRANSCRIPT_HELP = (
@@ -149,11 +152,15 @@ class CommandExecutor:
     """Execute parsed asky commands for one authorized sender or room."""
 
     def __init__(
-        self, transcript_manager: TranscriptManager, double_verbose: bool = False
+        self,
+        transcript_manager: TranscriptManager,
+        double_verbose: bool = False,
+        plugin_runtime: Optional["PluginRuntime"] = None,
     ):
         self.transcript_manager = transcript_manager
         self.session_profile_manager = transcript_manager.session_profile_manager
         self.double_verbose = double_verbose
+        self.plugin_runtime = plugin_runtime
         self._pending_clear: dict[str, tuple[str, Optional[str]]] = {}
 
     def get_interface_command_reference(self) -> str:
@@ -528,7 +535,8 @@ class CommandExecutor:
                 research_mode=bool(getattr(args, "research", False)),
                 disabled_tools=set(),
                 system_prompt_override=getattr(args, "system_prompt", None),
-            )
+            ),
+            plugin_runtime=self.plugin_runtime,
         )
         request = AskyTurnRequest(
             query_text=query_text,
