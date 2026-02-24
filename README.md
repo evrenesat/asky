@@ -7,8 +7,6 @@ asky is an AI-powered web search CLI with LLM tool-calling capabilities and an o
 
 It (invoked as `asky` or `ask`) provides a command-line interface that brings AI-powered search and research capabilities directly to your terminal. It uses LLMs and tools to synthesize answers from the web (or from local files and CLI commands).
 
-## The asky Mindset
-
 **asky is a single-command application.** You provide a command, and you receive an output.
 
 It intentionally avoids being a Terminal User Interface (TUI). While TUIs have their place, they can sometimes feel confusing and unintuitive for text-based conversational tasks. When using a terminal, the expectation is a straightforward, streamlined experience: input a command, read the output, and move on.

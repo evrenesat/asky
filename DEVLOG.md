@@ -1,5 +1,32 @@
 # DEVLOG
 
+## 2026-02-24 - Remove Icon Fallback Logic
+
+Removed redundant `asky_icon_small.png` fallback logic from menubar and app bundle modules.
+
+- **`src/asky/data/icons/`**:
+  - Renamed `asky.icns.icns` to `asky.icns` (fixing a previous naming error that caused the fallback to be used).
+  - Deleted `asky_icon_small.png`.
+- **`src/asky/daemon/menubar.py`**:
+  - Removed `ICON_FALLBACK_FILE_PATH`.
+  - Simplified icon detection logic to only check for `ICON_FILE_PATH`.
+- **`src/asky/daemon/app_bundle_macos.py`**:
+  - Removed `png_fallback` and simplified icon copying to only use `asky.icns`.
+- **Validation**:
+  - Verified icon filenames in `data/icons`.
+  - `tests/test_daemon_menubar.py` and `tests/test_app_bundle_macos.py` passed.
+
+## 2026-02-24 - XMPP Help Text Markdown Formatting
+
+Applied consistent Markdown formatting to the `_HELP_TEXT` constant in `src/asky/daemon/command_executor.py`.
+
+- **Changed**:
+  - Updated `_HELP_TEXT` to use Markdown headers (`#`, `##`), bullet points, and backticks for commands and flags.
+  - Improved structure and spacing for better readability in Markdown-intelligent XMPP clients.
+- **Validation**:
+  - `tests/test_xmpp_commands.py` passed (19 tests).
+  - Full regression suite passed.
+
 ## 2026-02-24 - XMPP Help Command Regression and Routing Fix
 
 Fixed a bug where XMPP command-like messages (such as `/help`, `/h`, `transcript list`, or flags like `-H`) were being incorrectly routed to the LLM interface planner, causing delays and incorrect responses (showing only prompt aliases instead of full help).
@@ -2771,3 +2798,32 @@ For older logs, see [DEVLOG_ARCHIVE.md](DEVLOG_ARCHIVE.md).
 - **Tests**:
   - Added/updated tests for CLI user-error surfacing and env-backed daemon readiness.
   - Full suite passes.
+
+## 2026-02-24
+
+### Plugin System Planning Revision (Docs-Only)
+
+**Summary**: Reworked the plugin system implementation planning docs to align with current code architecture and make the rollout phase-gated, deterministic, and implementation-ready before coding begins.
+
+- **What changed**:
+  - Updated:
+    - `plans/plugin-system.md`
+    - `plans/plugin-system-api.md`
+    - `plans/plugin-system-hooks.md`
+  - Kept unchanged:
+    - `plans/plugin_system_draft.md` (original ideation draft intentionally preserved)
+
+- **Plan quality improvements**:
+  - Added explicit **definition of done**, **phase gates**, and **verification commands** (`uv run pytest` + phase-specific tests).
+  - Rebased hook and lifecycle plans on real current call sites (`api/client.py`, `core/tool_registry_factory.py`, `core/registry.py`, `core/engine.py`, `daemon/service.py`, `daemon/command_executor.py`).
+  - Split integration into clearer risk-separated phases (runtime foundation, hook kernel, turn pipeline, daemon server integration, config/data isolation, then feature plugins).
+  - Removed bootstrap-risk assumptions from earlier draft (notably global config hook timing issues).
+  - Added concrete **open questions with recommended defaults** to lock decisions before implementation.
+
+- **Why**:
+  - Prior plan had useful direction but mixed conceptual and implementation concerns, and included a few sequencing assumptions that conflict with current startup/config architecture.
+  - This revision is intended to reduce implementation risk, avoid hidden coupling, and make progress measurable at each phase boundary.
+
+- **Gotchas / Follow-ups**:
+  - Before Phase 3 coding, decisions should be locked for: plugin trust model, class resolution strategy, hook mutability policy, dependency packaging boundaries, persona export scope, and GUI framework choice.
+  - No runtime code was changed in this step; this was a planning/docs pass only.

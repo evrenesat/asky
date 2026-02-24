@@ -77,66 +77,69 @@ POINTER_PATTERN = re.compile(r"#(it|i|at|a)(\d+)\b", re.IGNORECASE)
 _SUMMARIZATION_MODEL_OVERRIDE_LOCK = threading.Lock()
 
 _HELP_TEXT = """\
-asky XMPP Help
+```markdown
+# asky XMPP Help
 
---- Session ---
-/session                            Show session help + recent sessions
-/session new                        Create and switch to a new session
-/session child                      Create child session (inherit current overrides)
-/session clear                      Clear conversation messages (keeps transcripts/media)
-/session <id|name>                  Switch to existing session by id or name
+## Session
+* `/session` — Show session help + recent sessions
+* `/session new` — Create and switch to a new session
+* `/session child` — Create child session (inherit current overrides)
+* `/session clear` — Clear conversation messages (keeps transcripts/media)
+* `/session <id|name>` — Switch to existing session by id or name
 
---- Transcripts ---
-transcript list [N]                 List recent audio/image transcripts (default 20)
-transcript show <id|#atN>           Show full transcript text
-transcript use <id|#atN>            Run transcript as a query
-transcript clear                    Delete all transcripts for this conversation
+## Transcripts
+* `transcript list [N]` — List recent audio/image transcripts (default 20)
+* `transcript show <id|#atN>` — Show full transcript text
+* `transcript use <id|#atN>` — Run transcript as a query
+* `transcript clear` — Delete all transcripts for this conversation
 
---- Media Pointers (use in queries) ---
-#aN                                 Audio file N as file path
-#atN                                Audio transcript N as text
-#iN                                 Image file N as file path
-#itN                                Image transcript N as text
+## Media Pointers (use in queries)
+* `#aN` — Audio file N as file path
+* `#atN` — Audio transcript N as text
+* `#iN` — Image file N as file path
+* `#itN` — Image transcript N as text
 
---- Asky Commands ---
--H [N], --history [N]               Show last N query summaries (default 10)
--pa ID, --print-answer ID           Print full answer for history ID(s)
--ps SEL, --print-session SEL        Print session content by ID or name
--sh [N], --session-history [N]      List recent sessions (default 10)
--ss NAME, --sticky-session NAME     Create and activate a named session
--rs NAME, --resume-session NAME     Resume existing session by ID or name
--r [CORPUS], --research [CORPUS]    Enable research mode (optional local corpus pointer)
--s, --summarize                     Enable summarize mode
--L, --lean                          Disable pre-LLM source shortlisting
--t N, --turns N                     Set max turn count for this session
--em, --elephant-mode                Enable automatic memory extraction
--sp TEXT, --system-prompt TEXT      Override system prompt for this run
--m ALIAS, --model ALIAS             Select model alias
--c [ID], --continue-chat [ID]       Continue from history ID (omit for last)
---shortlist auto|on|off             Control source shortlisting behavior
--off TOOL, --tool-off TOOL          Disable a specific LLM tool for this run
---list-tools                        List all available tools
---query-corpus QUERY                Query research corpus directly (no model)
---summarize-section [QUERY]         Summarize a corpus section (no model)
---list-memories                     List saved user memories
+## Asky Commands
+* `-H [N]`, `--history [N]` — Show last N query summaries (default 10)
+* `-pa ID`, `--print-answer ID` — Print full answer for history ID(s)
+* `-ps SEL`, `--print-session SEL` — Print session content by ID or name
+* `-sh [N]`, `--session-history [N]` — List recent sessions (default 10)
+* `-ss NAME`, `--sticky-session NAME` — Create and activate a named session
+* `-rs NAME`, `--resume-session NAME` — Resume existing session by ID or name
+* `-r [CORPUS]`, `--research [CORPUS]` — Enable research mode (optional local corpus pointer)
+* `-s`, `--summarize` — Enable summarize mode
+* `-L`, `--lean` — Disable pre-LLM source shortlisting
+* `-t N`, `--turns N` — Set max turn count for this session
+* `-em`, `--elephant-mode` — Enable automatic memory extraction
+* `-sp TEXT`, `--system-prompt TEXT` — Override system prompt for this run
+* `-m ALIAS`, `--model ALIAS` — Select model alias
+* `-c [ID]`, `--continue-chat [ID]` — Continue from history ID (omit for last)
+* `--shortlist auto|on|off` — Control source shortlisting behavior
+* `-off TOOL`, `--tool-off TOOL` — Disable a specific LLM tool for this run
+* `--list-tools` — List all available tools
+* `--query-corpus QUERY` — Query research corpus directly (no model)
+* `--summarize-section [QUERY]` — Summarize a corpus section (no model)
+* `--list-memories` — List saved user memories
 
---- Prompt Aliases ---
-/                                   List all configured prompt aliases
-/name [query]                       Expand alias and run as query
-/prefix                             List aliases matching that prefix
+## Prompt Aliases
+* `/` — List all configured prompt aliases
+* `/name [query]` — Expand alias and run as query
+* `/prefix` — List aliases matching that prefix
 
---- Command Presets ---
-\\presets                           List configured command presets
-\\name [args]                       Run named command preset with optional args
+## Command Presets
+* `\\presets` — List configured command presets
+* `\\name [args]` — Run named command preset with optional args
 
---- Config Override ---
+## Config Override
 Send a TOML block to apply session-scoped config overrides:
-  general.toml
-  ```toml
-  [general]
-  default_model = "gpt-4o"
-  ```
-Supported files: general.toml, user.toml\
+
+`general.toml`
+```toml
+[general]
+default_model = "gpt-4o"
+```
+Supported files: `general.toml`, `user.toml`
+```
 """
 
 

@@ -26,9 +26,6 @@ except ImportError:  # pragma: no cover
 ICON_FILE_PATH = (
     Path(__file__).resolve().parents[1] / "data" / "icons" / "asky_icon_mono.ico"
 )
-ICON_FALLBACK_FILE_PATH = (
-    Path(__file__).resolve().parents[1] / "data" / "icons" / "asky_icon_small.png"
-)
 MENUBAR_LOCK_PATH = Path.home() / ".config" / "asky" / "locks" / "menubar.lock"
 MENUBAR_ALREADY_RUNNING_MESSAGE = "asky menubar daemon is already running."
 MISSING_XMPP_CONFIG_MESSAGE = "XMPP configuration is incomplete."
@@ -139,13 +136,10 @@ def run_menubar_app() -> None:
     singleton_lock = acquire_menubar_singleton_lock()
 
     icon_path = ICON_FILE_PATH if ICON_FILE_PATH.exists() else None
-    if icon_path is None and ICON_FALLBACK_FILE_PATH.exists():
-        icon_path = ICON_FALLBACK_FILE_PATH
     if icon_path is None:
         logger.warning(
-            "menubar icon missing paths=%s,%s; falling back to default title-only icon",
+            "menubar icon missing path=%s; falling back to default title-only icon",
             ICON_FILE_PATH,
-            ICON_FALLBACK_FILE_PATH,
         )
 
     class AskyMenubarApp(rumps.App):
@@ -242,7 +236,7 @@ def run_menubar_app() -> None:
             )
             startup_enabled = startup_state.supported and startup_state.enabled
             self.status_daemon.title = (
-                f"Daemon: {'running' if daemon_running else 'stopped'}"
+                f"AskyDaemon: {'running' if daemon_running else 'stopped'}"
             )
             jid_text = settings.jid if settings.jid else "(unset)"
             self.status_jid.title = f"JID: {jid_text}"

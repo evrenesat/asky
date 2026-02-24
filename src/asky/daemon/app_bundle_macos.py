@@ -28,7 +28,9 @@ def bundle_is_current(python_path: str) -> bool:
 
     try:
         lines = marker.read_text().splitlines()
-        return len(lines) >= 2 and lines[0] == python_path and lines[1] == LAUNCHER_VERSION
+        return (
+            len(lines) >= 2 and lines[0] == python_path and lines[1] == LAUNCHER_VERSION
+        )
     except Exception:
         return False
 
@@ -71,9 +73,9 @@ def create_bundle(python_path: str) -> Path:
     launcher = macos_dir / BUNDLE_NAME
     launcher.write_text(
         "#!/bin/zsh\n"
-        "[ -f \"$HOME/.zshenv\" ] && source \"$HOME/.zshenv\" 2>/dev/null\n"
-        "[ -f \"$HOME/.zprofile\" ] && source \"$HOME/.zprofile\" 2>/dev/null\n"
-        "[ -f \"$HOME/.zshrc\" ] && source \"$HOME/.zshrc\" 2>/dev/null\n"
+        '[ -f "$HOME/.zshenv" ] && source "$HOME/.zshenv" 2>/dev/null\n'
+        '[ -f "$HOME/.zprofile" ] && source "$HOME/.zprofile" 2>/dev/null\n'
+        '[ -f "$HOME/.zshrc" ] && source "$HOME/.zshrc" 2>/dev/null\n'
         f'exec "{python_path}" -m asky --xmpp-daemon --xmpp-menubar-child "$@"\n'
     )
     launcher.chmod(0o755)
@@ -83,18 +85,10 @@ def create_bundle(python_path: str) -> Path:
     # data/icons/ is src/asky/data/icons/
     # so we go up 1 level to asky/ and then into data/icons/
     icns_src = Path(__file__).resolve().parent.parent / "data" / "icons" / "asky.icns"
-    png_fallback = (
-        Path(__file__).resolve().parent.parent
-        / "data"
-        / "icons"
-        / "asky_icon_small.png"
-    )
     icns_dest = resources_dir / "AppIcon.icns"
 
     if icns_src.exists():
         shutil.copy2(icns_src, icns_dest)
-    elif png_fallback.exists():
-        shutil.copy2(png_fallback, icns_dest)
 
     # 4. Marker: python_path on line 1, LAUNCHER_VERSION on line 2.
     #    bundle_is_current() checks both, so bumping LAUNCHER_VERSION forces
