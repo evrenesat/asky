@@ -946,6 +946,19 @@ def run_chat(
                     f"[Push data failed: {result['endpoint']} - {result['error']}]"
                 )
 
+        if final_answer and plugin_runtime is not None:
+            from asky.plugins.hook_types import POST_TURN_RENDER, PostTurnRenderContext
+
+            plugin_runtime.hooks.invoke(
+                POST_TURN_RENDER,
+                PostTurnRenderContext(
+                    final_answer=final_answer,
+                    request=turn_request,
+                    result=turn_result,
+                    cli_args=args,
+                ),
+            )
+
     except KeyboardInterrupt:
         console.print("\nAborted by user.")
     except ContextOverflowError as e:

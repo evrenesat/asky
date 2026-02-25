@@ -18,12 +18,12 @@ POST_LLM_RESPONSE = "POST_LLM_RESPONSE"
 PRE_TOOL_EXECUTE = "PRE_TOOL_EXECUTE"
 POST_TOOL_EXECUTE = "POST_TOOL_EXECUTE"
 TURN_COMPLETED = "TURN_COMPLETED"
+POST_TURN_RENDER = "POST_TURN_RENDER"
 DAEMON_SERVER_REGISTER = "DAEMON_SERVER_REGISTER"
 DAEMON_TRANSPORT_REGISTER = "DAEMON_TRANSPORT_REGISTER"
 TRAY_MENU_REGISTER = "TRAY_MENU_REGISTER"
 
 CONFIG_LOADED = "CONFIG_LOADED"
-POST_TURN_RENDER = "POST_TURN_RENDER"
 SESSION_END = "SESSION_END"
 
 SUPPORTED_HOOK_NAMES = {
@@ -37,6 +37,7 @@ SUPPORTED_HOOK_NAMES = {
     PRE_TOOL_EXECUTE,
     POST_TOOL_EXECUTE,
     TURN_COMPLETED,
+    POST_TURN_RENDER,
     DAEMON_SERVER_REGISTER,
     DAEMON_TRANSPORT_REGISTER,
     TRAY_MENU_REGISTER,
@@ -44,7 +45,6 @@ SUPPORTED_HOOK_NAMES = {
 
 DEFERRED_HOOK_NAMES = {
     CONFIG_LOADED,
-    POST_TURN_RENDER,
     SESSION_END,
 }
 
@@ -142,6 +142,21 @@ class TurnCompletedContext:
 
     request: Any
     result: Any
+
+
+@dataclass
+class PostTurnRenderContext:
+    """Payload fired after the final answer has been rendered to the CLI.
+
+    ``cli_args`` carries the argparse Namespace so plugins can read
+    CLI-only flags (e.g. ``push_data_endpoint``, ``mail_recipients``)
+    that are not part of ``AskyTurnRequest``.
+    """
+
+    final_answer: str
+    request: Any
+    result: Any
+    cli_args: Any = None
 
 
 @dataclass
