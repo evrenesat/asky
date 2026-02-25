@@ -19,7 +19,6 @@ from asky.core.registry import ToolRegistry
 from asky.lazy_imports import call_attr, load_module
 from asky.plugins.hook_types import TOOL_REGISTRY_BUILD, ToolRegistryBuildContext
 from asky.plugins.hooks import HookRegistry
-from asky.research.tools import ACQUISITION_TOOL_NAMES
 
 ToolExecutor = Callable[[Dict[str, Any]], Dict[str, Any]]
 CustomToolExecutor = Callable[[str, Dict[str, Any]], Dict[str, Any]]
@@ -429,6 +428,8 @@ def create_research_tool_registry(
     active_custom_tools = custom_tools if custom_tools is not None else CUSTOM_TOOLS
     excluded_tools = disabled_tools or set()
     if corpus_preloaded:
+        from asky.research.tools import ACQUISITION_TOOL_NAMES
+
         excluded_tools = excluded_tools | ACQUISITION_TOOL_NAMES
 
     load_research_tool_bindings = (
