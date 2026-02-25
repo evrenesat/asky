@@ -342,57 +342,6 @@ def create_tool_registry(
             lambda args: call_attr("asky.memory.tools", "execute_save_memory", args),
         )
 
-    from asky.push_data import execute_push_data, get_enabled_endpoints
-
-    for endpoint_name, endpoint_config in get_enabled_endpoints().items():
-        fields_config = endpoint_config.get("fields", {})
-        properties = {}
-        required = []
-
-        for key, value in fields_config.items():
-            if (
-                isinstance(value, str)
-                and value.startswith("${")
-                and value.endswith("}")
-            ):
-                param_name = value[2:-1]
-                if param_name not in {"query", "answer", "timestamp", "model"}:
-                    properties[param_name] = {
-                        "type": "string",
-                        "description": f"Value for {param_name}",
-                    }
-                    required.append(param_name)
-
-        def make_push_executor(ep_name: str):
-            def push_executor(args: Dict[str, Any]) -> Dict[str, Any]:
-                return execute_push_data(ep_name, dynamic_args=args)
-
-            return push_executor
-
-        tool_name = f"push_data_{endpoint_name}"
-        description = endpoint_config.get(
-            "description", f"Push data to {endpoint_name}"
-        )
-        if not _is_tool_enabled(tool_name, excluded_tools):
-            continue
-        registry.register(
-            tool_name,
-            {
-                "name": tool_name,
-                "description": description,
-                "system_prompt_guideline": endpoint_config.get(
-                    "system_prompt_guideline",
-                    "Use only after the final answer is complete and data is ready to publish.",
-                ),
-                "parameters": {
-                    "type": "object",
-                    "properties": properties,
-                    "required": required,
-                },
-            },
-            make_push_executor(endpoint_name),
-        )
-
     if hook_registry is not None:
         hook_registry.invoke(
             TOOL_REGISTRY_BUILD,

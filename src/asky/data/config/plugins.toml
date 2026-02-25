@@ -27,3 +27,9 @@ enabled = true
 module = "asky.plugins.xmpp_daemon.plugin"
 class = "XMPPDaemonPlugin"
 capabilities = ["daemon_transport"]
+
+[plugin.push_data]
+enabled = true
+module = "asky.plugins.push_data.plugin"
+class = "PushDataPlugin"
+capabilities = ["tool_registry", "post_turn"]

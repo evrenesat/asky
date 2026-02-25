@@ -923,29 +923,6 @@ def run_chat(
             email_subject = args.subject or f"asky Result: {effective_query_text[:50]}"
             send_email(recipients, email_subject, final_answer)
 
-        # Push data to configured endpoint if requested
-        if final_answer and getattr(args, "push_data_endpoint", None):
-            from asky.push_data import execute_push_data
-
-            dynamic_args = dict(args.push_params) if args.push_params else {}
-            result = execute_push_data(
-                args.push_data_endpoint,
-                dynamic_args=dynamic_args,
-                query=effective_query_text,
-                answer=final_answer,
-                model=args.model,
-            )
-            if result["success"]:
-                if not is_lean:
-                    console.print(
-                        f"[Push data successful: {result['endpoint']} - {result['status_code']}]"
-                    )
-            else:
-                # Always print errors
-                console.print(
-                    f"[Push data failed: {result['endpoint']} - {result['error']}]"
-                )
-
         if final_answer and plugin_runtime is not None:
             from asky.plugins.hook_types import POST_TURN_RENDER, PostTurnRenderContext
 
