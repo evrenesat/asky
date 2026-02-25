@@ -91,6 +91,7 @@ graph TB
         persona_manager["persona_manager/*<br/>Import/Bind/Inject Persona Context"]
         gui_plugin["gui_server/*<br/>NiceGUI Daemon Sidecar"]
         xmpp_daemon_plugin["xmpp_daemon/*<br/>XMPP Transport Plugin"]
+        playwright_plugin["playwright_browser/*<br/>Browser Retrieval Plugin"]
     end
 
     subgraph Tools["Tool Execution"]
@@ -240,6 +241,8 @@ emit `SESSION_RESOLVED` plugin hook
 preload.py → optional local_ingestion + shortlist pipeline
            → research-mode deterministic bootstrap retrieval over preloaded corpus handles
            → standard-mode seed URL content preload (budget-aware)
+    ↓
+retrieval.py (fetch_url_document) → emit `FETCH_URL_OVERRIDE` plugin hook
     ↓
 emit `PRE_PRELOAD` / `POST_PRELOAD` plugin hooks
     ↓
@@ -724,3 +727,13 @@ A simplified "retrieval-only" system prompt guidance is injected in these cases 
   - One-way dependency: `plugins/xmpp_daemon` may import `asky.daemon.errors`; `daemon/` core must not import from `plugins/xmpp_daemon`.
   - `DaemonService` raises `DaemonUserError` if zero or more than one transport is registered.
   - The XMPP daemon plugin is enabled by default in `plugins.toml` and can be disabled to suppress XMPP transport entirely.
+
+### Decision 22: Browser-Based Retrieval Plugin (Playwright)
+
+- **Context**: Aggressive bot-protection blocks standard `requests`-based retrieval.
+- **Decision**: Add an optional Playwright-based plugin that can intercept fetch requests and provide browser-rendered content with session persistence.
+- **Implementation**:
+  - `FETCH_URL_OVERRIDE` hook in `retrieval.py` allows plugins to provide a result before the default pipeline runs.
+  - `PlaywrightBrowserManager` (sync) handles browser lifecycle, anti-fingerprinting, and CAPTCHA detection.
+  - `--playwright-login` CLI flag allows manual login and session state (`storage_state`) persistence.
+  - Same-site delay logic (random 1.5s - 4s) to avoid rate-limiting.

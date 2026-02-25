@@ -703,6 +703,7 @@ def _fetch_and_parse(
             output_format="markdown",
             include_links=True,
             max_links=max_links or RESEARCH_MAX_LINKS_PER_URL,
+            trace_context={"tool_name": "research"},
         )
         if payload.get("error"):
             return {

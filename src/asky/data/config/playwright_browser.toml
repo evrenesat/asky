@@ -1,0 +1,18 @@
+browser = "chromium"
+
+# Which call-site identifiers to intercept.
+# Valid values: "get_url_content", "get_url_details", "shortlist", "research"
+intercept = ["get_url_content", "get_url_details"]
+
+# Random delay between consecutive requests to the same domain (ms).
+same_site_min_delay_ms = 1500
+same_site_max_delay_ms = 4000
+
+# Save/restore cookies and localStorage between asky sessions.
+persist_session = true
+
+# Maximum time to wait for a page to load (ms).
+page_timeout_ms = 30000
+
+# Time with no network activity before page is considered done (ms).
+network_idle_timeout_ms = 2000

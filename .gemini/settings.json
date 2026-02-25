@@ -1,0 +1,13 @@
+{
+  "yolo": true,
+  "toolPermissions": {
+    "alwaysAllow": [
+      "run_shell_command",
+      "write_file",
+      "read_file",
+      "list_directory",
+      "terminal",
+      "web_fetch"
+    ]
+  }
+}

@@ -454,6 +454,12 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
         action="store_true",
         help=argparse.SUPPRESS,
     )
+    parser.add_argument(
+        "--playwright-login",
+        metavar="URL",
+        default=None,
+        help="Open browser to URL for manual login; saves session for future fetches.",
+    )
     parser.add_argument("query", nargs="*", help="The query string")
 
     model_action.completer = complete_model_aliases
@@ -690,6 +696,33 @@ def _resolve_research_corpus(
     if has_web_token:
         return True, [], None, "web_only", True
     return True, resolved_paths, None, "local_only", True
+
+
+def _run_playwright_login(url: str) -> None:
+    """Trigger manual login session for Playwright plugin."""
+    from asky.plugins.runtime import get_or_create_plugin_runtime
+
+    runtime = get_or_create_plugin_runtime()
+    if runtime is None:
+        print("Plugin runtime not available.", file=sys.stderr)
+        sys.exit(1)
+
+    for status in runtime.manager.list_status():
+        if status.name == "playwright_browser":
+            if status.active:
+                plugin = runtime.manager.get_plugin(status.name)
+                if plugin and hasattr(plugin, "run_login_session"):
+                    plugin.run_login_session(url)
+                    return
+            else:
+                print(
+                    f"playwright_browser plugin is not active (state: {status.state}).",
+                    file=sys.stderr,
+                )
+                sys.exit(1)
+
+    print("playwright_browser plugin is not enabled.", file=sys.stderr)
+    sys.exit(1)
 
 
 def main() -> None:
@@ -1277,6 +1310,11 @@ def main() -> None:
     from asky.plugins.runtime import get_or_create_plugin_runtime
 
     plugin_runtime = get_or_create_plugin_runtime()
+
+    if getattr(args, "playwright_login", None) and isinstance(args.playwright_login, str):
+        _run_playwright_login(args.playwright_login)
+        return
+
     chat.run_chat(args, query_text, plugin_runtime=plugin_runtime)
 
 

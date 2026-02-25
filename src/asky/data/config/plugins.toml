@@ -39,3 +39,9 @@ enabled = true
 module = "asky.plugins.email_sender.plugin"
 class = "EmailSenderPlugin"
 capabilities = ["post_turn"]
+
+[plugin.playwright_browser]
+enabled = false
+module = "asky.plugins.playwright_browser.plugin"
+class = "PlaywrightBrowserPlugin"
+config_file = "plugins/playwright_browser.toml"

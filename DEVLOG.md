@@ -1,5 +1,26 @@
 # DEVLOG
 
+## 2026-02-25 - Playwright Browser Plugin Implementation
+
+- **Features**:
+  - Implemented `playwright_browser` plugin for optional drop-in browser-based URL retrieval.
+  - Added `FETCH_URL_OVERRIDE` hook to `asky.plugins.hook_types` allowing plugins to intercept `fetch_url_document`.
+  - Added `--playwright-login <URL>` CLI command to manually save browser sessions.
+  - Integrated CAPTCHA detection and manual solving support in the browser plugin.
+  - Added same-site delay logic and anti-fingerprinting measures (AutomationControlled disable, navigator.webdriver override).
+- **Architecture**:
+  - `retrieval.py`: Added hook invocation at the start of `fetch_url_document`.
+  - `research/tools.py`: Added `trace_context` to `fetch_url_document` calls for plugin interception.
+  - `cli/main.py`: Added `--playwright-login` and early-exit handler.
+- **Dependencies**:
+  - Added `playwright` as an optional dependency in `pyproject.toml`.
+- **Configuration**:
+  - Added `src/asky/data/config/playwright_browser.toml` for plugin-specific settings.
+  - Registered plugin in bundled `plugins.toml` (disabled by default).
+- **Tests**:
+  - Added `tests/test_playwright_browser_plugin.py` covering hook registration, interception, fallback, and delay logic.
+  - Updated `tests/test_plugin_manager.py` to reflect the new bundled plugin in the roster.
+
 ## 2026-02-25 - Portal-Aware Content Extraction in fetch_url_document
 
 Added automatic detection of portal/listing pages (news homepages, category indices) in `fetch_url_document`. Previously, Trafilatura would silently return a tiny fragment for such pages while hundreds of headlines went unused.

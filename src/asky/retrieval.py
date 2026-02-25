@@ -72,7 +72,6 @@ def fetch_url_document(
 
     Returns a payload with common fields shared by standard, research, and shortlist flows.
     """
-    started = time.perf_counter()
     requested_url = sanitize_url(url)
     if not requested_url:
         return {
@@ -84,6 +83,18 @@ def fetch_url_document(
             "links": [],
         }
 
+    _plugin_override = _try_fetch_url_plugin_override(
+        url=requested_url,
+        output_format=output_format,
+        include_links=include_links,
+        max_links=max_links,
+        trace_callback=trace_callback,
+        trace_context=trace_context,
+    )
+    if _plugin_override is not None:
+        return _plugin_override
+
+    started = time.perf_counter()
     normalized_format = (
         output_format if output_format in SUPPORTED_OUTPUT_FORMATS else "markdown"
     )
@@ -424,15 +435,25 @@ def _extract_with_html_fallback(html: str, output_format: str) -> Dict[str, Any]
     }
 
 
-def _extract_links(html: str, base_url: str, max_links: int) -> List[Dict[str, str]]:
-    """Extract links from raw HTML while preserving anchor text."""
+def _extract_and_normalize_links(
+    html: str, base_url: str, max_links: Optional[int]
+) -> List[Dict[str, str]]:
+    """Extract and normalize anchor links from HTML. Package-internal."""
     try:
         stripper = HTMLStripper(base_url=base_url)
         stripper.feed(html)
-        return stripper.get_links()[:max_links]
+        links = stripper.get_links()
+        if max_links is not None and max_links > 0:
+            return links[:max_links]
+        return links
     except Exception as exc:
         logger.debug("retrieval link extraction failed url=%s error=%s", base_url, exc)
         return []
+
+
+def _extract_links(html: str, base_url: str, max_links: int) -> List[Dict[str, str]]:
+    """Extract links from raw HTML while preserving anchor text."""
+    return _extract_and_normalize_links(html, base_url, max_links)
 
 
 def _clean_title(value: str) -> str:
@@ -441,6 +462,35 @@ def _clean_title(value: str) -> str:
         return ""
     cleaned = str(value).strip().strip("#").strip()
     return cleaned[:MAX_TITLE_CHARS]
+
+
+def _try_fetch_url_plugin_override(
+    url: str,
+    output_format: str,
+    include_links: bool,
+    max_links: Optional[int],
+    trace_callback: Optional[TraceCallback],
+    trace_context: Optional[Dict[str, Any]],
+) -> Optional[Dict[str, Any]]:
+    """Ask plugins for an override result; returns None to use the default pipeline."""
+    try:
+        from asky.plugins.hook_types import FETCH_URL_OVERRIDE, FetchURLContext
+        from asky.plugins.runtime import get_or_create_plugin_runtime
+    except ImportError:
+        return None
+    runtime = get_or_create_plugin_runtime()
+    if runtime is None:
+        return None
+    ctx = FetchURLContext(
+        url=url,
+        output_format=output_format,
+        include_links=include_links,
+        max_links=max_links,
+        trace_callback=trace_callback,
+        trace_context=trace_context,
+    )
+    runtime.hooks.invoke(FETCH_URL_OVERRIDE, ctx)
+    return ctx.result
 
 
 def _derive_title(content: str, url: str) -> str:

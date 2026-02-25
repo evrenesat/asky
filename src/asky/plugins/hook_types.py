@@ -22,6 +22,7 @@ POST_TURN_RENDER = "POST_TURN_RENDER"
 DAEMON_SERVER_REGISTER = "DAEMON_SERVER_REGISTER"
 DAEMON_TRANSPORT_REGISTER = "DAEMON_TRANSPORT_REGISTER"
 TRAY_MENU_REGISTER = "TRAY_MENU_REGISTER"
+FETCH_URL_OVERRIDE = "FETCH_URL_OVERRIDE"
 
 CONFIG_LOADED = "CONFIG_LOADED"
 SESSION_END = "SESSION_END"
@@ -41,6 +42,7 @@ SUPPORTED_HOOK_NAMES = {
     DAEMON_SERVER_REGISTER,
     DAEMON_TRANSPORT_REGISTER,
     TRAY_MENU_REGISTER,
+    FETCH_URL_OVERRIDE,
 }
 
 DEFERRED_HOOK_NAMES = {
@@ -216,3 +218,22 @@ class TrayMenuRegisterContext:
     stop_service: Callable[[], None]
     is_service_running: Callable[[], bool]
     on_error: Callable[[str], None]
+
+
+@dataclass
+class FetchURLContext:
+    """Mutable payload for fetch-URL override hooks.
+
+    Plugins that handle the request must set ``result`` to the same
+    dict structure returned by ``fetch_url_document``.  Leaving it as
+    ``None`` passes control to the next plugin (or to the default
+    requests/trafilatura pipeline).
+    """
+
+    url: str
+    output_format: str
+    include_links: bool
+    max_links: Optional[int]
+    trace_callback: Optional[Any]
+    trace_context: Optional[Dict[str, Any]]
+    result: Optional[Dict[str, Any]] = None
