@@ -50,6 +50,7 @@ def load_config() -> Dict[str, Any]:
         "api.toml",
         "prompts.toml",
         "user.toml",
+        "plugins.toml",
         "xmpp.toml",
         "push_data.toml",
         "research.toml",

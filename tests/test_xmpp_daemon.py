@@ -1,13 +1,12 @@
-"""Daemon service/unit tests."""
+"""XMPP daemon plugin unit tests."""
 
 from asky.daemon.chunking import chunk_text
-from asky.daemon.service import (
+from asky.plugins.xmpp_daemon.xmpp_service import (
+    XMPPService,
     _extract_urls_from_text,
     _extract_toml_urls,
     _split_media_urls,
     _should_process_text_body,
-    XMPPDaemonService,
-    run_xmpp_daemon_foreground,
 )
 
 
@@ -18,14 +17,20 @@ def test_chunk_text_splits_in_order():
     assert "".join(chunks) == text
 
 
-def test_run_xmpp_daemon_requires_enabled(monkeypatch):
-    monkeypatch.setattr("asky.daemon.service.XMPP_ENABLED", False)
+def test_xmpp_plugin_transport_register_raises_when_disabled(monkeypatch):
+    monkeypatch.setattr("asky.plugins.xmpp_daemon.plugin.XMPP_ENABLED", False)
+    from asky.daemon.errors import DaemonUserError
+    from asky.plugins.hook_types import DaemonTransportRegisterContext
+    from asky.plugins.xmpp_daemon.plugin import XMPPDaemonPlugin
+
+    plugin = XMPPDaemonPlugin()
+    context = DaemonTransportRegisterContext(double_verbose=False)
     try:
-        run_xmpp_daemon_foreground()
-    except RuntimeError as exc:
+        plugin._on_daemon_transport_register(context)
+    except DaemonUserError as exc:
         assert "disabled" in str(exc).lower()
     else:
-        raise AssertionError("Expected RuntimeError when XMPP daemon is disabled.")
+        raise AssertionError("Expected DaemonUserError when XMPP daemon is disabled.")
 
 
 def test_audio_message_url_body_is_not_processed_as_text():
@@ -101,14 +106,7 @@ def test_media_url_list_body_is_not_processed_as_text():
     )
 
 
-def test_service_stop_noop_when_not_running():
-    daemon = XMPPDaemonService.__new__(XMPPDaemonService)
-    daemon._running = False
-    daemon._client = object()
-    daemon.stop()
-
-
-def test_service_stop_calls_client_stop_when_running():
+def test_service_stop_logs_and_delegates_to_client():
     class _Client:
         def __init__(self):
             self.stop_called = False
@@ -116,8 +114,9 @@ def test_service_stop_calls_client_stop_when_running():
         def stop(self):
             self.stop_called = True
 
-    daemon = XMPPDaemonService.__new__(XMPPDaemonService)
-    daemon._running = True
-    daemon._client = _Client()
-    daemon.stop()
-    assert daemon._client.stop_called is True
+    service = XMPPService.__new__(XMPPService)
+    service._client = _Client()
+    service.stop()
+    assert service._client.stop_called is True
+
+

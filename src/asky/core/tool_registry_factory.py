@@ -17,6 +17,8 @@ from asky.config import (
 from asky.core.api_client import UsageTracker, get_llm_msg
 from asky.core.registry import ToolRegistry
 from asky.lazy_imports import call_attr, load_module
+from asky.plugins.hook_types import TOOL_REGISTRY_BUILD, ToolRegistryBuildContext
+from asky.plugins.hooks import HookRegistry
 from asky.research.tools import ACQUISITION_TOOL_NAMES
 
 ToolExecutor = Callable[[Dict[str, Any]], Dict[str, Any]]
@@ -127,9 +129,10 @@ def create_tool_registry(
     custom_tools: Optional[Dict[str, Any]] = None,
     disabled_tools: Optional[Set[str]] = None,
     tool_trace_callback: Optional[TraceCallback] = None,
+    hook_registry: Optional[HookRegistry] = None,
 ) -> ToolRegistry:
     """Create a ToolRegistry with all default and custom tools."""
-    registry = ToolRegistry()
+    registry = ToolRegistry(hook_registry=hook_registry)
     web_search_executor = execute_web_search_fn or _execute_web_search
     get_url_content_executor = execute_get_url_content_fn or _execute_get_url_content
     get_url_details_executor = execute_get_url_details_fn or _execute_get_url_details
@@ -391,6 +394,16 @@ def create_tool_registry(
             make_push_executor(endpoint_name),
         )
 
+    if hook_registry is not None:
+        hook_registry.invoke(
+            TOOL_REGISTRY_BUILD,
+            ToolRegistryBuildContext(
+                mode="standard",
+                registry=registry,
+                disabled_tools=set(excluded_tools),
+            ),
+        )
+
     return registry
 
 
@@ -407,9 +420,10 @@ def create_research_tool_registry(
     research_source_mode: Optional[str] = None,
     summarization_tracker: Optional[UsageTracker] = None,
     tool_trace_callback: Optional[TraceCallback] = None,
+    hook_registry: Optional[HookRegistry] = None,
 ) -> ToolRegistry:
     """Create a ToolRegistry with research mode tools."""
-    registry = ToolRegistry()
+    registry = ToolRegistry(hook_registry=hook_registry)
     web_search_executor = execute_web_search_fn or _execute_web_search
     custom_tool_executor = execute_custom_tool_fn or _execute_custom_tool
     active_custom_tools = custom_tools if custom_tools is not None else CUSTOM_TOOLS
@@ -605,6 +619,16 @@ def create_research_tool_registry(
             "save_memory",
             _apply_tool_prompt_overrides("save_memory", MEMORY_TOOL_SCHEMA),
             lambda args: call_attr("asky.memory.tools", "execute_save_memory", args),
+        )
+
+    if hook_registry is not None:
+        hook_registry.invoke(
+            TOOL_REGISTRY_BUILD,
+            ToolRegistryBuildContext(
+                mode="research",
+                registry=registry,
+                disabled_tools=set(excluded_tools),
+            ),
         )
 
     return registry

@@ -55,6 +55,7 @@ class AskyTurnRequest:
     research_source_mode: Optional[str] = None
     replace_research_corpus: bool = False
     shortlist_override: Optional[str] = None
+    persona_mention: Optional[str] = None  # Persona name extracted from @mention syntax during query preprocessing
 
 
 @dataclass

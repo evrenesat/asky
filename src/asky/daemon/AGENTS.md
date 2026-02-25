@@ -1,22 +1,17 @@
 # Daemon Package (`asky/daemon/`)
 
-Optional XMPP client daemon runtime. When `asky --xmpp-daemon` is run, this package handles XMPP transport, message routing, session management, and optional voice/image transcription pipelines.
+Core daemon lifecycle infrastructure. This package owns the foreground daemon entry point, macOS menubar app, startup-at-login support, and the transport-agnostic `DaemonService` coordinator. XMPP transport logic lives in `plugins/xmpp_daemon/` as a built-in plugin.
 
 ## Module Overview
 
 | Module                      | Purpose                                                                     |
 | --------------------------- | --------------------------------------------------------------------------- |
-| `service.py`                | `XMPPDaemonService` — top-level coordinator, per-JID queue management       |
-| `xmpp_client.py`            | Slixmpp transport wrapper — connects, sends, and receives XMPP stanzas      |
-| `router.py`                 | `MessageRouter` — ingress policy (allowlist, room binding, confirmation)    |
-| `command_executor.py`       | Command/query bridge — policy gate, transcript namespace, `AskyClient` call |
-| `session_profile_manager.py`| Room/session bindings + session override file management                    |
-| `interface_planner.py`      | LLM-based intent classification for non-prefixed messages                   |
-| `voice_transcriber.py`      | Background audio transcription via `mlx-whisper`                            |
-| `image_transcriber.py`      | Background image description via image-capable LLM                         |
-| `transcript_manager.py`     | `TranscriptManager` — transcript lifecycle, pending confirmation tracking   |
-| `chunking.py`               | Outbound response chunking                                                  |
-| `menubar.py`                | macOS `rumps` menubar app controlling daemon lifecycle                      |
+| `service.py`                | `DaemonService` — transport-agnostic lifecycle: fires hooks, runs transport |
+| `menubar.py`                | macOS singleton lock and thin `run_menubar_app()` launcher                  |
+| `launch_context.py`         | `LaunchContext` enum + get/set/is_interactive helpers                       |
+| `tray_protocol.py`          | `TrayApp` ABC, `TrayStatus`, `TrayPluginEntry` data contracts               |
+| `tray_controller.py`        | `TrayController` — generic daemon service lifecycle + startup toggle        |
+| `tray_macos.py`             | `MacosTrayApp(TrayApp)` — dynamic plugin-driven rumps menu                  |
 | `app_bundle_macos.py`       | macOS `.app` bundle creation/update for Spotlight integration               |
 | `startup.py`                | Cross-platform startup-at-login dispatcher                                  |
 | `startup_macos.py`          | LaunchAgent plist management                                                |
@@ -26,19 +21,61 @@ Optional XMPP client daemon runtime. When `asky --xmpp-daemon` is run, this pack
 
 ---
 
-## Per-JID Queue and Worker Lifecycle
+## Architecture: Core vs. Plugin Boundary
 
-`service.py` serializes all processing for each conversation through a per-key queue:
+```
+daemon/service.py (DaemonService)      — core, transport-agnostic lifecycle
+    fires DAEMON_SERVER_REGISTER       — plugins add sidecar servers
+    fires DAEMON_TRANSPORT_REGISTER    — exactly one plugin registers the transport
+    runs transport.run()               — blocks until daemon stops
 
-- **Queue key**: resolved from the incoming XMPP payload — room JID for groupchat messages, sender bare JID for direct messages.
-- **Queue**: a `queue.Queue` of callables created on first message from that key.
-- **Worker thread**: a single daemon thread per queue key, started on first message (or restarted if the previous thread has exited). Thread restart is guarded by `_jid_workers_lock` to prevent double-spawn under concurrent delivery.
-- **Ordering guarantee**: messages from the same conversation are always processed in arrival order. Messages from different conversations are fully concurrent.
-- **Shutdown**: worker threads are daemon threads and exit automatically when the main process exits; no graceful drain is guaranteed on abrupt termination.
+plugins/xmpp_daemon/plugin.py          — built-in plugin, registers XMPP transport
+    creates XMPPService                — XMPP-specific service
+    appends DaemonTransportSpec        — to the DAEMON_TRANSPORT_REGISTER context
+```
+
+**One-way dependency rule**: plugin code may import from `asky.daemon.errors`. Daemon core code must not import from plugin packages.
+
+---
+
+## DaemonService Lifecycle
+
+1. `__init__`: calls `init_db()`, fires `DAEMON_SERVER_REGISTER` (collect sidecars), fires `DAEMON_TRANSPORT_REGISTER` (collect exactly one transport). Raises `DaemonUserError` if zero or multiple transports are registered.
+2. `run_foreground()`: starts sidecar servers, calls `transport.run()` (blocking), stops sidecar servers and shuts down plugin runtime in `finally`.
+3. `stop()`: delegates to `transport.stop()`.
+
+---
+
+## TrayApp Abstraction
+
+`tray_protocol.py` defines the `TrayApp` ABC and shared state types:
+
+- `TrayPluginEntry` — one contributed menu item (status row or action row); `get_label` is called each refresh, `on_action` is `None` for non-clickable rows, `autostart_fn` (optional) is invoked once at tray init
+- `TrayStatus` — view-model: startup-at-login state + pre-computed labels + lists of plugin-contributed entries + startup warnings
+- `TrayApp` — ABC with `run()` and `update_status(status)` methods
+
+`tray_controller.py` provides `TrayController`, holding all platform-agnostic business logic: daemon service lifecycle (start/stop/toggle threading), startup-at-login toggle, and autostart delegation. It accepts `hook_registry` to fire `TRAY_MENU_REGISTER` at construction so plugins can contribute their own menu entries. XMPP/voice/GUI specifics live entirely in their respective plugins.
+
+`tray_macos.py` provides `MacosTrayApp(TrayApp)`, a thin rumps wrapper. It gets the hook registry from the plugin runtime, creates a `TrayController`, and dynamically builds the menu from `plugin_status_entries` and `plugin_action_entries`. The only fixed core items are `status_startup`, `action_startup`, and `action_quit`.
+
+`menubar.py` is a thin launcher: it acquires the singleton lock then delegates to `MacosTrayApp().run()`. It retains `MenubarSingletonLock`, `acquire_menubar_singleton_lock`, and `is_menubar_instance_running` helpers.
+
+`launch_context.py` provides `LaunchContext` enum (`INTERACTIVE_CLI`, `DAEMON_FOREGROUND`, `MACOS_APP`) and module-level `get/set_launch_context()` / `is_interactive()` helpers. `main.py` sets the context before entering each daemon code path.
+
+---
+
+## Plugin Integration
+
+- `DaemonService` fires `DAEMON_SERVER_REGISTER` at construction to collect sidecar specs.
+- `DaemonService` fires `DAEMON_TRANSPORT_REGISTER` at construction to collect the transport. Exactly one transport must be registered.
+- `gui_server` plugin registers a sidecar server via `DAEMON_SERVER_REGISTER`.
+- `xmpp_daemon` plugin registers the XMPP transport via `DAEMON_TRANSPORT_REGISTER`.
 
 ---
 
 ## Authorization Model
+
+Authorization is handled by `plugins/xmpp_daemon/router.py`.
 
 ### Direct messages (`chat` stanzas)
 
@@ -52,92 +89,42 @@ Optional XMPP client daemon runtime. When `asky --xmpp-daemon` is run, this pack
 
 - The room's bare JID must be pre-bound in `room_session_bindings` (via a trusted-room invite or explicit bind command).
 - Individual sender identity is not checked for authorization — any occupant of a bound room can send commands.
-- See "Known Limitations" below for the implication of this design.
 
 ---
 
 ## Command Routing Order
 
-For each incoming message the router applies these stages in order:
+Handled by `plugins/xmpp_daemon/router.py`. For each incoming message:
 
 1. **Authorization / room guard** — drop if not authorized.
-2. **Inline TOML upload** — if message contains a fenced TOML block (or OOB TOML URL), validate and persist as session override.
+2. **Inline TOML upload** — validate and persist as session override.
 3. **`/session` command surface** — `/session`, `/session new`, `/session child`, `/session <id|name>`, `/session clear`.
-4. **Transcript confirmation shortcuts** — `yes` / `no` if a transcript is pending for this conversation key.
-5. **Interface planner** (when `general.interface_model` is configured and message is not prefixed with `command_prefix`):
-   - LLM classifies input as `command` or `query` action.
-   - Unresolvable (malformed JSON, unknown action type, empty command) fall through to query behavior.
-6. **Command prefix gate** — messages starting with `command_prefix` (default `/asky`) are treated as direct commands.
-7. **Command vs. query heuristic** — remaining text is checked for command-like patterns; otherwise routed as query text.
-8. **Remote policy gate** — blocked flags are rejected after planning/expansion so they cannot be bypassed via presets or planner.
-9. **`AskyClient.run_turn()`** — final command or query execution.
+4. **Transcript confirmation shortcuts** — `yes` / `no` if a transcript is pending.
+5. **Interface planner** — when configured and message is not command-prefixed.
+6. **Command prefix gate** — messages starting with `command_prefix` (default `/asky`).
+7. **Command vs. query heuristic** — remaining text.
+8. **Remote policy gate** — blocked flags are rejected.
+9. **`AskyClient.run_turn()`** — final execution.
 
 ---
 
-## Interface Planner Fallback Behavior
+## Per-JID Queue and Worker Lifecycle
 
-When the interface planner is active and the LLM returns output that cannot be resolved:
+`plugins/xmpp_daemon/xmpp_service.py` serializes all processing per conversation through a per-key queue:
 
-- **Malformed JSON**: planner output cannot be parsed → falls back to treating the original message as a plain query.
-- **Unknown `action_type`**: value is neither `command` nor `query` → falls back to plain query.
-- **Empty `command_text`** for a `command` action: treated as a query.
-- **Empty `query_text`** for a `query` action: treated as a query (no-op query with empty text).
-
-The fallback path means messages that confuse the planner are silently routed as queries rather than dropped.
-
----
-
-## Voice Transcription Pipeline
-
-Requires `mlx-whisper` and macOS.
-
-1. Incoming XMPP message with OOB audio URL is detected by `router.py`.
-2. Audio file is streamed to `voice_storage_dir` (background thread via `VoiceTranscriber`).
-3. `mlx-whisper` transcription runs in a worker pool (`voice_workers` threads).
-4. On completion, transcript is persisted to `transcripts` table with `status=completed`.
-5. Sender is notified with a text preview and confirmation prompt.
-6. **Confirmation**: `yes` runs the transcript as a query; `no` stores without executing.
-7. With `voice_auto_yes_without_interface_model=true` and no interface model, transcripts are auto-run without `yes`.
-
-**Status states**: `pending` → `completed` | `failed`.
-
-Non-macOS platforms: transcription requests fail immediately with an error message.
-
----
-
-## Transcript Confirmation Scope
-
-Transcript confirmation (`yes`/`no`) is keyed by **conversation** (room JID for groupchat, sender JID for direct), not by individual user.
-
-In a group chat:
-- Any occupant of the room can confirm or reject any pending transcript in that conversation.
-- There is at most one pending transcript per conversation key at a time.
-- A second audio message arriving before confirmation replaces the pending state.
-
----
-
-## Session Override File Contract
-
-Users can upload TOML config overrides over XMPP. The contract:
-
-- **Supported files**: `general.toml`, `user.toml` (defined in `ALLOWED_OVERRIDE_FILENAMES`).
-- **Delivery**: inline fenced TOML block (`filename.toml ``` toml … ````) or OOB TOML URL.
-- **Semantics**: last-write-wins per file per session. Uploading a new `general.toml` replaces the stored one for that session entirely (no merge).
-- **Allowed keys**:
-  - `general.toml`: only `[general]` section; only `default_model` and `summarization_model` keys; values must be valid known model aliases.
-  - `user.toml`: only `[user_prompts]` section; arbitrary string keys/values.
-- **Unsupported keys**: silently ignored with a warning included in the response.
-- **Applied at**: session start / session switch. Override files are loaded into the runtime config for the lifetime of that session.
-- **Cross-session inheritance**: when creating a child session (`/session child`), override files are copied from the parent session.
+- **Queue key**: room JID for groupchat, sender bare JID for direct messages.
+- **Worker thread**: daemon thread per queue key, started on first message (or restarted if dead). Thread restart is guarded by `_jid_workers_lock`.
+- **Ordering guarantee**: messages from the same conversation are processed in arrival order.
+- **Shutdown**: worker threads are daemon threads; no graceful drain on abrupt termination.
 
 ---
 
 ## Known Limitations
 
-- **Single pending transcript per conversation**: only the most recent audio/image upload awaits confirmation. Sending a second file before confirming the first silently replaces the pending confirmation.
-- **No replay protection**: the system does not validate that a received message is unique or recent. A replayed XMPP stanza would be processed again.
-- **Group chat authorization is room-level**: any occupant of a bound room can send commands — individual sender identity is not re-checked inside a bound room.
-- **JID worker threads are daemon threads**: they are killed without drain on process exit. In-flight tasks may be lost if the daemon is killed uncleanly.
+- **Single pending transcript per conversation**: only the most recent audio/image upload awaits confirmation.
+- **No replay protection**: a replayed XMPP stanza would be processed again.
+- **Group chat authorization is room-level**: any occupant of a bound room can send commands.
+- **JID worker threads are daemon threads**: in-flight tasks may be lost on unclean shutdown.
 
 ---
 
@@ -145,10 +132,16 @@ Users can upload TOML config overrides over XMPP. The contract:
 
 ```
 daemon/
-├── service.py → xmpp_client.py, router.py, chunking.py
+├── service.py → plugins/hook_types.py (fires hooks), storage/sqlite.py (init_db)
+├── menubar.py → tray_macos.py (creates MacosTrayApp)
+├── tray_macos.py → tray_controller.py, tray_protocol.py
+├── tray_controller.py → cli/daemon_config.py, daemon/startup.py, daemon/service.py
+└── tray_protocol.py (no daemon deps)
+
+plugins/xmpp_daemon/
+├── xmpp_service.py → xmpp_client.py, router.py, chunking.py
 ├── router.py → command_executor.py, session_profile_manager.py,
 │               voice_transcriber.py, image_transcriber.py, transcript_manager.py
 ├── command_executor.py → api/client.py, session_profile_manager.py
-├── session_profile_manager.py → storage/sqlite.py
-└── menubar.py → service.py (subprocess/lifecycle control)
+└── session_profile_manager.py → storage/sqlite.py
 ```

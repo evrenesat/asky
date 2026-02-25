@@ -8,6 +8,8 @@ Command-line interface layer handling argument parsing, command routing, and use
 | ------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
 | `main.py`                 | Entry point, argument parsing, command routing                                                                                                 |
 | `chat.py`                 | Chat conversation orchestration                                                                                                                |
+| `mention_parser.py`       | @mention syntax parsing for deterministic persona loading                                                                                      |
+| `persona_commands.py`     | Persona management CLI commands (create, load, import, export, alias)                                                                          |
 | `presets.py`              | Backslash command preset expansion/listing (`\\name`, `\\presets`)                                                                             |
 | `local_ingestion_flow.py` | Pre-LLM local source preload for research mode (path-redacted local KB context)                                                                |
 | `research_commands.py`    | Manual corpus query commands (no-LLM retrieval inspection)                                                                                     |
@@ -58,6 +60,7 @@ Command-line interface layer handling argument parsing, command routing, and use
 | `--clean-session-research`     | `sessions.py`                                                                                                                                                                                                                                                               |
 | `--xmpp-daemon`                | macOS menubar daemon (`daemon/menubar.py`) or foreground fallback (`daemon/service.py`); on macOS menubar path, duplicate launches are blocked with exit code `1`, and a `~/Applications/AskyDaemon.app` bundle is automatically created/updated for Spotlight integration. |
 | `--edit-daemon`                | `daemon_config.py` interactive daemon settings editor                                                                                                                                                                                                                       |
+| `persona <subcommand>`         | `persona_commands.py` persona management (create, load, unload, import, export, alias)                                                                                                                                                                                      |
 
 Preset invocation notes:
 
@@ -69,10 +72,11 @@ Preset invocation notes:
 Main conversation entry point via `run_chat()`:
 
 1. **Session Identification**: Resolve session variables (`SS`, `RS`, shell-id) and run `_check_idle_session_timeout()` **before** starting the banner.
-2. **CLI Adaptation**: Parse args into `AskyTurnRequest` + UI callbacks.
-3. **API Orchestration**: `AskyClient.run_turn()` performs context/session/preload/model/persist flow.
-4. **UI Rendering**: `chat.py` maps API notices/events into Rich output + banner updates.
-5. **Interface Side Effects**: optional browser/email/push/report handling (including dynamic sidebar index updates).
+2. **Mention Parsing**: Parse `@persona_name` syntax from query and load persona before model invocation.
+3. **CLI Adaptation**: Parse args into `AskyTurnRequest` + UI callbacks.
+4. **API Orchestration**: `AskyClient.run_turn()` performs context/session/preload/model/persist flow.
+5. **UI Rendering**: `chat.py` maps API notices/events into Rich output + banner updates.
+6. **Interface Side Effects**: optional browser/email/push/report handling (including dynamic sidebar index updates).
 
 Research mode is session-owned:
 

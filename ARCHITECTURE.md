@@ -41,7 +41,17 @@ graph TB
     end
 
     subgraph Daemon["Daemon Layer (daemon/)"]
-        daemon_service["service.py<br/>XMPPDaemonService"]
+        daemon_service["service.py<br/>DaemonService (transport-agnostic)"]
+        daemon_menubar["menubar.py<br/>Singleton Lock + Launcher"]
+        daemon_tray_proto["tray_protocol.py<br/>TrayApp ABC + TrayStatus"]
+        daemon_tray_ctrl["tray_controller.py<br/>TrayController (shared logic)"]
+        daemon_tray_macos["tray_macos.py<br/>MacosTrayApp (rumps)"]
+        daemon_app_bundle["app_bundle_macos.py<br/>macOS .app Bundle Creation"]
+    end
+
+    subgraph XMPPPlugin["XMPP Daemon Plugin (plugins/xmpp_daemon/)"]
+        xmpp_plugin["plugin.py<br/>XMPPDaemonPlugin"]
+        xmpp_service["xmpp_service.py<br/>XMPPService + per-JID queues"]
         daemon_xmpp["xmpp_client.py<br/>Slixmpp Transport Wrapper"]
         daemon_router["router.py<br/>Ingress Routing + Policy"]
         daemon_exec["command_executor.py<br/>Command/Query Bridge"]
@@ -51,7 +61,6 @@ graph TB
         daemon_image["image_transcriber.py<br/>Async Image Jobs"]
         daemon_transcripts["transcript_manager.py<br/>Transcript Lifecycle"]
         daemon_chunking["chunking.py<br/>Outbound Chunking"]
-        daemon_app_bundle["app_bundle_macos.py<br/>macOS .app Bundle Creation"]
     end
 
     subgraph Storage["Storage Layer (storage/)"]
@@ -74,6 +83,16 @@ graph TB
         shortlist_ops["shortlist_collect.py<br/>shortlist_score.py"]
     end
 
+    subgraph Plugins["Plugin Runtime (plugins/)"]
+        plugin_runtime["runtime.py<br/>Process Runtime Bootstrap"]
+        plugin_manager["manager.py<br/>Manifest + Lifecycle"]
+        plugin_hooks["hooks.py<br/>Deterministic Hook Registry"]
+        persona_creator["manual_persona_creator/*<br/>Persona Build/Export Tools"]
+        persona_manager["persona_manager/*<br/>Import/Bind/Inject Persona Context"]
+        gui_plugin["gui_server/*<br/>NiceGUI Daemon Sidecar"]
+        xmpp_daemon_plugin["xmpp_daemon/*<br/>XMPP Transport Plugin"]
+    end
+
     subgraph Tools["Tool Execution"]
         tools["tools.py<br/>Web Search, URL Fetch"]
     end
@@ -89,9 +108,11 @@ graph TB
     api_preload -.-> shortlist
     main --> chat
     main --> daemon_service
+    main --> daemon_menubar
     main --> research_cmd
     main --> section_cmd
     main --> presets_cli
+    main --> plugin_runtime
     chat --> api_client
     main --> history
     main --> sessions_cli
@@ -105,9 +126,15 @@ graph TB
     session_mgr --> sqlite
     history --> sqlite
     sessions_cli --> sqlite
-    daemon_service --> daemon_xmpp
-    daemon_service --> daemon_router
-    daemon_service --> daemon_chunking
+    daemon_service --> plugin_hooks
+    daemon_menubar --> daemon_tray_macos
+    daemon_tray_macos --> daemon_tray_ctrl
+    daemon_tray_macos --> daemon_tray_proto
+    daemon_tray_ctrl --> daemon_tray_proto
+    xmpp_plugin --> xmpp_service
+    xmpp_service --> daemon_xmpp
+    xmpp_service --> daemon_router
+    xmpp_service --> daemon_chunking
     daemon_router --> daemon_planner
     daemon_router --> daemon_exec
     daemon_router --> daemon_profiles
@@ -117,7 +144,18 @@ graph TB
     daemon_exec --> api_client
     daemon_exec --> daemon_profiles
     daemon_transcripts --> sqlite
+    xmpp_daemon_plugin --> xmpp_plugin
     registry --> tools
+    plugin_runtime --> plugin_manager
+    plugin_manager --> plugin_hooks
+    plugin_manager --> persona_creator
+    plugin_manager --> persona_manager
+    plugin_manager --> gui_plugin
+    api_client --> plugin_hooks
+    tool_factory --> plugin_hooks
+    engine --> plugin_hooks
+    registry --> plugin_hooks
+    daemon_service --> plugin_hooks
     config_init --> loader
     shortlist_flow -.-> shortlist
     shortlist -.-> shortlist_ops
@@ -135,11 +173,12 @@ graph TB
 src/asky/
 ├── api/                # Programmatic library API surface (run_turn orchestration)
 ├── cli/                # Command-line interface → see cli/AGENTS.md
-├── daemon/             # Optional XMPP daemon runtime (transport/router/planner/voice/image/group sessions/macOS app bundle)
+├── daemon/             # Daemon lifecycle core: DaemonService, menubar launcher, tray abstraction
 ├── core/               # Conversation engine → see core/AGENTS.md
 ├── storage/            # Data persistence → see storage/AGENTS.md
 ├── research/           # Research mode RAG → see research/AGENTS.md
 ├── memory/             # Cross-session user memory → see memory/AGENTS.md
+├── plugins/            # Optional plugin runtime + built-in plugins (persona/gui/xmpp_daemon)
 ├── evals/              # Manual integration eval harnesses (research + standard)
 ├── config/             # Configuration → see config/AGENTS.md
 ├── tools.py            # Tool execution (web search, URL fetch, custom)
@@ -164,12 +203,13 @@ For test organization, see `tests/AGENTS.md`.
 | Package     | Documentation                                     | Key Components                                                                      |
 | ----------- | ------------------------------------------------- | ----------------------------------------------------------------------------------- |
 | `cli/`      | [cli/AGENTS.md](src/asky/cli/AGENTS.md)           | Entry point, chat flow, commands                                                    |
-| `daemon/`   | [daemon/AGENTS.md](src/asky/daemon/AGENTS.md)     | XMPP transport, group/direct router, session profile manager, voice+image pipelines |
+| `daemon/`   | [daemon/AGENTS.md](src/asky/daemon/AGENTS.md)     | Transport-agnostic `DaemonService`, menubar launcher, `TrayApp` abstraction          |
 | `api/`      | [api/AGENTS.md](src/asky/api/AGENTS.md)           | `AskyClient`, turn orchestration services                                           |
 | `core/`     | [core/AGENTS.md](src/asky/core/AGENTS.md)         | ConversationEngine, ToolRegistry, API client                                        |
 | `storage/`  | [storage/AGENTS.md](src/asky/storage/AGENTS.md)   | SQLite repository, data model                                                       |
 | `research/` | [research/AGENTS.md](src/asky/research/AGENTS.md) | Cache, vector store, embeddings                                                     |
 | `memory/`   | [memory/AGENTS.md](src/asky/memory/AGENTS.md)     | Cross-session user memory store, recall, tools                                      |
+| `plugins/`  | [plugins/AGENTS.md](src/asky/plugins/AGENTS.md)   | Plugin manager/runtime, hook registry, persona plugins, GUI server plugin           |
 | `evals/`    | (manual harness)                                  | Dual-mode research integration evaluation runner                                    |
 | `config/`   | [config/AGENTS.md](src/asky/config/AGENTS.md)     | TOML loading, constants                                                             |
 | `tests/`    | [tests/AGENTS.md](tests/AGENTS.md)                | Test organization, patterns                                                         |
@@ -185,6 +225,8 @@ User Query
     ↓
 CLI (main.py) → parse args (`-r` corpus pointers + `--shortlist` override)
     ↓
+optional plugin runtime init (`plugins/runtime.py`) from `~/.config/asky/plugins.toml`
+    ↓
 chat.py → build AskyTurnRequest + UI callbacks
     ↓
 AskyClient.run_turn()
@@ -193,13 +235,21 @@ context.py → resolve history selectors + context payload
     ↓
 session.py → resolve create/resume/auto/research session state
     ↓
+emit `SESSION_RESOLVED` plugin hook
+    ↓
 preload.py → optional local_ingestion + shortlist pipeline
            → research-mode deterministic bootstrap retrieval over preloaded corpus handles
            → standard-mode seed URL content preload (budget-aware)
     ↓
+emit `PRE_PRELOAD` / `POST_PRELOAD` plugin hooks
+    ↓
 build_messages() (inside AskyClient)
     ↓
+apply `SYSTEM_PROMPT_EXTEND` chain hook
+    ↓
 create ToolRegistry (mode-aware + runtime tool exclusions)
+    ↓
+emit `TOOL_REGISTRY_BUILD` plugin hook
     ↓
 apply optional config-driven prompt text overrides for built-in tools
     ↓
@@ -210,11 +260,14 @@ ConversationEngine.run()
 ┌─────────────────────────────────────┐
 │ Multi-Turn Loop:                    │
 │   1. Send messages to LLM           │
-│   2. Parse tool calls (if any)      │
-│   3. Dispatch via ToolRegistry      │
-│   4. Append results to messages     │
-│   5. Repeat until no more calls     │
+│   2. `PRE_LLM_CALL` / `POST_LLM_RESPONSE` hooks
+│   3. Parse tool calls (if any)      │
+│   4. Dispatch via ToolRegistry (`PRE_TOOL_EXECUTE` / `POST_TOOL_EXECUTE`) │
+│   5. Append results to messages     │
+│   6. Repeat until no more calls     │
 └─────────────────────────────────────┘
+    ↓
+emit `TURN_COMPLETED` plugin hook
     ↓
 generate_summaries() → persist (session/history)
     ↓
@@ -270,20 +323,23 @@ turn to enforce single-pass answering from preloaded seed content.
 ### XMPP Daemon Flow
 
 ```
-asky --xmpp-daemon
+asky --daemon
     ↓
 macOS + rumps available:
   cli/main.py
     -> singleton probe (`menubar.lock`) before spawn
     -> if running: print clear error, exit code 1
-    -> if not running: spawn `--xmpp-menubar-child`
-  daemon/menubar.py (status bar app)
+    -> if not running: spawn `--menubar-child`
+  daemon/menubar.py → MacosTrayApp (status bar app)
     -> child acquires singleton lock before creating `rumps.App`
   menubar controls daemon/service.py lifecycle
 otherwise:
-  daemon/service.py (foreground)
+  daemon/service.py (DaemonService, foreground)
+    -> fires DAEMON_TRANSPORT_REGISTER → xmpp_daemon plugin registers XMPPService
+    -> fires DAEMON_SERVER_REGISTER → gui_server etc. register sidecar servers
+    -> calls XMPPService.run() (blocking)
     ↓
-xmpp_client.py message callback payload
+xmpp_service.py message callback payload
     ↓
 per-conversation queue (serialized processing)
     ↓
@@ -325,7 +381,7 @@ Command presets are expanded at ingress (`\\name`, `\\presets`) before command e
 XMPP query ingress applies the same recursive slash-expansion behavior as CLI (`/alias`, `/cp`) before model execution, and unresolved slash queries follow CLI prompt-list semantics (`/` lists all prompts, unknown `/prefix` returns filtered prompt listing). This shared query-prep path is used by direct text queries, interface-planned query actions, and `transcript use` query execution.
 Daemon query prep also supports session-scoped media pointers: `#aN`/`#atN` for audio file+transcript and `#iN`/`#itN` for image file+transcript.
 Room bindings and session override files are persisted in SQLite; on daemon startup/session-start, previously bound rooms are auto-rejoined and continue with their last active bound sessions.
-On macOS menubar builds, action rows use state-aware labels (`Start/Stop Daemon`, `Enable/Disable Voice`, `Enable/Disable Run at Login`) while top rows remain informational status. XMPP credential/allowlist editing is CLI-only via `--edit-daemon` (no menubar credential editor).
+On macOS menubar builds, the menu is assembled dynamically from plugin-contributed entries (via `TRAY_MENU_REGISTER`). The XMPP plugin contributes: XMPP status, JID, Voice status rows + Start/Stop XMPP and Voice toggle action rows. The GUI server plugin contributes: Start/Stop Web GUI and Open Settings action rows. Core fixed items are: startup-at-login status/action and Quit. XMPP credential/allowlist editing is CLI-only via `--edit-daemon` (no menubar credential editor).
 
 ### Session Flow
 
@@ -619,3 +675,52 @@ A simplified "retrieval-only" system prompt guidance is injected in these cases 
 - **Key invariants**:
   - Passing `-t` / `--turns` while a session is active (or being created) overwrites the persisted setting for that session.
   - Subsequent resumes of that session automatically use the last-set turn limit.
+
+### Decision 19: Local-Only Plugin Runtime (v1)
+
+- **Context**: Feature extensions (persona workflows, daemon sidecars, future extractions) should be composable without hard-coding every capability into core CLI/daemon loops.
+- **Decision**: Introduce an optional local-only plugin runtime loaded from `~/.config/asky/plugins.toml`, with deterministic hook ordering and per-plugin failure isolation.
+- **Implementation**:
+  - `plugins/manifest.py` + `plugins/manager.py` — roster parsing, dependency graph ordering, import/activation/deactivation.
+  - `plugins/hooks.py` + `plugins/hook_types.py` — thread-safe ordered registry and typed mutable hook payloads.
+  - `plugins/runtime.py` — process-level runtime bootstrap + cache.
+  - Hook plumbing across `api/client.py`, `core/tool_registry_factory.py`, `core/engine.py`, and `core/registry.py`.
+  - CLI/daemon runtime injection in `cli/main.py`, `cli/chat.py`, `daemon/service.py`.
+- **Key invariants**:
+  - No enabled plugins means behavior stays identical to pre-plugin baseline.
+  - Plugin load/activation failures never crash normal chat/daemon execution.
+  - Hook order is deterministic: `(priority, plugin_name, registration_index)`.
+  - Deferred hooks (`CONFIG_LOADED`, `POST_TURN_RENDER`, `SESSION_END`) remain unimplemented in v1.
+
+### Decision 21: Plugin-Contributed Tray Entries + Dependency Visibility
+
+- **Context:** `TrayController` knew about XMPP and GUI server specifically. Dependency failures were silently logged. No way to distinguish launch context for gating interactive prompts.
+- **Decision:** Core tray has zero transport/plugin knowledge. Each plugin contributes menu entries via `TRAY_MENU_REGISTER`. Dependency issues surface as interactive prompts (CLI) or tray warnings (daemon/app). `LaunchContext` enum gates interactive behaviour.
+- **Implementation:**
+  - `daemon/launch_context.py` — `LaunchContext` enum + module-level get/set/is_interactive.
+  - `daemon/tray_protocol.py` — `TrayPluginEntry` (callable label + optional action + optional autostart) + slimmed `TrayStatus`.
+  - `plugins/hook_types.py` — `TRAY_MENU_REGISTER` + `TrayMenuRegisterContext` (status_entries, action_entries, service callbacks).
+  - `daemon/tray_controller.py` — fires `TRAY_MENU_REGISTER` at init; generic `start/stop/toggle_service`; no XMPP/GUI imports.
+  - `daemon/tray_macos.py` — dynamic menu from plugin entries; startup warnings displayed once.
+  - `plugins/manager.py` — `DependencyIssue` + `get_dependency_issues()` + `enable_plugin()` + atomic `_persist_enabled_state()`.
+  - `plugins/runtime.py` — `_handle_dependency_issues()` between roster load and import; `get_startup_warnings()` on `PluginRuntime`.
+- **Key invariants:**
+  - `daemon/` core never imports from `plugins/xmpp_daemon/`.
+  - `enable_plugin()` TOML write is atomic (`os.replace()`).
+  - No `input()` calls in `DAEMON_FOREGROUND` or `MACOS_APP` contexts.
+  - If no plugin runtime or empty hook registry, `TRAY_MENU_REGISTER` fires with no subscribers → graceful empty menu (only core items).
+
+### Decision 20: XMPP Daemon as Built-in Plugin
+
+- **Context**: XMPP daemon transport was originally hard-coded into `daemon/service.py`. This made the core daemon inseparable from XMPP concerns and prevented alternative transports.
+- **Decision**: Extract all XMPP logic into `plugins/xmpp_daemon/` as a built-in plugin. `daemon/service.py` becomes a transport-agnostic `DaemonService` that uses hook-based transport registration.
+- **Implementation**:
+  - `DAEMON_TRANSPORT_REGISTER` hook in `hook_types.py` — `DaemonService` fires this at construction; exactly one plugin must respond with a `DaemonTransportSpec`.
+  - `plugins/xmpp_daemon/plugin.py` — `XMPPDaemonPlugin` handles the hook, constructs `XMPPService`, appends `DaemonTransportSpec`.
+  - `plugins/xmpp_daemon/xmpp_service.py` — all XMPP runtime logic (per-JID queues, client wiring, message dispatch).
+  - `daemon/service.py` — reduced to lifecycle: fire hooks, run transport, stop servers on exit.
+  - `daemon/tray_protocol.py` + `daemon/tray_macos.py` — platform-agnostic `TrayApp` ABC and macOS rumps implementation separated for future platform portability.
+- **Key invariants**:
+  - One-way dependency: `plugins/xmpp_daemon` may import `asky.daemon.errors`; `daemon/` core must not import from `plugins/xmpp_daemon`.
+  - `DaemonService` raises `DaemonUserError` if zero or more than one transport is registered.
+  - The XMPP daemon plugin is enabled by default in `plugins.toml` and can be disabled to suppress XMPP transport entirely.

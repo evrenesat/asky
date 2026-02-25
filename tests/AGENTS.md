@@ -88,6 +88,12 @@ uv run pytest tests/test_cli.py::test_function_name
 | `test_html.py`                         | HTML stripping                                                                                                                  |
 | `test_expansion.py`                    | Query expansion                                                                                                                 |
 | `test_push_data.py`                    | Push data endpoints                                                                                                             |
+| `test_plugin_manager.py`               | Plugin roster parsing, dependency ordering, lifecycle activation/deactivation                                                   |
+| `test_plugin_hooks.py`                 | Hook registry ordering, chain invocation, freeze behavior, error isolation                                                      |
+| `test_plugin_integration.py`           | Runtime hook plumbing across API/core/daemon call paths                                                                         |
+| `test_manual_persona_creator.py`       | Manual persona plugin storage/ingestion/export and tool registration                                                            |
+| `test_persona_manager.py`              | Persona import/binding/prompt+preload injection behavior                                                                        |
+| `test_gui_server_plugin.py`            | NiceGUI sidecar lifecycle, general settings page helpers, plugin page extension registry                                        |
 | `test_summarization.py`                | Content summarization                                                                                                           |
 | `test_integration.py`                  | End-to-end flows                                                                                                                |
 | `test_research_eval_*.py`              | Evaluation harness dataset/assertion/matrix/source-provider contracts                                                           |

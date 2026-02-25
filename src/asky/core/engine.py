@@ -24,6 +24,13 @@ from asky.core.api_client import get_llm_msg, count_tokens, UsageTracker
 from asky.core.exceptions import ContextOverflowError
 from asky.core.prompts import extract_calls
 from asky.core.registry import ToolRegistry
+from asky.plugins.hook_types import (
+    POST_LLM_RESPONSE,
+    PRE_LLM_CALL,
+    PostLLMResponseContext,
+    PreLLMCallContext,
+)
+from asky.plugins.hooks import HookRegistry
 from asky import summarization
 
 logger = logging.getLogger(__name__)
@@ -72,6 +79,7 @@ class ConversationEngine:
         event_callback: Optional[Callable[[str, Dict[str, Any]], None]] = None,
         lean: bool = False,
         max_turns: Optional[int] = None,
+        hook_registry: Optional[HookRegistry] = None,
     ):
         self.model_config = model_config
         self.tool_registry = tool_registry
@@ -85,6 +93,7 @@ class ConversationEngine:
         self.event_callback = event_callback
         self.lean = lean
         self.max_turns = max_turns or MAX_TURNS
+        self.hook_registry = hook_registry
         self._research_cache = None
         self.start_time: float = 0
         self.final_answer: str = ""
@@ -149,6 +158,29 @@ class ConversationEngine:
                 messages = self.check_and_compact(messages)
                 tool_schemas = self.tool_registry.get_schemas()
                 use_tools = bool(tool_schemas)
+                if self.hook_registry is not None:
+                    pre_llm_context = PreLLMCallContext(
+                        turn=turn,
+                        messages=messages,
+                        use_tools=use_tools,
+                        tool_schemas=tool_schemas,
+                    )
+                    self.hook_registry.invoke(PRE_LLM_CALL, pre_llm_context)
+                    if isinstance(pre_llm_context.messages, list):
+                        messages = pre_llm_context.messages
+                    else:
+                        logger.warning(
+                            "PRE_LLM_CALL hook returned invalid messages type: %s",
+                            type(pre_llm_context.messages).__name__,
+                        )
+                    use_tools = bool(pre_llm_context.use_tools)
+                    if isinstance(pre_llm_context.tool_schemas, list):
+                        tool_schemas = pre_llm_context.tool_schemas
+                    else:
+                        logger.warning(
+                            "PRE_LLM_CALL hook returned invalid tool_schemas type: %s",
+                            type(pre_llm_context.tool_schemas).__name__,
+                        )
 
                 # Initialize tracking for all available tools so they appear with 0 usage
                 if (
@@ -212,6 +244,36 @@ class ConversationEngine:
                 )
 
                 calls = extract_calls(msg, turn)
+                if self.hook_registry is not None:
+                    post_llm_context = PostLLMResponseContext(
+                        turn=turn,
+                        message=msg,
+                        calls=calls,
+                        messages=messages,
+                    )
+                    self.hook_registry.invoke(POST_LLM_RESPONSE, post_llm_context)
+                    if isinstance(post_llm_context.message, dict):
+                        msg = post_llm_context.message
+                    else:
+                        logger.warning(
+                            "POST_LLM_RESPONSE hook returned invalid message type: %s",
+                            type(post_llm_context.message).__name__,
+                        )
+                    if isinstance(post_llm_context.calls, list):
+                        calls = post_llm_context.calls
+                    else:
+                        logger.warning(
+                            "POST_LLM_RESPONSE hook returned invalid calls type: %s",
+                            type(post_llm_context.calls).__name__,
+                        )
+                    if isinstance(post_llm_context.messages, list):
+                        messages = post_llm_context.messages
+                    else:
+                        logger.warning(
+                            "POST_LLM_RESPONSE hook returned invalid messages type: %s",
+                            type(post_llm_context.messages).__name__,
+                        )
+
                 if not calls:
                     self.final_answer = strip_think_tags(msg.get("content", ""))
 
@@ -754,6 +816,7 @@ def create_tool_registry(
     summarization_verbose_callback: Optional[Callable[[Any], None]] = None,
     disabled_tools: Optional[Set[str]] = None,
     tool_trace_callback: Optional[Callable[[Dict[str, Any]], None]] = None,
+    hook_registry: Optional[HookRegistry] = None,
 ) -> ToolRegistry:
     """Create a ToolRegistry with all default and custom tools."""
     return call_attr(
@@ -770,6 +833,7 @@ def create_tool_registry(
         execute_custom_tool_fn=_execute_custom_tool,
         custom_tools=CUSTOM_TOOLS,
         disabled_tools=disabled_tools,
+        hook_registry=hook_registry,
     )
 
 
@@ -780,6 +844,7 @@ def create_research_tool_registry(
     research_source_mode: Optional[str] = None,
     summarization_tracker: Optional[UsageTracker] = None,
     tool_trace_callback: Optional[Callable[[Dict[str, Any]], None]] = None,
+    hook_registry: Optional[HookRegistry] = None,
 ) -> ToolRegistry:
     """Create a ToolRegistry with research mode tools."""
     return call_attr(
@@ -794,6 +859,7 @@ def create_research_tool_registry(
         session_id=session_id,
         research_source_mode=research_source_mode,
         tool_trace_callback=tool_trace_callback,
+        hook_registry=hook_registry,
     )
 
 

@@ -262,3 +262,57 @@ system_prompt_guideline = "Avoid web search unless preloaded evidence is insuffi
 ```
 
 The default `user.toml` includes commented examples for these knobs so new installs can discover and copy them quickly.
+
+## 14. Plugin Runtime (`plugins.toml`)
+
+Asky v1 plugins are local-only and loaded from:
+
+- `~/.config/asky/plugins.toml`
+
+If missing, asky creates a commented template on first plugin-runtime initialization.
+The generated default enables built-in plugins (`manual_persona_creator`,
+`persona_manager`, `gui_server`) so GUI settings editing works out of the box.
+
+Manifest schema (per plugin entry):
+
+```toml
+[plugin.manual_persona_creator]
+enabled = true
+module = "asky.plugins.manual_persona_creator.plugin"
+class = "ManualPersonaCreatorPlugin"
+dependencies = []
+capabilities = ["tool_registry", "preload", "prompt"]
+config_file = "plugins/manual_persona_creator.toml"
+```
+
+Rules:
+
+- Required keys: `enabled`, `module`, `class`
+- Optional keys: `dependencies`, `capabilities`, `config_file`
+- Unknown keys are ignored with warning
+- Import/activation failures are isolated per plugin and do not crash startup
+
+### Built-in Hook Names (v1)
+
+- `TOOL_REGISTRY_BUILD`
+- `SESSION_RESOLVED`
+- `PRE_PRELOAD`
+- `POST_PRELOAD`
+- `SYSTEM_PROMPT_EXTEND` (chain-return)
+- `PRE_LLM_CALL`
+- `POST_LLM_RESPONSE`
+- `PRE_TOOL_EXECUTE`
+- `POST_TOOL_EXECUTE`
+- `TURN_COMPLETED`
+- `DAEMON_SERVER_REGISTER`
+
+Deferred in v1: `CONFIG_LOADED`, `POST_TURN_RENDER`, `SESSION_END`.
+
+### Built-in Plugins in This Repo
+
+- `asky.plugins.manual_persona_creator`: manual persona creation/export tools
+- `asky.plugins.persona_manager`: persona import + per-session binding + prompt/preload injection
+- `asky.plugins.gui_server`: NiceGUI sidecar server (daemon integration) with general settings editor
+
+For concrete entry points and current limitations (including persona workflow
+visibility and GUI URLs), see [`docs/plugins.md`](./plugins.md).

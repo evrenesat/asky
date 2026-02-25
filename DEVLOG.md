@@ -27,6 +27,360 @@ Applied consistent Markdown formatting to the `_HELP_TEXT` constant in `src/asky
   - `tests/test_xmpp_commands.py` passed (19 tests).
   - Full regression suite passed.
 
+## 2026-02-25 - Plugin-Contributed Tray Entries, Launch Context, Dependency Visibility
+
+Three related improvements implemented together.
+
+**Problem 1 — Tray coupling:** `TrayController` knew about XMPP and GUI server
+specifically. Both are plugins and should own their tray items.
+
+**Problem 2 — Silent dependency failures:** When a plugin's required dep is
+disabled or missing the user got no actionable feedback.
+
+**Problem 3 — No launch context:** No way to distinguish how the process was
+launched (interactive CLI vs foreground daemon vs macOS app) — needed to gate
+interactive `input()` prompts.
+
+**What changed:**
+
+- `daemon/launch_context.py` (NEW) — `LaunchContext` enum + `set/get_launch_context()` / `is_interactive()`. Set in `cli/main.py` at the menubar-child and foreground-daemon code paths.
+- `daemon/tray_protocol.py` — removed `TrayXmppState`, XMPP/GUI fields from `TrayStatus`; added `TrayPluginEntry` (label callable + optional action + optional autostart); `TrayStatus` now holds `plugin_status_entries`, `plugin_action_entries`, `warnings`.
+- `plugins/hook_types.py` — added `TRAY_MENU_REGISTER` hook + `TrayMenuRegisterContext` payload.
+- `daemon/tray_controller.py` — full refactor: XMPP/GUI methods removed; fires `TRAY_MENU_REGISTER` at init; renames `start/stop/toggle/is_xmpp` → `start/stop/toggle/is_service`; `autostart_if_ready()` delegates to plugin entry `autostart_fn`.
+- `daemon/tray_macos.py` — menu built dynamically from `plugin_status_entries` / `plugin_action_entries`; gets hook registry from plugin runtime; displays startup warnings on first refresh.
+- `plugins/xmpp_daemon/plugin.py` — registers `TRAY_MENU_REGISTER` handler: contributes XMPP status, JID, Voice status rows + Start/Stop XMPP, Voice toggle action rows; moves XMPP config completeness check into `_on_daemon_transport_register()`; owns autostart logic.
+- `plugins/gui_server/plugin.py` — registers `TRAY_MENU_REGISTER` handler: contributes Start/Stop Web GUI + Open Settings action rows.
+- `plugins/manager.py` — added `DependencyIssue` dataclass; `_detect_early_dependency_issues()` called from `load_roster()`; added `get_dependency_issues()`, `enable_plugin()`, `_persist_enabled_state()` (atomic TOML write via `os.replace()`).
+- `plugins/runtime.py` — `_handle_dependency_issues()` called between `load_roster()` and `discover_and_import()`; prompts to enable in interactive mode; stores warnings in `PluginRuntime._startup_warnings`; `get_startup_warnings()` exposes them.
+- Tests updated: `test_daemon_menubar.py` rewritten for dynamic menu; `test_plugin_integration.py` + `test_gui_server_plugin.py` extended with new hook and dependency tests.
+
+**Key invariants:**
+- `daemon/` core imports nothing from `plugins/xmpp_daemon/`.
+- `tray_controller.py` contains no XMPP/GUI/voice references.
+- `get_startup_warnings()` returns warnings collected at startup.
+- All 1060 tests pass.
+
+## 2026-02-25 - Refactor Tray: Labels to Controller, Daemon→XMPP Rename
+
+Moved all display-label computation out of the macOS-specific tray file into `TrayController.get_state()`. Renamed "Daemon" to "XMPP" throughout the tray UI layer since the menu action controls the XMPP transport, not the Python process itself (which is the actual daemon/menubar process).
+
+**What changed:**
+
+- `daemon/tray_protocol.py` — renamed `TrayDaemonState` → `TrayXmppState`, `daemon_state` → `xmpp_state` in `TrayStatus`; added pre-computed display label fields (`status_xmpp_label`, `status_jid_label`, `action_xmpp_label`, etc.) so platform tray renderers are purely declarative.
+- `daemon/tray_controller.py` — renamed `is_daemon_running` → `is_xmpp_running`, `start_daemon` → `start_xmpp`, `stop_daemon` → `stop_xmpp`, `toggle_daemon` → `toggle_xmpp`; `get_state()` now computes all label strings; thread name updated to `asky-xmpp-client`.
+- `daemon/tray_macos.py` — `_refresh_status()` reduced to pure assignment of label fields from `TrayStatus`; no string construction or state branching; renamed `status_daemon`→`status_xmpp`, `action_daemon`→`action_xmpp`, `_on_daemon_action`→`_on_xmpp_action`.
+- `tests/test_daemon_menubar.py` — updated label assertions and attribute names.
+- `ARCHITECTURE.md`, `docs/xmpp_daemon.md`, `daemon/AGENTS.md` — label references updated.
+
+**Key invariants:**
+- `MacosTrayApp._refresh_status()` contains no business logic; all label decisions live in `TrayController.get_state()`.
+- All 1053 tests pass.
+
+## 2026-02-25 - Fix GUI URL + Web GUI Server Toggle in Tray
+
+Fixed the "Open Settings" URL (was opening `/` → 404; now opens `/settings/general`). Added "Start/Stop Web GUI" tray action that starts/stops the NiceGUI sidecar independently of the daemon.
+
+**What changed:**
+
+- `daemon/tray_protocol.py` — added `gui_server_running: bool = False` to `TrayStatus`.
+- `daemon/service.py` — added `get_plugin_server(name) -> Optional[DaemonServerSpec]` to expose sidecar lookup without exposing the full internal list.
+- `daemon/tray_controller.py` — fixed `GUI_SERVER_DEFAULT_URL` to include `/settings/general`; added `GUI_SERVER_SIDECAR_NAME = "nicegui_server"` constant; added `is_gui_server_running()` and `toggle_gui_server()` methods; `get_state()` now populates `gui_server_running`.
+- `daemon/tray_macos.py` — added `action_gui_toggle` ("Start/Stop Web GUI") menu item before "Open Settings"; `_refresh_status()` updates its label.
+- `tests/test_daemon_menubar.py` — asserts `action_gui_toggle` present and labelled "Start Web GUI"; new tests for `open_gui_server` URL path, toggle-without-daemon error, and start/stop cycle.
+
+**Key invariants:**
+- Daemon core does not import from plugin packages; sidecar is accessed by name via `DaemonService.get_plugin_server()`.
+- Toggling the GUI server while daemon is not running surfaces a user-facing error via `on_error` callback.
+- All 1052 tests pass.
+
+## 2026-02-25 - Extract TrayController + Add GUI Server Tray Action
+
+Extracted all platform-agnostic tray business logic from the `AskyMenubarApp` inner class into a new `TrayController` class. Added "Open Settings" tray menu item that opens the GUI server in the default browser.
+
+**What changed:**
+
+- `daemon/tray_controller.py` (new) — `TrayController` holds daemon start/stop threading, voice/startup toggles, autostart logic, and `open_gui_server()`. Accepts `on_state_change` and `on_error` callbacks; no platform-specific imports.
+- `daemon/tray_protocol.py` — added `gui_server_url: str = ""` field to `TrayStatus`.
+- `daemon/tray_macos.py` — reduced to a thin rumps wrapper. Creates `TrayController` in `run()`, delegates all callbacks. Added `action_gui` menu item ("Open Settings") that calls `controller.open_gui_server()`.
+- `tests/test_daemon_menubar.py` — updated monkeypatch targets to `asky.daemon.tray_controller.*`, updated `_service_thread` access to `app._controller._service_thread`. Added `test_menubar_has_gui_action` and `test_tray_controller_open_gui_server`.
+- `daemon/AGENTS.md` — added `tray_controller.py` row and updated TrayApp Abstraction section and dependency listing.
+- `ARCHITECTURE.md` — added `daemon_tray_ctrl` node and edges in Daemon subgraph.
+
+**Key invariants:**
+- `TrayController` has no platform-specific imports (no `rumps`, `Tk`, etc.).
+- `GUI_SERVER_DEFAULT_URL = "http://127.0.0.1:8766"` defined as module-level constant in `tray_controller.py`; daemon core does not import from plugin packages.
+- All 1050 tests pass, no regressions.
+
+## 2026-02-25 - XMPP Daemon Extracted to Built-in Plugin
+
+Converted the XMPP daemon from hard-coded core into a built-in plugin, making `daemon/service.py` a transport-agnostic lifecycle coordinator.
+
+**What changed:**
+
+- `daemon/service.py` — `XMPPDaemonService` replaced by `DaemonService`. Transport-agnostic: fires `DAEMON_TRANSPORT_REGISTER` at init to collect exactly one transport from plugins, fires `DAEMON_SERVER_REGISTER` to collect sidecar servers.
+- `plugins/xmpp_daemon/` — new built-in plugin containing all XMPP logic previously in `daemon/`: `xmpp_client.py`, `router.py`, `command_executor.py`, `session_profile_manager.py`, `interface_planner.py`, `voice_transcriber.py`, `image_transcriber.py`, `transcript_manager.py`, `chunking.py`, plus new `xmpp_service.py` (`XMPPService`) and `plugin.py` (`XMPPDaemonPlugin`).
+- `hook_types.py` — added `DAEMON_TRANSPORT_REGISTER` hook, `DaemonTransportSpec`, `DaemonTransportRegisterContext`.
+- `daemon/menubar.py` — reduced to singleton lock helpers + thin `run_menubar_app()` launcher.
+- `daemon/tray_protocol.py` + `daemon/tray_macos.py` — new `TrayApp` ABC and macOS rumps implementation, decoupled from menubar launcher for future platform portability.
+- `plugins/manager.py` — `MANIFEST_TEMPLATE` updated to include `xmpp_daemon` built-in plugin.
+
+**Key invariants:**
+- One-way dependency: `plugins/xmpp_daemon` may import from `asky.daemon.errors`; daemon core must not import from `plugins/xmpp_daemon`.
+- `DaemonService` raises `DaemonUserError` if zero or multiple transports are registered.
+- Daemon mode itself (singleton lock, macOS menubar, startup-at-login) stays in core `daemon/`.
+- All 1047 tests pass, no regressions.
+
+## 2026-02-25 - Persona Plugin Deterministic UX Implementation Complete
+
+Successfully completed all 15 tasks for the persona-plugin-deterministic-ux spec, transforming persona management from model-driven tool-discovery to deterministic user-first command pattern with @mention syntax.
+
+**Implementation Summary:**
+- **Phase 1 (Tasks 1-4)**: Core infrastructure
+  - Plugin KVStore with SQLite backend (27 tests)
+  - @mention parser with regex extraction (20 tests)
+  - Persona name/alias resolver (23 tests)
+- **Phase 2 (Tasks 5-9)**: CLI commands and integration
+  - Complete CLI persona command suite (36 tests)
+  - Mention parsing integrated into query preprocessing
+  - Session binding with persistence (38 tests)
+  - Integration tests for mention pipeline (21 tests)
+- **Phase 3 (Tasks 10-12)**: Breaking changes
+  - Removed persona tools from LLM surface (CLI-only approach)
+  - Updated tool registry integration tests (4 tests)
+- **Phase 4 (Tasks 13-15)**: Polish and completion
+  - Custom error classes with actionable messages (27 tests)
+  - Deprecated tool files removed
+  - Documentation updated across all affected modules
+  - End-to-end integration tests (13 tests)
+
+**Key Features Delivered:**
+- CLI commands: `asky persona create/load/unload/list/alias/import/export`
+- @mention syntax: `@persona_name query text` for deterministic persona loading
+- Alias support: `@alias → persona_name` resolution
+- Session-scoped persona persistence
+- Import/export persona packages (ZIP format)
+- Hook integration for context injection (SESSION_RESOLVED, SYSTEM_PROMPT_EXTEND, PRE_PRELOAD)
+
+**Test Coverage:**
+- Total: 1048 tests passing
+- New tests added: 209 tests across 12 new test files
+- Test execution time: ~8 seconds
+- No regressions introduced
+
+**Files Modified/Created:**
+- Created: 12 new modules (kvstore, mention_parser, resolver, persona_commands, errors, etc.)
+- Created: 12 new test files
+- Modified: 8 existing modules (plugin.py files, main.py, chat.py, types.py)
+- Updated: 6 AGENTS.md documentation files
+
+**Breaking Changes:**
+- Persona creation/management tools removed from LLM tool registry
+- All persona operations now CLI-only (deterministic, user-driven)
+
+## 2026-02-25 - Hook Integration Tests for Persona Plugin
+
+Added comprehensive integration tests for the persona manager hook system to verify correct behavior with mention-based persona loading.
+
+- Created **`tests/test_hook_integration.py`** [NEW]:
+  - 12 integration tests covering all three persona manager hooks
+  - **SESSION_RESOLVED hook tests** (3 tests):
+    - `test_session_resolved_restores_persona_binding` - verifies hook restores persona from session binding
+    - `test_session_resolved_with_mention_loaded_persona` - verifies hook works with @mention-loaded personas
+    - `test_session_resolved_with_nonexistent_persona_clears_binding` - verifies hook clears invalid bindings
+  - **SYSTEM_PROMPT_EXTEND hook tests** (3 tests):
+    - `test_system_prompt_extend_injects_persona_behavior` - verifies behavior prompt injection
+    - `test_system_prompt_extend_with_no_persona_returns_unchanged` - verifies no-op when no persona
+    - `test_system_prompt_extend_with_alias_loaded_persona` - verifies hook works with alias-loaded personas
+  - **PRE_PRELOAD hook tests** (3 tests):
+    - `test_pre_preload_injects_persona_knowledge` - verifies knowledge chunk injection
+    - `test_pre_preload_skips_when_lean_mode` - verifies lean mode skips knowledge injection
+    - `test_pre_preload_with_no_persona_does_nothing` - verifies no-op when no persona
+  - **End-to-end flow tests** (3 tests):
+    - `test_complete_mention_to_hooks_flow` - verifies complete flow: @mention → resolve → load → all hooks execute
+    - `test_complete_alias_mention_to_hooks_flow` - verifies complete flow with alias: @alias → resolve → load → hooks execute
+    - `test_persona_replacement_via_mention_updates_hooks` - verifies persona replacement updates all hooks correctly
+- Verified existing hook implementations:
+  - All three hooks (`_on_session_resolved`, `_on_system_prompt_extend`, `_on_pre_preload`) are already implemented in `src/asky/plugins/persona_manager/plugin.py`
+  - Hooks correctly integrate with mention-based loading system
+  - SESSION_RESOLVED restores persona bindings from storage
+  - SYSTEM_PROMPT_EXTEND injects persona behavior prompt
+  - PRE_PRELOAD injects persona knowledge chunks
+- Validation:
+  - `uv run pytest tests/test_hook_integration.py -v` -> 12 passed in 2.77s
+  - `uv run pytest tests/ -v` -> 1008 passed, 1 warning in 7.31s (no regressions)
+- Tasks: Completed tasks 11.1, 11.2, 11.3, 11.4, and 11 from persona-plugin-deterministic-ux spec
+
+## 2026-02-25 - Tool Registry Integration Tests for Persona Plugin
+
+Added integration tests to verify that persona tools are no longer registered in the tool registry after the CLI-only migration.
+
+- Created **`tests/test_tool_registry_integration.py`** [NEW]:
+  - 4 integration tests verifying tool registry behavior after persona tool removal
+  - `test_persona_manager_does_not_register_tools` - verifies persona_manager plugin registers no tools
+  - `test_manual_persona_creator_does_not_register_tools` - verifies manual_persona_creator plugin registers no tools
+  - `test_other_plugins_can_still_register_tools` - verifies non-persona plugins can still register tools correctly
+  - `test_tool_registry_schemas_exclude_persona_tools` - verifies tool schemas don't include any persona tools
+- Updated **`tests/test_persona_manager.py`**:
+  - Changed `test_persona_manager_registers_tools` to `test_persona_manager_does_not_register_tools` - now asserts tools are NOT registered
+  - Updated `test_prompt_and_preload_injection_for_loaded_persona` - replaced `registry.dispatch()` with direct `plugin._tool_load_persona()` call
+  - Updated `test_session_binding_persists_and_child_session_is_unbound` - replaced `registry.dispatch()` with direct `plugin._tool_load_persona()` call
+- Updated **`tests/test_manual_persona_creator.py`**:
+  - Changed `test_manual_persona_creator_registers_tools` to `test_manual_persona_creator_does_not_register_tools` - now asserts tools are NOT registered
+- Validation:
+  - `uv run pytest tests/test_tool_registry_integration.py -v` -> 4 passed
+  - `uv run pytest tests/test_persona_manager.py tests/test_manual_persona_creator.py -v` -> 8 passed
+  - All tests pass with updated assertions reflecting CLI-only persona management
+- Task: Completed task 10.3 from persona-plugin-deterministic-ux spec
+
+## 2026-02-25 - Session Binding Unit Tests for Persona Plugin
+
+Added comprehensive unit tests for the session binding module to verify persona persistence functionality.
+
+- Created **`tests/test_session_binding.py`** [NEW]:
+  - 38 unit tests covering all session binding functions
+  - Tests for `get_session_binding()` and `set_session_binding()` with various input types
+  - Tests for persona binding persistence across operations
+  - Tests for persona replacement functionality
+  - Tests for persona unbinding (clearing bindings)
+  - Tests for cross-query persistence
+  - Tests for atomic file writes and TOML serialization
+- Verified existing implementation:
+  - Session binding module (`src/asky/plugins/persona_manager/session_binding.py`) already supports mention-based loading
+  - `set_session_binding()` works for binding personas (equivalent to conceptual `bind_persona_to_session`)
+  - `get_session_binding()` returns current persona (equivalent to conceptual `get_session_persona`)
+  - `set_session_binding(persona_name=None)` clears binding (equivalent to conceptual `unbind_persona_from_session`)
+- Integration verified:
+  - Mention-based loading in `src/asky/cli/chat.py` uses `set_session_binding()` correctly
+  - All 21 integration tests in `test_mention_pipeline_integration.py` pass
+  - All 13 persona command tests involving binding pass
+- Validation:
+  - `uv run pytest tests/test_session_binding.py -xvs` -> 38 passed
+  - `uv run pytest tests/test_mention_pipeline_integration.py -xvs` -> 21 passed
+- Tasks: Completed tasks 8.1 and 8.2 from persona-plugin-deterministic-ux spec
+
+## 2026-02-24 - Persona Command Routing via Early argv Check
+
+Implemented Solution 1 for persona command routing to avoid argparse conflicts with query positional arguments.
+
+- Modified **`src/asky/cli/main.py`**:
+  - Added early check in `main()` for `sys.argv[1] == "persona"` before calling `parse_args()`
+  - When detected, creates separate argparse parser for persona subcommands and dispatches directly to handlers
+  - Removed persona subparser setup from `parse_args()` function to eliminate conflict with query positional argument
+  - Removed complex `parse_known_args()` workaround logic that was attempting to handle the conflict
+  - Removed redundant persona command handling block that was in the middle of `main()`
+- Benefits:
+  - Clean UX: `asky persona list` works without conflicts
+  - No breaking changes to existing query parsing
+  - Simpler code flow with early routing decision
+- Validation:
+  - `uv run pytest tests/test_persona_commands.py -v` -> 36 passed
+  - `uv run pytest tests/ -k "main or parse_args" -v` -> 45 passed
+- Task: Completed task 7.1 from persona-plugin-deterministic-ux spec
+
+## 2026-02-24 - Plugin User Documentation and Entry-Point Clarification
+
+Clarified plugin user entry points and current limitations, especially for persona plugins.
+
+- Added dedicated user-facing plugin documentation:
+  - **`docs/plugins.md`** [NEW]
+    - Runtime start conditions
+    - Built-in plugin list
+    - Exact GUI URLs and daemon dependency
+    - Current persona entry points (tool-based only)
+    - Practical usage prompt patterns
+    - Current limitations and what is not exposed yet
+- Updated plugin references:
+  - **`README.md`**:
+    - Added docs index link to `docs/plugins.md`
+    - Replaced inline plugin summary block with pointer to dedicated plugin doc
+  - **`docs/configuration.md`**:
+    - Plugin section now points to `docs/plugins.md` for entry-point and limitation details
+- Updated plugin AGENTS docs for future agent clarity:
+  - **`src/asky/plugins/AGENTS.md`**
+  - **`src/asky/plugins/manual_persona_creator/AGENTS.md`**
+  - **`src/asky/plugins/persona_manager/AGENTS.md`**
+  - **`src/asky/plugins/gui_server/AGENTS.md`**
+  - Added explicit “User Entry Points (Current)” sections and noted persona plugins are tool-call based for now.
+- Validation:
+  - `uv run pytest` -> `821 passed`
+
+## 2026-02-24 - Default Built-in Plugin Roster Enabled
+
+Updated plugin bootstrap defaults so built-in plugins are enabled automatically on fresh installs.
+
+- Added bundled default config: **`src/asky/data/config/plugins.toml`** with:
+  - `manual_persona_creator` enabled
+  - `persona_manager` enabled
+  - `gui_server` enabled
+- Updated **`src/asky/plugins/manager.py`** `MANIFEST_TEMPLATE` to generate the same enabled roster when `~/.config/asky/plugins.toml` is missing and plugin runtime initializes before config copy.
+- Updated **`src/asky/config/loader.py`** to include `plugins.toml` in split-config bootstrap copy list.
+- Updated **`tests/test_plugin_manager.py`** to assert the new default generated roster entries.
+- Updated docs in **`docs/configuration.md`** to clarify default-enabled built-ins and current manual persona creator UI status.
+- Validation:
+  - `uv run pytest tests/test_plugin_manager.py tests/test_config.py` -> passed
+  - `uv run pytest` -> `821 passed`
+
+## 2026-02-24 - Updated asky.icns from Simplified Mono Icon
+
+Converted the simplified mono bold icon from `.ico` to a full multi-resolution Apple `.icns` file to replace the existing asset.
+
+- **`src/asky/data/icons/asky.icns`** [MODIFY]: Replaced with a new version generated from `/Users/evren/code/asky/temp/assets/asky_icon_mono_simplified_bold.ico`.
+- **Process**:
+  - Extracted 256x256 base PNG from `.ico`.
+  - Generated a complete iconset with sizes: 16x16, 32x32, 64x64, 128x128, 256x256, 512x512, and 1024x1024 (upscaled).
+  - Compiled into `.icns` using macOS `iconutil`.
+- **Validation**:
+  - Verified as `com.apple.icns` with `file` and `sips`.
+  - Confirmed 1024x1024 maximum resolution.
+
+## 2026-02-24 - Plugin Runtime v1 + Persona Plugins + GUI Sidecar
+
+Implemented the first full plugin runtime slice with deterministic hooks, lifecycle isolation, built-in persona plugins, and a daemon-integrated NiceGUI sidecar plugin.
+
+- **New plugin runtime package (`src/asky/plugins/`)**:
+  - Added manifest schema + parsing (`manifest.py`) for `~/.config/asky/plugins.toml`.
+  - Added deterministic hook registry (`hooks.py`) and hook payload contracts (`hook_types.py`).
+  - Added plugin manager/lifecycle (`manager.py`) with dependency ordering, cycle detection, and failure isolation.
+  - Added runtime container + process-level bootstrap cache (`runtime.py`).
+- **Core/API hook integration**:
+  - `AskyClient` now accepts optional `plugin_runtime`; when absent, behavior is unchanged.
+  - Added turn lifecycle hooks in `api/client.py`: `SESSION_RESOLVED`, `PRE_PRELOAD`, `POST_PRELOAD`, `SYSTEM_PROMPT_EXTEND`, `TURN_COMPLETED`.
+  - Added registry/engine hook support:
+    - `TOOL_REGISTRY_BUILD` in `core/tool_registry_factory.py`
+    - `PRE_LLM_CALL` / `POST_LLM_RESPONSE` in `core/engine.py`
+    - `PRE_TOOL_EXECUTE` / `POST_TOOL_EXECUTE` in `core/registry.py`
+- **CLI + daemon runtime threading**:
+  - CLI query path now initializes runtime once and injects it into chat client construction.
+  - Daemon service now accepts plugin runtime, injects it into `CommandExecutor`/`AskyClient`, and supports `DAEMON_SERVER_REGISTER` for sidecar servers.
+  - Daemon now starts/stops registered plugin sidecar servers with per-server failure isolation.
+- **Manual Persona Creator plugin** (`src/asky/plugins/manual_persona_creator/`):
+  - Added canonical persona storage layout + schema versioning.
+  - Added source ingestion to normalized chunks with partial-warning surfacing.
+  - Added ZIP export format with metadata/prompt/chunks and checksum metadata.
+  - Registered tool surface via `TOOL_REGISTRY_BUILD`.
+- **Persona Manager plugin** (`src/asky/plugins/persona_manager/`):
+  - Added persona package importer with path-traversal checks and schema validation.
+  - Added embedding rebuild on import from normalized chunk payloads.
+  - Added persistent session-to-persona bindings and deterministic resume behavior.
+  - Added prompt/preload injection hooks for active persona context.
+- **GUI Server plugin** (`src/asky/plugins/gui_server/`):
+  - Added NiceGUI sidecar server lifecycle wrapper (background thread, health, stop).
+  - Added general settings page helpers (`general.toml` read/validate/safe-write).
+  - Added plugin page extension registry contract and page mounting isolation.
+  - Registered GUI sidecar through `DAEMON_SERVER_REGISTER`.
+- **Dependency update**:
+  - Added `nicegui>=2.0.0` to base dependencies in `pyproject.toml`.
+  - Regenerated `uv.lock`.
+- **Tests**:
+  - Added:
+    - `tests/test_plugin_manager.py`
+    - `tests/test_plugin_hooks.py`
+    - `tests/test_plugin_integration.py`
+    - `tests/test_manual_persona_creator.py`
+    - `tests/test_persona_manager.py`
+    - `tests/test_gui_server_plugin.py`
+  - Full suite pass: **821 passed**.
+
 ## 2026-02-24 - XMPP Help Command Regression and Routing Fix
 
 Fixed a bug where XMPP command-like messages (such as `/help`, `/h`, `transcript list`, or flags like `-H`) were being incorrectly routed to the LLM interface planner, causing delays and incorrect responses (showing only prompt aliases instead of full help).
@@ -2799,31 +3153,28 @@ For older logs, see [DEVLOG_ARCHIVE.md](DEVLOG_ARCHIVE.md).
   - Added/updated tests for CLI user-error surfacing and env-backed daemon readiness.
   - Full suite passes.
 
-## 2026-02-24
+### Plugin System Detailed Handoff Blueprint (Execution-Oriented Plan)
 
-### Plugin System Planning Revision (Docs-Only)
-
-**Summary**: Reworked the plugin system implementation planning docs to align with current code architecture and make the rollout phase-gated, deterministic, and implementation-ready before coding begins.
+**Summary**: Added an implementation-grade, decision-complete plugin-system blueprint designed for safe handoff to smaller agents without ambiguity or room for shortcutting.
 
 - **What changed**:
-  - Updated:
-    - `plans/plugin-system.md`
-    - `plans/plugin-system-api.md`
-    - `plans/plugin-system-hooks.md`
-  - Kept unchanged:
-    - `plans/plugin_system_draft.md` (original ideation draft intentionally preserved)
-
-- **Plan quality improvements**:
-  - Added explicit **definition of done**, **phase gates**, and **verification commands** (`uv run pytest` + phase-specific tests).
-  - Rebased hook and lifecycle plans on real current call sites (`api/client.py`, `core/tool_registry_factory.py`, `core/registry.py`, `core/engine.py`, `daemon/service.py`, `daemon/command_executor.py`).
-  - Split integration into clearer risk-separated phases (runtime foundation, hook kernel, turn pipeline, daemon server integration, config/data isolation, then feature plugins).
-  - Removed bootstrap-risk assumptions from earlier draft (notably global config hook timing issues).
-  - Added concrete **open questions with recommended defaults** to lock decisions before implementation.
+  - Added new detailed plan file:
+    - `plans/plugin-system-implementation-detailed.md`
+  - The blueprint includes:
+    - locked product decisions,
+    - explicit in/out scope,
+    - full file inventory (create/modify/avoid),
+    - exact public API/type changes,
+    - strict hook contracts and ordering rules,
+    - sequential atomic phase steps,
+    - per-step and per-phase verification commands,
+    - edge-case requirements,
+    - binary final checklist.
 
 - **Why**:
-  - Prior plan had useful direction but mixed conceptual and implementation concerns, and included a few sequencing assumptions that conflict with current startup/config architecture.
-  - This revision is intended to reduce implementation risk, avoid hidden coupling, and make progress measurable at each phase boundary.
+  - Existing plan docs were directionally strong but not sufficiently prescriptive for constrained/smaller agents.
+  - This blueprint minimizes implementation drift and eliminates implicit decision points.
 
 - **Gotchas / Follow-ups**:
-  - Before Phase 3 coding, decisions should be locked for: plugin trust model, class resolution strategy, hook mutability policy, dependency packaging boundaries, persona export scope, and GUI framework choice.
-  - No runtime code was changed in this step; this was a planning/docs pass only.
+  - This is a docs/planning deliverable only; runtime implementation has not started.
+  - The new detailed file should be treated as the implementation authority during handoff execution.
