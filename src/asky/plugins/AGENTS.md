@@ -35,6 +35,7 @@ Hook callback exceptions are logged and isolated; remaining callbacks still run.
 - `PRE_TOOL_EXECUTE`
 - `POST_TOOL_EXECUTE`
 - `TURN_COMPLETED`
+- `POST_TURN_RENDER` — fired after final answer is rendered to CLI; payload is `PostTurnRenderContext` with `final_answer`, `request`, `result`, `cli_args` (argparse Namespace for CLI-only flags like `push_data_endpoint`, `mail_recipients`)
 - `DAEMON_SERVER_REGISTER` — collect sidecar server specs (start/stop callables)
 - `DAEMON_TRANSPORT_REGISTER` — register exactly one daemon transport (run/stop callables)
 - `TRAY_MENU_REGISTER` — contribute tray menu items; payload is `TrayMenuRegisterContext` with `status_entries` (non-clickable) and `action_entries` (clickable) lists plus service lifecycle callbacks
@@ -42,7 +43,6 @@ Hook callback exceptions are logged and isolated; remaining callbacks still run.
 Deferred in v1:
 
 - `CONFIG_LOADED`
-- `POST_TURN_RENDER`
 - `SESSION_END`
 
 ## Built-in Plugins
@@ -51,6 +51,8 @@ Deferred in v1:
 - `persona_manager/` — persona import/session binding/prompt+preload injection with @mention syntax
 - `gui_server/` — NiceGUI daemon sidecar and page extension registry
 - `xmpp_daemon/` — XMPP transport for daemon mode (router, executor, voice/image pipelines)
+- `push_data/` — registers `push_data_*` LLM tools for configured endpoints (`TOOL_REGISTRY_BUILD`) and handles `--push-data-endpoint` CLI flag (`POST_TURN_RENDER`)
+- `email_sender/` — sends the final answer via SMTP when `--mail` is used (`POST_TURN_RENDER`)
 
 ## Dependency Visibility
 

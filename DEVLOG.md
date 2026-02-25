@@ -1,5 +1,19 @@
 # DEVLOG
 
+## 2026-02-25 - Plugin Extraction: POST_TURN_RENDER, push_data, email_sender
+
+Four related cleanups committed separately:
+
+1. **Fix research eager import** (`tool_registry_factory.py`): `ACQUISITION_TOOL_NAMES` moved from module-level to a lazy import inside `create_research_tool_registry()`. Avoids pulling chromadb on every import.
+
+2. **POST_TURN_RENDER hook** (`hook_types.py`, `cli/chat.py`): Promoted `POST_TURN_RENDER` from `DEFERRED_HOOK_NAMES` to `SUPPORTED_HOOK_NAMES`. Added `PostTurnRenderContext` (fields: `final_answer`, `request`, `result`, `cli_args`). Emitted from `cli/chat.py` after all post-processing blocks.
+
+3. **PushDataPlugin** (`plugins/push_data/`): New built-in plugin hooking `TOOL_REGISTRY_BUILD` (registers `push_data_*` LLM tools for enabled endpoints) and `POST_TURN_RENDER` (handles `--push-data-endpoint` CLI arg). Inline push_data code removed from `tool_registry_factory.py` and `cli/chat.py`.
+
+4. **EmailSenderPlugin** (`plugins/email_sender/`): New built-in plugin hooking `POST_TURN_RENDER` to send the final answer via SMTP when `--mail` is used. Inline email code removed from `cli/chat.py`.
+
+Both new plugins registered in `src/asky/data/config/plugins.toml` with `enabled = true`.
+
 ## 2026-02-24 - Remove Icon Fallback Logic
 
 Removed redundant `asky_icon_small.png` fallback logic from menubar and app bundle modules.
