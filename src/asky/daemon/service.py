@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import threading
 from typing import Any, Optional
 
 from asky.daemon.errors import DaemonUserError
@@ -26,8 +27,9 @@ class DaemonService:
 
     On construction the service fires DAEMON_SERVER_REGISTER (to collect sidecar
     servers from plugins) and DAEMON_TRANSPORT_REGISTER (to collect the primary
-    transport). Exactly one transport must be registered; zero or more than one
-    raises DaemonUserError immediately.
+    transport). Transport is optional: if none is registered the daemon runs sidecar
+    servers only and blocks until stop() is called. More than one transport raises
+    DaemonUserError immediately.
     """
 
     def __init__(
@@ -42,6 +44,7 @@ class DaemonService:
         self._plugin_servers: list[DaemonServerSpec] = []
         self._transport: Optional[DaemonTransportSpec] = None
         self._running = False
+        self._stop_event = threading.Event()
 
         self._register_plugin_servers()
         self._register_transport()
@@ -53,17 +56,21 @@ class DaemonService:
         )
 
     def run_foreground(self) -> None:
-        """Start sidecar servers, run transport foreground loop, then clean up."""
-        if self._transport is None:
-            raise DaemonUserError(
-                "No daemon transport registered.",
-                hint="Enable the xmpp_daemon plugin in plugins.toml.",
-            )
-        logger.info("daemon foreground loop starting transport=%s", self._transport.name)
+        """Start sidecar servers, run foreground loop, then clean up.
+
+        If a transport is registered it drives the blocking loop. With no transport
+        the daemon runs sidecar servers only and blocks until stop() is called.
+        """
         self._running = True
+        self._stop_event.clear()
         self._start_plugin_servers()
         try:
-            self._transport.run()
+            if self._transport is not None:
+                logger.info("daemon foreground loop starting transport=%s", self._transport.name)
+                self._transport.run()
+            else:
+                logger.info("daemon foreground loop: no transport, running sidecar servers only")
+                self._stop_event.wait()
         finally:
             self._stop_plugin_servers()
             if self.plugin_runtime is not None:
@@ -72,14 +79,16 @@ class DaemonService:
             logger.info("daemon foreground loop exited")
 
     def stop(self) -> None:
-        """Request transport shutdown."""
+        """Request shutdown: stops transport if present, otherwise signals the wait event."""
         if not self._running:
             logger.debug("daemon stop requested while not running")
             return
-        if self._transport is None:
-            return
-        logger.info("daemon stop requested transport=%s", self._transport.name)
-        self._transport.stop()
+        if self._transport is not None:
+            logger.info("daemon stop requested transport=%s", self._transport.name)
+            self._transport.stop()
+        else:
+            logger.info("daemon stop requested (sidecar-only mode)")
+            self._stop_event.set()
 
     def _register_plugin_servers(self) -> None:
         runtime = self.plugin_runtime
@@ -102,24 +111,27 @@ class DaemonService:
     def _register_transport(self) -> None:
         runtime = self.plugin_runtime
         if runtime is None:
-            raise DaemonUserError(
-                "No plugin runtime available; cannot register daemon transport.",
-                hint="Enable the xmpp_daemon plugin in plugins.toml.",
-            )
+            logger.warning("No plugin runtime available; daemon will run without a transport.")
+            return
         context = DaemonTransportRegisterContext(double_verbose=self._double_verbose)
         runtime.hooks.invoke(DAEMON_TRANSPORT_REGISTER, context)
 
-        if len(context.transports) == 0:
-            raise DaemonUserError(
-                "No daemon transport was registered by any plugin.",
-                hint="Enable the xmpp_daemon plugin in plugins.toml.",
-            )
         if len(context.transports) > 1:
             names = ", ".join(t.name for t in context.transports)
             raise DaemonUserError(
                 f"Multiple daemon transports registered ({names}); exactly one is required.",
             )
-        self._transport = context.transports[0]
+        if context.transports:
+            self._transport = context.transports[0]
+        else:
+            logger.info("No daemon transport registered; running sidecar servers only.")
+
+    def get_plugin_server(self, name: str) -> Optional[DaemonServerSpec]:
+        """Return the sidecar spec registered under *name*, or None."""
+        for spec in self._plugin_servers:
+            if spec.name == name:
+                return spec
+        return None
 
     def _start_plugin_servers(self) -> None:
         for spec in self._plugin_servers:

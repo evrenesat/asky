@@ -912,7 +912,9 @@ def main() -> None:
 
     if getattr(args, "xmpp_menubar_child", False) is True:
         from asky.daemon.errors import DaemonUserError
+        from asky.daemon.launch_context import LaunchContext, set_launch_context
 
+        set_launch_context(LaunchContext.MACOS_APP)
         logger.info("dispatching xmpp menubar child mode")
         from asky.daemon.menubar import run_menubar_app
 
@@ -1008,9 +1010,11 @@ def main() -> None:
                     "menubar bootstrap failed; falling back to foreground daemon"
                 )
         logger.info("running foreground xmpp daemon fallback")
+        from asky.daemon.launch_context import LaunchContext, set_launch_context
         from asky.daemon.service import run_daemon_foreground
         from asky.plugins.runtime import get_or_create_plugin_runtime
 
+        set_launch_context(LaunchContext.DAEMON_FOREGROUND)
         try:
             plugin_runtime = get_or_create_plugin_runtime()
             run_daemon_foreground(

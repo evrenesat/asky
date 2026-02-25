@@ -70,7 +70,7 @@ Runtime behavior:
 
 Menubar action labels are state-aware:
 
-- `Start Daemon` / `Stop Daemon`
+- `Start XMPP` / `Stop XMPP`
 - `Enable Voice` / `Disable Voice`
 - `Enable Run at Login` / `Disable Run at Login`
 

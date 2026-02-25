@@ -1,5 +1,89 @@
 # DEVLOG
 
+## 2026-02-25 - Plugin-Contributed Tray Entries, Launch Context, Dependency Visibility
+
+Three related improvements implemented together.
+
+**Problem 1 — Tray coupling:** `TrayController` knew about XMPP and GUI server
+specifically. Both are plugins and should own their tray items.
+
+**Problem 2 — Silent dependency failures:** When a plugin's required dep is
+disabled or missing the user got no actionable feedback.
+
+**Problem 3 — No launch context:** No way to distinguish how the process was
+launched (interactive CLI vs foreground daemon vs macOS app) — needed to gate
+interactive `input()` prompts.
+
+**What changed:**
+
+- `daemon/launch_context.py` (NEW) — `LaunchContext` enum + `set/get_launch_context()` / `is_interactive()`. Set in `cli/main.py` at the menubar-child and foreground-daemon code paths.
+- `daemon/tray_protocol.py` — removed `TrayXmppState`, XMPP/GUI fields from `TrayStatus`; added `TrayPluginEntry` (label callable + optional action + optional autostart); `TrayStatus` now holds `plugin_status_entries`, `plugin_action_entries`, `warnings`.
+- `plugins/hook_types.py` — added `TRAY_MENU_REGISTER` hook + `TrayMenuRegisterContext` payload.
+- `daemon/tray_controller.py` — full refactor: XMPP/GUI methods removed; fires `TRAY_MENU_REGISTER` at init; renames `start/stop/toggle/is_xmpp` → `start/stop/toggle/is_service`; `autostart_if_ready()` delegates to plugin entry `autostart_fn`.
+- `daemon/tray_macos.py` — menu built dynamically from `plugin_status_entries` / `plugin_action_entries`; gets hook registry from plugin runtime; displays startup warnings on first refresh.
+- `plugins/xmpp_daemon/plugin.py` — registers `TRAY_MENU_REGISTER` handler: contributes XMPP status, JID, Voice status rows + Start/Stop XMPP, Voice toggle action rows; moves XMPP config completeness check into `_on_daemon_transport_register()`; owns autostart logic.
+- `plugins/gui_server/plugin.py` — registers `TRAY_MENU_REGISTER` handler: contributes Start/Stop Web GUI + Open Settings action rows.
+- `plugins/manager.py` — added `DependencyIssue` dataclass; `_detect_early_dependency_issues()` called from `load_roster()`; added `get_dependency_issues()`, `enable_plugin()`, `_persist_enabled_state()` (atomic TOML write via `os.replace()`).
+- `plugins/runtime.py` — `_handle_dependency_issues()` called between `load_roster()` and `discover_and_import()`; prompts to enable in interactive mode; stores warnings in `PluginRuntime._startup_warnings`; `get_startup_warnings()` exposes them.
+- Tests updated: `test_daemon_menubar.py` rewritten for dynamic menu; `test_plugin_integration.py` + `test_gui_server_plugin.py` extended with new hook and dependency tests.
+
+**Key invariants:**
+- `daemon/` core imports nothing from `plugins/xmpp_daemon/`.
+- `tray_controller.py` contains no XMPP/GUI/voice references.
+- `get_startup_warnings()` returns warnings collected at startup.
+- All 1060 tests pass.
+
+## 2026-02-25 - Refactor Tray: Labels to Controller, Daemon→XMPP Rename
+
+Moved all display-label computation out of the macOS-specific tray file into `TrayController.get_state()`. Renamed "Daemon" to "XMPP" throughout the tray UI layer since the menu action controls the XMPP transport, not the Python process itself (which is the actual daemon/menubar process).
+
+**What changed:**
+
+- `daemon/tray_protocol.py` — renamed `TrayDaemonState` → `TrayXmppState`, `daemon_state` → `xmpp_state` in `TrayStatus`; added pre-computed display label fields (`status_xmpp_label`, `status_jid_label`, `action_xmpp_label`, etc.) so platform tray renderers are purely declarative.
+- `daemon/tray_controller.py` — renamed `is_daemon_running` → `is_xmpp_running`, `start_daemon` → `start_xmpp`, `stop_daemon` → `stop_xmpp`, `toggle_daemon` → `toggle_xmpp`; `get_state()` now computes all label strings; thread name updated to `asky-xmpp-client`.
+- `daemon/tray_macos.py` — `_refresh_status()` reduced to pure assignment of label fields from `TrayStatus`; no string construction or state branching; renamed `status_daemon`→`status_xmpp`, `action_daemon`→`action_xmpp`, `_on_daemon_action`→`_on_xmpp_action`.
+- `tests/test_daemon_menubar.py` — updated label assertions and attribute names.
+- `ARCHITECTURE.md`, `docs/xmpp_daemon.md`, `daemon/AGENTS.md` — label references updated.
+
+**Key invariants:**
+- `MacosTrayApp._refresh_status()` contains no business logic; all label decisions live in `TrayController.get_state()`.
+- All 1053 tests pass.
+
+## 2026-02-25 - Fix GUI URL + Web GUI Server Toggle in Tray
+
+Fixed the "Open Settings" URL (was opening `/` → 404; now opens `/settings/general`). Added "Start/Stop Web GUI" tray action that starts/stops the NiceGUI sidecar independently of the daemon.
+
+**What changed:**
+
+- `daemon/tray_protocol.py` — added `gui_server_running: bool = False` to `TrayStatus`.
+- `daemon/service.py` — added `get_plugin_server(name) -> Optional[DaemonServerSpec]` to expose sidecar lookup without exposing the full internal list.
+- `daemon/tray_controller.py` — fixed `GUI_SERVER_DEFAULT_URL` to include `/settings/general`; added `GUI_SERVER_SIDECAR_NAME = "nicegui_server"` constant; added `is_gui_server_running()` and `toggle_gui_server()` methods; `get_state()` now populates `gui_server_running`.
+- `daemon/tray_macos.py` — added `action_gui_toggle` ("Start/Stop Web GUI") menu item before "Open Settings"; `_refresh_status()` updates its label.
+- `tests/test_daemon_menubar.py` — asserts `action_gui_toggle` present and labelled "Start Web GUI"; new tests for `open_gui_server` URL path, toggle-without-daemon error, and start/stop cycle.
+
+**Key invariants:**
+- Daemon core does not import from plugin packages; sidecar is accessed by name via `DaemonService.get_plugin_server()`.
+- Toggling the GUI server while daemon is not running surfaces a user-facing error via `on_error` callback.
+- All 1052 tests pass.
+
+## 2026-02-25 - Extract TrayController + Add GUI Server Tray Action
+
+Extracted all platform-agnostic tray business logic from the `AskyMenubarApp` inner class into a new `TrayController` class. Added "Open Settings" tray menu item that opens the GUI server in the default browser.
+
+**What changed:**
+
+- `daemon/tray_controller.py` (new) — `TrayController` holds daemon start/stop threading, voice/startup toggles, autostart logic, and `open_gui_server()`. Accepts `on_state_change` and `on_error` callbacks; no platform-specific imports.
+- `daemon/tray_protocol.py` — added `gui_server_url: str = ""` field to `TrayStatus`.
+- `daemon/tray_macos.py` — reduced to a thin rumps wrapper. Creates `TrayController` in `run()`, delegates all callbacks. Added `action_gui` menu item ("Open Settings") that calls `controller.open_gui_server()`.
+- `tests/test_daemon_menubar.py` — updated monkeypatch targets to `asky.daemon.tray_controller.*`, updated `_service_thread` access to `app._controller._service_thread`. Added `test_menubar_has_gui_action` and `test_tray_controller_open_gui_server`.
+- `daemon/AGENTS.md` — added `tray_controller.py` row and updated TrayApp Abstraction section and dependency listing.
+- `ARCHITECTURE.md` — added `daemon_tray_ctrl` node and edges in Daemon subgraph.
+
+**Key invariants:**
+- `TrayController` has no platform-specific imports (no `rumps`, `Tk`, etc.).
+- `GUI_SERVER_DEFAULT_URL = "http://127.0.0.1:8766"` defined as module-level constant in `tray_controller.py`; daemon core does not import from plugin packages.
+- All 1050 tests pass, no regressions.
+
 ## 2026-02-25 - XMPP Daemon Extracted to Built-in Plugin
 
 Converted the XMPP daemon from hard-coded core into a built-in plugin, making `daemon/service.py` a transport-agnostic lifecycle coordinator.

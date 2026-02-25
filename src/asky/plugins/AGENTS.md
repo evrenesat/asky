@@ -37,6 +37,7 @@ Hook callback exceptions are logged and isolated; remaining callbacks still run.
 - `TURN_COMPLETED`
 - `DAEMON_SERVER_REGISTER` — collect sidecar server specs (start/stop callables)
 - `DAEMON_TRANSPORT_REGISTER` — register exactly one daemon transport (run/stop callables)
+- `TRAY_MENU_REGISTER` — contribute tray menu items; payload is `TrayMenuRegisterContext` with `status_entries` (non-clickable) and `action_entries` (clickable) lists plus service lifecycle callbacks
 
 Deferred in v1:
 
@@ -51,9 +52,20 @@ Deferred in v1:
 - `gui_server/` — NiceGUI daemon sidecar and page extension registry
 - `xmpp_daemon/` — XMPP transport for daemon mode (router, executor, voice/image pipelines)
 
+## Dependency Visibility
+
+`PluginManager` records `DependencyIssue` entries (plugin_name, dep_name, reason) during `load_roster()` for disabled or missing dependencies. `runtime.py` calls `_handle_dependency_issues()` between `load_roster()` and `discover_and_import()`:
+
+- Interactive context (`INTERACTIVE_CLI`): prompts the user to enable a disabled dep and calls `manager.enable_plugin(dep_name)` on confirmation.
+- Non-interactive (`DAEMON_FOREGROUND` / `MACOS_APP`): returns warning strings forwarded to `PluginRuntime._startup_warnings` and shown as tray alerts on first menu refresh.
+
+`enable_plugin()` updates the in-memory manifest and atomically rewrites `plugins.toml` via `os.replace()`.
+
 ## xmpp_daemon Plugin
 
-`xmpp_daemon/` provides the XMPP transport layer for `asky --daemon`. It registers itself via the `DAEMON_TRANSPORT_REGISTER` hook. The daemon core (`daemon/service.py`) is transport-agnostic; `xmpp_daemon` is the only built-in transport.
+`xmpp_daemon/` provides the XMPP transport layer for `asky --daemon`. It registers itself via `DAEMON_TRANSPORT_REGISTER` and contributes tray menu entries (XMPP status, JID, Voice, Start/Stop XMPP, Voice toggle) via `TRAY_MENU_REGISTER`. The daemon core (`daemon/service.py`) is transport-agnostic; `xmpp_daemon` is the only built-in transport.
+
+The XMPP config completeness check (`has_minimum_requirements()`) runs inside `_on_daemon_transport_register()` and raises `DaemonUserError` if incomplete; `TrayController.start_service()` surfaces this via `on_error`.
 
 Key modules:
 

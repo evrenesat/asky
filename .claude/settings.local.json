@@ -11,8 +11,5 @@
   "sandbox": {
     "enabled": true,
     "autoAllowBashIfSandboxed": true
-  },
-  "kiroAgent": {
-    "agentIgnoreFiles": []
   }
 }

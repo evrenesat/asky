@@ -44,6 +44,7 @@ graph TB
         daemon_service["service.py<br/>DaemonService (transport-agnostic)"]
         daemon_menubar["menubar.py<br/>Singleton Lock + Launcher"]
         daemon_tray_proto["tray_protocol.py<br/>TrayApp ABC + TrayStatus"]
+        daemon_tray_ctrl["tray_controller.py<br/>TrayController (shared logic)"]
         daemon_tray_macos["tray_macos.py<br/>MacosTrayApp (rumps)"]
         daemon_app_bundle["app_bundle_macos.py<br/>macOS .app Bundle Creation"]
     end
@@ -127,7 +128,9 @@ graph TB
     sessions_cli --> sqlite
     daemon_service --> plugin_hooks
     daemon_menubar --> daemon_tray_macos
+    daemon_tray_macos --> daemon_tray_ctrl
     daemon_tray_macos --> daemon_tray_proto
+    daemon_tray_ctrl --> daemon_tray_proto
     xmpp_plugin --> xmpp_service
     xmpp_service --> daemon_xmpp
     xmpp_service --> daemon_router
@@ -378,7 +381,7 @@ Command presets are expanded at ingress (`\\name`, `\\presets`) before command e
 XMPP query ingress applies the same recursive slash-expansion behavior as CLI (`/alias`, `/cp`) before model execution, and unresolved slash queries follow CLI prompt-list semantics (`/` lists all prompts, unknown `/prefix` returns filtered prompt listing). This shared query-prep path is used by direct text queries, interface-planned query actions, and `transcript use` query execution.
 Daemon query prep also supports session-scoped media pointers: `#aN`/`#atN` for audio file+transcript and `#iN`/`#itN` for image file+transcript.
 Room bindings and session override files are persisted in SQLite; on daemon startup/session-start, previously bound rooms are auto-rejoined and continue with their last active bound sessions.
-On macOS menubar builds, action rows use state-aware labels (`Start/Stop Daemon`, `Enable/Disable Voice`, `Enable/Disable Run at Login`) while top rows remain informational status. XMPP credential/allowlist editing is CLI-only via `--edit-daemon` (no menubar credential editor).
+On macOS menubar builds, the menu is assembled dynamically from plugin-contributed entries (via `TRAY_MENU_REGISTER`). The XMPP plugin contributes: XMPP status, JID, Voice status rows + Start/Stop XMPP and Voice toggle action rows. The GUI server plugin contributes: Start/Stop Web GUI and Open Settings action rows. Core fixed items are: startup-at-login status/action and Quit. XMPP credential/allowlist editing is CLI-only via `--edit-daemon` (no menubar credential editor).
 
 ### Session Flow
 
@@ -688,6 +691,24 @@ A simplified "retrieval-only" system prompt guidance is injected in these cases 
   - Plugin load/activation failures never crash normal chat/daemon execution.
   - Hook order is deterministic: `(priority, plugin_name, registration_index)`.
   - Deferred hooks (`CONFIG_LOADED`, `POST_TURN_RENDER`, `SESSION_END`) remain unimplemented in v1.
+
+### Decision 21: Plugin-Contributed Tray Entries + Dependency Visibility
+
+- **Context:** `TrayController` knew about XMPP and GUI server specifically. Dependency failures were silently logged. No way to distinguish launch context for gating interactive prompts.
+- **Decision:** Core tray has zero transport/plugin knowledge. Each plugin contributes menu entries via `TRAY_MENU_REGISTER`. Dependency issues surface as interactive prompts (CLI) or tray warnings (daemon/app). `LaunchContext` enum gates interactive behaviour.
+- **Implementation:**
+  - `daemon/launch_context.py` — `LaunchContext` enum + module-level get/set/is_interactive.
+  - `daemon/tray_protocol.py` — `TrayPluginEntry` (callable label + optional action + optional autostart) + slimmed `TrayStatus`.
+  - `plugins/hook_types.py` — `TRAY_MENU_REGISTER` + `TrayMenuRegisterContext` (status_entries, action_entries, service callbacks).
+  - `daemon/tray_controller.py` — fires `TRAY_MENU_REGISTER` at init; generic `start/stop/toggle_service`; no XMPP/GUI imports.
+  - `daemon/tray_macos.py` — dynamic menu from plugin entries; startup warnings displayed once.
+  - `plugins/manager.py` — `DependencyIssue` + `get_dependency_issues()` + `enable_plugin()` + atomic `_persist_enabled_state()`.
+  - `plugins/runtime.py` — `_handle_dependency_issues()` between roster load and import; `get_startup_warnings()` on `PluginRuntime`.
+- **Key invariants:**
+  - `daemon/` core never imports from `plugins/xmpp_daemon/`.
+  - `enable_plugin()` TOML write is atomic (`os.replace()`).
+  - No `input()` calls in `DAEMON_FOREGROUND` or `MACOS_APP` contexts.
+  - If no plugin runtime or empty hook registry, `TRAY_MENU_REGISTER` fires with no subscribers → graceful empty menu (only core items).
 
 ### Decision 20: XMPP Daemon as Built-in Plugin
 

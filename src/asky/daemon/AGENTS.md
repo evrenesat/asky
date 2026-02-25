@@ -8,8 +8,10 @@ Core daemon lifecycle infrastructure. This package owns the foreground daemon en
 | --------------------------- | --------------------------------------------------------------------------- |
 | `service.py`                | `DaemonService` — transport-agnostic lifecycle: fires hooks, runs transport |
 | `menubar.py`                | macOS singleton lock and thin `run_menubar_app()` launcher                  |
-| `tray_protocol.py`          | `TrayApp` ABC and `TrayStatus` / `TrayDaemonState` data contracts           |
-| `tray_macos.py`             | `MacosTrayApp(TrayApp)` — rumps-based menu bar implementation               |
+| `launch_context.py`         | `LaunchContext` enum + get/set/is_interactive helpers                       |
+| `tray_protocol.py`          | `TrayApp` ABC, `TrayStatus`, `TrayPluginEntry` data contracts               |
+| `tray_controller.py`        | `TrayController` — generic daemon service lifecycle + startup toggle        |
+| `tray_macos.py`             | `MacosTrayApp(TrayApp)` — dynamic plugin-driven rumps menu                  |
 | `app_bundle_macos.py`       | macOS `.app` bundle creation/update for Spotlight integration               |
 | `startup.py`                | Cross-platform startup-at-login dispatcher                                  |
 | `startup_macos.py`          | LaunchAgent plist management                                                |
@@ -48,13 +50,17 @@ plugins/xmpp_daemon/plugin.py          — built-in plugin, registers XMPP trans
 
 `tray_protocol.py` defines the `TrayApp` ABC and shared state types:
 
-- `TrayDaemonState` — `STOPPED`, `RUNNING`, `ERROR`
-- `TrayStatus` — snapshot of daemon state, jid, voice_enabled, startup flags
+- `TrayPluginEntry` — one contributed menu item (status row or action row); `get_label` is called each refresh, `on_action` is `None` for non-clickable rows, `autostart_fn` (optional) is invoked once at tray init
+- `TrayStatus` — view-model: startup-at-login state + pre-computed labels + lists of plugin-contributed entries + startup warnings
 - `TrayApp` — ABC with `run()` and `update_status(status)` methods
 
-`tray_macos.py` provides `MacosTrayApp(TrayApp)`, the rumps-based macOS implementation.
+`tray_controller.py` provides `TrayController`, holding all platform-agnostic business logic: daemon service lifecycle (start/stop/toggle threading), startup-at-login toggle, and autostart delegation. It accepts `hook_registry` to fire `TRAY_MENU_REGISTER` at construction so plugins can contribute their own menu entries. XMPP/voice/GUI specifics live entirely in their respective plugins.
+
+`tray_macos.py` provides `MacosTrayApp(TrayApp)`, a thin rumps wrapper. It gets the hook registry from the plugin runtime, creates a `TrayController`, and dynamically builds the menu from `plugin_status_entries` and `plugin_action_entries`. The only fixed core items are `status_startup`, `action_startup`, and `action_quit`.
 
 `menubar.py` is a thin launcher: it acquires the singleton lock then delegates to `MacosTrayApp().run()`. It retains `MenubarSingletonLock`, `acquire_menubar_singleton_lock`, and `is_menubar_instance_running` helpers.
+
+`launch_context.py` provides `LaunchContext` enum (`INTERACTIVE_CLI`, `DAEMON_FOREGROUND`, `MACOS_APP`) and module-level `get/set_launch_context()` / `is_interactive()` helpers. `main.py` sets the context before entering each daemon code path.
 
 ---
 
@@ -128,7 +134,8 @@ Handled by `plugins/xmpp_daemon/router.py`. For each incoming message:
 daemon/
 ├── service.py → plugins/hook_types.py (fires hooks), storage/sqlite.py (init_db)
 ├── menubar.py → tray_macos.py (creates MacosTrayApp)
-├── tray_macos.py → daemon/tray_protocol.py, cli/daemon_config.py, daemon/startup.py
+├── tray_macos.py → tray_controller.py, tray_protocol.py
+├── tray_controller.py → cli/daemon_config.py, daemon/startup.py, daemon/service.py
 └── tray_protocol.py (no daemon deps)
 
 plugins/xmpp_daemon/

@@ -19,6 +19,8 @@ DEFAULT_GUI_HOST = "127.0.0.1"
 DEFAULT_GUI_PORT = 8766
 SERVER_STOP_JOIN_TIMEOUT_SECONDS = 2.0
 
+_nicegui_pages_mounted = False
+
 Runner = Callable[[str, int, Path, PluginPageRegistry], None]
 Shutdown = Callable[[], None]
 
@@ -104,11 +106,24 @@ def _default_runner(
     config_dir: Path,
     page_registry: PluginPageRegistry,
 ) -> None:
+    global _nicegui_pages_mounted
     from nicegui import ui
+    import nicegui.core as core
 
-    mount_general_settings_page(ui, config_dir=config_dir)
-    mount_plugin_registry_page(ui, page_registry)
-    page_registry.mount_pages(ui)
+    if _nicegui_pages_mounted:
+        # Starlette's middleware_stack is still "started" from the previous run.
+        # Reset it so ui.run() can re-add the gzip middleware, then clear the
+        # stale middleware list so it isn't duplicated.
+        if getattr(core.app, "middleware_stack", None) is not None:
+            core.app.middleware_stack = None
+        if isinstance(getattr(core.app, "middleware", None), list):
+            core.app.middleware.clear()
+    else:
+        mount_general_settings_page(ui, config_dir=config_dir)
+        mount_plugin_registry_page(ui, page_registry)
+        page_registry.mount_pages(ui)
+        _nicegui_pages_mounted = True
+
     ui.run(
         host=host,
         port=port,

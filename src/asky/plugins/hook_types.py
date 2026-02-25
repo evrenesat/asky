@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Callable, Dict, List, Optional, Set
+from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, Set
+
+if TYPE_CHECKING:
+    from asky.daemon.tray_protocol import TrayPluginEntry
 
 TOOL_REGISTRY_BUILD = "TOOL_REGISTRY_BUILD"
 SESSION_RESOLVED = "SESSION_RESOLVED"
@@ -17,6 +20,7 @@ POST_TOOL_EXECUTE = "POST_TOOL_EXECUTE"
 TURN_COMPLETED = "TURN_COMPLETED"
 DAEMON_SERVER_REGISTER = "DAEMON_SERVER_REGISTER"
 DAEMON_TRANSPORT_REGISTER = "DAEMON_TRANSPORT_REGISTER"
+TRAY_MENU_REGISTER = "TRAY_MENU_REGISTER"
 
 CONFIG_LOADED = "CONFIG_LOADED"
 POST_TURN_RENDER = "POST_TURN_RENDER"
@@ -35,6 +39,7 @@ SUPPORTED_HOOK_NAMES = {
     TURN_COMPLETED,
     DAEMON_SERVER_REGISTER,
     DAEMON_TRANSPORT_REGISTER,
+    TRAY_MENU_REGISTER,
 }
 
 DEFERRED_HOOK_NAMES = {
@@ -178,3 +183,21 @@ class DaemonTransportRegisterContext:
 
     double_verbose: bool = False
     transports: List[DaemonTransportSpec] = field(default_factory=list)
+
+
+@dataclass
+class TrayMenuRegisterContext:
+    """Mutable payload for tray menu registration.
+
+    Plugins append ``TrayPluginEntry`` items to ``status_entries`` (read-only
+    informational rows) or ``action_entries`` (clickable rows).  The service
+    callbacks let plugins drive the daemon lifecycle without importing
+    ``TrayController`` directly.
+    """
+
+    status_entries: "List[TrayPluginEntry]"
+    action_entries: "List[TrayPluginEntry]"
+    start_service: Callable[[], None]
+    stop_service: Callable[[], None]
+    is_service_running: Callable[[], bool]
+    on_error: Callable[[str], None]

@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import importlib
 import logging
+import os
 import tomllib
+from dataclasses import dataclass
 from importlib import resources
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set
@@ -15,6 +17,17 @@ from asky.plugins.hooks import HookRegistry
 from asky.plugins.manifest import PluginManifest, build_manifest_entry
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass
+class DependencyIssue:
+    """Describes one unmet plugin dependency detected during roster resolution."""
+
+    plugin_name: str
+    dep_name: str
+    reason: str  # "disabled" | "not_found" | "failed"
+
+
 PLUGIN_ROSTER_FILENAME = "plugins.toml"
 PLUGIN_CONFIG_SUBDIR = "plugins"
 PLUGIN_DATA_SUBDIR = "plugins"
@@ -51,6 +64,7 @@ class PluginManager:
         self._statuses: Dict[str, PluginStatus] = {}
         self._load_order: List[str] = []
         self._activation_order: List[str] = []
+        self._dependency_issues: List[DependencyIssue] = []
 
     def load_roster(self) -> List[PluginManifest]:
         """Load plugin roster from ~/.config/asky/plugins.toml."""
@@ -77,6 +91,7 @@ class PluginManager:
         self._statuses = {}
         self._load_order = []
         self._activation_order = []
+        self._dependency_issues = []
 
         normalized_name_map: Dict[str, str] = {}
         for plugin_name in sorted(plugin_table.keys()):
@@ -132,6 +147,7 @@ class PluginManager:
                 dependencies=manifest.dependencies,
             )
 
+        self._detect_early_dependency_issues()
         return [self._manifests[name] for name in sorted(self._manifests.keys())]
 
     def discover_and_import(self) -> None:
@@ -298,6 +314,83 @@ class PluginManager:
     def has_enabled_plugins(self) -> bool:
         """Return whether manifest contains any enabled plugins."""
         return any(manifest.enabled for manifest in self._manifests.values())
+
+    def get_dependency_issues(self) -> List[DependencyIssue]:
+        """Return all dependency issues collected during roster resolution."""
+        return list(self._dependency_issues)
+
+    def enable_plugin(self, name: str) -> bool:
+        """Enable a plugin in-memory and persist the change to plugins.toml."""
+        manifest = self._manifests.get(name)
+        if manifest is None:
+            return False
+        self._manifests[name] = PluginManifest(
+            name=manifest.name,
+            enabled=True,
+            module=manifest.module,
+            plugin_class=manifest.plugin_class,
+            dependencies=manifest.dependencies,
+            capabilities=manifest.capabilities,
+            config_file=manifest.config_file,
+        )
+        status = self._statuses.get(name)
+        if status is not None:
+            status.enabled = True
+            status.state = "loaded"
+            status.message = ""
+        self._persist_enabled_state(name, enabled=True)
+        return True
+
+    def _persist_enabled_state(self, name: str, enabled: bool) -> None:
+        """Atomically write the enabled flag for plugin ``name`` to plugins.toml."""
+        import tomlkit
+
+        try:
+            with self.roster_path.open("rb") as fh:
+                doc = tomlkit.load(fh)
+        except Exception:
+            logger.exception(
+                "Could not read plugins.toml for enabled-state update plugin=%s", name
+            )
+            return
+
+        plugin_table = doc.get("plugin", {})
+        if isinstance(plugin_table, dict) and name in plugin_table:
+            plugin_table[name]["enabled"] = enabled
+
+        tmp_path = self.roster_path.with_suffix(".toml.tmp")
+        try:
+            tmp_path.write_text(tomlkit.dumps(doc), encoding="utf-8")
+            os.replace(tmp_path, self.roster_path)
+        except Exception:
+            logger.exception(
+                "Could not write plugins.toml for enabled-state update plugin=%s", name
+            )
+            tmp_path.unlink(missing_ok=True)
+
+    def _detect_early_dependency_issues(self) -> None:
+        """Populate ``_dependency_issues`` for disabled/missing deps after roster load.
+
+        This runs before ``discover_and_import()`` so the interactive prompt in
+        ``_handle_dependency_issues()`` can offer to enable disabled deps before
+        the import phase.
+        """
+        for name in sorted(self._manifests):
+            manifest = self._manifests[name]
+            if not manifest.enabled:
+                continue
+            for dep in manifest.dependencies:
+                dep_manifest = self._manifests.get(dep)
+                if dep_manifest is None:
+                    self._dependency_issues.append(
+                        DependencyIssue(plugin_name=name, dep_name=dep, reason="not_found")
+                    )
+                    break
+                if not dep_manifest.enabled:
+                    self._dependency_issues.append(
+                        DependencyIssue(plugin_name=name, dep_name=dep, reason="disabled")
+                    )
+                    break
 
     def _ensure_roster_file(self) -> None:
         self.config_dir.mkdir(parents=True, exist_ok=True)

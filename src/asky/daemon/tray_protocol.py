@@ -3,29 +3,42 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
-from enum import Enum
-from typing import Optional
+from dataclasses import dataclass, field
+from typing import Callable, List, Optional
 
 
-class TrayDaemonState(Enum):
-    """Reported daemon lifecycle state shown in the tray UI."""
+@dataclass
+class TrayPluginEntry:
+    """One menu item contributed by a plugin.
 
-    STOPPED = "stopped"
-    RUNNING = "running"
-    ERROR = "error"
+    ``get_label`` is called each time the menu refreshes.  Returning ``None``
+    hides the item.  ``on_action`` is ``None`` for non-clickable status rows
+    and a callable for clickable action rows.  ``autostart_fn``, when set, is
+    invoked once by ``TrayController.autostart_if_ready()`` at tray init.
+    """
+
+    get_label: Callable[[], Optional[str]]
+    on_action: Optional[Callable[[], None]] = None
+    autostart_fn: Optional[Callable[[], None]] = None
+    separator_after: bool = False
 
 
 @dataclass
 class TrayStatus:
-    """Snapshot of daemon state for tray UI rendering."""
+    """View-model snapshot produced by TrayController for tray UI rendering.
 
-    daemon_state: TrayDaemonState = TrayDaemonState.STOPPED
-    jid: str = ""
-    voice_enabled: bool = False
+    Plugin-specific state lives in ``plugin_status_entries`` and
+    ``plugin_action_entries`` contributed via the ``TRAY_MENU_REGISTER`` hook.
+    """
+
     startup_enabled: bool = False
     startup_supported: bool = False
     error_message: str = ""
+    warnings: List[str] = field(default_factory=list)
+    plugin_status_entries: List[TrayPluginEntry] = field(default_factory=list)
+    plugin_action_entries: List[TrayPluginEntry] = field(default_factory=list)
+    status_startup_label: str = "Run at login: off"
+    action_startup_label: str = "Enable Run at Login"
 
 
 class TrayApp(ABC):
