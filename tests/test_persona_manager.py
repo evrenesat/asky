@@ -58,7 +58,8 @@ def _create_persona_archive(tmp_path: Path, name: str = "demo") -> Path:
     return archive_path
 
 
-def test_persona_manager_registers_tools(tmp_path: Path):
+def test_persona_manager_does_not_register_tools(tmp_path: Path):
+    """Persona tools are now CLI-only and should not be registered."""
     hooks = HookRegistry()
     plugin = PersonaManagerPlugin()
     context = _plugin_context(tmp_path, hooks)
@@ -70,8 +71,8 @@ def test_persona_manager_registers_tools(tmp_path: Path):
         ToolRegistryBuildContext(mode="standard", registry=registry, disabled_tools=set()),
     )
 
-    assert "persona_import_package" in registry.get_tool_names()
-    assert "persona_load" in registry.get_tool_names()
+    assert "persona_import_package" not in registry.get_tool_names()
+    assert "persona_load" not in registry.get_tool_names()
 
 
 def test_import_rebuilds_embeddings(monkeypatch, tmp_path: Path):
@@ -117,19 +118,9 @@ def test_prompt_and_preload_injection_for_loaded_persona(monkeypatch, tmp_path: 
         ),
     )
 
-    registry = ToolRegistry()
-    hooks.invoke(
-        "TOOL_REGISTRY_BUILD",
-        ToolRegistryBuildContext(mode="standard", registry=registry, disabled_tools=set()),
-    )
-    registry.dispatch(
-        {
-            "function": {
-                "name": "persona_load",
-                "arguments": '{"name": "loaded"}',
-            }
-        }
-    )
+    # Directly call the plugin method instead of using tool dispatch
+    result = plugin._tool_load_persona({"name": "loaded"})
+    assert result.get("ok") is True
 
     extended_prompt = hooks.invoke_chain("SYSTEM_PROMPT_EXTEND", "base prompt")
     assert "Loaded Persona (loaded)" in extended_prompt
@@ -177,19 +168,10 @@ def test_session_binding_persists_and_child_session_is_unbound(
             session_resolution=type("S", (), {"session_id": 42})(),
         ),
     )
-    registry_a = ToolRegistry()
-    hooks_a.invoke(
-        "TOOL_REGISTRY_BUILD",
-        ToolRegistryBuildContext(mode="standard", registry=registry_a, disabled_tools=set()),
-    )
-    registry_a.dispatch(
-        {
-            "function": {
-                "name": "persona_load",
-                "arguments": '{"name": "sticky"}',
-            }
-        }
-    )
+    
+    # Directly call the plugin method instead of using tool dispatch
+    result = plugin_a._tool_load_persona({"name": "sticky"})
+    assert result.get("ok") is True
 
     hooks_b = HookRegistry()
     plugin_b = PersonaManagerPlugin()

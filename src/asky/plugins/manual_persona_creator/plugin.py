@@ -6,7 +6,6 @@ from typing import Optional
 
 from asky.plugins.base import AskyPlugin, PluginContext
 from asky.plugins.hook_types import TOOL_REGISTRY_BUILD, ToolRegistryBuildContext
-from asky.plugins.manual_persona_creator.tools import register_manual_persona_tools
 
 TOOL_REGISTRATION_PRIORITY = 200
 
@@ -34,11 +33,13 @@ class ManualPersonaCreatorPlugin(AskyPlugin):
         self._context = None
 
     def _on_tool_registry_build(self, payload: ToolRegistryBuildContext) -> None:
-        context = self._context
-        if context is None:
-            return
-        register_manual_persona_tools(
-            registry=payload.registry,
-            data_dir=context.data_dir,
-            plugin_config=dict(context.config),
-        )
+        """
+        Skip tool registration - persona tools are now CLI-only.
+        
+        Persona creation and management operations are now handled exclusively
+        through CLI commands (e.g., 'asky persona create', 'asky persona load')
+        to provide deterministic, user-driven control. The LLM no longer has
+        access to persona management tools.
+        """
+        # Intentionally empty - no tools registered
+        return

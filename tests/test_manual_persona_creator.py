@@ -34,7 +34,8 @@ def _plugin_context(tmp_path: Path, hooks: HookRegistry) -> PluginContext:
     )
 
 
-def test_manual_persona_creator_registers_tools(tmp_path: Path):
+def test_manual_persona_creator_does_not_register_tools(tmp_path: Path):
+    """Persona creation tools are now CLI-only and should not be registered."""
     hooks = HookRegistry()
     plugin = ManualPersonaCreatorPlugin()
     context = _plugin_context(tmp_path, hooks)
@@ -46,8 +47,8 @@ def test_manual_persona_creator_registers_tools(tmp_path: Path):
         ToolRegistryBuildContext(mode="standard", registry=registry, disabled_tools=set()),
     )
 
-    assert "manual_persona_create" in registry.get_tool_names()
-    assert "manual_persona_export" in registry.get_tool_names()
+    assert "manual_persona_create" not in registry.get_tool_names()
+    assert "manual_persona_export" not in registry.get_tool_names()
 
 
 def test_persona_storage_validation_and_schema(tmp_path: Path):

@@ -29,7 +29,6 @@ from asky.plugins.persona_manager.session_binding import (
     get_session_binding,
     set_session_binding,
 )
-from asky.plugins.persona_manager.tools import register_persona_manager_tools
 
 SESSION_HOOK_PRIORITY = 100
 TOOL_HOOK_PRIORITY = 210
@@ -91,14 +90,16 @@ class PersonaManagerPlugin(AskyPlugin):
             delattr(self._thread_local, "session_id")
 
     def _on_tool_registry_build(self, payload: ToolRegistryBuildContext) -> None:
-        register_persona_manager_tools(
-            registry=payload.registry,
-            import_handler=self._tool_import_persona,
-            load_handler=self._tool_load_persona,
-            unload_handler=self._tool_unload_persona,
-            current_handler=self._tool_current_persona,
-            list_handler=self._tool_list_personas,
-        )
+        """
+        Skip tool registration - persona tools are now CLI-only.
+        
+        Persona management operations (load, unload, import, etc.) are now handled
+        exclusively through CLI commands (e.g., 'asky persona load', 'asky persona unload')
+        and @mention syntax for deterministic, user-driven control. The LLM no longer
+        has access to persona management tools.
+        """
+        # Intentionally empty - no tools registered
+        return
 
     def _on_session_resolved(self, payload: SessionResolvedContext) -> None:
         context = self._context

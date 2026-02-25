@@ -442,6 +442,7 @@ def run_chat(
     """Run the chat conversation flow."""
     from asky.core import clear_shell_session
     from asky.storage.sqlite import SQLiteHistoryRepository
+    from asky.cli.mention_parser import parse_persona_mention
 
     console = Console()
 
@@ -454,6 +455,19 @@ def run_chat(
         research_mode = True
 
     disabled_tools = _parse_disabled_tools(getattr(args, "tool_off", []))
+    
+    # Parse @persona mentions from query text
+    persona_mention_result = None
+    try:
+        persona_mention_result = parse_persona_mention(query_text)
+        if persona_mention_result.has_mention:
+            # Update query text to cleaned version (mention removed)
+            query_text = persona_mention_result.cleaned_query
+            # Store persona identifier in args for later binding
+            args.persona_mention = persona_mention_result.persona_identifier
+    except ValueError as e:
+        console.print(f"[bold red]Error:[/] {e}")
+        return
 
     is_lean = bool(getattr(args, "lean", False))
     if is_lean:
@@ -688,6 +702,40 @@ def run_chat(
                 "(-ss or -rs). Flag ignored."
             )
             elephant_mode = False
+        
+        # Define session resolved callback that handles persona binding
+        def on_session_resolved(session_manager):
+            setattr(renderer, "session_manager", session_manager)
+            
+            # Handle persona mention binding after session is resolved
+            persona_identifier = getattr(args, "persona_mention", None)
+            if persona_identifier and session_manager and session_manager.current_session:
+                from asky.cli.persona_commands import _get_data_dir
+                from asky.plugins.kvstore import PluginKVStore
+                from asky.plugins.manual_persona_creator.storage import (
+                    persona_exists,
+                    list_persona_names,
+                )
+                from asky.plugins.persona_manager.resolver import resolve_persona_name
+                from asky.plugins.persona_manager.session_binding import set_session_binding
+                
+                data_dir = _get_data_dir()
+                kvstore = PluginKVStore("persona_manager")
+                
+                # Resolve persona name (handles aliases)
+                resolved_name = resolve_persona_name(persona_identifier, kvstore, data_dir)
+                
+                if resolved_name is None or not persona_exists(data_dir, resolved_name):
+                    available = list_persona_names(data_dir)
+                    console.print(f"[bold red]Error:[/] Persona '{persona_identifier}' not found.")
+                    if available:
+                        console.print(f"Available personas: {', '.join(available)}")
+                    else:
+                        console.print("No personas available. Create one with 'asky persona create'")
+                else:
+                    session_id = session_manager.current_session.id
+                    set_session_binding(data_dir, session_id=session_id, persona_name=resolved_name)
+                    console.print(f"[green]✓[/] Loaded persona '[cyan]{resolved_name}[/cyan]' via @mention")
 
         turn_request = AskyTurnRequest(
             query_text=effective_query_text,
@@ -724,9 +772,7 @@ def run_chat(
                 else None
             ),
             messages_prepared_callback=lambda msgs: setattr(renderer, "messages", msgs),
-            session_resolved_callback=lambda sm: setattr(
-                renderer, "session_manager", sm
-            ),
+            session_resolved_callback=on_session_resolved,
             set_shell_session_id_fn=set_shell_session_id,
             clear_shell_session_fn=clear_shell_session,
             shortlist_executor=shortlist_prompt_sources,

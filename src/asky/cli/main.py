@@ -89,6 +89,10 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
         description="Tool-calling CLI with model selection.",
         formatter_class=argparse.RawTextHelpFormatter,
     )
+    
+    # Note: persona subcommand is handled separately in main() before parse_args()
+    # to avoid conflicts with query positional argument
+    
     model_action = parser.add_argument(
         "-m",
         "--model",
@@ -461,7 +465,9 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
     parser._option_string_actions["--tool-off"].completer = complete_tool_names
 
     enable_argcomplete(parser)
+    
     parsed_args = parser.parse_args(argv)
+    
     parsed_args.verbose_level = int(getattr(parsed_args, "verbose_level", 0) or 0)
     parsed_args.verbose = parsed_args.verbose_level >= 1
     parsed_args.double_verbose = parsed_args.verbose_level >= 2
@@ -688,6 +694,80 @@ def _resolve_research_corpus(
 
 def main() -> None:
     """Main entry point."""
+    # Solution 1: Check for "persona" subcommand before parse_args()
+    # This maintains clean UX without breaking existing functionality
+    if len(sys.argv) > 1 and sys.argv[1] == "persona":
+        from asky.cli import persona_commands
+        
+        # Parse persona subcommands separately
+        parser = argparse.ArgumentParser(description="Persona management commands")
+        subparsers = parser.add_subparsers(dest='persona_command', required=True)
+        
+        create_parser = subparsers.add_parser('create', help='Create a new persona')
+        create_parser.add_argument('name', help='Persona name')
+        create_parser.add_argument('--prompt', required=True, help='Path to behavior prompt file')
+        create_parser.add_argument('--description', default='', help='Persona description')
+        
+        add_sources_parser = subparsers.add_parser('add-sources', help='Add knowledge sources to a persona')
+        add_sources_parser.add_argument('name', help='Persona name')
+        add_sources_parser.add_argument('sources', nargs='+', help='Source URLs or paths')
+        
+        import_parser = subparsers.add_parser('import', help='Import a persona package')
+        import_parser.add_argument('path', help='Path to persona ZIP file')
+        
+        export_parser = subparsers.add_parser('export', help='Export a persona package')
+        export_parser.add_argument('name', help='Persona name')
+        export_parser.add_argument('--output', help='Output path for exported ZIP file')
+        
+        load_parser = subparsers.add_parser('load', help='Load a persona into the current session')
+        load_parser.add_argument('name', help='Persona name or alias')
+        
+        unload_parser = subparsers.add_parser('unload', help='Unload the current persona')
+        
+        current_parser = subparsers.add_parser('current', help='Show the currently loaded persona')
+        
+        list_parser = subparsers.add_parser('list', help='List all available personas')
+        
+        alias_parser = subparsers.add_parser('alias', help='Create a persona alias')
+        alias_parser.add_argument('alias', help='Alias name')
+        alias_parser.add_argument('persona_name', help='Target persona name')
+        
+        unalias_parser = subparsers.add_parser('unalias', help='Remove a persona alias')
+        unalias_parser.add_argument('alias', help='Alias to remove')
+        
+        aliases_parser = subparsers.add_parser('aliases', help='List persona aliases')
+        aliases_parser.add_argument('persona_name', nargs='?', help='Show aliases for specific persona')
+        
+        # Parse persona args (skip "persona" token)
+        persona_args = parser.parse_args(sys.argv[2:])
+        
+        # Dispatch to appropriate handler
+        persona_cmd = persona_args.persona_command
+        if persona_cmd == 'create':
+            persona_commands.handle_persona_create(persona_args)
+        elif persona_cmd == 'add-sources':
+            persona_commands.handle_persona_add_sources(persona_args)
+        elif persona_cmd == 'import':
+            persona_commands.handle_persona_import(persona_args)
+        elif persona_cmd == 'export':
+            persona_commands.handle_persona_export(persona_args)
+        elif persona_cmd == 'load':
+            persona_commands.handle_persona_load(persona_args)
+        elif persona_cmd == 'unload':
+            persona_commands.handle_persona_unload(persona_args)
+        elif persona_cmd == 'current':
+            persona_commands.handle_persona_current(persona_args)
+        elif persona_cmd == 'list':
+            persona_commands.handle_persona_list(persona_args)
+        elif persona_cmd == 'alias':
+            persona_commands.handle_persona_alias(persona_args)
+        elif persona_cmd == 'unalias':
+            persona_commands.handle_persona_unalias(persona_args)
+        elif persona_cmd == 'aliases':
+            persona_commands.handle_persona_aliases(persona_args)
+        return
+    
+    # Normal query parsing flow
     args = parse_args()
     raw_initial_query = " ".join(getattr(args, "query", []) or [])
     if raw_initial_query.startswith("\\"):

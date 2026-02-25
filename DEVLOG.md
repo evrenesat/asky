@@ -1,5 +1,152 @@
 # DEVLOG
 
+## 2026-02-25 - Persona Plugin Deterministic UX Implementation Complete
+
+Successfully completed all 15 tasks for the persona-plugin-deterministic-ux spec, transforming persona management from model-driven tool-discovery to deterministic user-first command pattern with @mention syntax.
+
+**Implementation Summary:**
+- **Phase 1 (Tasks 1-4)**: Core infrastructure
+  - Plugin KVStore with SQLite backend (27 tests)
+  - @mention parser with regex extraction (20 tests)
+  - Persona name/alias resolver (23 tests)
+- **Phase 2 (Tasks 5-9)**: CLI commands and integration
+  - Complete CLI persona command suite (36 tests)
+  - Mention parsing integrated into query preprocessing
+  - Session binding with persistence (38 tests)
+  - Integration tests for mention pipeline (21 tests)
+- **Phase 3 (Tasks 10-12)**: Breaking changes
+  - Removed persona tools from LLM surface (CLI-only approach)
+  - Updated tool registry integration tests (4 tests)
+- **Phase 4 (Tasks 13-15)**: Polish and completion
+  - Custom error classes with actionable messages (27 tests)
+  - Deprecated tool files removed
+  - Documentation updated across all affected modules
+  - End-to-end integration tests (13 tests)
+
+**Key Features Delivered:**
+- CLI commands: `asky persona create/load/unload/list/alias/import/export`
+- @mention syntax: `@persona_name query text` for deterministic persona loading
+- Alias support: `@alias → persona_name` resolution
+- Session-scoped persona persistence
+- Import/export persona packages (ZIP format)
+- Hook integration for context injection (SESSION_RESOLVED, SYSTEM_PROMPT_EXTEND, PRE_PRELOAD)
+
+**Test Coverage:**
+- Total: 1048 tests passing
+- New tests added: 209 tests across 12 new test files
+- Test execution time: ~8 seconds
+- No regressions introduced
+
+**Files Modified/Created:**
+- Created: 12 new modules (kvstore, mention_parser, resolver, persona_commands, errors, etc.)
+- Created: 12 new test files
+- Modified: 8 existing modules (plugin.py files, main.py, chat.py, types.py)
+- Updated: 6 AGENTS.md documentation files
+
+**Breaking Changes:**
+- Persona creation/management tools removed from LLM tool registry
+- All persona operations now CLI-only (deterministic, user-driven)
+
+## 2026-02-25 - Hook Integration Tests for Persona Plugin
+
+Added comprehensive integration tests for the persona manager hook system to verify correct behavior with mention-based persona loading.
+
+- Created **`tests/test_hook_integration.py`** [NEW]:
+  - 12 integration tests covering all three persona manager hooks
+  - **SESSION_RESOLVED hook tests** (3 tests):
+    - `test_session_resolved_restores_persona_binding` - verifies hook restores persona from session binding
+    - `test_session_resolved_with_mention_loaded_persona` - verifies hook works with @mention-loaded personas
+    - `test_session_resolved_with_nonexistent_persona_clears_binding` - verifies hook clears invalid bindings
+  - **SYSTEM_PROMPT_EXTEND hook tests** (3 tests):
+    - `test_system_prompt_extend_injects_persona_behavior` - verifies behavior prompt injection
+    - `test_system_prompt_extend_with_no_persona_returns_unchanged` - verifies no-op when no persona
+    - `test_system_prompt_extend_with_alias_loaded_persona` - verifies hook works with alias-loaded personas
+  - **PRE_PRELOAD hook tests** (3 tests):
+    - `test_pre_preload_injects_persona_knowledge` - verifies knowledge chunk injection
+    - `test_pre_preload_skips_when_lean_mode` - verifies lean mode skips knowledge injection
+    - `test_pre_preload_with_no_persona_does_nothing` - verifies no-op when no persona
+  - **End-to-end flow tests** (3 tests):
+    - `test_complete_mention_to_hooks_flow` - verifies complete flow: @mention → resolve → load → all hooks execute
+    - `test_complete_alias_mention_to_hooks_flow` - verifies complete flow with alias: @alias → resolve → load → hooks execute
+    - `test_persona_replacement_via_mention_updates_hooks` - verifies persona replacement updates all hooks correctly
+- Verified existing hook implementations:
+  - All three hooks (`_on_session_resolved`, `_on_system_prompt_extend`, `_on_pre_preload`) are already implemented in `src/asky/plugins/persona_manager/plugin.py`
+  - Hooks correctly integrate with mention-based loading system
+  - SESSION_RESOLVED restores persona bindings from storage
+  - SYSTEM_PROMPT_EXTEND injects persona behavior prompt
+  - PRE_PRELOAD injects persona knowledge chunks
+- Validation:
+  - `uv run pytest tests/test_hook_integration.py -v` -> 12 passed in 2.77s
+  - `uv run pytest tests/ -v` -> 1008 passed, 1 warning in 7.31s (no regressions)
+- Tasks: Completed tasks 11.1, 11.2, 11.3, 11.4, and 11 from persona-plugin-deterministic-ux spec
+
+## 2026-02-25 - Tool Registry Integration Tests for Persona Plugin
+
+Added integration tests to verify that persona tools are no longer registered in the tool registry after the CLI-only migration.
+
+- Created **`tests/test_tool_registry_integration.py`** [NEW]:
+  - 4 integration tests verifying tool registry behavior after persona tool removal
+  - `test_persona_manager_does_not_register_tools` - verifies persona_manager plugin registers no tools
+  - `test_manual_persona_creator_does_not_register_tools` - verifies manual_persona_creator plugin registers no tools
+  - `test_other_plugins_can_still_register_tools` - verifies non-persona plugins can still register tools correctly
+  - `test_tool_registry_schemas_exclude_persona_tools` - verifies tool schemas don't include any persona tools
+- Updated **`tests/test_persona_manager.py`**:
+  - Changed `test_persona_manager_registers_tools` to `test_persona_manager_does_not_register_tools` - now asserts tools are NOT registered
+  - Updated `test_prompt_and_preload_injection_for_loaded_persona` - replaced `registry.dispatch()` with direct `plugin._tool_load_persona()` call
+  - Updated `test_session_binding_persists_and_child_session_is_unbound` - replaced `registry.dispatch()` with direct `plugin._tool_load_persona()` call
+- Updated **`tests/test_manual_persona_creator.py`**:
+  - Changed `test_manual_persona_creator_registers_tools` to `test_manual_persona_creator_does_not_register_tools` - now asserts tools are NOT registered
+- Validation:
+  - `uv run pytest tests/test_tool_registry_integration.py -v` -> 4 passed
+  - `uv run pytest tests/test_persona_manager.py tests/test_manual_persona_creator.py -v` -> 8 passed
+  - All tests pass with updated assertions reflecting CLI-only persona management
+- Task: Completed task 10.3 from persona-plugin-deterministic-ux spec
+
+## 2026-02-25 - Session Binding Unit Tests for Persona Plugin
+
+Added comprehensive unit tests for the session binding module to verify persona persistence functionality.
+
+- Created **`tests/test_session_binding.py`** [NEW]:
+  - 38 unit tests covering all session binding functions
+  - Tests for `get_session_binding()` and `set_session_binding()` with various input types
+  - Tests for persona binding persistence across operations
+  - Tests for persona replacement functionality
+  - Tests for persona unbinding (clearing bindings)
+  - Tests for cross-query persistence
+  - Tests for atomic file writes and TOML serialization
+- Verified existing implementation:
+  - Session binding module (`src/asky/plugins/persona_manager/session_binding.py`) already supports mention-based loading
+  - `set_session_binding()` works for binding personas (equivalent to conceptual `bind_persona_to_session`)
+  - `get_session_binding()` returns current persona (equivalent to conceptual `get_session_persona`)
+  - `set_session_binding(persona_name=None)` clears binding (equivalent to conceptual `unbind_persona_from_session`)
+- Integration verified:
+  - Mention-based loading in `src/asky/cli/chat.py` uses `set_session_binding()` correctly
+  - All 21 integration tests in `test_mention_pipeline_integration.py` pass
+  - All 13 persona command tests involving binding pass
+- Validation:
+  - `uv run pytest tests/test_session_binding.py -xvs` -> 38 passed
+  - `uv run pytest tests/test_mention_pipeline_integration.py -xvs` -> 21 passed
+- Tasks: Completed tasks 8.1 and 8.2 from persona-plugin-deterministic-ux spec
+
+## 2026-02-24 - Persona Command Routing via Early argv Check
+
+Implemented Solution 1 for persona command routing to avoid argparse conflicts with query positional arguments.
+
+- Modified **`src/asky/cli/main.py`**:
+  - Added early check in `main()` for `sys.argv[1] == "persona"` before calling `parse_args()`
+  - When detected, creates separate argparse parser for persona subcommands and dispatches directly to handlers
+  - Removed persona subparser setup from `parse_args()` function to eliminate conflict with query positional argument
+  - Removed complex `parse_known_args()` workaround logic that was attempting to handle the conflict
+  - Removed redundant persona command handling block that was in the middle of `main()`
+- Benefits:
+  - Clean UX: `asky persona list` works without conflicts
+  - No breaking changes to existing query parsing
+  - Simpler code flow with early routing decision
+- Validation:
+  - `uv run pytest tests/test_persona_commands.py -v` -> 36 passed
+  - `uv run pytest tests/ -k "main or parse_args" -v` -> 45 passed
+- Task: Completed task 7.1 from persona-plugin-deterministic-ux spec
+
 ## 2026-02-24 - Plugin User Documentation and Entry-Point Clarification
 
 Clarified plugin user entry points and current limitations, especially for persona plugins.

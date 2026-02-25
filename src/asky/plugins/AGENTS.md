@@ -45,15 +45,16 @@ Deferred in v1:
 
 ## Built-in Plugins
 
-- `manual_persona_creator/` — manual persona creation/ingestion/export tools
-- `persona_manager/` — persona import/session binding/prompt+preload injection
+- `manual_persona_creator/` — CLI-based persona creation/ingestion/export
+- `persona_manager/` — persona import/session binding/prompt+preload injection with @mention syntax
 - `gui_server/` — NiceGUI daemon sidecar and page extension registry
 
 ## User Entry Points (Current State)
 
 - Runtime config entrypoint: `~/.config/asky/plugins.toml`
 - GUI entrypoint (only when daemon is running): `http://127.0.0.1:8766/settings/general`
-- Persona entrypoints: tool calls only (`manual_persona_*`, `persona_*`), not
-  dedicated CLI flags or dedicated GUI pages yet.
+- Persona entrypoints: CLI commands (`asky persona <command>`) and @mention syntax in queries
+  - No LLM tools registered for persona operations (CLI-only by design)
+  - See `plugins/persona_manager/AGENTS.md` for full CLI command reference
 
 For user-focused usage and limitations, see `docs/plugins.md`.
