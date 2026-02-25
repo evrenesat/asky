@@ -56,6 +56,15 @@ AUDIO_EXTENSIONS = (".m4a", ".mp3", ".mp4", ".wav", ".webm", ".ogg", ".flac", ".
 IMAGE_EXTENSIONS = (".jpg", ".jpeg", ".png", ".webp", ".gif")
 
 
+"""XMPP transport: wires daemon router, background workers, and XMPP client."""
+
+from asky.plugins.xmpp_daemon.xmpp_formatting import (
+    ASCIITableRenderer,
+    MessageFormatter,
+    MessageModel,
+)
+
+
 class XMPPService:
     """XMPP transport: wires daemon router, background workers, and XMPP client."""
 
@@ -102,6 +111,10 @@ class XMPPService:
             allowed_mime_types=XMPP_IMAGE_ALLOWED_MIME_TYPES,
             completion_callback=self._on_image_transcription_complete,
         )
+        
+        self._table_renderer = ASCIITableRenderer()
+        self._formatter = MessageFormatter(self._table_renderer)
+        
         self.router = DaemonRouter(
             transcript_manager=self.transcript_manager,
             command_executor=self.command_executor,
@@ -279,7 +292,10 @@ class XMPPService:
                 jid_queue.task_done()
 
     def _send_chunked(self, jid: str, text: str, *, message_type: str = "chat") -> None:
-        parts = chunk_text(text, XMPP_RESPONSE_CHUNK_CHARS)
+        model = MessageModel(plain_body=text)
+        formatted_text = self._formatter.format_message(model)
+        
+        parts = chunk_text(formatted_text, XMPP_RESPONSE_CHUNK_CHARS)
         total = len(parts)
         for index, part in enumerate(parts, start=1):
             if total > 1:

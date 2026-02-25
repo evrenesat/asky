@@ -353,6 +353,7 @@ def execute_get_url_details(
         "title": payload.get("title", ""),
         "date": payload.get("date"),
         "final_url": payload.get("final_url", url),
+        "page_type": payload.get("page_type", "article"),
         "system_note": "IMPORTANT: Do NOT use get_url_details again. Use get_url_content to read links.",
     }
 

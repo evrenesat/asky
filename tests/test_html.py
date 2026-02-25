@@ -97,3 +97,72 @@ def test_html_stripper_excluded_link_container_tags():
 
     assert len(links) == 1
     assert links[0]["href"] == "https://example.com/world"
+
+
+def test_html_stripper_section_tracking_headings():
+    html = """
+    <h2>Top Stories</h2>
+    <a href="https://example.com/1">Article One</a>
+    <a href="https://example.com/2">Article Two</a>
+    <h2>World News</h2>
+    <a href="https://example.com/3">Article Three</a>
+    """
+    stripper = HTMLStripper(base_url="https://example.com")
+    stripper.feed(html)
+    links = stripper.get_links_with_sections()
+
+    assert len(links) == 3
+    assert links[0] == {"text": "Article One", "href": "https://example.com/1", "section": "Top Stories"}
+    assert links[1] == {"text": "Article Two", "href": "https://example.com/2", "section": "Top Stories"}
+    assert links[2] == {"text": "Article Three", "href": "https://example.com/3", "section": "World News"}
+
+
+def test_html_stripper_section_tracking_zones():
+    html = """
+    <nav><a href="https://example.com/nav">Nav Link</a></nav>
+    <h2>Main Content</h2>
+    <a href="https://example.com/article">Article</a>
+    <aside><a href="https://example.com/sidebar">Sidebar Link</a></aside>
+    <footer><a href="https://example.com/footer">Footer Link</a></footer>
+    """
+    stripper = HTMLStripper(base_url="https://example.com")
+    stripper.feed(html)
+    links = stripper.get_links_with_sections()
+
+    assert len(links) == 4
+    assert links[0]["section"] == "Navigation"
+    assert links[1]["section"] == "Main Content"
+    assert links[2]["section"] == "Sidebar"
+    assert links[3]["section"] == "Footer"
+
+
+def test_html_stripper_section_tracking_no_context():
+    html = """
+    <a href="https://example.com/1">Early Link</a>
+    <h2>After Heading</h2>
+    <a href="https://example.com/2">Heading Link</a>
+    """
+    stripper = HTMLStripper(base_url="https://example.com")
+    stripper.feed(html)
+    links = stripper.get_links_with_sections()
+
+    assert links[0]["section"] == ""
+    assert links[1]["section"] == "After Heading"
+
+
+def test_html_stripper_heading_links_excluded_from_sectioned():
+    """Links inside heading tags should not appear in sectioned list."""
+    html = """
+    <h2><a href="https://example.com/nav-link">Section Header as Link</a></h2>
+    <a href="https://example.com/content">Content Link</a>
+    """
+    stripper = HTMLStripper(base_url="https://example.com")
+    stripper.feed(html)
+    all_links = stripper.get_links()
+    sectioned = stripper.get_links_with_sections()
+
+    # get_links() includes heading links, get_links_with_sections() excludes them
+    assert any(l["href"] == "https://example.com/nav-link" for l in all_links)
+    assert not any(l["href"] == "https://example.com/nav-link" for l in sectioned)
+    assert len(sectioned) == 1
+    assert sectioned[0]["href"] == "https://example.com/content"

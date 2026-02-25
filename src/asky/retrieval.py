@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 import time
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional, Set
 
 import requests
 
@@ -22,6 +22,15 @@ except ImportError:
 SUPPORTED_OUTPUT_FORMATS = {"markdown", "txt"}
 MAX_TITLE_CHARS = 220
 TraceCallback = Callable[[Dict[str, Any]], None]
+
+# Portal detection: if extracted content is less than this fraction of total
+# visible text, the page is classified as a listing/portal page.
+PORTAL_DETECTION_CONTENT_RATIO = 0.15
+# Minimum visible text for portal detection to fire (avoids false positives on
+# tiny pages like error pages or single-widget apps).
+PORTAL_DETECTION_MIN_VISIBLE_CHARS = 2000
+# Maximum links to include in portal-mode content.
+PORTAL_MAX_LINKS = 150
 
 
 def _emit_trace_event(
@@ -190,6 +199,7 @@ def fetch_url_document(
         "links": links,
         "source": extracted.get("source", "unknown"),
         "output_format": normalized_format,
+        "page_type": extracted.get("page_type", "article"),
     }
     if warning:
         payload["warning"] = warning
@@ -219,19 +229,104 @@ def _extract_main_content(
     source_url: str,
     output_format: str,
 ) -> Dict[str, Any]:
-    """Extract main content with Trafilatura first, then fallback parser."""
+    """Extract main content with Trafilatura first, then fallback parser.
+
+    When Trafilatura's output is sparse relative to the page's total visible
+    text, the page is classified as a portal/listing page and a structured
+    link listing is returned instead.
+    """
     trafilatura_result = _extract_with_trafilatura(
         html=html,
         source_url=source_url,
         output_format=output_format,
     )
-    if trafilatura_result.get("content"):
+    extracted_content = trafilatura_result.get("content", "")
+
+    # Fast path: Trafilatura produced substantial content → article, skip detection.
+    if len(extracted_content) >= PORTAL_DETECTION_MIN_VISIBLE_CHARS:
+        trafilatura_result["page_type"] = "article"
+        return trafilatura_result
+
+    visible_chars = len(strip_tags(html).strip())
+    page_type = _detect_page_type(extracted_content, visible_chars)
+
+    if page_type == "portal":
+        portal_content = _format_portal_content(html, source_url, PORTAL_MAX_LINKS)
+        result: Dict[str, Any] = {
+            "content": portal_content,
+            "title": trafilatura_result.get("title", ""),
+            "date": trafilatura_result.get("date"),
+            "source": "portal_links",
+            "page_type": "portal",
+        }
+        if trafilatura_result.get("warning"):
+            result["warning"] = trafilatura_result["warning"]
+        return result
+
+    if extracted_content:
+        trafilatura_result["page_type"] = "article"
         return trafilatura_result
 
     fallback = _extract_with_html_fallback(html=html, output_format=output_format)
+    fallback["page_type"] = "article"
     if trafilatura_result.get("warning") and not fallback.get("warning"):
         fallback["warning"] = trafilatura_result["warning"]
     return fallback
+
+
+def _detect_page_type(extracted_content: str, visible_chars: int) -> str:
+    """Classify a page as 'article' or 'portal' based on extraction yield.
+
+    A portal is a listing/aggregation page (news homepage, category index, etc.)
+    where Trafilatura finds little content relative to the total visible text.
+    """
+    if visible_chars < PORTAL_DETECTION_MIN_VISIBLE_CHARS:
+        return "article"
+    extracted_chars = len(extracted_content.strip())
+    if extracted_chars == 0:
+        return "portal"
+    return "portal" if extracted_chars / visible_chars < PORTAL_DETECTION_CONTENT_RATIO else "article"
+
+
+def _format_portal_content(html: str, base_url: str, max_links: int) -> str:
+    """Extract and format section-grouped links from a portal/listing page.
+
+    Returns a markdown string with a type header and links grouped under
+    their structural section (heading text or zone name).
+    """
+    stripper = HTMLStripper(base_url=base_url)
+    stripper.feed(html)
+    links = stripper.get_links_with_sections()
+
+    # Group links by section preserving first-appearance order,
+    # deduplicating by href and capping at max_links total.
+    sections: Dict[str, List[Dict[str, str]]] = {}
+    section_order: List[str] = []
+    seen_hrefs: Set[str] = set()
+    count = 0
+
+    for link in links:
+        if count >= max_links:
+            break
+        href = link["href"]
+        if href in seen_hrefs:
+            continue
+        seen_hrefs.add(href)
+        section = link["section"] or "Content"
+        if section not in sections:
+            sections[section] = []
+            section_order.append(section)
+        sections[section].append(link)
+        count += 1
+
+    lines = ["[Page type: news portal / content listing]", ""]
+    for section in section_order:
+        lines.append(f"## {section}")
+        for link in sections[section]:
+            lines.append(f"- [{link['text']}]({link['href']})")
+        lines.append("")
+
+    return "\n".join(lines).strip()
 
 
 def _extract_with_trafilatura(
