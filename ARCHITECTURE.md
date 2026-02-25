@@ -41,7 +41,16 @@ graph TB
     end
 
     subgraph Daemon["Daemon Layer (daemon/)"]
-        daemon_service["service.py<br/>XMPPDaemonService"]
+        daemon_service["service.py<br/>DaemonService (transport-agnostic)"]
+        daemon_menubar["menubar.py<br/>Singleton Lock + Launcher"]
+        daemon_tray_proto["tray_protocol.py<br/>TrayApp ABC + TrayStatus"]
+        daemon_tray_macos["tray_macos.py<br/>MacosTrayApp (rumps)"]
+        daemon_app_bundle["app_bundle_macos.py<br/>macOS .app Bundle Creation"]
+    end
+
+    subgraph XMPPPlugin["XMPP Daemon Plugin (plugins/xmpp_daemon/)"]
+        xmpp_plugin["plugin.py<br/>XMPPDaemonPlugin"]
+        xmpp_service["xmpp_service.py<br/>XMPPService + per-JID queues"]
         daemon_xmpp["xmpp_client.py<br/>Slixmpp Transport Wrapper"]
         daemon_router["router.py<br/>Ingress Routing + Policy"]
         daemon_exec["command_executor.py<br/>Command/Query Bridge"]
@@ -51,7 +60,6 @@ graph TB
         daemon_image["image_transcriber.py<br/>Async Image Jobs"]
         daemon_transcripts["transcript_manager.py<br/>Transcript Lifecycle"]
         daemon_chunking["chunking.py<br/>Outbound Chunking"]
-        daemon_app_bundle["app_bundle_macos.py<br/>macOS .app Bundle Creation"]
     end
 
     subgraph Storage["Storage Layer (storage/)"]
@@ -81,6 +89,7 @@ graph TB
         persona_creator["manual_persona_creator/*<br/>Persona Build/Export Tools"]
         persona_manager["persona_manager/*<br/>Import/Bind/Inject Persona Context"]
         gui_plugin["gui_server/*<br/>NiceGUI Daemon Sidecar"]
+        xmpp_daemon_plugin["xmpp_daemon/*<br/>XMPP Transport Plugin"]
     end
 
     subgraph Tools["Tool Execution"]
@@ -98,6 +107,7 @@ graph TB
     api_preload -.-> shortlist
     main --> chat
     main --> daemon_service
+    main --> daemon_menubar
     main --> research_cmd
     main --> section_cmd
     main --> presets_cli
@@ -115,9 +125,13 @@ graph TB
     session_mgr --> sqlite
     history --> sqlite
     sessions_cli --> sqlite
-    daemon_service --> daemon_xmpp
-    daemon_service --> daemon_router
-    daemon_service --> daemon_chunking
+    daemon_service --> plugin_hooks
+    daemon_menubar --> daemon_tray_macos
+    daemon_tray_macos --> daemon_tray_proto
+    xmpp_plugin --> xmpp_service
+    xmpp_service --> daemon_xmpp
+    xmpp_service --> daemon_router
+    xmpp_service --> daemon_chunking
     daemon_router --> daemon_planner
     daemon_router --> daemon_exec
     daemon_router --> daemon_profiles
@@ -127,6 +141,7 @@ graph TB
     daemon_exec --> api_client
     daemon_exec --> daemon_profiles
     daemon_transcripts --> sqlite
+    xmpp_daemon_plugin --> xmpp_plugin
     registry --> tools
     plugin_runtime --> plugin_manager
     plugin_manager --> plugin_hooks
@@ -155,12 +170,12 @@ graph TB
 src/asky/
 ├── api/                # Programmatic library API surface (run_turn orchestration)
 ├── cli/                # Command-line interface → see cli/AGENTS.md
-├── daemon/             # Optional XMPP daemon runtime (transport/router/planner/voice/image/group sessions/macOS app bundle)
+├── daemon/             # Daemon lifecycle core: DaemonService, menubar launcher, tray abstraction
 ├── core/               # Conversation engine → see core/AGENTS.md
 ├── storage/            # Data persistence → see storage/AGENTS.md
 ├── research/           # Research mode RAG → see research/AGENTS.md
 ├── memory/             # Cross-session user memory → see memory/AGENTS.md
-├── plugins/            # Optional plugin runtime + built-in plugins (persona/gui)
+├── plugins/            # Optional plugin runtime + built-in plugins (persona/gui/xmpp_daemon)
 ├── evals/              # Manual integration eval harnesses (research + standard)
 ├── config/             # Configuration → see config/AGENTS.md
 ├── tools.py            # Tool execution (web search, URL fetch, custom)
@@ -185,7 +200,7 @@ For test organization, see `tests/AGENTS.md`.
 | Package     | Documentation                                     | Key Components                                                                      |
 | ----------- | ------------------------------------------------- | ----------------------------------------------------------------------------------- |
 | `cli/`      | [cli/AGENTS.md](src/asky/cli/AGENTS.md)           | Entry point, chat flow, commands                                                    |
-| `daemon/`   | [daemon/AGENTS.md](src/asky/daemon/AGENTS.md)     | XMPP transport, group/direct router, session profile manager, voice+image pipelines |
+| `daemon/`   | [daemon/AGENTS.md](src/asky/daemon/AGENTS.md)     | Transport-agnostic `DaemonService`, menubar launcher, `TrayApp` abstraction          |
 | `api/`      | [api/AGENTS.md](src/asky/api/AGENTS.md)           | `AskyClient`, turn orchestration services                                           |
 | `core/`     | [core/AGENTS.md](src/asky/core/AGENTS.md)         | ConversationEngine, ToolRegistry, API client                                        |
 | `storage/`  | [storage/AGENTS.md](src/asky/storage/AGENTS.md)   | SQLite repository, data model                                                       |
@@ -305,20 +320,23 @@ turn to enforce single-pass answering from preloaded seed content.
 ### XMPP Daemon Flow
 
 ```
-asky --xmpp-daemon
+asky --daemon
     ↓
 macOS + rumps available:
   cli/main.py
     -> singleton probe (`menubar.lock`) before spawn
     -> if running: print clear error, exit code 1
-    -> if not running: spawn `--xmpp-menubar-child`
-  daemon/menubar.py (status bar app)
+    -> if not running: spawn `--menubar-child`
+  daemon/menubar.py → MacosTrayApp (status bar app)
     -> child acquires singleton lock before creating `rumps.App`
   menubar controls daemon/service.py lifecycle
 otherwise:
-  daemon/service.py (foreground)
+  daemon/service.py (DaemonService, foreground)
+    -> fires DAEMON_TRANSPORT_REGISTER → xmpp_daemon plugin registers XMPPService
+    -> fires DAEMON_SERVER_REGISTER → gui_server etc. register sidecar servers
+    -> calls XMPPService.run() (blocking)
     ↓
-xmpp_client.py message callback payload
+xmpp_service.py message callback payload
     ↓
 per-conversation queue (serialized processing)
     ↓
@@ -664,9 +682,24 @@ A simplified "retrieval-only" system prompt guidance is injected in these cases 
   - `plugins/hooks.py` + `plugins/hook_types.py` — thread-safe ordered registry and typed mutable hook payloads.
   - `plugins/runtime.py` — process-level runtime bootstrap + cache.
   - Hook plumbing across `api/client.py`, `core/tool_registry_factory.py`, `core/engine.py`, and `core/registry.py`.
-  - CLI/daemon runtime injection in `cli/main.py`, `cli/chat.py`, `daemon/command_executor.py`, `daemon/service.py`.
+  - CLI/daemon runtime injection in `cli/main.py`, `cli/chat.py`, `daemon/service.py`.
 - **Key invariants**:
   - No enabled plugins means behavior stays identical to pre-plugin baseline.
   - Plugin load/activation failures never crash normal chat/daemon execution.
   - Hook order is deterministic: `(priority, plugin_name, registration_index)`.
   - Deferred hooks (`CONFIG_LOADED`, `POST_TURN_RENDER`, `SESSION_END`) remain unimplemented in v1.
+
+### Decision 20: XMPP Daemon as Built-in Plugin
+
+- **Context**: XMPP daemon transport was originally hard-coded into `daemon/service.py`. This made the core daemon inseparable from XMPP concerns and prevented alternative transports.
+- **Decision**: Extract all XMPP logic into `plugins/xmpp_daemon/` as a built-in plugin. `daemon/service.py` becomes a transport-agnostic `DaemonService` that uses hook-based transport registration.
+- **Implementation**:
+  - `DAEMON_TRANSPORT_REGISTER` hook in `hook_types.py` — `DaemonService` fires this at construction; exactly one plugin must respond with a `DaemonTransportSpec`.
+  - `plugins/xmpp_daemon/plugin.py` — `XMPPDaemonPlugin` handles the hook, constructs `XMPPService`, appends `DaemonTransportSpec`.
+  - `plugins/xmpp_daemon/xmpp_service.py` — all XMPP runtime logic (per-JID queues, client wiring, message dispatch).
+  - `daemon/service.py` — reduced to lifecycle: fire hooks, run transport, stop servers on exit.
+  - `daemon/tray_protocol.py` + `daemon/tray_macos.py` — platform-agnostic `TrayApp` ABC and macOS rumps implementation separated for future platform portability.
+- **Key invariants**:
+  - One-way dependency: `plugins/xmpp_daemon` may import `asky.daemon.errors`; `daemon/` core must not import from `plugins/xmpp_daemon`.
+  - `DaemonService` raises `DaemonUserError` if zero or more than one transport is registered.
+  - The XMPP daemon plugin is enabled by default in `plugins.toml` and can be disabled to suppress XMPP transport entirely.

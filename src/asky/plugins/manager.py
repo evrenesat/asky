@@ -5,6 +5,7 @@ from __future__ import annotations
 import importlib
 import logging
 import tomllib
+from importlib import resources
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set
 
@@ -17,7 +18,7 @@ logger = logging.getLogger(__name__)
 PLUGIN_ROSTER_FILENAME = "plugins.toml"
 PLUGIN_CONFIG_SUBDIR = "plugins"
 PLUGIN_DATA_SUBDIR = "plugins"
-MANIFEST_TEMPLATE = """# Asky plugin roster\n#\n# Built-in plugins are enabled by default.\n\n[plugin.manual_persona_creator]\nenabled = true\nmodule = "asky.plugins.manual_persona_creator.plugin"\nclass = "ManualPersonaCreatorPlugin"\ncapabilities = ["tool_registry", "preload", "prompt"]\n\n[plugin.persona_manager]\nenabled = true\nmodule = "asky.plugins.persona_manager.plugin"\nclass = "PersonaManagerPlugin"\ncapabilities = ["tool_registry", "prompt", "preload", "session"]\n\n[plugin.gui_server]\nenabled = true\nmodule = "asky.plugins.gui_server.plugin"\nclass = "GUIServerPlugin"\ncapabilities = ["daemon_server", "gui"]\n# Optional plugin config file for host/port overrides:\n# config_file = "plugins/gui_server.toml"\n"""
+_BUNDLED_PLUGINS_TOML = resources.files("asky.data.config").joinpath("plugins.toml")
 ACTIVE_PLUGIN_STATE = "active"
 IMPORTED_PLUGIN_STATE = "imported"
 DISABLED_PLUGIN_STATE = "disabled"
@@ -303,7 +304,7 @@ class PluginManager:
         if self.roster_path.exists():
             return
         try:
-            self.roster_path.write_text(MANIFEST_TEMPLATE, encoding="utf-8")
+            self.roster_path.write_bytes(_BUNDLED_PLUGINS_TOML.read_bytes())
             logger.info("Created plugin roster template at %s", self.roster_path)
         except Exception:
             logger.exception("Failed to create plugin roster template at %s", self.roster_path)

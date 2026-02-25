@@ -21,3 +21,9 @@ class = "GUIServerPlugin"
 capabilities = ["daemon_server", "gui"]
 # Optional plugin config file for host/port overrides:
 # config_file = "plugins/gui_server.toml"
+
+[plugin.xmpp_daemon]
+enabled = true
+module = "asky.plugins.xmpp_daemon.plugin"
+class = "XMPPDaemonPlugin"
+capabilities = ["daemon_transport"]

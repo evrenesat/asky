@@ -35,7 +35,8 @@ Hook callback exceptions are logged and isolated; remaining callbacks still run.
 - `PRE_TOOL_EXECUTE`
 - `POST_TOOL_EXECUTE`
 - `TURN_COMPLETED`
-- `DAEMON_SERVER_REGISTER`
+- `DAEMON_SERVER_REGISTER` — collect sidecar server specs (start/stop callables)
+- `DAEMON_TRANSPORT_REGISTER` — register exactly one daemon transport (run/stop callables)
 
 Deferred in v1:
 
@@ -48,6 +49,29 @@ Deferred in v1:
 - `manual_persona_creator/` — CLI-based persona creation/ingestion/export
 - `persona_manager/` — persona import/session binding/prompt+preload injection with @mention syntax
 - `gui_server/` — NiceGUI daemon sidecar and page extension registry
+- `xmpp_daemon/` — XMPP transport for daemon mode (router, executor, voice/image pipelines)
+
+## xmpp_daemon Plugin
+
+`xmpp_daemon/` provides the XMPP transport layer for `asky --daemon`. It registers itself via the `DAEMON_TRANSPORT_REGISTER` hook. The daemon core (`daemon/service.py`) is transport-agnostic; `xmpp_daemon` is the only built-in transport.
+
+Key modules:
+
+| Module                      | Purpose                                                    |
+| --------------------------- | ---------------------------------------------------------- |
+| `plugin.py`                 | `XMPPDaemonPlugin` — registers XMPP transport via hook     |
+| `xmpp_service.py`           | `XMPPService` — per-JID queue + XMPP client wiring        |
+| `xmpp_client.py`            | Slixmpp transport wrapper                                  |
+| `router.py`                 | `DaemonRouter` — ingress policy (allowlist, room binding)  |
+| `command_executor.py`       | Command/query bridge — policy gate, `AskyClient.run_turn`  |
+| `session_profile_manager.py`| Room/session bindings + session override file management   |
+| `interface_planner.py`      | LLM-based intent classification for non-prefixed messages  |
+| `voice_transcriber.py`      | Background audio transcription via `mlx-whisper`           |
+| `image_transcriber.py`      | Background image description via image-capable LLM         |
+| `transcript_manager.py`     | Transcript lifecycle, pending confirmation tracking        |
+| `chunking.py`               | Outbound response chunking                                 |
+
+One-way dependency rule: `xmpp_daemon` may import from `asky.daemon.errors`; `daemon/` core must not import from `asky.plugins.xmpp_daemon`.
 
 ## User Entry Points (Current State)
 

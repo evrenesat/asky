@@ -1,5 +1,24 @@
 # DEVLOG
 
+## 2026-02-25 - XMPP Daemon Extracted to Built-in Plugin
+
+Converted the XMPP daemon from hard-coded core into a built-in plugin, making `daemon/service.py` a transport-agnostic lifecycle coordinator.
+
+**What changed:**
+
+- `daemon/service.py` — `XMPPDaemonService` replaced by `DaemonService`. Transport-agnostic: fires `DAEMON_TRANSPORT_REGISTER` at init to collect exactly one transport from plugins, fires `DAEMON_SERVER_REGISTER` to collect sidecar servers.
+- `plugins/xmpp_daemon/` — new built-in plugin containing all XMPP logic previously in `daemon/`: `xmpp_client.py`, `router.py`, `command_executor.py`, `session_profile_manager.py`, `interface_planner.py`, `voice_transcriber.py`, `image_transcriber.py`, `transcript_manager.py`, `chunking.py`, plus new `xmpp_service.py` (`XMPPService`) and `plugin.py` (`XMPPDaemonPlugin`).
+- `hook_types.py` — added `DAEMON_TRANSPORT_REGISTER` hook, `DaemonTransportSpec`, `DaemonTransportRegisterContext`.
+- `daemon/menubar.py` — reduced to singleton lock helpers + thin `run_menubar_app()` launcher.
+- `daemon/tray_protocol.py` + `daemon/tray_macos.py` — new `TrayApp` ABC and macOS rumps implementation, decoupled from menubar launcher for future platform portability.
+- `plugins/manager.py` — `MANIFEST_TEMPLATE` updated to include `xmpp_daemon` built-in plugin.
+
+**Key invariants:**
+- One-way dependency: `plugins/xmpp_daemon` may import from `asky.daemon.errors`; daemon core must not import from `plugins/xmpp_daemon`.
+- `DaemonService` raises `DaemonUserError` if zero or multiple transports are registered.
+- Daemon mode itself (singleton lock, macOS menubar, startup-at-login) stays in core `daemon/`.
+- All 1047 tests pass, no regressions.
+
 ## 2026-02-25 - Persona Plugin Deterministic UX Implementation Complete
 
 Successfully completed all 15 tasks for the persona-plugin-deterministic-ux spec, transforming persona management from model-driven tool-discovery to deterministic user-first command pattern with @mention syntax.

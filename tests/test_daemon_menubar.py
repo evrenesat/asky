@@ -5,6 +5,7 @@ import pytest
 
 from asky.cli.daemon_config import DaemonSettings
 from asky.daemon import menubar
+from asky.daemon import startup as startup_module
 
 
 class _FakeResponse:
@@ -95,12 +96,12 @@ def test_run_menubar_app_uses_fake_rumps(monkeypatch, tmp_path):
         lambda: original_acquire(lock_path),
     )
     monkeypatch.setattr(
-        "asky.daemon.menubar.get_daemon_settings",
+        "asky.daemon.tray_macos.get_daemon_settings",
         lambda: _build_settings(),
     )
     monkeypatch.setattr(
-        "asky.daemon.menubar.startup.get_status",
-        lambda: menubar.startup.StartupStatus(
+        "asky.daemon.tray_macos.startup.get_status",
+        lambda: startup_module.StartupStatus(
             supported=True,
             enabled=False,
             active=False,
@@ -128,12 +129,12 @@ def test_run_menubar_app_rejects_duplicate_instance(monkeypatch, tmp_path):
         lambda: original_acquire(lock_path),
     )
     monkeypatch.setattr(
-        "asky.daemon.menubar.get_daemon_settings",
+        "asky.daemon.tray_macos.get_daemon_settings",
         lambda: _build_settings(),
     )
     monkeypatch.setattr(
-        "asky.daemon.menubar.startup.get_status",
-        lambda: menubar.startup.StartupStatus(
+        "asky.daemon.tray_macos.startup.get_status",
+        lambda: startup_module.StartupStatus(
             supported=True,
             enabled=False,
             active=False,
@@ -191,11 +192,11 @@ def test_menubar_actions_use_state_aware_labels(monkeypatch, tmp_path):
             current_state["voice_enabled"] = kwargs["voice_enabled"]
         return _settings()
 
-    monkeypatch.setattr("asky.daemon.menubar.get_daemon_settings", _settings)
-    monkeypatch.setattr("asky.daemon.menubar.update_daemon_settings", _update)
+    monkeypatch.setattr("asky.daemon.tray_macos.get_daemon_settings", _settings)
+    monkeypatch.setattr("asky.daemon.tray_macos.update_daemon_settings", _update)
     monkeypatch.setattr(
-        "asky.daemon.menubar.startup.get_status",
-        lambda: menubar.startup.StartupStatus(
+        "asky.daemon.tray_macos.startup.get_status",
+        lambda: startup_module.StartupStatus(
             supported=current_state["startup_supported"],
             enabled=current_state["startup_enabled"],
             active=current_state["startup_enabled"],
@@ -258,11 +259,11 @@ def test_start_daemon_with_missing_config_uses_cli_error_path(monkeypatch, tmp_p
             current_state["voice_enabled"] = kwargs["voice_enabled"]
         return _settings()
 
-    monkeypatch.setattr("asky.daemon.menubar.get_daemon_settings", _settings)
-    monkeypatch.setattr("asky.daemon.menubar.update_daemon_settings", _update)
+    monkeypatch.setattr("asky.daemon.tray_macos.get_daemon_settings", _settings)
+    monkeypatch.setattr("asky.daemon.tray_macos.update_daemon_settings", _update)
     monkeypatch.setattr(
-        "asky.daemon.menubar.startup.get_status",
-        lambda: menubar.startup.StartupStatus(
+        "asky.daemon.tray_macos.startup.get_status",
+        lambda: startup_module.StartupStatus(
             supported=True,
             enabled=False,
             active=False,

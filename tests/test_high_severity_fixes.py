@@ -165,38 +165,27 @@ def test_h07_tmp_file_removed_after_replace(tmp_path):
 def test_h11_single_worker_per_jid():
     from unittest.mock import patch as _patch
 
-    from asky.daemon import service as svc
+    from asky.plugins.xmpp_daemon import xmpp_service as svc
 
     with (
-        _patch.object(svc, "init_db"),
-        _patch("asky.daemon.service.TranscriptManager"),
-        _patch("asky.daemon.service.CommandExecutor"),
-        _patch("asky.daemon.service.InterfacePlanner"),
-        _patch("asky.daemon.service.VoiceTranscriber"),
-        _patch("asky.daemon.service.ImageTranscriber"),
-        _patch("asky.daemon.service.DaemonRouter"),
-        _patch("asky.daemon.service.AskyXMPPClient"),
+        _patch("asky.plugins.xmpp_daemon.xmpp_service.TranscriptManager"),
+        _patch("asky.plugins.xmpp_daemon.xmpp_service.CommandExecutor"),
+        _patch("asky.plugins.xmpp_daemon.xmpp_service.InterfacePlanner"),
+        _patch("asky.plugins.xmpp_daemon.xmpp_service.VoiceTranscriber"),
+        _patch("asky.plugins.xmpp_daemon.xmpp_service.ImageTranscriber"),
+        _patch("asky.plugins.xmpp_daemon.xmpp_service.DaemonRouter"),
+        _patch("asky.plugins.xmpp_daemon.xmpp_service.AskyXMPPClient"),
     ):
-        daemon = svc.XMPPDaemonService.__new__(svc.XMPPDaemonService)
-        daemon._jid_queues = {}
-        daemon._jid_workers = {}
-        daemon._jid_workers_lock = threading.Lock()
+        service = svc.XMPPService.__new__(svc.XMPPService)
+        service._jid_queues = {}
+        service._jid_workers = {}
+        service._jid_workers_lock = threading.Lock()
 
-        workers_started = []
-        barrier = threading.Barrier(2)
-
-        original_enqueue = svc.XMPPDaemonService._enqueue_for_jid
-
-        def _counting_enqueue(self, jid, task):
-            barrier.wait()
-            original_enqueue(self, jid, task)
-
-        results = []
         exceptions = []
 
         def _run():
             try:
-                daemon._enqueue_for_jid("user@example.com", lambda: None)
+                service._enqueue_for_jid("user@example.com", lambda: None)
             except Exception as e:
                 exceptions.append(e)
 
@@ -210,7 +199,7 @@ def test_h11_single_worker_per_jid():
         assert not exceptions
 
         alive_workers = [
-            w for w in daemon._jid_workers.values() if w.is_alive()
+            w for w in service._jid_workers.values() if w.is_alive()
         ]
         assert len(alive_workers) <= 1, "Only one worker thread should be running per JID"
 

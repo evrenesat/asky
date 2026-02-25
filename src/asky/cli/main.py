@@ -1008,12 +1008,12 @@ def main() -> None:
                     "menubar bootstrap failed; falling back to foreground daemon"
                 )
         logger.info("running foreground xmpp daemon fallback")
-        from asky.daemon.service import run_xmpp_daemon_foreground
+        from asky.daemon.service import run_daemon_foreground
         from asky.plugins.runtime import get_or_create_plugin_runtime
 
         try:
             plugin_runtime = get_or_create_plugin_runtime()
-            run_xmpp_daemon_foreground(
+            run_daemon_foreground(
                 double_verbose=bool(getattr(args, "double_verbose", False)),
                 plugin_runtime=plugin_runtime,
             )

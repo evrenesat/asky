@@ -199,6 +199,8 @@ def test_engine_and_registry_emit_llm_and_tool_hooks():
 
 
 def test_daemon_server_register_hook_collects_servers(monkeypatch):
+    from asky.plugins.hook_types import DaemonTransportSpec
+
     hooks = HookRegistry()
 
     hooks.register(
@@ -208,18 +210,17 @@ def test_daemon_server_register_hook_collects_servers(monkeypatch):
         ),
         plugin_name="plug",
     )
+    hooks.register(
+        "DAEMON_TRANSPORT_REGISTER",
+        lambda payload: payload.transports.append(
+            DaemonTransportSpec(name="mock", run=lambda: None, stop=lambda: None)
+        ),
+        plugin_name="mock_transport",
+    )
 
     from asky.daemon import service as daemon_service
 
     monkeypatch.setattr(daemon_service, "init_db", lambda: None)
-    monkeypatch.setattr(daemon_service, "TranscriptManager", MagicMock())
-    monkeypatch.setattr(daemon_service, "CommandExecutor", MagicMock())
-    monkeypatch.setattr(daemon_service, "InterfacePlanner", MagicMock())
-    monkeypatch.setattr(daemon_service, "VoiceTranscriber", MagicMock())
-    monkeypatch.setattr(daemon_service, "ImageTranscriber", MagicMock())
-    monkeypatch.setattr(daemon_service, "DaemonRouter", MagicMock())
-    mock_client = MagicMock()
-    monkeypatch.setattr(daemon_service, "AskyXMPPClient", MagicMock(return_value=mock_client))
 
-    service = daemon_service.XMPPDaemonService(plugin_runtime=_Runtime(hooks))
+    service = daemon_service.DaemonService(plugin_runtime=_Runtime(hooks))
     assert any(spec.name == "extra" for spec in service._plugin_servers)

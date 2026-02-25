@@ -616,7 +616,7 @@ def test_parse_args_xmpp_menubar_child_hidden_flag():
 
 
 @patch("asky.cli.main.parse_args")
-@patch("asky.daemon.service.run_xmpp_daemon_foreground")
+@patch("asky.daemon.service.run_daemon_foreground")
 def test_main_xmpp_daemon_early_exit(mock_run_daemon, mock_parse):
     mock_parse.return_value = argparse.Namespace(
         model="gf",
@@ -788,7 +788,7 @@ def test_main_xmpp_menubar_child_unexpected_error_exits_nonzero(mock_parse, caps
 
 
 @patch("asky.cli.main.parse_args")
-@patch("asky.daemon.service.run_xmpp_daemon_foreground")
+@patch("asky.daemon.service.run_daemon_foreground")
 def test_main_xmpp_daemon_surfaces_user_error(mock_run_daemon, mock_parse, capsys):
     mock_parse.return_value = argparse.Namespace(
         model="gf",

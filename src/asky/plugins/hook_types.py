@@ -16,6 +16,7 @@ PRE_TOOL_EXECUTE = "PRE_TOOL_EXECUTE"
 POST_TOOL_EXECUTE = "POST_TOOL_EXECUTE"
 TURN_COMPLETED = "TURN_COMPLETED"
 DAEMON_SERVER_REGISTER = "DAEMON_SERVER_REGISTER"
+DAEMON_TRANSPORT_REGISTER = "DAEMON_TRANSPORT_REGISTER"
 
 CONFIG_LOADED = "CONFIG_LOADED"
 POST_TURN_RENDER = "POST_TURN_RENDER"
@@ -33,6 +34,7 @@ SUPPORTED_HOOK_NAMES = {
     POST_TOOL_EXECUTE,
     TURN_COMPLETED,
     DAEMON_SERVER_REGISTER,
+    DAEMON_TRANSPORT_REGISTER,
 }
 
 DEFERRED_HOOK_NAMES = {
@@ -153,3 +155,26 @@ class DaemonServerRegisterContext:
 
     service: Any
     servers: List[DaemonServerSpec] = field(default_factory=list)
+
+
+@dataclass
+class DaemonTransportSpec:
+    """Transport contract for the primary daemon communication channel."""
+
+    name: str
+    run: Callable[[], None]
+    stop: Callable[[], None]
+
+
+@dataclass
+class DaemonTransportRegisterContext:
+    """Mutable payload for daemon transport registration.
+
+    Exactly one transport must be appended. The daemon runner raises
+    DaemonUserError when zero or more than one transport is registered.
+    The double_verbose flag is forwarded from the CLI invocation so
+    transport plugins can honour it without an out-of-band channel.
+    """
+
+    double_verbose: bool = False
+    transports: List[DaemonTransportSpec] = field(default_factory=list)
