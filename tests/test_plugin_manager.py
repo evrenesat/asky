@@ -40,6 +40,7 @@ def test_roster_template_created_when_missing(tmp_path: Path):
 
     assert (tmp_path / "config" / "plugins.toml").exists()
     assert sorted(manifest.name for manifest in manifests) == [
+        "email_sender",
         "gui_server",
         "manual_persona_creator",
         "persona_manager",

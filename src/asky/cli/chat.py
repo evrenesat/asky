@@ -915,14 +915,6 @@ def run_chat(
                     renderer.update_banner(renderer.current_turn, status_message=None)
                     renderer.stop_live()
 
-        # Send Email if requested
-        if final_answer and getattr(args, "mail_recipients", None):
-            from asky.email_sender import send_email
-
-            recipients = [x.strip() for x in args.mail_recipients.split(",")]
-            email_subject = args.subject or f"asky Result: {effective_query_text[:50]}"
-            send_email(recipients, email_subject, final_answer)
-
         if final_answer and plugin_runtime is not None:
             from asky.plugins.hook_types import POST_TURN_RENDER, PostTurnRenderContext
 

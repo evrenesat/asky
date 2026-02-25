@@ -33,3 +33,9 @@ enabled = true
 module = "asky.plugins.push_data.plugin"
 class = "PushDataPlugin"
 capabilities = ["tool_registry", "post_turn"]
+
+[plugin.email_sender]
+enabled = true
+module = "asky.plugins.email_sender.plugin"
+class = "EmailSenderPlugin"
+capabilities = ["post_turn"]
