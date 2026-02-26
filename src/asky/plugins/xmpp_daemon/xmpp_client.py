@@ -53,10 +53,11 @@ class AskyXMPPClient:
 
         register_plugin = getattr(self._client, "register_plugin", None)
         if callable(register_plugin):
-            try:
-                register_plugin("xep_0045")
-            except Exception:
-                logger.debug("failed to register xep_0045 plugin", exc_info=True)
+            for _plugin_name in ("xep_0045", "xep_0050", "xep_0004"):
+                try:
+                    register_plugin(_plugin_name)
+                except Exception:
+                    logger.debug("failed to register %s plugin", _plugin_name, exc_info=True)
 
         self._client.add_event_handler("session_start", self._on_session_start)
         self._client.add_event_handler("message", self._on_message)
@@ -107,6 +108,21 @@ class AskyXMPPClient:
         """Attempt graceful shutdown for foreground loop."""
         logger.info("xmpp client stop requested")
         _disconnect_client(self._client)
+
+    def get_plugin(self, name: str):
+        """Return a registered slixmpp plugin by name, or None."""
+        plugins = getattr(self._client, "plugin", None)
+        if plugins is None:
+            return None
+        try:
+            return plugins[name]
+        except Exception:
+            return None
+
+    @property
+    def loop(self):
+        """Return the underlying asyncio event loop, or None."""
+        return getattr(self._client, "loop", None)
 
     def send_chat_message(self, to_jid: str, body: str) -> None:
         self.send_message(to_jid=to_jid, body=body, message_type="chat")

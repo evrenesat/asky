@@ -14,3 +14,4 @@ __pycache__/
 TODO_research_pipeline.md
 review_context.md
 .hypothesis
+.claude/settings.local.json

@@ -122,12 +122,51 @@ daemon startup flags, delete flags, and output side-effect flags).
 
 ---
 
+## Ad-Hoc Commands (XEP-0050)
+
+Implemented in `plugins/xmpp_daemon/adhoc_commands.py`. Registered at XMPP session start via
+`XMPPService._on_xmpp_session_start()`.
+
+`AdHocCommandHandler` requires `xep_0050` and `xep_0004` slixmpp plugins to be registered. If either
+is absent, ad-hoc commands are silently disabled (text command surface still works normally).
+
+### Registered Nodes
+
+| Node                      | Type         | Description                                      |
+|---------------------------|--------------|--------------------------------------------------|
+| `asky#status`             | single-step  | Connected JID, voice/image feature flags         |
+| `asky#list-sessions`      | single-step  | Recent sessions list                             |
+| `asky#list-history`       | single-step  | Recent history summaries                         |
+| `asky#list-transcripts`   | single-step  | Recent audio/image transcripts                   |
+| `asky#list-tools`         | single-step  | All available LLM tool names                     |
+| `asky#list-memories`      | single-step  | All saved user memories                          |
+| `asky#list-prompts`       | single-step  | Configured prompt aliases                        |
+| `asky#list-presets`       | single-step  | Configured command presets                       |
+| `asky#query`              | two-step     | Run query (form: text, model, research, turns…)  |
+| `asky#new-session`        | single-step  | Create and switch to a new session               |
+| `asky#switch-session`     | two-step     | Switch to existing session (form: ID/name)       |
+| `asky#clear-session`      | two-step     | Clear session messages (confirmation form)       |
+| `asky#use-transcript`     | two-step     | Run transcript as query (form: transcript list)  |
+
+### Authorization
+
+Every handler (including multi-step second steps) checks the IQ sender's bare JID against the daemon
+allowlist via `router.is_authorized()`. Unauthorized requests receive a permission-denied error note.
+
+### Blocking Calls
+
+All executor calls (`run_turn`, DB operations) run in `loop.run_in_executor(None, fn)` so the asyncio
+event loop is never blocked.
+
+---
+
 ## Known Limitations
 
 - **Single pending transcript per conversation**: only the most recent audio/image upload awaits confirmation.
 - **No replay protection**: a replayed XMPP stanza would be processed again.
 - **Group chat authorization is room-level**: any occupant of a bound room can send commands.
 - **JID worker threads are daemon threads**: in-flight tasks may be lost on unclean shutdown.
+- **Ad-hoc commands target direct JID only**: form commands use the sender's bare JID for session resolution, not room JID.
 
 ---
 

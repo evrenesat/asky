@@ -1,5 +1,28 @@
 # DEVLOG
 
+## 2026-02-27 - XEP-0050 Ad-Hoc Commands
+
+- Implemented XEP-0050 (Ad-Hoc Commands) support for the XMPP daemon, exposing all major asky features as discoverable, form-driven commands that any standards-compliant XMPP client (Conversations, Gajim, etc.) can find and execute via their built-in ad-hoc command GUI.
+
+- **New file: `plugins/xmpp_daemon/adhoc_commands.py`**
+  - `AdHocCommandHandler` class with 13 commands:
+    - Single-step info: `asky#status`, `asky#list-sessions`, `asky#list-history`, `asky#list-transcripts`, `asky#list-tools`, `asky#list-memories`, `asky#list-prompts`, `asky#list-presets`
+    - Form-based interactive: `asky#query` (full query with model/research/turns/lean/system-prompt options), `asky#new-session`, `asky#switch-session`, `asky#clear-session`, `asky#use-transcript`
+  - All blocking calls (run_turn, DB reads) go through `loop.run_in_executor()` — asyncio loop is never blocked.
+  - Authorization check (daemon allowlist) is enforced at the start of every handler, including multi-step second steps.
+  - Graceful degradation: if `xep_0050`/`xep_0004` plugins are absent, ad-hoc commands are disabled and the existing text-based command surface continues working normally.
+
+- **Modified `plugins/xmpp_daemon/xmpp_client.py`**
+  - `xep_0050` and `xep_0004` are registered alongside `xep_0045` at startup.
+  - Added `get_plugin(name)` method for safe plugin lookup.
+  - Added `loop` property exposing the underlying asyncio event loop.
+
+- **Modified `plugins/xmpp_daemon/xmpp_service.py`**
+  - `AdHocCommandHandler` is created in `__init__` with `voice_enabled`/`image_enabled` state.
+  - Registered in `_on_xmpp_session_start` after room joins; logs info if xep_0050 is available, debug if not.
+
+- **New file: `tests/test_xmpp_adhoc.py`** — 33 unit tests; all mocked, no I/O, <1s total.
+
 ## 2026-02-26 - Unified Config Entrypoint + Grouped Command Surface
 
 - **CLI Surface Redesign**:

@@ -41,6 +41,7 @@ from asky.config import (
     XMPP_VOICE_WORKERS,
 )
 from asky.daemon.errors import DaemonUserError
+from asky.plugins.xmpp_daemon.adhoc_commands import AdHocCommandHandler
 from asky.plugins.xmpp_daemon.chunking import chunk_text
 from asky.plugins.xmpp_daemon.command_executor import CommandExecutor
 from asky.plugins.xmpp_daemon.image_transcriber import ImageTranscriber
@@ -114,7 +115,7 @@ class XMPPService:
         
         self._table_renderer = ASCIITableRenderer()
         self._formatter = MessageFormatter(self._table_renderer)
-        
+
         self.router = DaemonRouter(
             transcript_manager=self.transcript_manager,
             command_executor=self.command_executor,
@@ -124,6 +125,12 @@ class XMPPService:
             command_prefix=XMPP_COMMAND_PREFIX,
             allowed_jids=list(XMPP_ALLOWED_JIDS),
             voice_auto_yes_without_interface_model=XMPP_VOICE_AUTO_YES_WITHOUT_INTERFACE_MODEL,
+        )
+        self._adhoc_handler = AdHocCommandHandler(
+            command_executor=self.command_executor,
+            router=self.router,
+            voice_enabled=XMPP_VOICE_ENABLED,
+            image_enabled=XMPP_IMAGE_ENABLED,
         )
         self._jid_queues: dict[str, queue.Queue[Callable[[], None]]] = {}
         self._jid_workers: dict[str, threading.Thread] = {}
@@ -326,6 +333,13 @@ class XMPPService:
     def _on_xmpp_session_start(self) -> None:
         for room_jid in self.command_executor.list_bound_room_jids():
             self._client.join_room(room_jid)
+        xep_0050 = self._client.get_plugin("xep_0050")
+        xep_0004 = self._client.get_plugin("xep_0004")
+        if xep_0050 is not None:
+            self._adhoc_handler.register_all(xep_0050, xep_0004)
+            logger.info("xmpp ad-hoc commands registered (xep_0050)")
+        else:
+            logger.debug("xep_0050 plugin not available; ad-hoc commands disabled")
 
 
 def _should_process_text_body(*, has_media: bool, body: str) -> bool:
