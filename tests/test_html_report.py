@@ -162,7 +162,7 @@ def test_sidebar_groups_and_sorting():
 
 
 def test_extract_markdown_title():
-    """Test H1 title extraction from markdown content."""
+    """Test title extraction from markdown content with headers and heuristics."""
     from asky.rendering import extract_markdown_title
 
     # Basic H1 extraction
@@ -171,15 +171,22 @@ def test_extract_markdown_title():
     # H1 with trailing spaces
     assert extract_markdown_title("# Trailing   \n\nContent") == "Trailing"
 
-    # H1 not at beginning (H2 first)
+    # H1 not at beginning (H2 first) - H1 should still win if H2 is generic
     assert (
-        extract_markdown_title("## Subheading\n\n# Main Title\n\nContent")
-        == "Main Title"
+        extract_markdown_title("## Query\n\n# Main Title\n\nContent") == "Main Title"
     )
 
-    # No H1 present
-    assert extract_markdown_title("Just some text") is None
-    assert extract_markdown_title("## Only H2") is None
+    # H2 extraction when H1 is missing
+    assert extract_markdown_title("## My Detailed Topic\n\nSome body") == "My Detailed Topic"
+
+    # Heuristic extraction (first non-empty line)
+    assert (
+        extract_markdown_title("This is a plain text response\nwith multiple lines.")
+        == "This is a plain text response"
+    )
+
+    # Filter generic headers
+    assert extract_markdown_title("## Query\n\nSome body") == "Some body"
 
     # Empty/None input
     assert extract_markdown_title("") is None

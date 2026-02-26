@@ -1,8 +1,24 @@
 # DEVLOG
 
+## 2026-02-26 - Fix "untitled" Archive Filenames
+
+- **Bug Fixes**:
+  - Improved HTML archive filename generation to prevent "untitled" names.
+  - Made `extract_markdown_title` in `rendering.py` more robust by supporting H2/H3 headers and falling back to the first non-empty line (with markdown stripping) if no headers are found.
+  - Updated `chat.py` to use the user's query text as a secondary fallback for the filename hint if the assistant provides no title in its response.
+  - Added regression tests in `test_html_report.py`.
+
+## 2026-02-26 - Fix Session Name Integrity Error
+
+- **Bug Fixes**:
+  - Fixed `sqlite3.IntegrityError: UNIQUE constraint failed: sessions.name` by adding automatic numeric suffixing to session names when collisions occur. The `SQLiteHistoryRepository.create_session` method now uses `_ensure_unique_session_name` to safely generate a unique name (e.g., `research_query` -> `research_query_2`) before insertion.
+  - Added regression test `test_duplicate_session_name_resolved_automatically` to `tests/test_sessions.py`.
+
 ## 2026-02-26 - Playwright Plugin Enhancements: Better Waits & CAPTCHA Debugging
 
 - **Bug Fixes**:
+  - Fixed a major RAG regression where the LLM would get stuck in a paradox loop during research mode. The `source_shortlist` pipeline was fetching web pages but failing to cache them in the `ResearchCache` SQLite database. When the LLM subsequently called `get_relevant_content` on those same URLs, it would fail with a "Not cached" error, crippling deep reads. `_default_fetch_executor` now properly caches successfully fetched candidates.
+  - Fixed a failing test in `test_source_shortlist.py` (`test_shortlist_default_fetch_emits_transport_error_metadata`) that was checking for `"source"` instead of the updated `"tool_name"` trace context key.
   - Allowed the `--playwright-login` CLI flag to execute without requiring a trailing query argument.
   - Added graceful error handling and automatic `https://` prefixing for malformed URLs in `--playwright-login` to prevent unhandled tracebacks.
   - Fixed an issue where Firefox and WebKit would attempt to navigate to `http://automationcontrolled/` due to being passed Chromium-specific `--disable-blink-features=AutomationControlled` launch arguments.

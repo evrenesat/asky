@@ -296,3 +296,21 @@ def test_resolve_session_replaces_corpus_profile_when_new_pointers_passed(temp_r
     assert reloaded is not None
     assert reloaded.research_source_mode == "mixed"
     assert reloaded.research_local_corpus_paths == ["/books/new.epub"]
+
+
+def test_duplicate_session_name_resolved_automatically(temp_repo):
+    """Verify that creating sessions with duplicate names appends numeric suffixes."""
+    # First session
+    sid1 = temp_repo.create_session("model-a", name="duplicate")
+    s1 = temp_repo.get_session_by_id(sid1)
+    assert s1.name == "duplicate"
+
+    # Second session with same name
+    sid2 = temp_repo.create_session("model-a", name="duplicate")
+    s2 = temp_repo.get_session_by_id(sid2)
+    assert s2.name == "duplicate_2"
+
+    # Third one
+    sid3 = temp_repo.create_session("model-a", name="duplicate")
+    s3 = temp_repo.get_session_by_id(sid3)
+    assert s3.name == "duplicate_3"

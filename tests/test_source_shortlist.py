@@ -637,8 +637,46 @@ def test_shortlist_default_fetch_emits_transport_error_metadata(monkeypatch):
     assert payload["enabled"] is True
     assert any(
         event.get("kind") == "transport_error"
-        and event.get("source") == "shortlist"
+        and event.get("tool_name") == "shortlist"
         and event.get("operation") == "shortlist_fetch"
         and event.get("status_code") == 403
         for event in trace_events
     )
+
+
+def test_shortlist_uses_research_cache(monkeypatch):
+    """Verify that source_shortlist skips fetching if URL is in ResearchCache."""
+    from asky.research import source_shortlist as shortlist_mod
+    
+    monkeypatch.setattr(shortlist_mod, "SOURCE_SHORTLIST_ENABLED", True)
+    monkeypatch.setattr(shortlist_mod, "SOURCE_SHORTLIST_ENABLE_RESEARCH_MODE", True)
+    monkeypatch.setattr(shortlist_mod, "SOURCE_SHORTLIST_MIN_CONTENT_CHARS", 20)
+    
+    mock_cache = MagicMock()
+    # Simulate a cache hit
+    mock_cache.get_cached.return_value = {
+        "content": "This is cached content from a previous run.",
+        "title": "Cached Title",
+        "url": "https://example.com/cached"
+    }
+    
+    # Mock ResearchCache constructor to return our mock
+    monkeypatch.setattr("asky.research.cache.ResearchCache", lambda: mock_cache)
+    
+    # Mock fetch_url_document to ensure it's NOT called
+    mock_fetch = MagicMock()
+    monkeypatch.setattr("asky.research.source_shortlist.fetch_url_document", mock_fetch)
+    
+    payload = shortlist_prompt_sources(
+        user_prompt="Summarize https://example.com/cached",
+        research_mode=True
+    )
+    
+    assert payload["enabled"] is True
+    # Should find 1 candidate (the seed URL)
+    assert len(payload["candidates"]) == 1
+    # fetch_url_document should NOT have been called due to cache hit
+    mock_fetch.assert_not_called()
+    # Cache hit content should be present
+    assert payload["candidates"][0]["title"] == "Cached Title"
+    assert "cached content" in payload["candidates"][0]["snippet"]

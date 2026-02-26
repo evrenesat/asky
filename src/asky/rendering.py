@@ -102,10 +102,12 @@ def _ensure_archive_assets() -> None:
 
 # Regex pattern to extract H1 markdown header (# Title)
 H1_PATTERN = re.compile(r"^#\s+(.+?)(?:\n|$)", re.MULTILINE)
+# Fallback patterns for other headers
+ANY_HEADER_PATTERN = re.compile(r"^#+\s+(.+?)(?:\n|$)", re.MULTILINE)
 
 
 def extract_markdown_title(content: str) -> Optional[str]:
-    """Extract the first H1 markdown header from content.
+    """Extract a title from markdown content using headers or heuristics.
 
     Args:
         content: The markdown content to search.
@@ -116,9 +118,34 @@ def extract_markdown_title(content: str) -> Optional[str]:
     if not content:
         return None
 
+    # 1. Try H1 first (standard)
     match = H1_PATTERN.search(content)
     if match:
         return match.group(1).strip()
+
+    # 2. Try any header (H2, H3, etc.)
+    match = ANY_HEADER_PATTERN.search(content)
+    if match:
+        title = match.group(1).strip()
+        # Filter out common generic headers like "Query" or "Assistant"
+        if title.lower() not in ("query", "assistant", "system", "summary"):
+            return title
+
+    # 3. Heuristic: Find first non-empty line that isn't just a header or weird char
+    for line in content.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        # Skip lines that are just headers we already checked or formatting
+        if line.startswith("#") or line.startswith("```") or line.startswith(">"):
+            continue
+        # Clean up common markdown from the line
+        cleaned = re.sub(r"[*_`\[\]]", "", line)
+        cleaned = re.sub(r"\(http\S+\)", "", cleaned).strip()
+        if len(cleaned) > 5:
+            # Take first 100 chars as a potential title
+            return cleaned[:100]
+
     return None
 
 

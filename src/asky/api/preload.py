@@ -566,12 +566,20 @@ def run_preload_pipeline(
     preload.preloaded_source_handles = _collect_source_handles(preload.local_payload)
 
     # Post-retrieval evidence extraction (optional)
-    if (
+    #
+    # HEURISTIC: In Research Mode, if we have a high-quality shortlist (>= 3 sources),
+    # we SKIP bootstrap evidence extraction. This prevents the LLM from feeling
+    # "finished" too early and forces it to use its RAG tools for deeper reading.
+    has_good_shortlist = len(preload.shortlist_payload.get("candidates", []) or []) >= 3
+    should_run_evidence = (
         research_mode
         and RESEARCH_EVIDENCE_EXTRACTION_ENABLED
         and preload.is_corpus_preloaded
-        and sub_queries  # Skip if no sub-queries available
-    ):
+        and sub_queries
+        and not has_good_shortlist
+    )
+
+    if should_run_evidence:
         if status_callback:
             status_callback("Evidence extraction: processing retrieved chunks")
         evidence_start = time.perf_counter()

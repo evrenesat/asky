@@ -865,6 +865,9 @@ def run_chat(
 
             # Extract title explicitly from the new answer to fix "untitled" archives
             filename_hint = extract_markdown_title(final_answer)
+            if not filename_hint:
+                # Fallback: use query text if assistant provided no clear title
+                filename_hint = effective_query_text
 
             session_name = ""
             session_id_int = None

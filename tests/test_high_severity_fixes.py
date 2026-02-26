@@ -239,10 +239,10 @@ def test_h16_valid_research_source_mode_accepted(tmp_path):
 
 
 # ---------------------------------------------------------------------------
-# H-19: Duplicate named sessions raise IntegrityError
+# H-19: Duplicate named sessions are automatically deduplicated
 # ---------------------------------------------------------------------------
 
-def test_h19_duplicate_named_session_raises(tmp_path):
+def test_h19_duplicate_named_session_deduplicates(tmp_path):
     db_file = tmp_path / "test.db"
 
     from asky.storage.sqlite import SQLiteHistoryRepository
@@ -253,10 +253,14 @@ def test_h19_duplicate_named_session_raises(tmp_path):
     with patch("asky.storage.sqlite.DB_PATH", db_file):
         repo.init_db()
 
-    repo.create_session(model="test", name="my-session")
+    id1 = repo.create_session(model="test", name="my-session")
+    id2 = repo.create_session(model="test", name="my-session")
 
-    with pytest.raises(sqlite3.IntegrityError):
-        repo.create_session(model="test", name="my-session")
+    s1 = repo.get_session_by_id(id1)
+    s2 = repo.get_session_by_id(id2)
+
+    assert s1.name == "my-session"
+    assert s2.name == "my-session_2"
 
 
 def test_h19_unnamed_sessions_can_coexist(tmp_path):

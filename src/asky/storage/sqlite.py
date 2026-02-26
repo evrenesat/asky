@@ -97,6 +97,21 @@ def _deserialize_local_corpus_paths(raw: Optional[str]) -> List[str]:
     return [str(item) for item in parsed if str(item).strip()]
 
 
+def _ensure_unique_session_name(cursor: sqlite3.Cursor, name: str) -> str:
+    """Ensure a session name is unique by appending a numeric suffix if needed."""
+    if not name:
+        return name
+
+    candidate = name
+    counter = 1
+    while True:
+        cursor.execute("SELECT 1 FROM sessions WHERE name = ? LIMIT 1", (candidate,))
+        if cursor.fetchone() is None:
+            return candidate
+        counter += 1
+        candidate = f"{name}_{counter}"
+
+
 def _build_unique_dedup_session_name(
     cursor: sqlite3.Cursor,
     *,
@@ -958,11 +973,14 @@ class SQLiteHistoryRepository(HistoryRepository):
         if research_source_mode and normalized_mode is None:
             conn.close()
             raise ValueError(f"Invalid research_source_mode: {research_source_mode!r}")
+
+        unique_name = _ensure_unique_session_name(c, name) if name else name
+
         serialized_paths = _serialize_local_corpus_paths(research_local_corpus_paths)
         c.execute(
             "INSERT INTO sessions (name, model, created_at, memory_auto_extract, max_turns, last_used_at, research_mode, research_source_mode, research_local_corpus_paths) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
-                name,
+                unique_name,
                 model,
                 timestamp,
                 int(memory_auto_extract),

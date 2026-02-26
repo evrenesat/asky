@@ -842,6 +842,29 @@ def _default_fetch_executor(
 ) -> Dict[str, Any]:
     """Fetch and extract URL content using the shared retrieval pipeline."""
     fetch_start = time.perf_counter()
+
+    # --- Cache Check ---
+    try:
+        from asky.research.cache import ResearchCache
+
+        cache = ResearchCache()
+        cached = cache.get_cached(url)
+        if cached and cached.get("content"):
+            logger.debug(
+                "source_shortlist fetch executor CACHE HIT url=%s elapsed=%.2fms",
+                url,
+                _elapsed_ms(fetch_start),
+            )
+            return {
+                "text": cached["content"],
+                "title": cached.get("title") or "",
+                "date": None,  # SQLite ResearchCache doesn't store date currently
+                "final_url": cached.get("url") or url,
+                "source": "cache",
+            }
+    except Exception as e:
+        logger.debug("Failed to check cache for shortlist candidate url=%s err=%s", url, e)
+
     redirect_target = _resolve_redirect_target_if_needed(url)
     payload = fetch_url_document(
         url=url,
@@ -849,10 +872,28 @@ def _default_fetch_executor(
         include_links=False,
         trace_callback=trace_callback,
         trace_context={
-            "source": "shortlist",
+            "tool_name": "shortlist",
             "operation": "shortlist_fetch",
         },
     )
+    try:
+        from asky.research.cache import ResearchCache
+
+        cache = ResearchCache()
+
+        content_to_cache = str(payload.get("text") or payload.get("content") or "")
+        if content_to_cache and not payload.get("error"):
+            # Only cache successfully extracted content
+            cache.cache_url(
+                url=str(payload.get("final_url", "") or url),
+                content=content_to_cache,
+                title=str(payload.get("title", "")),
+                links=[],
+                trigger_summarization=False,
+            )
+    except Exception as e:
+        logger.debug("Failed to cache shortlist candidate url=%s err=%s", url, e)
+        
     if payload.get("error"):
         logger.debug(
             "source_shortlist fetch executor error url=%s elapsed=%.2fms error=%s",
