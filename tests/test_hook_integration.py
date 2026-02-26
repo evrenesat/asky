@@ -452,7 +452,7 @@ class TestPrePreloadHook:
             local_corpus_paths=None,
             preload_local_sources=True,
             preload_shortlist=True,
-            shortlist_override="auto",
+            shortlist_override=None,
             additional_source_context=None,
         )
 
@@ -500,7 +500,7 @@ class TestPrePreloadHook:
             local_corpus_paths=None,
             preload_local_sources=True,
             preload_shortlist=True,
-            shortlist_override="auto",
+            shortlist_override=None,
             additional_source_context=None,
         )
 
@@ -532,7 +532,7 @@ class TestPrePreloadHook:
             local_corpus_paths=None,
             preload_local_sources=True,
             preload_shortlist=True,
-            shortlist_override="auto",
+            shortlist_override=None,
             additional_source_context=None,
         )
 
@@ -620,7 +620,7 @@ class TestEndToEndHookFlow:
             local_corpus_paths=None,
             preload_local_sources=True,
             preload_shortlist=True,
-            shortlist_override="auto",
+            shortlist_override=None,
             additional_source_context=None,
         )
 
@@ -707,7 +707,7 @@ class TestEndToEndHookFlow:
             local_corpus_paths=None,
             preload_local_sources=True,
             preload_shortlist=True,
-            shortlist_override="auto",
+            shortlist_override=None,
             additional_source_context=None,
         )
 

@@ -1,20 +1,13 @@
-"""Regression tests for high-severity issues fixed in this pass."""
-import os
-import re
+"""Safety and resilience guardrail tests for core runtime behavior."""
 import sqlite3
 import threading
 import time
-from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 
 
-# ---------------------------------------------------------------------------
-# H-02: INLINE_TOML_PATTERN must not exhibit catastrophic backtracking
-# ---------------------------------------------------------------------------
-
-def test_h02_toml_regex_completes_quickly():
+def test_inline_toml_pattern_avoids_catastrophic_backtracking():
     from asky.daemon.command_executor import INLINE_TOML_PATTERN
 
     bad_input = "a" * 100 + "`" * 50
@@ -24,7 +17,7 @@ def test_h02_toml_regex_completes_quickly():
     assert elapsed < 1.0, f"Regex took {elapsed:.2f}s — possible ReDoS"
 
 
-def test_h02_toml_regex_still_matches_valid():
+def test_inline_toml_pattern_matches_valid_toml_block():
     from asky.daemon.command_executor import INLINE_TOML_PATTERN
 
     text = "config.toml\n```toml\nkey = 'value'\n```"
@@ -34,11 +27,7 @@ def test_h02_toml_regex_still_matches_valid():
     assert "key" in m.group("content")
 
 
-# ---------------------------------------------------------------------------
-# H-03: load_custom_prompts must reject file:// URIs outside home dir
-# ---------------------------------------------------------------------------
-
-def test_h03_path_traversal_warning(capsys, tmp_path):
+def test_load_custom_prompts_rejects_file_uri_outside_home(capsys, tmp_path):
     from asky.cli.utils import load_custom_prompts
 
     outside_file = tmp_path / "secret.txt"
@@ -55,7 +44,7 @@ def test_h03_path_traversal_warning(capsys, tmp_path):
     assert prompts["sys"].startswith("file://"), "Value must not be replaced"
 
 
-def test_h03_path_within_home_loads(tmp_path):
+def test_load_custom_prompts_reads_file_uri_within_home(tmp_path):
     from asky.cli.utils import load_custom_prompts
 
     fake_home = tmp_path / "home"
@@ -71,11 +60,7 @@ def test_h03_path_within_home_loads(tmp_path):
     assert prompts["sys"] == "hello world"
 
 
-# ---------------------------------------------------------------------------
-# H-06: get_interaction_context must close connection even if summarization raises
-# ---------------------------------------------------------------------------
-
-def test_h06_connection_closed_after_summarization_error(tmp_path):
+def test_get_interaction_context_raises_when_summarization_fails(tmp_path):
     db_file = tmp_path / "test.db"
 
     from asky.storage.sqlite import SQLiteHistoryRepository
@@ -98,10 +83,6 @@ def test_h06_connection_closed_after_summarization_error(tmp_path):
 
     with (
         patch("asky.storage.sqlite.DB_PATH", db_file),
-        patch(
-            "asky.storage.sqlite.SQLiteHistoryRepository._get_conn",
-            wraps=repo._get_conn,
-        ) as spy,
     ):
         repo.db_path = db_file
 
@@ -114,7 +95,7 @@ def test_h06_connection_closed_after_summarization_error(tmp_path):
                 repo.get_interaction_context([msg_id])
 
 
-def test_h06_connection_closed_on_empty_result(tmp_path):
+def test_get_interaction_context_returns_empty_for_empty_ids(tmp_path):
     """Verify early-return path (empty ids) doesn't leak connection."""
     db_file = tmp_path / "empty.db"
 
@@ -130,11 +111,7 @@ def test_h06_connection_closed_on_empty_result(tmp_path):
     assert result == ""
 
 
-# ---------------------------------------------------------------------------
-# H-07: set_shell_session_id writes atomically and registers atexit
-# ---------------------------------------------------------------------------
-
-def test_h07_atomic_write(tmp_path):
+def test_set_shell_session_id_writes_lock_atomically(tmp_path):
     from asky.core import session_manager as sm
 
     lock_file = tmp_path / "session.lock"
@@ -146,7 +123,7 @@ def test_h07_atomic_write(tmp_path):
             mock_atexit.register.assert_called_once_with(sm.clear_shell_session)
 
 
-def test_h07_tmp_file_removed_after_replace(tmp_path):
+def test_set_shell_session_id_removes_tmp_file_after_replace(tmp_path):
     from asky.core import session_manager as sm
 
     lock_file = tmp_path / "session.lock"
@@ -158,11 +135,7 @@ def test_h07_tmp_file_removed_after_replace(tmp_path):
     assert not tmp_file.exists(), ".tmp file should be gone after atomic replace"
 
 
-# ---------------------------------------------------------------------------
-# H-11: _enqueue_for_jid must start only one worker per JID under concurrency
-# ---------------------------------------------------------------------------
-
-def test_h11_single_worker_per_jid():
+def test_enqueue_for_jid_starts_single_worker_under_concurrency():
     from unittest.mock import patch as _patch
 
     from asky.plugins.xmpp_daemon import xmpp_service as svc
@@ -204,11 +177,7 @@ def test_h11_single_worker_per_jid():
         assert len(alive_workers) <= 1, "Only one worker thread should be running per JID"
 
 
-# ---------------------------------------------------------------------------
-# H-16: create_session raises ValueError for invalid research_source_mode
-# ---------------------------------------------------------------------------
-
-def test_h16_invalid_research_source_mode_raises(tmp_path):
+def test_create_session_rejects_invalid_research_source_mode(tmp_path):
     db_file = tmp_path / "test.db"
 
     from asky.storage.sqlite import SQLiteHistoryRepository
@@ -223,7 +192,7 @@ def test_h16_invalid_research_source_mode_raises(tmp_path):
         repo.create_session(model="test", research_source_mode="invalid_mode")
 
 
-def test_h16_valid_research_source_mode_accepted(tmp_path):
+def test_create_session_accepts_valid_research_source_mode(tmp_path):
     db_file = tmp_path / "test.db"
 
     from asky.storage.sqlite import SQLiteHistoryRepository
@@ -238,11 +207,7 @@ def test_h16_valid_research_source_mode_accepted(tmp_path):
     assert isinstance(sid, int)
 
 
-# ---------------------------------------------------------------------------
-# H-19: Duplicate named sessions are automatically deduplicated
-# ---------------------------------------------------------------------------
-
-def test_h19_duplicate_named_session_deduplicates(tmp_path):
+def test_create_session_deduplicates_duplicate_names(tmp_path):
     db_file = tmp_path / "test.db"
 
     from asky.storage.sqlite import SQLiteHistoryRepository
@@ -263,7 +228,7 @@ def test_h19_duplicate_named_session_deduplicates(tmp_path):
     assert s2.name == "my-session_2"
 
 
-def test_h19_unnamed_sessions_can_coexist(tmp_path):
+def test_create_session_allows_multiple_unnamed_sessions(tmp_path):
     """NULL names must not trigger the unique constraint."""
     db_file = tmp_path / "test.db"
 

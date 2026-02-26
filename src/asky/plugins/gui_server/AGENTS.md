@@ -20,7 +20,7 @@ Registers a NiceGUI sidecar server for daemon mode and exposes configuration/plu
 
 ## User Entry Points (Current)
 
-- Requires daemon runtime to be active (`asky --xmpp-daemon` path).
+- Requires daemon runtime to be active (`asky --daemon` path).
 - Default pages:
   - `/settings/general`
   - `/plugins`

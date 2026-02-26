@@ -102,10 +102,10 @@ Easily manage your model configurations directly from the CLI without having to 
 
 ```bash
 # Interactively search OpenRouter and add a new model definition
-asky --add-model
+asky --config model add
 
 # Interactively edit an existing model definition's parameters (temperature, max tokens)
-asky --edit-model my-alias
+asky --config model edit my-alias
 ```
 
 ## 7. Command Presets (`user.toml`)
@@ -133,8 +133,8 @@ Expansion behavior:
 
 ## 8. XMPP Daemon Settings (`xmpp.toml`)
 
-Daemon mode is configured through `xmpp.toml` and started with `asky --xmpp-daemon`.
-Use `asky --edit-daemon` for an interactive cross-platform editor for daemon settings.
+Daemon mode is configured through `xmpp.toml` and started with `asky --daemon`.
+Use `asky --config daemon edit` for an interactive cross-platform editor for daemon settings.
 
 Key options:
 
@@ -169,7 +169,7 @@ uv pip install "asky-cli[mlx-whisper]"
 uv pip install "asky-cli[mac]"  # includes iterm2 + mlx-whisper + rumps + slixmpp
 ```
 
-Startup-at-login behavior managed by `--edit-daemon`:
+Startup-at-login behavior managed by `--config daemon edit`:
 
 - macOS: LaunchAgent (`~/Library/LaunchAgents/com.evren.asky.menubar.plist`)
 - Linux: user `systemd` service (`~/.config/systemd/user/asky-xmpp-daemon.service`)
@@ -236,7 +236,36 @@ asky --completion-script zsh >> ~/.zshrc
 source ~/.zshrc
 ```
 
-## 13. Prompt and Tool Text Overrides
+## 13. Grouped CLI Surface
+
+Asky now supports grouped command nouns for discoverability while preserving plain query usage.
+
+```bash
+# still valid plain query
+asky explain why sky is blue
+
+# grouped command examples
+asky history list 20
+asky history show 42
+asky session list
+asky session show S12
+asky memory list
+asky corpus query "what did I index about MoE scaling?"
+asky corpus summarize "Section heading text"
+
+# query behavior defaults persisted to session
+asky --shortlist off
+asky --tools off web_search,get_url_content
+```
+
+Notes:
+
+- `--shortlist` supports `on|off|reset`.
+- `--tools` supports: list (`--tools`), disable (`--tools off`), and clear session override (`--tools reset`).
+- Query-behavior flags without a query auto-create/bind a session, persist defaults, and exit.
+- `--session <query...>` creates a new session named from query text and runs the query.
+
+## 14. Prompt and Tool Text Overrides
 
 You can override built-in prompt text without forking the project.
 
@@ -263,7 +292,7 @@ system_prompt_guideline = "Avoid web search unless preloaded evidence is insuffi
 
 The default `user.toml` includes commented examples for these knobs so new installs can discover and copy them quickly.
 
-## 14. Plugin Runtime (`plugins.toml`)
+## 15. Plugin Runtime (`plugins.toml`)
 
 Asky v1 plugins are local-only and loaded from:
 

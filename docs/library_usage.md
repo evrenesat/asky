@@ -81,7 +81,7 @@ client = AskyClient(cfg)
 | `sticky_session_name`       | `str \| None` | no       | `None`  | Create and attach to a new named session.                     |
 | `resume_session_term`       | `str \| None` | no       | `None`  | Resume by ID/name/partial-name.                               |
 | `shell_session_id`          | `int \| None` | no       | `None`  | Optional pre-resolved shell session id for auto-resume logic. |
-| `lean`                      | `bool`        | no       | `False` | Disables shortlist via policy resolution (`lean` mode).       |
+| `lean`                      | `bool`        | no       | `False` | Lean mode: disables all tools, skips shortlist/memory recall preload, and skips memory-extraction/context-compaction side effects. |
 | `preload_local_sources`     | `bool`        | no       | `True`  | Run local-source ingestion preload stage.                     |
 | `preload_shortlist`         | `bool`        | no       | `True`  | Run shortlist preload stage.                                  |
 | `additional_source_context` | `str \| None` | no       | `None`  | Extra corpus context appended to preload context.             |
@@ -276,7 +276,7 @@ client = AskyClient(
 result = client.run_turn(
     AskyTurnRequest(
         query_text="Analyze latest rust async ecosystem trends",
-        lean=True,                  # disables shortlist stage
+        lean=True,                  # lean mode: tool-less + reduced pre/post processing
         preload_local_sources=True,
     )
 )
@@ -329,7 +329,7 @@ print(resume_result.session_id)
 
 ## Daemon Integration Note
 
-XMPP daemon mode is exposed through CLI (`asky --xmpp-daemon`) and currently uses internal modules under `asky.daemon.*`.
+XMPP daemon mode is exposed through CLI (`asky --daemon`) and currently uses internal modules under `asky.daemon.*`.
 
 - Programmatic integrations should continue to use `AskyClient.run_turn(...)` as the stable API.
 - Daemon routing/planner behavior is configured through `general.interface_model`, `xmpp.toml`, `prompts.interface_planner_system`, and `[command_presets]` in `user.toml`.

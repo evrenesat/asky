@@ -74,7 +74,7 @@ def test_mention_parsing_stores_in_args():
         research_flag_provided=False,
         research_source_mode=None,
         replace_research_corpus=False,
-        shortlist="auto",
+        shortlist=None,
     )
     
     query = "@developer how do I optimize this?"

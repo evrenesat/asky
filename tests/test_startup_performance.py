@@ -65,9 +65,9 @@ def test_help_startup_time_guardrail():
 
 @pytest.mark.skipif(sys.platform == "win32", reason="RSS collection uses ps.")
 def test_edit_model_idle_memory_guardrail():
-    """Ensure `--edit-model` idle RSS stays below threshold."""
+    """Ensure `--config model edit` idle RSS stays below threshold."""
     process = subprocess.Popen(
-        [sys.executable, "-m", "asky", "--edit-model"],
+        [sys.executable, "-m", "asky", "--config", "model", "edit"],
         cwd=REPO_ROOT,
         stdin=subprocess.PIPE,
         stdout=subprocess.PIPE,
@@ -81,7 +81,7 @@ def test_edit_model_idle_memory_guardrail():
             if process.poll() is not None:
                 stdout, stderr = process.communicate(timeout=1)
                 raise AssertionError(
-                    "Expected --edit-model process to remain idle awaiting input, "
+                    "Expected --config model edit process to remain idle awaiting input, "
                     f"but exited early with code={process.returncode}, "
                     f"stdout_tail={stdout[-500:]}, stderr_tail={stderr[-500:]}"
                 )
@@ -90,7 +90,7 @@ def test_edit_model_idle_memory_guardrail():
 
         peak_rss_kb = max(rss_samples)
         assert peak_rss_kb <= EDIT_MODEL_IDLE_MAX_RSS_KB, (
-            "Idle RSS exceeded budget for --edit-model: "
+            "Idle RSS exceeded budget for --config model edit: "
             f"peak={peak_rss_kb}KiB budget={EDIT_MODEL_IDLE_MAX_RSS_KB}KiB "
             f"samples={rss_samples}"
         )

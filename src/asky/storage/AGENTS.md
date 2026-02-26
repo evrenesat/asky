@@ -38,6 +38,8 @@ class Session:
     research_mode: bool
     research_source_mode: Optional[str]
     research_local_corpus_paths: List[str]
+    shortlist_override: Optional[str]
+    query_defaults: Dict[str, Any]
 
 @dataclass
 class TranscriptRecord:
@@ -109,6 +111,8 @@ class SessionOverrideFile:
 - `research_mode`: Session-owned research-mode flag
 - `research_source_mode`: `web_only|local_only|mixed`
 - `research_local_corpus_paths`: JSON list of persisted corpus pointers
+- `shortlist_override`: Per-session shortlist override (`on|off|NULL`)
+- `query_defaults`: JSON object storing query-behavior defaults (model/tools/system prompt/etc.)
 
 **`transcripts`** - Daemon voice transcript records:
 - `id`: Primary key
@@ -170,6 +174,9 @@ class SessionOverrideFile:
 | `list_sessions()` | Recent sessions listing |
 | `delete_sessions()` | Delete sessions and messages |
 | `update_session_research_profile()` | Persist session research profile metadata |
+| `update_session_shortlist_override()` | Persist/clear session shortlist override |
+| `update_session_query_defaults()` | Persist JSON query-behavior defaults |
+| `update_session_name()` | Rename session with uniqueness guarantees |
 | `convert_history_to_session()` | Convert interaction to session (session names strip terminal-context wrapper prefixes) |
 | `create_transcript()` | Insert transcript row with session-scoped incrementing ID |
 | `update_transcript()` | Update status/text/error/usage fields |

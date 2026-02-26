@@ -226,6 +226,80 @@ def test_session_research_profile_roundtrip(mock_db_path):
     assert updated.research_local_corpus_paths == []
 
 
+def test_session_shortlist_override_roundtrip(mock_db_path):
+    from asky.storage.sqlite import SQLiteHistoryRepository
+
+    repo = SQLiteHistoryRepository()
+    init_db()
+
+    sid = repo.create_session("model", name="shortlist-test")
+    loaded = repo.get_session_by_id(sid)
+    assert loaded is not None
+    assert loaded.shortlist_override is None
+
+    repo.update_session_shortlist_override(sid, "on")
+    updated = repo.get_session_by_id(sid)
+    assert updated is not None
+    assert updated.shortlist_override == "on"
+
+    repo.update_session_shortlist_override(sid, "off")
+    updated2 = repo.get_session_by_id(sid)
+    assert updated2 is not None
+    assert updated2.shortlist_override == "off"
+
+    repo.update_session_shortlist_override(sid, None)
+    cleared = repo.get_session_by_id(sid)
+    assert cleared is not None
+    assert cleared.shortlist_override is None
+
+
+def test_session_query_defaults_roundtrip(mock_db_path):
+    from asky.storage.sqlite import SQLiteHistoryRepository
+
+    repo = SQLiteHistoryRepository()
+    init_db()
+
+    sid = repo.create_session("model", name="defaults-test")
+    loaded = repo.get_session_by_id(sid)
+    assert loaded is not None
+    assert loaded.query_defaults == {}
+
+    repo.update_session_query_defaults(
+        sid,
+        {
+            "model": "gf",
+            "tool_off": ["web_search"],
+            "pending_auto_name": True,
+        },
+    )
+    updated = repo.get_session_by_id(sid)
+    assert updated is not None
+    assert updated.query_defaults == {
+        "model": "gf",
+        "tool_off": ["web_search"],
+        "pending_auto_name": True,
+    }
+
+
+def test_update_session_name_ensures_uniqueness(mock_db_path):
+    from asky.storage.sqlite import SQLiteHistoryRepository
+
+    repo = SQLiteHistoryRepository()
+    init_db()
+
+    sid1 = repo.create_session("model", name="target_name")
+    sid2 = repo.create_session("model", name="other_name")
+
+    repo.update_session_name(sid2, "target_name")
+
+    s1 = repo.get_session_by_id(sid1)
+    s2 = repo.get_session_by_id(sid2)
+    assert s1 is not None
+    assert s2 is not None
+    assert s1.name == "target_name"
+    assert s2.name != "target_name"
+
+
 def test_transcript_crud_and_prune(mock_db_path):
     from asky.storage.sqlite import SQLiteHistoryRepository
 

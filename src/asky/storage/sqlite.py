@@ -97,6 +97,28 @@ def _deserialize_local_corpus_paths(raw: Optional[str]) -> List[str]:
     return [str(item) for item in parsed if str(item).strip()]
 
 
+def _serialize_query_defaults(values: Optional[dict]) -> Optional[str]:
+    """Serialize session query-default values to JSON."""
+    if not values:
+        return None
+    if not isinstance(values, dict):
+        return None
+    return json.dumps(values)
+
+
+def _deserialize_query_defaults(raw: Optional[str]) -> dict:
+    """Deserialize session query-default values from JSON."""
+    if not raw:
+        return {}
+    try:
+        parsed = json.loads(raw)
+    except (TypeError, ValueError):
+        return {}
+    if not isinstance(parsed, dict):
+        return {}
+    return parsed
+
+
 def _ensure_unique_session_name(cursor: sqlite3.Cursor, name: str) -> str:
     """Ensure a session name is unique by appending a numeric suffix if needed."""
     if not name:
@@ -160,6 +182,8 @@ class SQLiteHistoryRepository(HistoryRepository):
             research_local_corpus_paths=_deserialize_local_corpus_paths(
                 row["research_local_corpus_paths"]
             ),
+            shortlist_override=row["shortlist_override"] or None,
+            query_defaults=_deserialize_query_defaults(row["query_defaults"]),
         )
 
     def _transcript_from_row(self, row: sqlite3.Row) -> TranscriptRecord:
@@ -257,7 +281,8 @@ class SQLiteHistoryRepository(HistoryRepository):
                 last_used_at TEXT,
                 research_mode INTEGER DEFAULT 0,
                 research_source_mode TEXT,
-                research_local_corpus_paths TEXT
+                research_local_corpus_paths TEXT,
+                query_defaults TEXT
             )
         """
         )
@@ -365,6 +390,18 @@ class SQLiteHistoryRepository(HistoryRepository):
             c.execute(
                 "ALTER TABLE sessions ADD COLUMN research_local_corpus_paths TEXT"
             )
+        except sqlite3.OperationalError:
+            pass  # column already exists
+
+        # Schema migration: add shortlist_override column
+        try:
+            c.execute("ALTER TABLE sessions ADD COLUMN shortlist_override TEXT")
+        except sqlite3.OperationalError:
+            pass  # column already exists
+
+        # Schema migration: add query_defaults column
+        try:
+            c.execute("ALTER TABLE sessions ADD COLUMN query_defaults TEXT")
         except sqlite3.OperationalError:
             pass  # column already exists
 
@@ -1013,7 +1050,7 @@ class SQLiteHistoryRepository(HistoryRepository):
         conn.row_factory = sqlite3.Row
         c = conn.cursor()
         c.execute(
-            "SELECT id, name, model, created_at, compacted_summary, memory_auto_extract, max_turns, last_used_at, research_mode, research_source_mode, research_local_corpus_paths FROM sessions WHERE name = ? ORDER BY created_at DESC",
+            "SELECT id, name, model, created_at, compacted_summary, memory_auto_extract, max_turns, last_used_at, research_mode, research_source_mode, research_local_corpus_paths, shortlist_override, query_defaults FROM sessions WHERE name = ? ORDER BY created_at DESC",
             (name,),
         )
         rows = c.fetchall()
@@ -1026,7 +1063,7 @@ class SQLiteHistoryRepository(HistoryRepository):
         conn.row_factory = sqlite3.Row
         c = conn.cursor()
         c.execute(
-            "SELECT id, name, model, created_at, compacted_summary, memory_auto_extract, max_turns, last_used_at, research_mode, research_source_mode, research_local_corpus_paths FROM sessions WHERE id = ?",
+            "SELECT id, name, model, created_at, compacted_summary, memory_auto_extract, max_turns, last_used_at, research_mode, research_source_mode, research_local_corpus_paths, shortlist_override, query_defaults FROM sessions WHERE id = ?",
             (session_id,),
         )
         row = c.fetchone()
@@ -1041,7 +1078,7 @@ class SQLiteHistoryRepository(HistoryRepository):
         conn.row_factory = sqlite3.Row
         c = conn.cursor()
         c.execute(
-            "SELECT id, name, model, created_at, compacted_summary, memory_auto_extract, max_turns, last_used_at, research_mode, research_source_mode, research_local_corpus_paths FROM sessions WHERE name = ? ORDER BY created_at DESC LIMIT 1",
+            "SELECT id, name, model, created_at, compacted_summary, memory_auto_extract, max_turns, last_used_at, research_mode, research_source_mode, research_local_corpus_paths, shortlist_override, query_defaults FROM sessions WHERE name = ? ORDER BY created_at DESC LIMIT 1",
             (name,),
         )
         row = c.fetchone()
@@ -1129,7 +1166,7 @@ class SQLiteHistoryRepository(HistoryRepository):
         conn.row_factory = sqlite3.Row
         c = conn.cursor()
         c.execute(
-            "SELECT id, name, model, created_at, compacted_summary, memory_auto_extract, max_turns, last_used_at, research_mode, research_source_mode, research_local_corpus_paths FROM sessions ORDER BY created_at DESC LIMIT ?",
+            "SELECT id, name, model, created_at, compacted_summary, memory_auto_extract, max_turns, last_used_at, research_mode, research_source_mode, research_local_corpus_paths, shortlist_override, query_defaults FROM sessions ORDER BY created_at DESC LIMIT ?",
             (limit,),
         )
         rows = c.fetchall()
@@ -1183,6 +1220,46 @@ class SQLiteHistoryRepository(HistoryRepository):
                 serialized_paths,
                 session_id,
             ),
+        )
+        conn.commit()
+        conn.close()
+
+    def update_session_shortlist_override(
+        self, session_id: int, value: Optional[str]
+    ) -> None:
+        """Persist shortlist override for a session (None clears it)."""
+        conn = self._get_conn()
+        c = conn.cursor()
+        c.execute(
+            "UPDATE sessions SET shortlist_override = ? WHERE id = ?",
+            (value, session_id),
+        )
+        conn.commit()
+        conn.close()
+
+    def update_session_query_defaults(self, session_id: int, values: dict) -> None:
+        """Persist query-behavior defaults for a session."""
+        serialized = _serialize_query_defaults(values)
+        conn = self._get_conn()
+        c = conn.cursor()
+        c.execute(
+            "UPDATE sessions SET query_defaults = ? WHERE id = ?",
+            (serialized, session_id),
+        )
+        conn.commit()
+        conn.close()
+
+    def update_session_name(self, session_id: int, name: str) -> None:
+        """Rename session while preserving uniqueness constraints."""
+        normalized_name = str(name or "").strip()
+        if not normalized_name:
+            return
+        conn = self._get_conn()
+        c = conn.cursor()
+        unique_name = _ensure_unique_session_name(c, normalized_name)
+        c.execute(
+            "UPDATE sessions SET name = ? WHERE id = ?",
+            (unique_name, session_id),
         )
         conn.commit()
         conn.close()

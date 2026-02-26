@@ -2,7 +2,7 @@
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import List, Optional, Union
+from typing import Any, Dict, List, Optional, Union
 from datetime import datetime
 
 
@@ -78,6 +78,8 @@ class Session:
     research_mode: bool = False
     research_source_mode: Optional[str] = None
     research_local_corpus_paths: List[str] | None = None
+    shortlist_override: Optional[str] = None
+    query_defaults: Dict[str, Any] | None = None
 
 
 @dataclass
@@ -275,6 +277,25 @@ class HistoryRepository(ABC):
         research_local_corpus_paths: Optional[List[str]],
     ) -> None:
         """Update persisted research profile metadata for a session."""
+        pass
+
+    @abstractmethod
+    def update_session_shortlist_override(
+        self, session_id: int, value: Optional[str]
+    ) -> None:
+        """Persist shortlist override for a session (None clears it)."""
+        pass
+
+    @abstractmethod
+    def update_session_query_defaults(
+        self, session_id: int, values: Dict[str, Any]
+    ) -> None:
+        """Persist query-behavior default overrides for a session."""
+        pass
+
+    @abstractmethod
+    def update_session_name(self, session_id: int, name: str) -> None:
+        """Rename a session with uniqueness guarantees."""
         pass
 
     @abstractmethod

@@ -106,6 +106,9 @@ Handled by `plugins/xmpp_daemon/router.py`. For each incoming message:
 8. **Remote policy gate** — blocked flags are rejected.
 9. **`AskyClient.run_turn()`** — final execution.
 
+Remote policy blocks config/bootstrap mutations (for example `--config ...`,
+daemon startup flags, delete flags, and output side-effect flags).
+
 ---
 
 ## Per-JID Queue and Worker Lifecycle

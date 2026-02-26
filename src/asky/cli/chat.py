@@ -61,6 +61,14 @@ from asky.cli.verbose_output import (
 
 logger = logging.getLogger(__name__)
 BACKGROUND_SUMMARY_DRAIN_STATUS = "Finalizing background page summaries..."
+QUERY_DEFAULT_PENDING_AUTO_NAME_KEY = "pending_auto_name"
+QUERY_DEFAULT_MODEL_KEY = "model"
+QUERY_DEFAULT_SUMMARIZE_KEY = "summarize"
+QUERY_DEFAULT_RESEARCH_KEY = "research"
+QUERY_DEFAULT_LEAN_KEY = "lean"
+QUERY_DEFAULT_SYSTEM_PROMPT_KEY = "system_prompt"
+QUERY_DEFAULT_TOOL_OFF_KEY = "tool_off"
+QUERY_DEFAULT_TERMINAL_LINES_KEY = "terminal_lines"
 
 
 def shortlist_prompt_sources(*args: Any, **kwargs: Any) -> Dict[str, Any]:
@@ -197,7 +205,7 @@ def _shortlist_enabled_for_request(
         lean=bool(getattr(args, "lean", False)),
         model_config=model_config,
         research_mode=research_mode,
-        shortlist_override=str(getattr(args, "shortlist", "auto")),
+        shortlist_override=getattr(args, "shortlist", None),
     )
 
 
@@ -216,6 +224,107 @@ def _parse_disabled_tools(raw_values: Optional[List[str]]) -> Set[str]:
         return set(get_all_available_tool_names())
 
     return disabled_tools
+
+
+def _parse_tool_off_list(raw_values: Optional[List[str]]) -> List[str]:
+    """Normalize repeated/comma-separated disabled tool names."""
+    tools: List[str] = []
+    seen: Set[str] = set()
+    for raw_value in raw_values or []:
+        for token in str(raw_value).split(","):
+            normalized = token.strip()
+            if not normalized or normalized in seen:
+                continue
+            seen.add(normalized)
+            tools.append(normalized)
+    return tools
+
+
+def _collect_session_default_updates(args: argparse.Namespace) -> Dict[str, Any]:
+    """Collect explicitly provided query-default updates from CLI args."""
+    updates: Dict[str, Any] = {}
+    if bool(getattr(args, "_provided_model", False)):
+        updates[QUERY_DEFAULT_MODEL_KEY] = str(getattr(args, "model", "")).strip()
+    if bool(getattr(args, "_provided_summarize", False)) and bool(
+        getattr(args, "summarize", False)
+    ):
+        updates[QUERY_DEFAULT_SUMMARIZE_KEY] = True
+    if bool(getattr(args, "_provided_research", False)) and bool(
+        getattr(args, "research", False)
+    ):
+        updates[QUERY_DEFAULT_RESEARCH_KEY] = True
+    if bool(getattr(args, "_provided_lean", False)) and bool(getattr(args, "lean", False)):
+        updates[QUERY_DEFAULT_LEAN_KEY] = True
+    if bool(getattr(args, "_provided_system_prompt", False)):
+        updates[QUERY_DEFAULT_SYSTEM_PROMPT_KEY] = str(
+            getattr(args, "system_prompt", "") or ""
+        ).strip()
+    if bool(getattr(args, "_provided_terminal_lines", False)):
+        terminal_lines = getattr(args, "terminal_lines", None)
+        if isinstance(terminal_lines, int) and terminal_lines > 0:
+            updates[QUERY_DEFAULT_TERMINAL_LINES_KEY] = int(terminal_lines)
+    if bool(getattr(args, "_provided_tools", False)):
+        if bool(getattr(args, "tools_reset", False)):
+            updates[QUERY_DEFAULT_TOOL_OFF_KEY] = []
+        else:
+            updates[QUERY_DEFAULT_TOOL_OFF_KEY] = _parse_tool_off_list(
+                list(getattr(args, "tool_off", []) or [])
+            )
+    return updates
+
+
+def _persist_session_default_updates(session_id: int, args: argparse.Namespace) -> None:
+    """Persist invocation-provided defaults into the active session."""
+    from asky.storage.sqlite import SQLiteHistoryRepository
+
+    repo = SQLiteHistoryRepository()
+    session = repo.get_session_by_id(int(session_id))
+    if not session:
+        return
+
+    updates = _collect_session_default_updates(args)
+    if updates:
+        merged_defaults = dict(getattr(session, "query_defaults", None) or {})
+        for key, value in updates.items():
+            if key == QUERY_DEFAULT_TOOL_OFF_KEY and value == []:
+                merged_defaults.pop(key, None)
+                continue
+            if key == QUERY_DEFAULT_SYSTEM_PROMPT_KEY and not value:
+                merged_defaults.pop(key, None)
+                continue
+            merged_defaults[key] = value
+        repo.update_session_query_defaults(int(session_id), merged_defaults)
+
+    if bool(getattr(args, "_provided_turns", False)) and getattr(args, "turns", None) is not None:
+        repo.update_session_max_turns(int(session_id), int(args.turns))
+    if bool(getattr(args, "_provided_elephant_mode", False)) and bool(
+        getattr(args, "elephant_mode", False)
+    ):
+        repo.set_session_memory_auto_extract(int(session_id), True)
+    if bool(getattr(args, "_provided_shortlist", False)):
+        shortlist = getattr(args, "shortlist", None)
+        if shortlist in {"on", "off"}:
+            repo.update_session_shortlist_override(int(session_id), shortlist)
+        elif shortlist == "reset":
+            repo.update_session_shortlist_override(int(session_id), None)
+
+
+def _rename_pending_auto_named_session(session_id: int, query_text: str) -> None:
+    """Rename sessions that were auto-created without query text."""
+    from asky.storage.sqlite import SQLiteHistoryRepository
+
+    repo = SQLiteHistoryRepository()
+    session = repo.get_session_by_id(int(session_id))
+    if not session:
+        return
+    defaults = dict(getattr(session, "query_defaults", None) or {})
+    if not bool(defaults.get(QUERY_DEFAULT_PENDING_AUTO_NAME_KEY, False)):
+        return
+
+    new_name = generate_session_name(query_text or "session")
+    repo.update_session_name(int(session_id), new_name)
+    defaults.pop(QUERY_DEFAULT_PENDING_AUTO_NAME_KEY, None)
+    repo.update_session_query_defaults(int(session_id), defaults)
 
 
 def _append_enabled_tool_guidelines(
@@ -737,6 +846,12 @@ def run_chat(
                     set_session_binding(data_dir, session_id=session_id, persona_name=resolved_name)
                     console.print(f"[green]✓[/] Loaded persona '[cyan]{resolved_name}[/cyan]' via @mention")
 
+            if session_manager and session_manager.current_session:
+                resolved_session_id = int(session_manager.current_session.id)
+                _persist_session_default_updates(resolved_session_id, args)
+                if str(query_text or "").strip():
+                    _rename_pending_auto_named_session(resolved_session_id, query_text)
+
         turn_request = AskyTurnRequest(
             query_text=effective_query_text,
             continue_ids=args.continue_ids,
@@ -757,7 +872,7 @@ def run_chat(
             replace_research_corpus=bool(
                 getattr(args, "replace_research_corpus", False)
             ),
-            shortlist_override=str(getattr(args, "shortlist", "auto")),
+            shortlist_override=getattr(args, "shortlist", None),
         )
 
         display_cb = display_callback

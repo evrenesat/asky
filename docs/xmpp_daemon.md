@@ -53,14 +53,14 @@ Important constraints:
 ## Run Daemon
 
 ```bash
-asky --xmpp-daemon
+asky --daemon
 ```
 
 - macOS + `rumps`: launches menubar app.
 - non-macOS, or macOS without `rumps`: uses foreground daemon mode.
-- `asky --edit-daemon` works on all platforms and edits `xmpp.toml` + startup registration.
-- macOS menubar runtime is single-instance. If already running, `asky --xmpp-daemon` prints `Error: asky menubar daemon is already running.` and exits with status `1`.
-- Menubar does not edit XMPP credentials/allowlist. Configure those only via `asky --edit-daemon`.
+- `asky --config daemon edit` works on all platforms and edits `xmpp.toml` + startup registration.
+- macOS menubar runtime is single-instance. If already running, `asky --daemon` prints `Error: asky menubar daemon is already running.` and exits with status `1`.
+- Menubar does not edit XMPP credentials/allowlist. Configure those only via `asky --config daemon edit`.
 
 Runtime behavior:
 
@@ -217,13 +217,14 @@ Blocked remotely (authoritative list from `command_executor.REMOTE_BLOCKED_FLAGS
 - `--delete-sessions`
 - `--all`
 - `--clean-session-research`
+- `--config`
 - `--add-model`
 - `--edit-model`
 - `--clear-memories`
 - `--delete-memory`
-- `--xmpp-daemon`
+- `--daemon` / `--xmpp-daemon`
 - `--xmpp-menubar-child`
-- `--edit-daemon`
+- `--config daemon edit` / `--edit-daemon`
 - `--completion-script`
 
 Allowed remotely:

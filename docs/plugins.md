@@ -11,7 +11,7 @@ Plugins are loaded from:
 Runtime initialization happens when asky starts query execution:
 
 - Local CLI query flow (`asky ...`)
-- XMPP daemon flow (`asky --xmpp-daemon`)
+- XMPP daemon flow (`asky --daemon`)
 
 If no plugin is enabled in `plugins.toml`, runtime stays disabled.
 
@@ -32,7 +32,7 @@ The GUI sidecar is started only from daemon service lifecycle.
 Required:
 
 1. `gui_server` plugin enabled in `~/.config/asky/plugins.toml`
-2. Daemon running (`asky --xmpp-daemon`)
+2. Daemon running (`asky --daemon`)
 
 Default URL:
 

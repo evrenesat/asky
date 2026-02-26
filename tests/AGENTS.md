@@ -5,11 +5,14 @@ Pytest-based test suite organized by component.
 ## Running Tests
 
 ```bash
-# Full test suite
+# Full test suite (parallel by default via `-n auto`)
 uv run pytest
 
 # Verbose with output
 uv run pytest -v
+
+# Force single-process execution when debugging
+uv run pytest -n 0
 
 # Specific test file
 uv run pytest tests/test_cli.py
@@ -24,7 +27,7 @@ uv run pytest tests/test_cli.py::test_function_name
 
 | File                 | Coverage                                                                           |
 | -------------------- | ---------------------------------------------------------------------------------- |
-| `test_cli.py`        | Argument parsing, command handlers                                                 |
+| `test_cli.py`        | Argument parsing, grouped command surface translation (`history/session/memory/corpus`), `--config` routing, and command handlers |
 | `test_presets.py`    | Command preset parsing/substitution/listing behavior                               |
 | `test_completion.py` | Shell completion logic                                                             |
 | `test_models_cli.py` | Model add/edit commands and role assignment actions (main/summarization/interface) |
@@ -47,7 +50,7 @@ uv run pytest tests/test_cli.py::test_function_name
 
 | File                      | Coverage                                                                                                         |
 | ------------------------- | ---------------------------------------------------------------------------------------------------------------- |
-| `test_api_client_bugs.py` | Regression tests for API client orchestration, research mode resolution, and Unicode-safe memory trigger removal |
+| `test_api_turn_resolution.py` | API turn orchestration behavior for research-mode resolution and Unicode-safe memory trigger stripping |
 
 ### Storage Tests
 
@@ -81,6 +84,7 @@ uv run pytest tests/test_cli.py::test_function_name
 | `test_xmpp_group_sessions.py`          | Room/session binding persistence and session-scoped TOML override semantics (last-write-wins)                                   |
 | `test_xmpp_client.py`                  | slixmpp runtime API compatibility (`process` vs loop fallback)                                                                  |
 | `test_interface_planner.py`            | Interface model prompt contract, command-reference injection, JSON fallback behavior                                            |
+| `test_safety_and_resilience_guards.py` | Runtime safety guardrails for regex resilience, path constraints, session write semantics, and queue concurrency               |
 | `test_voice_transcription.py`          | Background voice job pipeline and platform gating                                                                               |
 | `test_image_transcription.py`          | Background image job pipeline and multimodal payload formatting                                                                  |
 | `test_api_model_parameter_override.py` | API config parameter override merge behavior                                                                                    |

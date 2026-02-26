@@ -314,3 +314,61 @@ def test_duplicate_session_name_resolved_automatically(temp_repo):
     sid3 = temp_repo.create_session("model-a", name="duplicate")
     s3 = temp_repo.get_session_by_id(sid3)
     assert s3.name == "duplicate_3"
+
+
+def test_resolve_session_loads_stored_shortlist_override(temp_repo):
+    sid = temp_repo.create_session("model-a", name="shortlist-session")
+    temp_repo.update_session_shortlist_override(sid, "on")
+    session_cls = _session_manager_cls_with_repo(temp_repo)
+
+    _manager, resolution = resolve_session_for_turn(
+        model_config={"alias": "model-a", "context_size": 1000},
+        usage_tracker=UsageTracker(),
+        summarization_tracker=UsageTracker(),
+        query_text="follow up",
+        shell_session_id=sid,
+        session_manager_cls=session_cls,
+    )
+
+    assert resolution.shortlist_override == "on"
+
+
+def test_resolve_session_saves_shortlist_on_explicit(temp_repo):
+    sid = temp_repo.create_session("model-a", name="shortlist-save-session")
+    session_cls = _session_manager_cls_with_repo(temp_repo)
+
+    _manager, resolution = resolve_session_for_turn(
+        model_config={"alias": "model-a", "context_size": 1000},
+        usage_tracker=UsageTracker(),
+        summarization_tracker=UsageTracker(),
+        query_text="query",
+        shell_session_id=sid,
+        shortlist_override="off",
+        session_manager_cls=session_cls,
+    )
+
+    assert resolution.shortlist_override == "off"
+    reloaded = temp_repo.get_session_by_id(sid)
+    assert reloaded is not None
+    assert reloaded.shortlist_override == "off"
+
+
+def test_resolve_session_resets_shortlist_on_reset(temp_repo):
+    sid = temp_repo.create_session("model-a", name="shortlist-reset-session")
+    temp_repo.update_session_shortlist_override(sid, "on")
+    session_cls = _session_manager_cls_with_repo(temp_repo)
+
+    _manager, resolution = resolve_session_for_turn(
+        model_config={"alias": "model-a", "context_size": 1000},
+        usage_tracker=UsageTracker(),
+        summarization_tracker=UsageTracker(),
+        query_text="query",
+        shell_session_id=sid,
+        shortlist_override="reset",
+        session_manager_cls=session_cls,
+    )
+
+    assert resolution.shortlist_override is None
+    reloaded = temp_repo.get_session_by_id(sid)
+    assert reloaded is not None
+    assert reloaded.shortlist_override is None

@@ -133,7 +133,7 @@ def test_prompt_and_preload_injection_for_loaded_persona(monkeypatch, tmp_path: 
         local_corpus_paths=None,
         preload_local_sources=True,
         preload_shortlist=True,
-        shortlist_override="auto",
+        shortlist_override=None,
         additional_source_context=None,
     )
     hooks.invoke("PRE_PRELOAD", pre_payload)

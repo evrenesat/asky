@@ -235,6 +235,38 @@ def test_shortlist_enabled_for_request_honors_request_override_off():
     assert reason == "request_override_off"
 
 
+def test_shortlist_enabled_global_general_overrides_mode_specific(monkeypatch):
+    import asky.api.preload as preload_mod
+
+    monkeypatch.setattr(preload_mod, "GENERAL_SHORTLIST_ENABLED", True)
+    monkeypatch.setattr(preload_mod, "SOURCE_SHORTLIST_ENABLED", True)
+    monkeypatch.setattr(preload_mod, "SOURCE_SHORTLIST_ENABLE_STANDARD_MODE", False)
+
+    enabled, reason = shortlist_enabled_for_request(
+        lean=False,
+        model_config={},
+        research_mode=False,
+    )
+    assert enabled is True
+    assert reason == "global_general"
+
+
+def test_shortlist_enabled_global_general_false_overrides_mode_specific(monkeypatch):
+    import asky.api.preload as preload_mod
+
+    monkeypatch.setattr(preload_mod, "GENERAL_SHORTLIST_ENABLED", False)
+    monkeypatch.setattr(preload_mod, "SOURCE_SHORTLIST_ENABLED", True)
+    monkeypatch.setattr(preload_mod, "SOURCE_SHORTLIST_ENABLE_RESEARCH_MODE", True)
+
+    enabled, reason = shortlist_enabled_for_request(
+        lean=False,
+        model_config={},
+        research_mode=True,
+    )
+    assert enabled is False
+    assert reason == "global_general"
+
+
 def test_collect_preloaded_source_urls_prefers_local_source_handles():
     urls = _collect_preloaded_source_urls(
         local_payload={

@@ -93,7 +93,7 @@ class TestMentionParsingInCLIFlow:
             research_flag_provided=False,
             research_source_mode=None,
             replace_research_corpus=False,
-            shortlist="auto",
+            shortlist=None,
         )
         
         query = "@developer how do I optimize this code?"
@@ -154,7 +154,7 @@ class TestMentionParsingInCLIFlow:
             research_flag_provided=False,
             research_source_mode=None,
             replace_research_corpus=False,
-            shortlist="auto",
+            shortlist=None,
         )
         
         query = "@developer how do I optimize this code?"
@@ -218,7 +218,7 @@ class TestMentionParsingInCLIFlow:
             research_flag_provided=False,
             research_source_mode=None,
             replace_research_corpus=False,
-            shortlist="auto",
+            shortlist=None,
         )
         
         query = "@nonexistent help me"

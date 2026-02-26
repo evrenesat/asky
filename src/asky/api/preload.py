@@ -9,6 +9,7 @@ from typing import Any, Callable, Dict, List, Optional
 
 from asky.config import (
     DEFAULT_CONTEXT_SIZE,
+    GENERAL_SHORTLIST_ENABLED,
     SOURCE_SHORTLIST_ENABLED,
     SOURCE_SHORTLIST_ENABLE_RESEARCH_MODE,
     SOURCE_SHORTLIST_ENABLE_STANDARD_MODE,
@@ -153,6 +154,9 @@ def shortlist_enabled_for_request(
     model_override = model_config.get("source_shortlist_enabled")
     if model_override in (True, False):
         return model_override, "model_override"
+
+    if GENERAL_SHORTLIST_ENABLED is not None:
+        return bool(GENERAL_SHORTLIST_ENABLED), "global_general"
 
     if not SOURCE_SHORTLIST_ENABLED:
         return False, "global_disabled"

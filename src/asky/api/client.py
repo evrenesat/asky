@@ -584,6 +584,7 @@ class AskyClient:
             requested_local_corpus_paths=request.local_corpus_paths,
             elephant_mode=request.elephant_mode,
             max_turns=request.max_turns,
+            shortlist_override=request.shortlist_override,
             set_shell_session_id_fn=set_shell_session_id_fn,
             clear_shell_session_fn=clear_shell_session_fn,
         )
@@ -603,6 +604,15 @@ class AskyClient:
             hook_registry.invoke(SESSION_RESOLVED, session_hook_context)
             session_manager = session_hook_context.session_manager
             session_resolution = session_hook_context.session_resolution
+
+        _request_shortlist = request.shortlist_override
+        _session_shortlist = session_resolution.shortlist_override
+        if _request_shortlist in ("on", "off"):
+            effective_shortlist_override = _request_shortlist
+        elif _request_shortlist == "reset":
+            effective_shortlist_override = None
+        else:
+            effective_shortlist_override = _session_shortlist
 
         resolved_research_mode = getattr(session_resolution, "research_mode", None)
         effective_research_mode = (
@@ -683,7 +693,7 @@ class AskyClient:
         preload_query_text = effective_query_text
         preload_local_sources = bool(request.preload_local_sources)
         preload_shortlist = bool(request.preload_shortlist)
-        preload_shortlist_override = request.shortlist_override
+        preload_shortlist_override = effective_shortlist_override
         preload_additional_source_context = request.additional_source_context
 
         if hook_registry is not None:

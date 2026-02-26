@@ -64,6 +64,7 @@ REMOTE_BLOCKED_FLAGS = (
     "--delete-sessions",
     "--all",
     "--clean-session-research",
+    "--config",
     "--add-model",
     "--edit-model",
     "--clear-memories",
@@ -111,13 +112,13 @@ _HELP_TEXT = """\
 * `-rs NAME`, `--resume-session NAME` — Resume existing session by ID or name
 * `-r [CORPUS]`, `--research [CORPUS]` — Enable research mode (optional local corpus pointer)
 * `-s`, `--summarize` — Enable summarize mode
-* `-L`, `--lean` — Disable pre-LLM source shortlisting
+* `-L`, `--lean` — Lean mode: disable all tools, shortlist/memory recall preload, and memory-extraction/context-compaction side effects
 * `-t N`, `--turns N` — Set max turn count for this session
 * `-em`, `--elephant-mode` — Enable automatic memory extraction
 * `-sp TEXT`, `--system-prompt TEXT` — Override system prompt for this run
 * `-m ALIAS`, `--model ALIAS` — Select model alias
 * `-c [ID]`, `--continue-chat [ID]` — Continue from history ID (omit for last)
-* `--shortlist auto|on|off` — Control source shortlisting behavior
+* `--shortlist on|off|reset` — Control source shortlisting behavior
 * `-off TOOL`, `--tool-off TOOL` — Disable a specific LLM tool for this run
 * `--list-tools` — List all available tools
 * `--query-corpus QUERY` — Query research corpus directly (no model)
@@ -175,7 +176,7 @@ class CommandExecutor:
             "- daemon session switch: /session, /session new, /session child, /session <id|name>",
             "- research/manual corpus: --query-corpus <query> [--query-corpus-max-sources N] [--query-corpus-max-chunks N]",
             "- section summary: --summarize-section [SECTION_QUERY] [--section-source SOURCE] [--section-id ID] [--section-detail balanced|max|compact] [--section-max-chunks N]",
-            "- research/profile toggles: -r [CORPUS_POINTER], --shortlist auto|on|off, -L",
+            "- research/profile toggles: -r [CORPUS_POINTER], --shortlist on|off|reset, -L",
             "- transcript namespace: transcript list [limit], transcript show <id>, transcript use <id>, transcript clear",
             "- pointer refs in queries: #iN image file, #itN image transcript, #aN audio file, #atN audio transcript",
             "- plain asky query text can be emitted as action_type=query",
@@ -294,7 +295,7 @@ class CommandExecutor:
                 research_source_mode=None,
                 replace_research_corpus=False,
                 local_corpus=None,
-                shortlist="auto",
+                shortlist=None,
                 system_prompt=None,
                 terminal_lines=None,
             ),
@@ -556,7 +557,7 @@ class CommandExecutor:
             replace_research_corpus=bool(
                 getattr(args, "replace_research_corpus", False)
             ),
-            shortlist_override=str(getattr(args, "shortlist", "auto")),
+            shortlist_override=getattr(args, "shortlist", None),
         )
         from rich.console import Console
 
@@ -710,6 +711,7 @@ class CommandExecutor:
                 bool(getattr(args, "delete_sessions", None)),
                 bool(getattr(args, "all", False)),
                 bool(getattr(args, "clean_session_research", None)),
+                bool(getattr(args, "config", None)),
                 bool(getattr(args, "add_model", False)),
                 getattr(args, "edit_model", None) is not None,
                 bool(getattr(args, "clear_memories", False)),

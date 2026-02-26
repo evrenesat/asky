@@ -62,7 +62,7 @@ When the plugin is active, it runs in **non-headless** mode. If a site presents 
 
 ### Persistent Login
 If a site requires you to be logged in:
-1. Run: `asky --playwright-login https://example.com`
+1. Run: `asky --browser https://example.com`
 2. Perform the login in the browser window.
 3. Press **Enter** in your terminal to save the session.
 4. Future requests to that site will now use your logged-in cookies.

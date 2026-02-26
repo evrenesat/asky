@@ -315,6 +315,20 @@ class SessionManager:
         if refreshed:
             self.current_session = refreshed
 
+    def update_current_session_shortlist_override(self, value: Optional[str]) -> None:
+        """Update persisted shortlist override for the active session."""
+        if not self.current_session:
+            return
+        self.repo.update_session_shortlist_override(int(self.current_session.id), value)
+        self.current_session.shortlist_override = value
+
+    def update_current_session_query_defaults(self, values: Dict[str, Any]) -> None:
+        """Update persisted query-behavior defaults for the active session."""
+        if not self.current_session:
+            return
+        self.repo.update_session_query_defaults(int(self.current_session.id), values)
+        self.current_session.query_defaults = dict(values)
+
     def find_sessions(self, search_term: str) -> List[Session]:
         """Find sessions matching the search term.
 

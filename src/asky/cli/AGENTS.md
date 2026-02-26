@@ -21,7 +21,7 @@ Command-line interface layer handling argument parsing, command routing, and use
 | `sessions.py`             | Session management commands                                                                                                                    |
 | `prompts.py`              | User prompt listing                                                                                                                            |
 | `models.py`               | Interactive model add/edit commands, including role assignment (main/summarization/interface) and per-model capability flags (`image_support`) |
-| `daemon_config.py`        | Interactive daemon config editor (`--edit-daemon`) and startup-at-login toggles                                                                |
+| `daemon_config.py`        | Interactive daemon config editor (entered via `--config daemon edit`) and startup-at-login toggles                                             |
 | `openrouter.py`           | OpenRouter API client for model discovery                                                                                                      |
 | `terminal.py`             | Terminal context fetching                                                                                                                      |
 | `utils.py`                | Query expansion, config printing                                                                                                               |
@@ -32,35 +32,33 @@ Command-line interface layer handling argument parsing, command routing, and use
   - Help placeholders (`metavar`) are intentionally explicit typed descriptors
     (e.g., `HISTORY_IDS`, `SESSION_SELECTOR`, `LINE_COUNT`) to keep `--help`
     output user-oriented instead of mirroring internal destination names.
+  - Top-level `--help` is curated around grouped user-facing commands; corpus-
+    specific option details are emitted only from grouped sub-help pages
+    (`corpus query --help`, `corpus summarize --help`).
+  - Curated top-level help includes concise one-line semantics for key flags
+    and grouped operations so users can discover behavior quickly.
+  - `--help-all` prints argparse-generated full option reference for power users.
 - Routes to appropriate handler based on command flags
 - Implements lazy startup for fast CLI response:
   - Completion, imports, DB init are deferred until needed
-  - Quick commands (`--add-model`, `-p`) short-circuit before heavy setup
+  - Quick commands (`--config ...`, grouped list/show commands, `-p`) short-circuit before heavy setup
 
-### Key CLI Flags
+### Key CLI Surface
 
-| Flag                           | Handler                                                                                                                                                                                                                                                                     |
-| ------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `-m, --model`                  | Model selection                                                                                                                                                                                                                                                             |
-| `-c, --continue-chat`          | Context loading from previous IDs                                                                                                                                                                                                                                           |
-| `-H, --history`                | `history.py`                                                                                                                                                                                                                                                                |
-| `-pa, --print-answer`          | `history.py`                                                                                                                                                                                                                                                                |
-| `-v, --verbose` / `-vv`        | `chat.py` + `core/engine.py` (verbose / double-verbose traces)                                                                                                                                                                                                              |
-| `-ss, --sticky-session`        | `sessions.py`                                                                                                                                                                                                                                                               |
-| `-rs, --resume-session`        | `sessions.py`                                                                                                                                                                                                                                                               |
-| `-off, -tool-off, --tool-off`  | `chat.py` (runtime tool exclusion, supports `all`)                                                                                                                                                                                                                          |
-| `--list-tools`                 | `main.py` (list all LLM tools and exit)                                                                                                                                                                                                                                     |
-| `--query-corpus`               | `research_commands.py` (deterministic corpus retrieval, no model call)                                                                                                                                                                                                      |
-| `--summarize-section`          | `section_commands.py` (deterministic section list/summary, no main model call)                                                                                                                                                                                              |
-| `--section-id`                 | `section_commands.py` (deterministic section selection override)                                                                                                                                                                                                            |
-| `--section-include-toc`        | `section_commands.py` (include TOC/debug rows in list mode)                                                                                                                                                                                                                 |
-| `-r, --research`               | Enable/promote research mode with optional corpus pointer list                                                                                                                                                                                                              |
-| `--shortlist auto\|on\|off`    | Per-run shortlist override                                                                                                                                                                                                                                                  |
-| `-sfm, --session-from-message` | `history.py`                                                                                                                                                                                                                                                                |
-| `--clean-session-research`     | `sessions.py`                                                                                                                                                                                                                                                               |
-| `--xmpp-daemon`                | macOS menubar daemon (`daemon/menubar.py`) or foreground fallback (`daemon/service.py`); on macOS menubar path, duplicate launches are blocked with exit code `1`, and a `~/Applications/AskyDaemon.app` bundle is automatically created/updated for Spotlight integration. |
-| `--edit-daemon`                | `daemon_config.py` interactive daemon settings editor                                                                                                                                                                                                                       |
-| `persona <subcommand>`         | `persona_commands.py` persona management (create, load, unload, import, export, alias)                                                                                                                                                                                      |
+| Entry                          | Behavior |
+| ------------------------------ | -------- |
+| `--config model add` / `--config model edit [alias]` | Model configuration mutation entrypoint |
+| `--config daemon edit`         | Daemon configuration mutation entrypoint |
+| `history ...`                  | Grouped history operations (`list/show/delete`) |
+| `session ...`                  | Grouped session operations (`list/show/create/use/end/delete/clean-research/from-message`) |
+| `memory ...`                   | Grouped memory operations (`list/delete/clear`) |
+| `corpus query ...` / `corpus summarize ...` | Grouped deterministic corpus operations |
+| `--session <query...>`         | Create session named from query text and run query |
+| `--tools`                      | Tool controls (`list`, `off`, `reset`) |
+| `--shortlist on\|off\|reset`   | Session shortlist override (`on/off`) or clear (`reset`) |
+| `--daemon`                     | macOS menubar daemon (`daemon/menubar.py`) or foreground fallback (`daemon/service.py`) |
+| `--browser <url>`              | Browser session flow (Playwright plugin login/session capture path) |
+| `persona <subcommand>`         | Persona management (create, load, unload, import, export, alias) |
 
 Preset invocation notes:
 

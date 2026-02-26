@@ -80,6 +80,7 @@ class SessionResolution:
     research_mode: bool = False
     research_source_mode: Optional[str] = None
     research_local_corpus_paths: List[str] = field(default_factory=list)
+    shortlist_override: Optional[str] = None
 
 
 @dataclass

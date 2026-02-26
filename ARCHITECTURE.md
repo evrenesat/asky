@@ -6,6 +6,8 @@ This document provides a high-level overview of the **asky** codebase architectu
 
 asky is an AI-powered CLI tool that combines LLM capabilities with web search and tool-calling to provide intelligent, research-backed answers to queries. It also includes an optional XMPP foreground daemon mode for remote command/query handling.
 
+Current CLI routing supports a grouped command surface (`history/session/memory/corpus`) and a single config mutation entrypoint (`--config <domain> <action>`). `main.py` normalizes that surface into internal flags before dispatch.
+
 ```mermaid
 graph TB
     subgraph API["Library API Layer (api/)"]
@@ -384,7 +386,7 @@ Command presets are expanded at ingress (`\\name`, `\\presets`) before command e
 XMPP query ingress applies the same recursive slash-expansion behavior as CLI (`/alias`, `/cp`) before model execution, and unresolved slash queries follow CLI prompt-list semantics (`/` lists all prompts, unknown `/prefix` returns filtered prompt listing). This shared query-prep path is used by direct text queries, interface-planned query actions, and `transcript use` query execution.
 Daemon query prep also supports session-scoped media pointers: `#aN`/`#atN` for audio file+transcript and `#iN`/`#itN` for image file+transcript.
 Room bindings and session override files are persisted in SQLite; on daemon startup/session-start, previously bound rooms are auto-rejoined and continue with their last active bound sessions.
-On macOS menubar builds, the menu is assembled dynamically from plugin-contributed entries (via `TRAY_MENU_REGISTER`). The XMPP plugin contributes: XMPP status, JID, Voice status rows + Start/Stop XMPP and Voice toggle action rows. The GUI server plugin contributes: Start/Stop Web GUI and Open Settings action rows. Core fixed items are: startup-at-login status/action and Quit. XMPP credential/allowlist editing is CLI-only via `--edit-daemon` (no menubar credential editor).
+On macOS menubar builds, the menu is assembled dynamically from plugin-contributed entries (via `TRAY_MENU_REGISTER`). The XMPP plugin contributes: XMPP status, JID, Voice status rows + Start/Stop XMPP and Voice toggle action rows. The GUI server plugin contributes: Start/Stop Web GUI and Open Settings action rows. Core fixed items are: startup-at-login status/action and Quit. XMPP credential/allowlist editing is CLI-only via `--config daemon edit` (no menubar credential editor).
 
 ### Session Flow
 
@@ -404,6 +406,9 @@ Session resolution now owns effective research profile state:
 - resumed research sessions keep research behavior even when `-r` is omitted,
 - `-r` on an existing non-research session promotes and persists that session as research,
 - new `-r` corpus pointers replace stored session corpus pointers.
+
+Sessions also persist query-behavior defaults (`sessions.query_defaults` JSON) for CLI flags like model/tool disables/system prompt; shortlist override remains first-class in `sessions.shortlist_override`.
+Defaults-only invocations can auto-create unnamed sessions, which are marked for deferred auto-rename and renamed from the first real query.
 
 If no session is active and effective research mode is requested, a research
 session is auto-created so research-memory operations remain session-scoped.
@@ -735,5 +740,5 @@ A simplified "retrieval-only" system prompt guidance is injected in these cases 
 - **Implementation**:
   - `FETCH_URL_OVERRIDE` hook in `retrieval.py` allows plugins to provide a result before the default pipeline runs.
   - `PlaywrightBrowserManager` (sync) handles browser lifecycle, anti-fingerprinting, and CAPTCHA detection.
-  - `--playwright-login` CLI flag allows manual login and session state (`storage_state`) persistence.
+  - `--browser` CLI flag allows manual login and persisted browser session state.
   - Same-site delay logic (random 1.5s - 4s) to avoid rate-limiting.

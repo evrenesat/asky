@@ -61,6 +61,9 @@ Precedence is:
 3. model-level shortlist override
 4. global shortlist config
 
+Lean note: `--lean` is broader than shortlist control. It also disables tool calls,
+skips memory recall preload, and skips memory-extraction/context-compaction side effects.
+
 ## Local Corpus Reliability and Fail-Fast
 
 For research profiles that expect local corpus input (`local_only` or `mixed`):

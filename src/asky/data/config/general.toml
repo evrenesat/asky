@@ -25,6 +25,10 @@ terminal_context_lines = 10
 # Helper to enable compact, two-line banner mode
 compact_banner = false
 
+# Global shortlist override for all query modes (true/false). If unset, falls back to
+# per-mode settings in [research.source_shortlist].
+# shortlist_enabled = true
+
 # URL of your SearXNG instance.
 searxng_url = "http://localhost:8888"
 

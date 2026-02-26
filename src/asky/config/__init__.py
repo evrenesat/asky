@@ -37,6 +37,7 @@ LOG_FILE = _gen.get("log_file", "~/.config/asky/logs/asky.log")
 LIVE_BANNER = True
 COMPACT_BANNER = _gen.get("compact_banner", False)
 ARCHIVE_DIR = Path(_gen.get("archive_dir", "~/.config/asky/archive")).expanduser()
+GENERAL_SHORTLIST_ENABLED = _gen.get("shortlist_enabled")
 
 
 # Limits & Timeouts

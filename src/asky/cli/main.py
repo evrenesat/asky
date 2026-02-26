@@ -9,10 +9,11 @@ import threading
 import os
 import subprocess
 import sys
+import time
 from pathlib import Path
 from asky.config import RESEARCH_LOCAL_DOCUMENT_ROOTS
 from types import ModuleType
-from typing import Optional
+from typing import Any, Optional
 
 from rich.console import Console
 
@@ -36,7 +37,8 @@ from asky.cli.completion import (
     parse_answer_selector_token,
     parse_session_selector_token,
 )
-from asky.core import get_shell_session_id
+from asky.core import get_shell_session_id, set_shell_session_id
+from asky.core.session_manager import generate_session_name
 
 
 class _LazyModuleProxy:
@@ -69,11 +71,515 @@ DEFAULT_MANUAL_QUERY_MAX_SOURCES = 20
 DEFAULT_MANUAL_QUERY_MAX_CHUNKS = 3
 DEFAULT_SECTION_DETAIL = "balanced"
 MENUBAR_BOOTSTRAP_LOG_FILE = "~/.config/asky/logs/asky-menubar-bootstrap.log"
+UNNAMED_SESSION_SENTINEL = "unnamed"
+QUERY_DEFAULT_PENDING_AUTO_NAME_KEY = "pending_auto_name"
+QUERY_DEFAULT_MODEL_KEY = "model"
+QUERY_DEFAULT_SUMMARIZE_KEY = "summarize"
+QUERY_DEFAULT_RESEARCH_KEY = "research"
+QUERY_DEFAULT_LEAN_KEY = "lean"
+QUERY_DEFAULT_SYSTEM_PROMPT_KEY = "system_prompt"
+QUERY_DEFAULT_TOOL_OFF_KEY = "tool_off"
+QUERY_DEFAULT_TERMINAL_LINES_KEY = "terminal_lines"
 logger = logging.getLogger(__name__)
+HELP_FLAG_TOKENS = {"-h", "--help"}
+
+
+def _print_top_level_help() -> None:
+    """Print curated top-level help focused on user-facing command surface."""
+    print(
+        """usage: asky [query ...]
+       asky --config <domain> <action>
+       asky <group> <action> [args]
+
+Tool-calling CLI with grouped operational commands.
+
+Grouped commands:
+  history list [count]                    List recent history entries.
+  history show <id_selector>              Show full answer(s) for selected history item(s).
+  history delete <id_selector|--all>      Delete history entries.
+  session list [count]                    List recent sessions.
+  session show <session_selector>         Print session transcript.
+  session create <name>                   Create and activate a named session.
+  session use <session_selector>          Resume a session by id/name.
+  session end                             End active shell-bound session.
+  session delete <session_selector|--all> Delete sessions and their messages.
+  session clean-research <session_selector>
+                                          Remove research cache data for a session.
+  session from-message <history_id|last>  Convert history message into a session.
+  memory list                             List user memories.
+  memory delete <id>                      Delete one memory.
+  memory clear                            Delete all memories.
+  corpus query <text>                     Deterministic corpus query (no main model call).
+  corpus summarize [query]                Deterministic section summary flow.
+  prompts list                            List configured user prompts.
+
+Configuration:
+  --config model add
+  --config model edit [alias]
+  --config daemon edit
+
+Query options:
+  -m, --model ALIAS
+      Select model alias for this run.
+  -r, --research [CORPUS_POINTER]
+      Enable deep research mode; optionally bind local/web corpus source(s).
+  -s, --summarize
+      Summarize URL content before main answer generation.
+  -L, --lean
+      Lean mode: disable all tool calls, skip shortlist/memory recall preload,
+      and skip memory extraction/context compaction side effects.
+  -t, --turns MAX_TURNS
+      Set per-session max turns.
+  -sp, --system-prompt TEXT
+      Override system prompt.
+  -tl, --terminal-lines [LINE_COUNT]
+      Include recent terminal context in query.
+  --shortlist {on,off,reset}
+      Persist shortlist preference to current session (or clear with reset).
+  --tools [off [a,b,c]|reset]
+      List tools, disable all/some tools, or clear tool override.
+  --session <query...>
+      Create a new session named from query text and run the query.
+  -v, --verbose
+      Verbose output (-vv for double-verbose).
+  -o, --open
+      Open final answer in browser.
+  --mail RECIPIENTS
+      Email final answer to recipients.
+  --subject EMAIL_SUBJECT
+      Subject line for --mail.
+
+Process options:
+  --daemon
+  --browser URL
+  --completion-script {bash,zsh}
+
+More help:
+  asky --help-all
+  asky corpus --help
+  asky corpus query --help
+  asky corpus summarize --help
+  asky history --help
+  asky session --help
+  asky memory --help"""
+    )
+
+
+def _print_corpus_help() -> None:
+    """Print grouped help for corpus operations."""
+    print(
+        """usage: asky corpus <query|summarize> ...
+
+Corpus commands:
+  asky corpus query <text>
+  asky corpus summarize [query]
+
+Run:
+  asky corpus query --help
+  asky corpus summarize --help"""
+    )
+
+
+def _print_corpus_query_help() -> None:
+    """Print help for corpus query subcommand."""
+    print(
+        """usage: asky corpus query <text> [options]
+
+Deterministically query cached/ingested corpus without invoking the main model.
+
+Options:
+  --query-corpus-max-sources COUNT
+      Maximum corpus sources to scan (default 20).
+  --query-corpus-max-chunks COUNT
+      Maximum chunks per source (default 3).
+  --section-include-toc
+      Include TOC/micro heading rows in corpus section output."""
+    )
+
+
+def _print_corpus_summarize_help() -> None:
+    """Print help for corpus summarize subcommand."""
+    print(
+        """usage: asky corpus summarize [query] [options]
+
+Summarize corpus sections without invoking the main model.
+
+Options:
+  --section-source SOURCE
+      Select corpus source (corpus://cache/<id>, cache id, title/url match).
+  --section-id SECTION_ID
+      Select exact section ID.
+  --section-include-toc
+      Include TOC/micro heading rows when listing sections.
+  --section-detail {balanced,max,compact}
+      Section summary detail profile (default balanced).
+  --section-max-chunks COUNT
+      Optional chunk limit for section summarization."""
+    )
+
+
+def _print_history_help() -> None:
+    """Print grouped help for history operations."""
+    print(
+        """usage: asky history <list|show|delete> [args]
+
+Commands:
+  asky history list [count]
+  asky history show <id_selector>
+  asky history delete <id_selector|--all>"""
+    )
+
+
+def _print_session_help() -> None:
+    """Print grouped help for session operations."""
+    print(
+        """usage: asky session <action> [args]
+
+Commands:
+  asky session list [count]
+  asky session show <session_selector>
+  asky session create <name>
+  asky session use <session_selector>
+  asky session end
+  asky session delete <session_selector|--all>
+  asky session clean-research <session_selector>
+  asky session from-message <history_id|last>"""
+    )
+
+
+def _print_memory_help() -> None:
+    """Print grouped help for memory operations."""
+    print(
+        """usage: asky memory <list|delete|clear> [args]
+
+Commands:
+  asky memory list
+  asky memory delete <id>
+  asky memory clear"""
+    )
+
+
+def _print_prompts_help() -> None:
+    """Print grouped help for prompts operations."""
+    print(
+        """usage: asky prompts list
+
+Commands:
+  asky prompts list"""
+    )
+
+
+def _consume_grouped_help(tokens: list[str]) -> bool:
+    """Render grouped help pages and short-circuit parse flow when requested."""
+    option_tokens = list(tokens)
+    if "--" in option_tokens:
+        option_tokens = option_tokens[: option_tokens.index("--")]
+    if not any(token in HELP_FLAG_TOKENS for token in option_tokens):
+        return False
+
+    visible_tokens = [t for t in option_tokens if t not in HELP_FLAG_TOKENS]
+    if not visible_tokens or str(visible_tokens[0]).startswith("-"):
+        _print_top_level_help()
+        raise SystemExit(0)
+
+    group = str(visible_tokens[0]).strip().lower()
+    action = (
+        str(visible_tokens[1]).strip().lower()
+        if len(visible_tokens) >= 2
+        else ""
+    )
+    if group == "corpus":
+        if action == "query":
+            _print_corpus_query_help()
+            raise SystemExit(0)
+        if action in {"summarize", "summarize-section"}:
+            _print_corpus_summarize_help()
+            raise SystemExit(0)
+        _print_corpus_help()
+        raise SystemExit(0)
+    if group == "history":
+        _print_history_help()
+        raise SystemExit(0)
+    if group == "session":
+        _print_session_help()
+        raise SystemExit(0)
+    if group == "memory":
+        _print_memory_help()
+        raise SystemExit(0)
+    if group == "prompts":
+        _print_prompts_help()
+        raise SystemExit(0)
+    return False
+
+
+def _is_flag_token(token: str) -> bool:
+    """Return True when token looks like a flag."""
+    return str(token).startswith("-")
+
+
+def _consume_text_until_flag(tokens: list[str]) -> tuple[str, list[str]]:
+    """Split positional text tokens from trailing option tokens."""
+    text_tokens: list[str] = []
+    index = 0
+    while index < len(tokens):
+        token = str(tokens[index])
+        if _is_flag_token(token):
+            break
+        text_tokens.append(token)
+        index += 1
+    text = " ".join(t for t in text_tokens if str(t).strip()).strip()
+    return text, list(tokens[index:])
+
+
+def _translate_config_tokens(tokens: list[str]) -> list[str]:
+    """Translate --config domain/action surface to internal flags."""
+    if "--config" not in tokens:
+        return tokens
+    config_index = tokens.index("--config")
+    if config_index + 2 >= len(tokens):
+        raise ValueError("Usage: --config <domain> <action>")
+
+    prefix = list(tokens[:config_index])
+    domain = str(tokens[config_index + 1]).strip().lower()
+    action = str(tokens[config_index + 2]).strip().lower()
+    rest = list(tokens[config_index + 3 :])
+
+    if domain == "model" and action == "add":
+        if rest:
+            raise ValueError("Usage: --config model add")
+        return [*prefix, "--add-model"]
+    if domain == "model" and action == "edit":
+        if len(rest) > 1:
+            raise ValueError("Usage: --config model edit [alias]")
+        if not rest:
+            return [*prefix, "--edit-model"]
+        return [*prefix, "--edit-model", str(rest[0])]
+    if domain == "daemon" and action == "edit":
+        if rest:
+            raise ValueError("Usage: --config daemon edit")
+        return [*prefix, "--edit-daemon"]
+
+    raise ValueError(f"Unknown config command: --config {domain} {action}")
+
+
+def _translate_grouped_command_tokens(tokens: list[str]) -> list[str]:
+    """Translate grouped noun/action commands into legacy parser flags."""
+    if len(tokens) < 2 or _is_flag_token(tokens[0]):
+        return tokens
+
+    noun = str(tokens[0]).strip().lower()
+    action = str(tokens[1]).strip().lower()
+    rest = list(tokens[2:])
+
+    if noun == "history":
+        if action == "list":
+            return ["--history"] + rest[:1]
+        if action == "show":
+            selector = " ".join(rest).strip()
+            if not selector:
+                return tokens
+            return ["--print-answer", selector]
+        if action == "delete":
+            if not rest:
+                return tokens
+            if rest[0] == "--all":
+                return ["--delete-messages", "--all"]
+            selector = " ".join(rest).strip()
+            return ["--delete-messages", selector]
+        return tokens
+
+    if noun == "session":
+        if action == "list":
+            return ["--session-history"] + rest[:1]
+        if action == "show":
+            selector = " ".join(rest).strip()
+            if not selector:
+                return tokens
+            return ["--print-session", selector]
+        if action == "create":
+            if not rest:
+                return tokens
+            return ["--sticky-session", *rest]
+        if action == "use":
+            if not rest:
+                return tokens
+            return ["--resume-session", *rest]
+        if action == "end":
+            return ["--session-end"]
+        if action == "delete":
+            if not rest:
+                return tokens
+            if rest[0] == "--all":
+                return ["--delete-sessions", "--all"]
+            selector = " ".join(rest).strip()
+            return ["--delete-sessions", selector]
+        if action == "clean-research":
+            selector = " ".join(rest).strip()
+            if not selector:
+                return tokens
+            return ["--clean-session-research", selector]
+        if action == "from-message":
+            selector = " ".join(rest).strip()
+            if not selector:
+                return tokens
+            if selector.lower() == "last":
+                return ["--reply"]
+            return ["--session-from-message", selector]
+        return tokens
+
+    if noun == "memory":
+        if action == "list":
+            return ["--list-memories"]
+        if action == "delete":
+            if not rest:
+                return tokens
+            return ["--delete-memory", str(rest[0])]
+        if action == "clear":
+            return ["--clear-memories"]
+        return tokens
+
+    if noun == "corpus":
+        if action == "query":
+            text, options = _consume_text_until_flag(rest)
+            if not text:
+                return tokens
+            return ["--query-corpus", text, *options]
+        if action in {"summarize", "summarize-section"}:
+            text, options = _consume_text_until_flag(rest)
+            if text:
+                return ["--summarize-section", text, *options]
+            return ["--summarize-section", *options]
+        return tokens
+
+    if noun == "prompts" and action == "list":
+        return ["--prompts"]
+
+    return tokens
+
+
+def _translate_tools_tokens(tokens: list[str]) -> list[str]:
+    """Translate --tools UX surface to existing tool flags."""
+    if "--tools" not in tokens:
+        return tokens
+
+    translated: list[str] = []
+    index = 0
+    while index < len(tokens):
+        token = str(tokens[index])
+        if token != "--tools":
+            translated.append(token)
+            index += 1
+            continue
+
+        next_token = str(tokens[index + 1]) if index + 1 < len(tokens) else ""
+        if not next_token or _is_flag_token(next_token):
+            translated.append("--list-tools")
+            index += 1
+            continue
+
+        mode = next_token.strip().lower()
+        if mode == "off":
+            value_token = (
+                str(tokens[index + 2]) if index + 2 < len(tokens) else ""
+            )
+            if not value_token or _is_flag_token(value_token):
+                translated.extend(["--tool-off", "all"])
+                index += 2
+            else:
+                translated.extend(["--tool-off", value_token])
+                index += 3
+            continue
+
+        if mode == "reset":
+            translated.append("--tools-reset")
+            index += 2
+            continue
+
+        raise ValueError("Usage: --tools [off [a,b,c]|reset]")
+
+    return translated
+
+
+def _translate_process_tokens(tokens: list[str]) -> list[str]:
+    """Translate top-level process aliases to internal flags."""
+    translated: list[str] = []
+    index = 0
+    while index < len(tokens):
+        token = str(tokens[index])
+        if token == "--daemon":
+            translated.append("--xmpp-daemon")
+            index += 1
+            continue
+        if token == "--browser":
+            translated.append("--playwright-login")
+            if index + 1 < len(tokens):
+                translated.append(str(tokens[index + 1]))
+                index += 2
+            else:
+                index += 1
+            continue
+        translated.append(token)
+        index += 1
+    return translated
+
+
+def _translate_session_query_tokens(tokens: list[str]) -> list[str]:
+    """Translate --session <query...> to sticky-session + query."""
+    if "--session" not in tokens:
+        return tokens
+    session_index = tokens.index("--session")
+    query_tokens = [str(t) for t in tokens[session_index + 1 :]]
+    if not query_tokens:
+        raise ValueError("Usage: --session <query...>")
+    query_text = " ".join(query_tokens).strip()
+    session_name = generate_session_name(query_text) or UNNAMED_SESSION_SENTINEL
+    return [
+        *tokens[:session_index],
+        "--sticky-session",
+        session_name,
+        "--",
+        *query_tokens,
+    ]
+
+
+def _translate_cli_tokens(tokens: list[str]) -> list[str]:
+    """Translate new command surface into parser-compatible tokens."""
+    translated = list(tokens)
+    translated = _translate_config_tokens(translated)
+    translated = _translate_grouped_command_tokens(translated)
+    translated = _translate_process_tokens(translated)
+    translated = _translate_tools_tokens(translated)
+    translated = _translate_session_query_tokens(translated)
+    return translated
+
+
+def _flag_present(tokens: list[str], *flag_names: str) -> bool:
+    """Check whether any of the provided flags are present."""
+    available = set(flag_names)
+    return any(str(token) in available for token in tokens)
 
 
 def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
     """Parse command-line arguments."""
+    raw_tokens = list(sys.argv[1:] if argv is None else argv)
+    _consume_grouped_help(raw_tokens)
+    try:
+        legacy_config_flags = {
+            "--add-model": "--config model add",
+            "--edit-model": "--config model edit [alias]",
+            "--edit-daemon": "--config daemon edit",
+        }
+        for legacy_flag, replacement in legacy_config_flags.items():
+            if legacy_flag in raw_tokens:
+                raise ValueError(
+                    f"{legacy_flag} is removed. Use `{replacement}` instead."
+                )
+        normalized_tokens = _translate_cli_tokens(raw_tokens)
+    except ValueError as exc:
+        parser = argparse.ArgumentParser(prog="asky")
+        parser.error(str(exc))
+        raise AssertionError("unreachable")
+
     from asky.cli.completion import (
         complete_answer_ids,
         complete_history_ids,
@@ -86,8 +592,14 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
     )
 
     parser = argparse.ArgumentParser(
+        prog="asky",
         description="Tool-calling CLI with model selection.",
         formatter_class=argparse.RawTextHelpFormatter,
+    )
+    parser.add_argument(
+        "--help-all",
+        action="help",
+        help="Show full option reference including advanced/internal routing flags.",
     )
     
     # Note: persona subcommand is handled separately in main() before parse_args()
@@ -226,9 +738,28 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
     )
 
     parser.add_argument(
+        "--config",
+        nargs=2,
+        metavar=("DOMAIN", "ACTION"),
+        help="Configuration entrypoint. Examples: --config model add, --config model edit, --config daemon edit.",
+    )
+    parser.add_argument(
+        "--session",
+        nargs=argparse.REMAINDER,
+        metavar="QUERY",
+        help="Create a new session named from query text and run the query.",
+    )
+    parser.add_argument(
+        "--tools",
+        nargs="*",
+        metavar="MODE",
+        help="Tool controls: --tools (list), --tools off [a,b], --tools reset.",
+    )
+
+    parser.add_argument(
         "--add-model",
         action="store_true",
-        help="Interactively add a new model definition.",
+        help=argparse.SUPPRESS,
     )
 
     parser.add_argument(
@@ -237,7 +768,7 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
         nargs="?",
         const="",
         metavar="MODEL_ALIAS",
-        help="Interactively edit an existing model definition.",
+        help=argparse.SUPPRESS,
     )
 
     resume_session_action = parser.add_argument(
@@ -299,13 +830,22 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
         "-L",
         "--lean",
         action="store_true",
-        help="Disable pre-LLM source shortlisting for this run (lean mode).",
+        help=(
+            "Lean mode: disable all tool calls, skip shortlist/memory recall "
+            "preload, and skip memory extraction/context compaction side effects."
+        ),
     )
     parser.add_argument(
         "--shortlist",
-        choices=["auto", "on", "off"],
-        default="auto",
-        help="Override source shortlisting for this run: auto (default), on, or off.",
+        choices=["on", "off", "reset"],
+        default=None,
+        help=(
+            "Control source shortlisting. 'on'/'off' writes the preference to the "
+            "session so it persists for all future turns. 'reset' erases any stored "
+            "session preference (future turns fall back to config). "
+            "Omit to read the session-stored preference without modifying it, "
+            "falling back to config defaults if nothing is stored."
+        ),
     )
     parser.add_argument(
         "-off",
@@ -440,14 +980,30 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
         help="Print shell setup snippet for argcomplete and exit.",
     )
     parser.add_argument(
-        "--xmpp-daemon",
+        "--tools-reset",
+        action="store_true",
+        help=argparse.SUPPRESS,
+    )
+    parser.add_argument(
+        "--daemon",
         action="store_true",
         help="Run foreground XMPP daemon mode.",
     )
     parser.add_argument(
+        "--browser",
+        metavar="URL",
+        default=None,
+        help="Open browser session flow for manual interaction at URL.",
+    )
+    parser.add_argument(
+        "--xmpp-daemon",
+        action="store_true",
+        help=argparse.SUPPRESS,
+    )
+    parser.add_argument(
         "--edit-daemon",
         action="store_true",
-        help="Interactively edit XMPP daemon settings.",
+        help=argparse.SUPPRESS,
     )
     parser.add_argument(
         "--xmpp-menubar-child",
@@ -458,7 +1014,7 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
         "--playwright-login",
         metavar="URL",
         default=None,
-        help="Open browser to URL for manual login; saves session for future fetches.",
+        help=argparse.SUPPRESS,
     )
     parser.add_argument("query", nargs="*", help="The query string")
 
@@ -472,8 +1028,38 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
 
     enable_argcomplete(parser)
     
-    parsed_args = parser.parse_args(argv)
-    
+    parsed_args = parser.parse_args(normalized_tokens)
+    parsed_args._raw_tokens = raw_tokens
+    parsed_args._normalized_tokens = normalized_tokens
+    parsed_args._provided_model = _flag_present(raw_tokens, "-m", "--model")
+    parsed_args._provided_summarize = _flag_present(raw_tokens, "-s", "--summarize")
+    parsed_args._provided_turns = _flag_present(raw_tokens, "-t", "--turns")
+    parsed_args._provided_research = _flag_present(raw_tokens, "-r", "--research")
+    parsed_args._provided_shortlist = _flag_present(raw_tokens, "--shortlist")
+    parsed_args._provided_tools = _flag_present(
+        raw_tokens, "--tools", "-off", "-tool-off", "--tool-off"
+    )
+    parsed_args._provided_lean = _flag_present(raw_tokens, "-L", "--lean")
+    parsed_args._provided_system_prompt = _flag_present(
+        raw_tokens, "-sp", "--system-prompt"
+    )
+    parsed_args._provided_elephant_mode = _flag_present(
+        raw_tokens, "-em", "--elephant-mode"
+    )
+    parsed_args._provided_terminal_lines = _flag_present(
+        raw_tokens, "-tl", "--terminal-lines"
+    )
+    parsed_args._provided_session_query = _flag_present(raw_tokens, "--session")
+
+    if bool(getattr(parsed_args, "daemon", False)) and not bool(
+        getattr(parsed_args, "xmpp_daemon", False)
+    ):
+        parsed_args.xmpp_daemon = True
+    if isinstance(getattr(parsed_args, "browser", None), str) and not getattr(
+        parsed_args, "playwright_login", None
+    ):
+        parsed_args.playwright_login = parsed_args.browser
+
     parsed_args.verbose_level = int(getattr(parsed_args, "verbose_level", 0) or 0)
     parsed_args.verbose = parsed_args.verbose_level >= 1
     parsed_args.double_verbose = parsed_args.verbose_level >= 2
@@ -534,6 +1120,31 @@ def handle_print_answer_implicit(args) -> bool:
         )
         return True
     return False
+
+
+def _is_valid_history_selector(value: str) -> bool:
+    """Validate history selector syntax used by print-answer paths."""
+    normalized = str(value or "").strip()
+    if not normalized:
+        return False
+    token_pattern = r"(?:[sS]?\d+|~\d+|__hid_\d+|\d+-\d+)"
+    return re.fullmatch(rf"{token_pattern}(?:,{token_pattern})*", normalized) is not None
+
+
+def _recover_history_show_as_query(args: argparse.Namespace) -> bool:
+    """Recover grouped `history show ...` misuse as query when selector is invalid."""
+    raw_tokens = list(getattr(args, "_raw_tokens", []) or [])
+    if len(raw_tokens) < 3:
+        return False
+    if str(raw_tokens[0]).lower() != "history" or str(raw_tokens[1]).lower() != "show":
+        return False
+
+    selector = " ".join(str(t) for t in raw_tokens[2:]).strip()
+    if _is_valid_history_selector(selector):
+        return False
+    args.print_ids = None
+    args.query = [selector]
+    return True
 
 
 def ResearchCache(*args, **kwargs):
@@ -698,8 +1309,8 @@ def _resolve_research_corpus(
     return True, resolved_paths, None, "local_only", True
 
 
-def _run_playwright_login(url: str) -> None:
-    """Trigger manual login session for Playwright plugin."""
+def _run_browser_session(url: str) -> None:
+    """Open the browser plugin session flow for user-driven interaction."""
     from asky.plugins.runtime import get_or_create_plugin_runtime
 
     runtime = get_or_create_plugin_runtime()
@@ -723,6 +1334,215 @@ def _run_playwright_login(url: str) -> None:
 
     print("playwright_browser plugin is not enabled.", file=sys.stderr)
     sys.exit(1)
+
+
+def _parse_tool_off_values(raw_values: list[str]) -> list[str]:
+    """Normalize repeated/comma-separated tool names."""
+    parsed: list[str] = []
+    seen: set[str] = set()
+    for raw_value in raw_values:
+        for token in str(raw_value).split(","):
+            normalized = token.strip()
+            if not normalized or normalized in seen:
+                continue
+            seen.add(normalized)
+            parsed.append(normalized)
+    return parsed
+
+
+def _apply_shell_session_defaults(args: argparse.Namespace) -> None:
+    """Apply persisted defaults from current shell-bound session when flags are omitted."""
+    shell_session_id = get_shell_session_id()
+    if not shell_session_id:
+        return
+    init_db()
+    repo = SQLiteHistoryRepository()
+    session = repo.get_session_by_id(int(shell_session_id))
+    if not session:
+        return
+
+    defaults = dict(getattr(session, "query_defaults", None) or {})
+
+    if not getattr(args, "_provided_model", False):
+        model_alias = str(defaults.get(QUERY_DEFAULT_MODEL_KEY, "")).strip()
+        if model_alias and model_alias in MODELS:
+            args.model = model_alias
+
+    if not getattr(args, "_provided_summarize", False):
+        if bool(defaults.get(QUERY_DEFAULT_SUMMARIZE_KEY, False)):
+            args.summarize = True
+
+    if not getattr(args, "_provided_research", False):
+        if bool(defaults.get(QUERY_DEFAULT_RESEARCH_KEY, False)):
+            args.research = True
+
+    if not getattr(args, "_provided_lean", False):
+        if bool(defaults.get(QUERY_DEFAULT_LEAN_KEY, False)):
+            args.lean = True
+
+    if not getattr(args, "_provided_system_prompt", False):
+        persisted_prompt = str(defaults.get(QUERY_DEFAULT_SYSTEM_PROMPT_KEY, "")).strip()
+        if persisted_prompt:
+            args.system_prompt = persisted_prompt
+
+    if not getattr(args, "_provided_tools", False):
+        persisted_tools = defaults.get(QUERY_DEFAULT_TOOL_OFF_KEY, [])
+        if isinstance(persisted_tools, list) and persisted_tools:
+            args.tool_off = [",".join(str(item) for item in persisted_tools)]
+    if not getattr(args, "_provided_terminal_lines", False):
+        persisted_terminal_lines = defaults.get(QUERY_DEFAULT_TERMINAL_LINES_KEY, None)
+        if isinstance(persisted_terminal_lines, int) and persisted_terminal_lines > 0:
+            args.terminal_lines = persisted_terminal_lines
+
+
+def _build_session_default_updates(args: argparse.Namespace) -> dict[str, Any]:
+    """Extract explicit query-behavior defaults from current invocation."""
+    updates: dict[str, Any] = {}
+    if getattr(args, "_provided_model", False):
+        updates[QUERY_DEFAULT_MODEL_KEY] = str(getattr(args, "model", "")).strip()
+    if getattr(args, "_provided_summarize", False) and bool(getattr(args, "summarize", False)):
+        updates[QUERY_DEFAULT_SUMMARIZE_KEY] = True
+    if getattr(args, "_provided_research", False) and bool(getattr(args, "research", False)):
+        updates[QUERY_DEFAULT_RESEARCH_KEY] = True
+    if getattr(args, "_provided_lean", False) and bool(getattr(args, "lean", False)):
+        updates[QUERY_DEFAULT_LEAN_KEY] = True
+    if getattr(args, "_provided_system_prompt", False):
+        updates[QUERY_DEFAULT_SYSTEM_PROMPT_KEY] = str(
+            getattr(args, "system_prompt", "") or ""
+        ).strip()
+    if getattr(args, "_provided_terminal_lines", False):
+        terminal_value = getattr(args, "terminal_lines", None)
+        if isinstance(terminal_value, int) and terminal_value > 0:
+            updates[QUERY_DEFAULT_TERMINAL_LINES_KEY] = terminal_value
+    if getattr(args, "_provided_tools", False):
+        if bool(getattr(args, "tools_reset", False)):
+            updates[QUERY_DEFAULT_TOOL_OFF_KEY] = []
+        else:
+            updates[QUERY_DEFAULT_TOOL_OFF_KEY] = _parse_tool_off_values(
+                list(getattr(args, "tool_off", []) or [])
+            )
+    return updates
+
+
+def _persist_session_defaults(
+    *,
+    session_id: int,
+    args: argparse.Namespace,
+    mark_pending_auto_name: bool = False,
+) -> None:
+    """Persist invocation-provided session default settings."""
+    repo = SQLiteHistoryRepository()
+    session = repo.get_session_by_id(int(session_id))
+    if not session:
+        return
+
+    merged_defaults = dict(getattr(session, "query_defaults", None) or {})
+    for key, value in _build_session_default_updates(args).items():
+        if key == QUERY_DEFAULT_TOOL_OFF_KEY and value == []:
+            merged_defaults.pop(key, None)
+            continue
+        if key == QUERY_DEFAULT_SYSTEM_PROMPT_KEY and not value:
+            merged_defaults.pop(key, None)
+            continue
+        merged_defaults[key] = value
+
+    if mark_pending_auto_name:
+        merged_defaults[QUERY_DEFAULT_PENDING_AUTO_NAME_KEY] = True
+
+    repo.update_session_query_defaults(int(session_id), merged_defaults)
+
+    if getattr(args, "_provided_turns", False) and getattr(args, "turns", None) is not None:
+        repo.update_session_max_turns(int(session_id), int(args.turns))
+    if getattr(args, "_provided_elephant_mode", False) and bool(
+        getattr(args, "elephant_mode", False)
+    ):
+        repo.set_session_memory_auto_extract(int(session_id), True)
+    if getattr(args, "_provided_shortlist", False):
+        shortlist_value = getattr(args, "shortlist", None)
+        if shortlist_value in {"on", "off"}:
+            repo.update_session_shortlist_override(int(session_id), shortlist_value)
+        elif shortlist_value == "reset":
+            repo.update_session_shortlist_override(int(session_id), None)
+
+
+def _needs_defaults_only_session(args: argparse.Namespace) -> bool:
+    """Return True when invocation should only persist defaults and exit."""
+    if bool(getattr(args, "query", [])):
+        return False
+    if bool(getattr(args, "playwright_login", None)):
+        return False
+    if bool(getattr(args, "xmpp_daemon", False)):
+        return False
+    if bool(getattr(args, "edit_daemon", False)):
+        return False
+    if bool(getattr(args, "completion_script", None)):
+        return False
+
+    return any(
+        [
+            bool(getattr(args, "_provided_model", False)),
+            bool(getattr(args, "_provided_summarize", False)),
+            bool(getattr(args, "_provided_turns", False)),
+            bool(getattr(args, "_provided_research", False)),
+            bool(getattr(args, "_provided_shortlist", False)),
+            bool(getattr(args, "_provided_tools", False)),
+            bool(getattr(args, "_provided_lean", False)),
+            bool(getattr(args, "_provided_system_prompt", False)),
+            bool(getattr(args, "_provided_elephant_mode", False)),
+            bool(getattr(args, "_provided_terminal_lines", False)),
+        ]
+    )
+
+
+def _ensure_defaults_session(args: argparse.Namespace) -> tuple[int, bool]:
+    """Resolve or create a target session for defaults-only invocations."""
+    init_db()
+    repo = SQLiteHistoryRepository()
+
+    if getattr(args, "sticky_session", None):
+        session_name = " ".join(str(t) for t in args.sticky_session).strip()
+        session_id = repo.create_session(
+            model=str(getattr(args, "model", DEFAULT_MODEL)),
+            name=session_name or UNNAMED_SESSION_SENTINEL,
+            memory_auto_extract=bool(getattr(args, "elephant_mode", False)),
+            max_turns=getattr(args, "turns", None),
+            research_mode=bool(getattr(args, "research", False)),
+            research_source_mode=getattr(args, "research_source_mode", None),
+            research_local_corpus_paths=getattr(args, "local_corpus", None),
+        )
+        set_shell_session_id(int(session_id))
+        return int(session_id), False
+
+    if getattr(args, "resume_session", None):
+        selector = " ".join(str(t) for t in args.resume_session).strip()
+        if selector:
+            parsed_session_id = parse_session_selector_token(selector)
+            if parsed_session_id is not None:
+                session = repo.get_session_by_id(int(parsed_session_id))
+                if session:
+                    set_shell_session_id(int(session.id))
+                    return int(session.id), False
+            session_by_name = repo.get_session_by_name(selector)
+            if session_by_name:
+                set_shell_session_id(int(session_by_name.id))
+                return int(session_by_name.id), False
+
+    shell_session_id = get_shell_session_id()
+    if shell_session_id and repo.get_session_by_id(int(shell_session_id)):
+        return int(shell_session_id), False
+
+    timestamped_name = f"{UNNAMED_SESSION_SENTINEL}_{int(time.time())}"
+    session_id = repo.create_session(
+        model=str(getattr(args, "model", DEFAULT_MODEL)),
+        name=timestamped_name,
+        memory_auto_extract=bool(getattr(args, "elephant_mode", False)),
+        max_turns=getattr(args, "turns", None),
+        research_mode=bool(getattr(args, "research", False)),
+        research_source_mode=getattr(args, "research_source_mode", None),
+        research_local_corpus_paths=getattr(args, "local_corpus", None),
+    )
+    set_shell_session_id(int(session_id))
+    return int(session_id), True
 
 
 def main() -> None:
@@ -819,6 +1639,8 @@ def main() -> None:
                 print("Error: Preset expansion produced an empty command.")
                 return
             args = parse_args(expanded_tokens)
+
+    _apply_shell_session_defaults(args)
 
     manual_corpus_query = _manual_corpus_query_arg(args)
     manual_section_query = _manual_section_query_arg(args)
@@ -1187,14 +2009,15 @@ def main() -> None:
         )
         return
     if args.print_ids:
-        history.print_answers_command(
-            args.print_ids,
-            args.summarize,
-            open_browser=args.open,
-            mail_recipients=args.mail_recipients,
-            subject=args.subject,
-        )
-        return
+        if not _recover_history_show_as_query(args):
+            history.print_answers_command(
+                args.print_ids,
+                args.summarize,
+                open_browser=args.open,
+                mail_recipients=args.mail_recipients,
+                subject=args.subject,
+            )
+            return
     if handle_print_answer_implicit(args):
         return
     if args.session_history is not None:
@@ -1255,6 +2078,16 @@ def main() -> None:
                 # Set terminal lines to default since flag was present
                 args.terminal_lines = TERMINAL_CONTEXT_LINES
 
+    if _needs_defaults_only_session(args):
+        session_id, created_unnamed = _ensure_defaults_session(args)
+        _persist_session_defaults(
+            session_id=session_id,
+            args=args,
+            mark_pending_auto_name=created_unnamed,
+        )
+        print(f"Session {session_id} updated with query defaults.")
+        return
+
     # From here on, we need a query
     if not args.query and not any(
         [
@@ -1313,7 +2146,7 @@ def main() -> None:
     plugin_runtime = get_or_create_plugin_runtime()
 
     if getattr(args, "playwright_login", None) and isinstance(args.playwright_login, str):
-        _run_playwright_login(args.playwright_login)
+        _run_browser_session(args.playwright_login)
         return
 
     chat.run_chat(args, query_text, plugin_runtime=plugin_runtime)

@@ -114,6 +114,7 @@ def _apply_session_runtime_flags(
     resolution: SessionResolution,
     elephant_mode: bool,
     max_turns: Optional[int],
+    shortlist_override: Optional[str] = None,
 ) -> None:
     session = session_manager.current_session
     if not session:
@@ -130,6 +131,14 @@ def _apply_session_runtime_flags(
         resolution.max_turns = max_turns
     else:
         resolution.max_turns = session.max_turns
+
+    if shortlist_override in ("on", "off"):
+        session_manager.repo.update_session_shortlist_override(int(session.id), shortlist_override)
+        session.shortlist_override = shortlist_override
+    elif shortlist_override == "reset":
+        session_manager.repo.update_session_shortlist_override(int(session.id), None)
+        session.shortlist_override = None
+    resolution.shortlist_override = getattr(session, "shortlist_override", None)
 
 
 def resolve_session_for_turn(
@@ -148,6 +157,7 @@ def resolve_session_for_turn(
     requested_local_corpus_paths: Optional[List[str]] = None,
     elephant_mode: bool = False,
     max_turns: Optional[int] = None,
+    shortlist_override: Optional[str] = None,
     set_shell_session_id_fn: Optional[Callable[[int], None]] = None,
     clear_shell_session_fn: Optional[Callable[[], None]] = None,
     session_manager_cls: Type[SessionManager] = SessionManager,
@@ -291,6 +301,7 @@ def resolve_session_for_turn(
             resolution=resolution,
             elephant_mode=elephant_mode,
             max_turns=max_turns,
+            shortlist_override=shortlist_override,
         )
     else:
         resolution.memory_auto_extract = False

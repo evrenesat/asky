@@ -19,8 +19,8 @@ asky embraces this philosophy. It does not take over your screen. It feels like 
 - **Deep Research Mode**: A specialized mode for an iterative, RAG-backed investigation across web sources and local data.
 - **Tool-Calling Integration**: Models autonomously search the web, fetch URLs, and use the current date/time to provide accurate answers.
 - **Plugin Runtime (v1)**: Optional local plugin roster (`~/.config/asky/plugins.toml`) with deterministic hooks and failure-isolated activation.
-- **XMPP Remote Daemon (Optional)**: Run asky as an XMPP client daemon (`asky --xmpp-daemon`) so authorized contacts can use asky from mobile/desktop XMPP apps.
-- **macOS Menubar Daemon (Optional)**: On macOS with `rumps` installed, `asky --xmpp-daemon` launches a menubar app and runs daemon lifecycle controls from the status bar.
+- **XMPP Remote Daemon (Optional)**: Run asky as an XMPP client daemon (`asky --daemon`) so authorized contacts can use asky from mobile/desktop XMPP apps.
+- **macOS Menubar Daemon (Optional)**: On macOS with `rumps` installed, `asky --daemon` launches a menubar app and runs daemon lifecycle controls from the status bar.
 - **Voice Transcription & Voice Commands (Optional)**: In XMPP daemon mode, voice attachments can be transcribed (`mlx-whisper`) and routed as transcript-driven commands/queries.
 - **Custom Tools**: Expose any CLI command as a tool for the LLM.
 - **User Memory (Elephant Mode)**: Cross-session persistent memory that allows the LLM to learn facts and preferences about you across different conversations.
@@ -30,7 +30,7 @@ asky embraces this philosophy. It does not take over your screen. It feels like 
 
 ## What XMPP Daemon Mode Means
 
-When you run `asky --xmpp-daemon`, asky logs into an XMPP account and waits for direct chat messages.
+When you run `asky --daemon`, asky logs into an XMPP account and waits for direct chat messages.
 
 - It behaves as an XMPP **client daemon** (not a full XMPP server).
 - It only processes messages from configured allowlisted JIDs.
@@ -111,10 +111,19 @@ asky -ss "Project X" "Let's brainstorm architectures"
 asky -m gf "Explain quantum entanglement"
 
 # Run XMPP daemon mode (menubar on macOS with rumps, foreground fallback otherwise)
-asky --xmpp-daemon
+asky --daemon
 
 # Edit daemon settings interactively (all platforms)
-asky --edit-daemon
+asky --config daemon edit
+
+# Manage models from one config entrypoint
+asky --config model add
+asky --config model edit gf
+
+# Grouped operational commands
+asky history list 20
+asky session list
+asky memory list
 ```
 
 ```console

@@ -65,7 +65,7 @@ class TestStartupCleanup:
                 args.list_memories = False
                 args.delete_memory = None
                 args.clear_memories = False
-                args.shortlist = "auto"
+                args.shortlist = None
                 args.turns = None
                 args.elephant_mode = False
 

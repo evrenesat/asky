@@ -81,11 +81,13 @@ packages = ["src/asky"]
 [dependency-groups]
 dev = [
     "pytest>=9.0.2",
+    "pytest-xdist>=3.8.0",
     "hypothesis>=6.0.0",
 ]
 
 [tool.pytest.ini_options]
-norecursedirs = ["data", "dist", "temp", "plan", "evals/research_pipeline/matrices/temp"]
+addopts = "-n auto"
+norecursedirs = [".hypothesis", "data", "dist", "temp", "plan", "evals/research_pipeline/matrices/temp"]
 filterwarnings = [
     "ignore:websockets.legacy is deprecated:DeprecationWarning",
 ]

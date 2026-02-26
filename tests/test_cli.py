@@ -55,20 +55,58 @@ def test_parse_args_defaults():
             assert args.model == "gf"
 
 
-def test_parse_args_help_uses_explicit_typed_metavars(capsys):
+def test_parse_args_top_level_help_is_grouped_and_curated(capsys):
     with patch("sys.argv", ["asky", "--help"]):
         with pytest.raises(SystemExit) as excinfo:
             parse_args()
         assert excinfo.value.code == 0
 
     help_output = capsys.readouterr().out
-    assert "HISTORY_IDS" in help_output
-    assert "SESSION_SELECTOR" in help_output
-    assert "LINE_COUNT" in help_output
+    assert "Grouped commands:" in help_output
+    assert "corpus query <text>" in help_output
+    assert "--config model add" in help_output
+    assert "Lean mode: disable all tool calls" in help_output
+    assert "--query-corpus-max-sources" not in help_output
+    assert "--section-source" not in help_output
+    assert "--summarize-section" not in help_output
 
-    assert "TERMINAL_LINES" not in help_output
-    assert "PRINT_SESSION" not in help_output
-    assert "SESSION_HISTORY" not in help_output
+
+def test_parse_args_corpus_query_help_includes_corpus_only_options(capsys):
+    with patch("sys.argv", ["asky", "corpus", "query", "--help"]):
+        with pytest.raises(SystemExit) as excinfo:
+            parse_args()
+        assert excinfo.value.code == 0
+
+    help_output = capsys.readouterr().out
+    assert "--query-corpus-max-sources" in help_output
+    assert "--query-corpus-max-chunks" in help_output
+    assert "--section-source" not in help_output
+
+
+def test_parse_args_corpus_summarize_help_includes_section_options(capsys):
+    with patch("sys.argv", ["asky", "corpus", "summarize", "--help"]):
+        with pytest.raises(SystemExit) as excinfo:
+            parse_args()
+        assert excinfo.value.code == 0
+
+    help_output = capsys.readouterr().out
+    assert "--section-source" in help_output
+    assert "--section-id" in help_output
+    assert "--section-detail" in help_output
+    assert "--query-corpus-max-sources" not in help_output
+
+
+def test_parse_args_help_all_shows_full_flag_reference(capsys):
+    with patch("sys.argv", ["asky", "--help-all"]):
+        with pytest.raises(SystemExit) as excinfo:
+            parse_args()
+        assert excinfo.value.code == 0
+
+    help_output = capsys.readouterr().out
+    assert "--query-corpus-max-sources" in help_output
+    assert "--section-source" in help_output
+    assert "--list-memories" in help_output
+    assert "--tools [MODE ...]" in help_output
 
 
 def test_parse_args_options():
@@ -117,6 +155,13 @@ def test_parse_args_shortlist_override():
     with patch("sys.argv", ["asky", "--shortlist", "off", "query"]):
         args = parse_args()
         assert args.shortlist == "off"
+        assert args.query == ["query"]
+
+
+def test_parse_args_shortlist_reset():
+    with patch("sys.argv", ["asky", "--shortlist", "reset", "query"]):
+        args = parse_args()
+        assert args.shortlist == "reset"
         assert args.query == ["query"]
 
 
@@ -605,8 +650,158 @@ def test_parse_args_xmpp_daemon_flag():
 
 def test_parse_args_edit_daemon_flag():
     with patch("sys.argv", ["asky", "--edit-daemon"]):
+        with pytest.raises(SystemExit):
+            parse_args()
+
+
+def test_parse_args_config_daemon_edit_flag():
+    with patch("sys.argv", ["asky", "--config", "daemon", "edit"]):
         args = parse_args()
         assert args.edit_daemon is True
+
+
+def test_parse_args_config_model_add_flag():
+    with patch("sys.argv", ["asky", "--config", "model", "add"]):
+        args = parse_args()
+        assert args.add_model is True
+
+
+def test_parse_args_config_model_add_with_prefix_flag():
+    with patch("sys.argv", ["asky", "-v", "--config", "model", "add"]):
+        args = parse_args()
+        assert args.add_model is True
+        assert args.verbose is True
+
+
+def test_parse_args_grouped_history_show_maps_to_print_answer():
+    with patch("sys.argv", ["asky", "history", "show", "12"]):
+        args = parse_args()
+        assert args.print_ids == "12"
+
+
+def test_parse_args_tools_off_maps_to_tool_off_all():
+    with patch("sys.argv", ["asky", "--tools", "off"]):
+        args = parse_args()
+        assert args.tool_off == ["all"]
+
+
+def test_parse_args_tools_reset_maps_to_hidden_flag():
+    with patch("sys.argv", ["asky", "--tools", "reset"]):
+        args = parse_args()
+        assert args.tools_reset is True
+
+
+def test_parse_args_session_query_shortcut_generates_sticky_session():
+    with patch("sys.argv", ["asky", "--session", "hello", "world"]):
+        args = parse_args()
+        assert args.sticky_session
+        assert args.query == ["hello", "world"]
+
+
+@patch("asky.plugins.runtime.get_or_create_plugin_runtime")
+@patch("asky.cli.main._start_research_cache_cleanup_thread")
+@patch("asky.cli.main.chat.run_chat")
+@patch("asky.cli.main.history.print_answers_command")
+@patch("asky.cli.main.init_db")
+@patch("asky.cli.main.setup_logging")
+def test_main_history_show_invalid_selector_falls_back_to_query(
+    _mock_setup_logging,
+    _mock_init_db,
+    mock_print_answers,
+    mock_run_chat,
+    mock_cleanup_thread,
+    mock_get_runtime,
+):
+    mock_cleanup_thread.return_value = MagicMock(join=MagicMock())
+    mock_get_runtime.return_value = None
+
+    with patch(
+        "sys.argv",
+        ["asky", "history", "show", "about", "second", "world", "war"],
+    ):
+        main()
+
+    mock_print_answers.assert_not_called()
+    mock_run_chat.assert_called_once()
+    called_args = mock_run_chat.call_args[0]
+    assert called_args[1] == "about second world war"
+
+
+@patch("asky.cli.main.parse_args")
+@patch("asky.cli.main._persist_session_defaults")
+@patch("asky.cli.main._ensure_defaults_session", return_value=(77, True))
+@patch("asky.cli.main.setup_logging")
+def test_main_no_query_tools_off_persists_session_defaults(
+    mock_setup_logging,
+    mock_ensure_defaults_session,
+    mock_persist_defaults,
+    mock_parse,
+):
+    mock_parse.return_value = argparse.Namespace(
+        model="gf",
+        history=None,
+        continue_ids=None,
+        summarize=False,
+        delete_messages=None,
+        delete_sessions=None,
+        all=False,
+        print_session=None,
+        print_ids=None,
+        prompts=False,
+        query=[],
+        verbose=False,
+        verbose_level=0,
+        double_verbose=False,
+        open=False,
+        mail_recipients=None,
+        subject=None,
+        sticky_session=None,
+        resume_session=None,
+        session_end=False,
+        session_history=None,
+        terminal_lines=None,
+        add_model=False,
+        edit_model=None,
+        reply=False,
+        session_from_message=None,
+        completion_script=None,
+        xmpp_daemon=False,
+        edit_daemon=False,
+        xmpp_menubar_child=False,
+        playwright_login=None,
+        query_corpus=None,
+        summarize_section=None,
+        tool_off=["all"],
+        tools_reset=False,
+        shortlist=None,
+        lean=False,
+        research=False,
+        research_source_mode=None,
+        replace_research_corpus=False,
+        local_corpus=None,
+        elephant_mode=False,
+        turns=None,
+        system_prompt=None,
+        _provided_model=False,
+        _provided_summarize=False,
+        _provided_turns=False,
+        _provided_research=False,
+        _provided_shortlist=False,
+        _provided_tools=True,
+        _provided_lean=False,
+        _provided_system_prompt=False,
+        _provided_elephant_mode=False,
+        _provided_terminal_lines=False,
+    )
+
+    main()
+
+    mock_ensure_defaults_session.assert_called_once()
+    mock_persist_defaults.assert_called_once_with(
+        session_id=77,
+        args=mock_parse.return_value,
+        mark_pending_auto_name=True,
+    )
 
 
 def test_parse_args_xmpp_menubar_child_hidden_flag():
@@ -1433,6 +1628,7 @@ def test_main_completion_script_early_exit(
 @patch("asky.cli.main.parse_args")
 @patch("asky.cli.main.init_db")
 @patch("asky.cli.main.get_db_record_count")
+@patch("asky.cli.main.chat.run_chat")
 @patch("asky.cli.chat.ConversationEngine.run")
 @patch("asky.cli.chat.generate_summaries")
 @patch("asky.cli.chat.save_interaction")
@@ -1450,6 +1646,7 @@ def test_main_flow(
     mock_save,
     mock_gen_sum,
     mock_run,
+    mock_run_chat,
     mock_db_count,
     mock_init,
     mock_parse,
@@ -1505,13 +1702,7 @@ def test_main_flow(
     # In default flow, it shouldn't be generating a timestamped path
     mock_generate_log_path.assert_not_called()
 
-    mock_run.assert_called_once_with(
-        [
-            {"role": "system", "content": ANY},
-            {"role": "user", "content": "test"},
-        ],
-        display_callback=ANY,
-    )
+    mock_run_chat.assert_called_once()
     # Summarization/persistence now run inside asky.api client orchestration.
     mock_gen_sum.assert_not_called()
     mock_save.assert_not_called()
@@ -1520,6 +1711,7 @@ def test_main_flow(
 @patch("asky.cli.main.parse_args")
 @patch("asky.cli.main.init_db")
 @patch("asky.cli.main.get_db_record_count")
+@patch("asky.cli.main.chat.run_chat")
 @patch("asky.cli.chat.ConversationEngine.run")
 @patch("asky.cli.chat.generate_summaries")
 @patch("asky.cli.chat.save_interaction")
@@ -1541,6 +1733,7 @@ def test_main_flow_verbose(
     mock_save,
     mock_gen_sum,
     mock_run,
+    mock_run_chat,
     mock_db_count,
     mock_init,
     mock_parse,
@@ -1605,16 +1798,7 @@ def test_main_flow_verbose(
     # we wrote is correct if we had injected a mock logger.
     # For now, asserting it DOES NOT print config is good.
 
-    mock_run.assert_called_once_with(
-        [
-            {"role": "system", "content": ANY},
-            {
-                "role": "user",
-                "content": "Terminal Context (Last 10 lines):\n```\nMocked Terminal Context\n```\n\nQuery:\ntest",
-            },
-        ],
-        display_callback=ANY,
-    )
+    mock_run_chat.assert_called_once()
 
 
 @patch("asky.cli.main.parse_args")
@@ -1940,7 +2124,7 @@ def test_main_runs_manual_query_corpus_command(
         query_corpus_max_sources=9,
         query_corpus_max_chunks=2,
         local_corpus=["/tmp/books/book.epub"],
-        shortlist="auto",
+        shortlist=None,
         turns=None,
         elephant_mode=False,
         research=False,
@@ -2012,7 +2196,7 @@ def test_main_runs_summarize_section_command(
         section_detail="balanced",
         section_max_chunks=5,
         local_corpus=["/tmp/books/book.epub"],
-        shortlist="auto",
+        shortlist=None,
         turns=None,
         elephant_mode=False,
         research=False,

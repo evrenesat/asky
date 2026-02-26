@@ -1,5 +1,68 @@
 # DEVLOG
 
+## 2026-02-26 - Unified Config Entrypoint + Grouped Command Surface
+
+- **CLI Surface Redesign**:
+  - Added a single persistent-config mutation entrypoint:
+    - `asky --config model add`
+    - `asky --config model edit [alias]`
+    - `asky --config daemon edit`
+  - Added grouped operational command routing:
+    - `history list|show|delete`
+    - `session list|show|create|use|end|delete|clean-research|from-message`
+    - `memory list|delete|clear`
+    - `corpus query|summarize`
+    - `prompts list`
+  - Added process aliases:
+    - `asky --daemon` (daemon runtime)
+    - `asky --browser <url>` (browser login/session flow)
+  - Reworked CLI help surface:
+    - Top-level `asky --help` now shows a curated grouped command interface (not internal legacy flags).
+    - Top-level help now includes concise inline meanings for grouped commands and key query flags (for direct discoverability without `--help-all`).
+    - Corpus-only options are documented under `asky corpus query --help` and `asky corpus summarize --help`.
+    - Added `asky --help-all` for argparse-generated full flag reference (terminal `find`-friendly).
+    - Corrected `--lean` help semantics across CLI/docs/daemon command help:
+      lean disables all tool calls, skips shortlist + memory-recall preload,
+      and skips memory-extraction/context-compaction side effects.
+  - Legacy config flags (`--add-model`, `--edit-model`, `--edit-daemon`) now fail fast with migration guidance.
+
+- **Session-Bound Query Defaults**:
+  - Added `sessions.query_defaults` JSON persistence for query-behavior flags (model/tools/system prompt/terminal lines/research/lean/summarize).
+  - Query-behavior flags used without a query now auto-bind/create a session, persist defaults, print session update confirmation, and exit.
+  - Added deferred auto-rename for unnamed auto-created sessions (renamed from first real query).
+  - Added `update_session_query_defaults` and `update_session_name` repository methods and SQLite implementations.
+
+- **Command/Query Ambiguity Handling**:
+  - `asky history show <text>` now falls back to query mode when `<text>` is not a valid ID selector, so free-text usage does not require quotes in that path.
+
+- **Daemon/XMPP Policy Sync**:
+  - Remote command policy now blocks `--config` mutations.
+  - Help text updated for shortlist values (`on|off|reset`) and command-surface references.
+
+- **Documentation + Agent Docs**:
+  - Updated README, configuration docs, daemon docs, plugin/library docs, and relevant `AGENTS.md` files for new command surface and aliases.
+  - Updated startup performance test docs/expectations to new `--config model edit` entrypoint.
+
+- **Validation**:
+  - Full suite passed: `1115 passed` (`uv run pytest`).
+
+## 2026-02-26 - Session-Bound Shortlist + Global Config
+
+- **Feature: Session-bound `--shortlist`**: `--shortlist on/off` now saves the preference to the session DB and persists across all subsequent turns. `--shortlist reset` clears the stored preference. `--shortlist auto` (default) applies the session-stored value if any, then falls back through the precedence chain.
+  - Precedence: lean → request on/off → session-stored → model_override → general.shortlist_enabled → mode-specific
+  - DB migration: adds `shortlist_override TEXT` column to `sessions` table.
+  - New abstract method `update_session_shortlist_override` in `HistoryRepository`; SQLite implementation added.
+  - `Session` dataclass: new `shortlist_override: Optional[str] = None` field.
+  - `SessionResolution`: new `shortlist_override: Optional[str] = None` field.
+  - `_apply_session_runtime_flags()` in `session.py`: handles on/off/reset writes and populates `resolution.shortlist_override`.
+  - `resolve_session_for_turn()`: new `shortlist_override` parameter threaded through.
+  - `client.py`: computes `effective_shortlist_override` (request value takes precedence over session-stored), uses it for preload.
+  - CLI `--shortlist`: choices extended to `["auto", "on", "off", "reset"]` with updated help text.
+
+- **Feature: Global `shortlist_enabled` config**: New `general.shortlist_enabled` key in `general.toml` (commented out by default). When set, it overrides mode-specific research/standard shortlist config for all queries. Exposed as `GENERAL_SHORTLIST_ENABLED` in `config/__init__.py`; checked in `shortlist_enabled_for_request()` with reason `"global_general"`.
+
+- **Tests**: Added `test_session_shortlist_override_roundtrip` (storage), `test_resolve_session_loads_stored_shortlist_override`, `test_resolve_session_saves_shortlist_on_explicit`, `test_resolve_session_resets_shortlist_on_reset` (sessions), `test_shortlist_enabled_global_general_overrides_mode_specific`, `test_shortlist_enabled_global_general_false_overrides_mode_specific` (preload), `test_parse_args_shortlist_reset` (cli). All 1091 tests pass.
+
 ## 2026-02-26 - Fix "untitled" Archive Filenames
 
 - **Bug Fixes**:
@@ -3322,3 +3385,70 @@ For older logs, see [DEVLOG_ARCHIVE.md](DEVLOG_ARCHIVE.md).
 - **Gotchas / Follow-ups**:
   - This is a docs/planning deliverable only; runtime implementation has not started.
   - The new detailed file should be treated as the implementation authority during handoff execution.
+
+## 2026-02-26
+
+### Pytest Parallel Execution Default (`pytest-xdist`)
+
+**Summary**: Enabled parallel test execution by default and added the required pytest plugin dependency.
+
+- **What changed**:
+  - Added `pytest-xdist>=3.8.0` to the `dev` dependency group in `pyproject.toml`.
+  - Set pytest default options to run in parallel via:
+    - `[tool.pytest.ini_options] addopts = "-n auto"`
+  - Regenerated lockfile to include plugin runtime dependencies (`execnet`, `pytest-xdist`).
+  - Updated test docs in `tests/AGENTS.md` to note:
+    - default parallel behavior,
+    - explicit single-process override command (`uv run pytest -n 0`).
+
+- **Why**:
+  - Speeds up local and CI test feedback without requiring developers to remember plugin/flags manually.
+
+- **Verification**:
+  - Baseline (before change): `uv run pytest` → `1097 passed`.
+  - After change (parallel default): `uv run pytest` with `xdist-3.8.0`, `10 workers` → `1097 passed`.
+
+### Behavior-Based Test Naming + API Turn Test Harness Tightening
+
+**Summary**: Renamed incident-labeled test files/cases to behavior-focused names and tightened API turn test mocking to keep these tests isolated from non-target side effects.
+
+- **What changed**:
+  - Renamed test files:
+    - `tests/test_api_client_bugs.py` → `tests/test_api_turn_resolution.py`
+    - `tests/test_high_severity_fixes.py` → `tests/test_safety_and_resilience_guards.py`
+  - Renamed `test_hXX_*` cases in the safety suite to behavior-oriented names (regex resilience, path constraints, session semantics, queue concurrency, source-mode validation).
+  - Updated API turn tests to use typed `SessionResolution` instead of permissive `MagicMock` session objects.
+  - Corrected preload mocking to patch module-level `asky.api.client.run_preload_pipeline`.
+  - Updated API turn test docstrings to behavior-focused wording.
+  - Updated `tests/AGENTS.md` references to renamed files and added the safety suite coverage entry.
+
+- **Why**:
+  - Test naming now describes behavior under test rather than issue IDs or incident buckets.
+  - Typed and explicit mocks reduce accidental side effects and make intent clearer.
+
+- **Verification**:
+  - Targeted:
+    - `uv run pytest -n 0 tests/test_api_turn_resolution.py`
+    - `uv run pytest -n 0 tests/test_safety_and_resilience_guards.py`
+  - Full suite:
+    - `uv run pytest` → `1104 passed` (parallel default enabled).
+
+### API Turn Test Slowdown Root Cause Fix + Warning Cleanup
+
+**Summary**: Fixed a fixture-scoping bug that caused API-turn tests to execute real preload/embedding/network paths, and removed repeated Hypothesis collection warnings.
+
+- **What changed**:
+  - `tests/test_api_turn_resolution.py`:
+    - Replaced `pytest.MonkeyPatch.context()` fixture usage (which was undoing patches before test execution) with direct `monkeypatch` fixture injection.
+    - Kept `run_preload_pipeline`, `resolve_session_for_turn`, and related side effects mocked for the full test call.
+  - `pyproject.toml`:
+    - Added `.hypothesis` to `norecursedirs` to restore expected ignore behavior and suppress warning spam.
+
+- **Why**:
+  - The previous fixture returned from inside a monkeypatch context manager, which reverted mocks too early.
+  - That made tests inadvertently run real shortlist/embedding work, producing large and unstable durations.
+
+- **Verification**:
+  - Before fix: API turn tests reported multi-second call durations (up to ~23–34s for a single case).
+  - After fix: `uv run pytest -n 0 tests/test_api_turn_resolution.py --durations=10` → `4 passed in 0.10s`.
+  - Full suite: `uv run pytest` → `1104 passed in 9.92s` (no warnings).

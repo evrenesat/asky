@@ -7,49 +7,55 @@ from asky.api.types import (
     AskyTurnRequest,
     PreloadResolution,
     ContextResolution,
+    SessionResolution,
 )
 
 
 @pytest.fixture
-def mock_client():
+def mock_client(monkeypatch: pytest.MonkeyPatch):
     from asky.config import MODELS
 
-    with pytest.MonkeyPatch.context() as mp:
-        # Mock MODELS to prevent AskyClient.__init__ from failing
-        mp.setitem(MODELS, "test-model", {"context_size": 4096, "id": "test-model-id"})
-        config = AskyConfig(model_alias="test-model")
-        client = AskyClient(config)
+    # Mock MODELS to prevent AskyClient.__init__ from failing
+    monkeypatch.setitem(
+        MODELS, "test-model", {"context_size": 4096, "id": "test-model-id"}
+    )
+    config = AskyConfig(model_alias="test-model")
+    client = AskyClient(config)
 
-        # Mock external dependencies used in run_turn to avoid side effects/network
-        client.run_preload_pipeline = MagicMock(return_value=PreloadResolution())
-        mp.setattr(
-            "asky.api.client.resolve_session_for_turn",
-            MagicMock(
-                return_value=(
-                    None,
-                    MagicMock(
-                        notices=[], halt_reason=None, research_mode=False, max_turns=5
-                    ),
-                )
-            ),
-        )
-        mp.setattr(
-            "asky.api.client.load_context_from_history",
-            MagicMock(return_value=ContextResolution()),
-        )
-        mp.setattr("asky.api.client.save_interaction", MagicMock())
+    # Mock external dependencies used in run_turn to avoid side effects/network
+    monkeypatch.setattr(
+        "asky.api.client.run_preload_pipeline",
+        MagicMock(return_value=PreloadResolution()),
+    )
+    monkeypatch.setattr(
+        "asky.api.client.resolve_session_for_turn",
+        MagicMock(
+            return_value=(
+                None,
+                SessionResolution(
+                    notices=[],
+                    halt_reason=None,
+                    research_mode=False,
+                    max_turns=5,
+                    memory_auto_extract=False,
+                ),
+            )
+        ),
+    )
+    monkeypatch.setattr(
+        "asky.api.client.load_context_from_history",
+        MagicMock(return_value=ContextResolution()),
+    )
+    monkeypatch.setattr("asky.api.client.save_interaction", MagicMock())
 
-        # Always patch run_messages to avoid executing the actual conversation engine
-        client.run_messages = MagicMock(return_value="OK")
+    # Return empty output so post-run side effects (history/memory extraction) are skipped.
+    client.run_messages = MagicMock(return_value="")
 
-        return client
+    return client
 
 
 def test_memory_trigger_prefix_removal_case_insensitive(mock_client):
-    """
-    Regression test for C-01: Verifies that global memory triggers are correctly
-    identified and stripped from the query text regardless of case.
-    """
+    """Global memory trigger prefixes should be stripped case-insensitively."""
     with patch.object(AskyClient, "build_messages") as mock_build:
         mock_build.return_value = []
         with patch(
@@ -63,10 +69,7 @@ def test_memory_trigger_prefix_removal_case_insensitive(mock_client):
 
 
 def test_memory_trigger_prefix_removal_unicode_safe(mock_client):
-    """
-    Regression test for C-01: Verifies that trigger removal is robust against
-    Unicode characters that change length when casefolded (e.g., 'ẞ' -> 'ss').
-    """
+    """Trigger-prefix stripping should stay correct for casefold length changes."""
     with patch.object(AskyClient, "build_messages") as mock_build:
         mock_build.return_value = []
         # 'ẞ' (U+1E9E) casefolds to 'ss' (length 1 -> 2)
@@ -84,13 +87,14 @@ def test_memory_trigger_prefix_removal_unicode_safe(mock_client):
 
 
 def test_research_mode_resolution_boolean_robustness(mock_client):
-    """
-    Regression test for C-02: Verifies that research_mode is correctly enabled
-    when session resolution returns an explicit boolean True.
-    """
+    """Boolean session overrides should drive `research_mode` directly."""
     with patch("asky.api.client.resolve_session_for_turn") as mock_resolve:
-        mock_res = MagicMock(
-            notices=[], halt_reason=None, research_mode=True, max_turns=5
+        mock_res = SessionResolution(
+            notices=[],
+            halt_reason=None,
+            research_mode=True,
+            max_turns=5,
+            memory_auto_extract=False,
         )
         mock_resolve.return_value = (None, mock_res)
 
@@ -102,17 +106,19 @@ def test_research_mode_resolution_boolean_robustness(mock_client):
 
 
 def test_research_mode_resolution_invalid_type_fallback(mock_client):
-    """
-    Regression test for C-02: Verifies that if an invalid type (e.g., an integer 0/1
-    directly from an un-cast DB field) is encountered, the resolver falls back to
-    the safe configuration default instead of using the raw value.
-    """
+    """Non-boolean session values should fall back to the client configuration."""
     # Force config to False to test fallback logic
     mock_client.config = dataclasses.replace(mock_client.config, research_mode=False)
 
     with patch("asky.api.client.resolve_session_for_turn") as mock_resolve:
         # Simulate a leaky integer value (e.g., 1 from SQLite) that isn't True/False
-        mock_res = MagicMock(notices=[], halt_reason=None, research_mode=1, max_turns=5)
+        mock_res = SessionResolution(
+            notices=[],
+            halt_reason=None,
+            research_mode=1,
+            max_turns=5,
+            memory_auto_extract=False,
+        )
         mock_resolve.return_value = (None, mock_res)
 
         request = AskyTurnRequest(query_text="test")
