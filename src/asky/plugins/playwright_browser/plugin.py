@@ -10,7 +10,12 @@ import trafilatura
 from asky.plugins.base import AskyPlugin, PluginContext
 from asky.plugins.hook_types import FETCH_URL_OVERRIDE, FetchURLContext
 from asky.plugins.playwright_browser.browser import PlaywrightBrowserManager
-from asky.retrieval import MAX_TITLE_CHARS, _extract_and_normalize_links
+from asky.retrieval import (
+    MAX_TITLE_CHARS,
+    _extract_and_normalize_links,
+    _extract_main_content,
+    _derive_title,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -21,7 +26,10 @@ class PlaywrightBrowserPlugin(AskyPlugin):
     def activate(self, context: PluginContext) -> None:
         config = context.config or {}
 
-        self._intercept = config.get("intercept", ["get_url_content", "get_url_details"])
+        self._intercept = config.get(
+            "intercept",
+            ["get_url_content", "get_url_details", "research", "shortlist", "default"],
+        )
 
         self._browser_manager = PlaywrightBrowserManager(
             data_dir=context.data_dir,
@@ -31,9 +39,14 @@ class PlaywrightBrowserPlugin(AskyPlugin):
             same_site_max_delay_ms=config.get("same_site_max_delay_ms", 4000),
             page_timeout_ms=config.get("page_timeout_ms", 30000),
             network_idle_timeout_ms=config.get("network_idle_timeout_ms", 2000),
+            keep_browser_open=config.get("keep_browser_open", True),
         )
 
-        context.hook_registry.register(FETCH_URL_OVERRIDE, self._on_fetch_url_override)
+        context.hook_registry.register(
+            FETCH_URL_OVERRIDE,
+            self._on_fetch_url_override,
+            plugin_name=context.plugin_name,
+        )
         logger.debug("PlaywrightBrowserPlugin activated with intercept=%s", self._intercept)
 
     def deactivate(self) -> None:
@@ -41,7 +54,7 @@ class PlaywrightBrowserPlugin(AskyPlugin):
 
     def _on_fetch_url_override(self, ctx: FetchURLContext) -> None:
         tc = ctx.trace_context or {}
-        site = tc.get("tool_name") or tc.get("source", "")
+        site = tc.get("tool_name") or tc.get("source", "") or "default"
 
         if site not in self._intercept:
             return
@@ -50,26 +63,48 @@ class PlaywrightBrowserPlugin(AskyPlugin):
 
         try:
             html, final_url = self._browser_manager.fetch_page(ctx.url)
+        except ImportError as e:
+            if not getattr(self, "_has_warned_missing_dep", False):
+                try:
+                    from rich.console import Console
+                    console = Console()
+                    console.print()
+                    console.print("[bold yellow]Playwright Plugin:[/bold yellow] [red]Playwright is not installed.[/red]")
+                    console.print("To use browser-based retrieval, please run: [cyan]uv pip install 'asky-cli[playwright]'[/cyan]")
+                    console.print("Falling back to default retrieval pipeline.\n")
+                except ImportError:
+                    import sys
+                    print("\n[Playwright Plugin] Playwright is not installed.", file=sys.stderr)
+                    print("[Playwright Plugin] To use browser-based retrieval, please run: uv pip install 'asky-cli[playwright]'", file=sys.stderr)
+                    print("[Playwright Plugin] Falling back to default retrieval pipeline.\n", file=sys.stderr)
+                self._has_warned_missing_dep = True
+            logger.warning("Playwright fetch failed: %s. Falling back to default pipeline.", e)
+            return
         except Exception as e:
             logger.warning("Playwright fetch failed for %s: %s. Falling back to default pipeline.", ctx.url, e)
             return
 
-        content = trafilatura.extract(
-            html,
-            url=ctx.url,
+        extracted = _extract_main_content(
+            html=html,
+            source_url=final_url,
             output_format=ctx.output_format,
-            include_comments=False,
-            include_tables=False
         )
-        if content is None:
-            content = ""
 
-        metadata = trafilatura.extract_metadata(html)
-        title = ""
+        content = extracted.get("content", "")
+        title = extracted.get("title", "") or _derive_title(content, final_url)
+        warning = extracted.get("warning")
+        page_type = extracted.get("page_type", "article")
+        
+        # We preserve Trafilatura metadata extraction for the date if possible
         date = None
-        if metadata:
-            title = (metadata.title or "")[:MAX_TITLE_CHARS]
-            date = str(metadata.date) if metadata.date else None
+        try:
+            metadata = trafilatura.extract_metadata(html)
+            if metadata and metadata.date:
+                date = str(metadata.date)
+            if metadata and not title and metadata.title:
+                title = metadata.title[:MAX_TITLE_CHARS]
+        except Exception:
+            pass
 
         links: List[Dict[str, str]] = []
         if ctx.include_links:
@@ -84,9 +119,10 @@ class PlaywrightBrowserPlugin(AskyPlugin):
             "title": title,
             "date": date,
             "links": links,
-            "source": "playwright",
+            "source": f"playwright/{extracted.get('source', 'unknown')}",
             "output_format": ctx.output_format,
-            "page_type": "article",
+            "page_type": page_type,
+            "warning": warning,
         }
 
     def run_login_session(self, url: str) -> None:

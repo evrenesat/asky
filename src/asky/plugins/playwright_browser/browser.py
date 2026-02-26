@@ -43,6 +43,7 @@ class PlaywrightBrowserManager:
         same_site_max_delay_ms: int = 4000,
         page_timeout_ms: int = 30000,
         network_idle_timeout_ms: int = 2000,
+        keep_browser_open: bool = True,
     ) -> None:
         self._data_dir = data_dir
         self._browser_type = browser_type
@@ -51,6 +52,7 @@ class PlaywrightBrowserManager:
         self._same_site_max_delay_ms = same_site_max_delay_ms
         self._page_timeout_ms = page_timeout_ms
         self._network_idle_timeout_ms = network_idle_timeout_ms
+        self._keep_browser_open = keep_browser_open
 
         self._session_path = self._data_dir / "playwright_session.json"
         self._playwright = None
@@ -60,7 +62,7 @@ class PlaywrightBrowserManager:
         self._last_request_time: Dict[str, float] = {}
 
     def _ensure_started(self) -> None:
-        if self._browser is not None:
+        if self._context is not None:
             return
 
         if sync_playwright is None:
@@ -72,34 +74,62 @@ class PlaywrightBrowserManager:
         self._playwright = sync_playwright().start()
         browser_launcher = getattr(self._playwright, self._browser_type)
 
-        self._browser = browser_launcher.launch(
-            headless=False,
-            args=["--disable-blink-features=AutomationControlled"],
-        )
+        launch_args: Dict[str, Any] = {"headless": False}
+        if self._browser_type == "chromium":
+            launch_args["args"] = ["--disable-blink-features=AutomationControlled"]
 
-        context_kwargs: Dict[str, Any] = {}
-        if self._persist_session and self._session_path.exists():
-            try:
-                with open(self._session_path, "r", encoding="utf-8") as f:
-                    context_kwargs["storage_state"] = json.load(f)
-            except Exception as e:
-                logger.warning("Failed to load Playwright session: %s", e)
+        def _launch() -> None:
+            if self._persist_session:
+                user_data_dir = self._data_dir / f"playwright_profile_{self._browser_type}"
+                user_data_dir.mkdir(parents=True, exist_ok=True)
+                self._context = browser_launcher.launch_persistent_context(
+                    user_data_dir=str(user_data_dir), **launch_args
+                )
+            else:
+                self._browser = browser_launcher.launch(**launch_args)
+                self._context = self._browser.new_context()
 
-        self._context = self._browser.new_context(**context_kwargs)
+        try:
+            _launch()
+        except Exception as e:
+            error_msg = str(e)
+            if "Executable doesn't exist at" in error_msg or "playwright install" in error_msg:
+                import sys
+                import subprocess
 
-        self._context.add_init_script(
-            "Object.defineProperty(navigator, 'webdriver', {get: () => undefined})"
-        )
+                logger.info("Playwright browser %s missing. Attempting automatic installation...", self._browser_type)
+                try:
+                    from rich.console import Console
+                    console = Console()
+                    console.print(f"\n[bold yellow]Playwright Plugin:[/bold yellow] Installing [cyan]{self._browser_type}[/cyan] browser... this may take a minute.")
+                except ImportError:
+                    print(f"\n[Playwright Plugin] Installing {self._browser_type} browser... this may take a minute.", file=sys.stderr)
+                
+                try:
+                    subprocess.run(
+                        [sys.executable, "-m", "playwright", "install", self._browser_type],
+                        check=True
+                    )
+                    try:
+                        Console().print(f"[bold green]Playwright Plugin:[/bold green] Successfully installed [cyan]{self._browser_type}[/cyan].")
+                    except ImportError:
+                        print(f"[Playwright Plugin] Successfully installed {self._browser_type}.", file=sys.stderr)
+                    
+                    # Retry launch after installation
+                    _launch()
+                except subprocess.CalledProcessError as install_err:
+                    raise RuntimeError(f"Failed to automatically install Playwright browser: {install_err}") from e
+            else:
+                raise
+
+        if self._context is not None:
+            self._context.add_init_script(
+                "Object.defineProperty(navigator, 'webdriver', {get: () => undefined})"
+            )
 
     def _save_session(self) -> None:
-        if self._context and self._persist_session:
-            try:
-                self._data_dir.mkdir(parents=True, exist_ok=True)
-                state = self._context.storage_state()
-                with open(self._session_path, "w", encoding="utf-8") as f:
-                    json.dump(state, f)
-            except Exception as e:
-                logger.warning("Failed to save Playwright session: %s", e)
+        # State is now persisted automatically via launch_persistent_context's user_data_dir
+        pass
 
     def _apply_delay(self, url: str) -> None:
         netloc = urlparse(url).netloc
@@ -121,23 +151,24 @@ class PlaywrightBrowserManager:
 
         self._last_request_time[netloc] = time.perf_counter()
 
-    def _detect_challenge(self, page: Page, response_status: Optional[int]) -> bool:
+    def _detect_challenge(self, page: Page, response_status: Optional[int]) -> Optional[str]:
         if response_status in CHALLENGE_HTTP_STATUSES:
-            return True
+            return f"HTTP status {response_status}"
 
         for selector in CHALLENGE_SELECTORS:
             try:
                 if page.locator(selector).count() > 0:
-                    return True
+                    return f"Selector '{selector}' found"
             except Exception as e:
                 logger.debug("Playwright challenge selector check failed: %s", e)
                 continue
-        return False
+        return None
 
-    def _wait_for_challenge_resolution(self, page: Page) -> None:
+    def _wait_for_challenge_resolution(self, page: Page, initial_reason: str) -> None:
         logger.warning(
-            "Challenge detected on %s. Please solve it in the browser window.",
+            "Challenge detected on %s (Reason: %s). Please solve it in the browser window.",
             page.url,
+            initial_reason,
         )
 
         start_time = time.perf_counter()
@@ -157,36 +188,75 @@ class PlaywrightBrowserManager:
             if not self._context:
                 raise RuntimeError("Browser context not initialized")
 
-            page = self._context.new_page()
+            if self._keep_browser_open and self._context.pages:
+                page = self._context.pages[-1]
+            else:
+                page = self._context.new_page()
+
             try:
+                logger.debug("Playwright navigating to: %s", url)
+                # Use 'domcontentloaded' instead of 'networkidle' to avoid hanging on 
+                # infinite background requests (ads, tracking, video players)
                 response = page.goto(
-                    url, wait_until="networkidle", timeout=self._page_timeout_ms
+                    url, wait_until="domcontentloaded", timeout=self._page_timeout_ms
                 )
 
+                # Give SPAs and dynamic sites a moment to render their main content
+                page.wait_for_timeout(2000)
+
                 status = response.status if response else None
-                if self._detect_challenge(page, status):
-                    self._wait_for_challenge_resolution(page)
+                challenge_reason = self._detect_challenge(page, status)
+                
+                if challenge_reason:
+                    self._wait_for_challenge_resolution(page, challenge_reason)
                     try:
                         page.wait_for_load_state(
-                            "networkidle", timeout=self._network_idle_timeout_ms
+                            "domcontentloaded", timeout=self._page_timeout_ms
                         )
+                        page.wait_for_timeout(2000)
                     except (TimeoutError, Exception) as e:
                         logger.debug("Post-challenge load state wait failed/timed out: %s", e)
 
                 html = page.content()
                 final_url = page.url
+                
+                logger.debug(
+                    "Playwright fetched final_url=%s status=%s title='%s' content_length=%d", 
+                    final_url, 
+                    status, 
+                    page.title(), 
+                    len(html)
+                )
+                
                 self._save_session()
                 return html, final_url
+            except Exception as e:
+                logger.debug("Playwright fetch failed for %s. Error: %s", url, e)
+                raise
             finally:
-                page.close()
+                if not self._keep_browser_open:
+                    page.close()
+                    self._close_unlocked()
 
     def open_login_session(self, url: str) -> None:
         with self._lock:
             self._ensure_started()
             if not self._context:
                 return
+            
+            url = url.strip()
+            if url.startswith("https//"):
+                url = url.replace("https//", "https://", 1)
+            elif url.startswith("http//"):
+                url = url.replace("http//", "http://", 1)
+            elif not url.startswith("http://") and not url.startswith("https://"):
+                url = f"https://{url}"
 
-            page = self._context.new_page()
+            if self._keep_browser_open and self._context.pages:
+                page = self._context.pages[-1]
+            else:
+                page = self._context.new_page()
+
             try:
                 logger.info("Opening %s for manual login.", url)
                 logger.info("Please log in and then press ENTER in this terminal to save the session.")
@@ -194,18 +264,26 @@ class PlaywrightBrowserManager:
                 input()
                 self._save_session()
                 logger.info("Session saved.")
+            except Exception as e:
+                import sys
+                print(f"\n[Playwright Plugin] Failed to open login session for '{url}': {e}", file=sys.stderr)
             finally:
-                page.close()
+                if not self._keep_browser_open:
+                    page.close()
+                    self._close_unlocked()
 
     def close(self) -> None:
         with self._lock:
-            if self._context:
-                self._save_session()
-                self._context.close()
-            if self._browser:
-                self._browser.close()
-            if self._playwright:
-                self._playwright.stop()
-            self._browser = None
-            self._context = None
-            self._playwright = None
+            self._close_unlocked()
+
+    def _close_unlocked(self) -> None:
+        if self._context:
+            self._save_session()
+            self._context.close()
+        if self._browser:
+            self._browser.close()
+        if self._playwright:
+            self._playwright.stop()
+        self._browser = None
+        self._context = None
+        self._playwright = None

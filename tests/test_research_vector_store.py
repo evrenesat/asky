@@ -157,7 +157,11 @@ class TestVectorStore:
         conn.commit()
         conn.close()
 
-        store = VectorStore(db_path=db_path, embedding_client=mock_embedding_client)
+        store = VectorStore(
+            db_path=db_path,
+            embedding_client=mock_embedding_client,
+            chroma_persist_directory=str(tmp_path / "chroma"),
+        )
         return store
 
     def test_store_chunk_embeddings(self, vector_store, mock_embedding_client):
@@ -524,7 +528,11 @@ class TestVectorStoreFindingsMethods:
         conn.commit()
         conn.close()
 
-        store = VectorStore(db_path=db_path, embedding_client=mock_embedding_client)
+        store = VectorStore(
+            db_path=db_path,
+            embedding_client=mock_embedding_client,
+            chroma_persist_directory=str(tmp_path / "chroma"),
+        )
         return store
 
     def test_store_finding_embedding(self, vector_store_with_findings, mock_embedding_client):

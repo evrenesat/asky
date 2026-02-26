@@ -1268,6 +1268,7 @@ def main() -> None:
             args.session_end,
             getattr(args, "sticky_session", None),
             getattr(args, "resume_session", None),
+            getattr(args, "playwright_login", None),
         ]
     ):
         print("Error: Query argument is required.")

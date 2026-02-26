@@ -1,13 +1,39 @@
 # DEVLOG
 
+## 2026-02-26 - Playwright Plugin Enhancements: Better Waits & CAPTCHA Debugging
+
+- **Bug Fixes**:
+  - Allowed the `--playwright-login` CLI flag to execute without requiring a trailing query argument.
+  - Added graceful error handling and automatic `https://` prefixing for malformed URLs in `--playwright-login` to prevent unhandled tracebacks.
+  - Fixed an issue where Firefox and WebKit would attempt to navigate to `http://automationcontrolled/` due to being passed Chromium-specific `--disable-blink-features=AutomationControlled` launch arguments.
+  - Fixed "lxml parsing failed: Document is empty" errors when fetching with Playwright by delegating HTML extraction to `_extract_main_content`, which includes a robust HTML fallback parser when `trafilatura` chokes on complex or dynamic DOM structures.
+- **Features**:
+  - Added `keep_browser_open` configuration option (defaults to `true`). When true, Playwright reuses a single browser tab between fetch operations, preventing infinite tab accumulation while drastically speeding up sequential queries. When false, the browser process cleanly terminates after each fetch.
+  - Switched `PlaywrightBrowserManager` from `storage_state` JSON serialization to Playwright's native `launch_persistent_context` when `persist_session=True`. This fully persists browser profiles on disk, enabling users to install and persist ad-blockers and other extensions between runs across all supported browser engines.
+  - Changed `wait_until` strategy in `PlaywrightBrowserManager.fetch_page` from `networkidle` to `domcontentloaded` combined with a brief 2000ms delay. This prevents Playwright from hanging indefinitely on pages with persistent background connections (e.g., ads, tracking scripts) where the main content is already visible behind cookie banners.
+  - Improved `_detect_challenge` to return the specific reason (HTTP status or matched selector) rather than a simple boolean.
+  - Added robust debug logging to `fetch_page` to record the final URL, HTTP status, page title, and content length, making it much easier to diagnose CAPTCHA misfires and timeouts.
+
+## 2026-02-26 - Fix ChromaDB Dimension Mismatch from Test Pollution
+
+- **Bug**: ChromaDB collections `asky_content_chunks`, `asky_link_embeddings`, and `asky_research_findings` were locked to dim=3 because test fixtures used mock embeddings (dim=3) against the production Chroma persist directory (`~/.config/asky/chromadb`). The real embedding model produces dim=384, causing "Collection expecting embedding with dimension of 3, got 384" errors in production.
+- **Root cause**: Both `TestVectorStore` and `TestVectorStoreFindingsMethods` fixtures in `tests/test_research_vector_store.py` passed a `tmp_path`-based SQLite DB but defaulted `chroma_persist_directory` to the production path.
+- **Fix**: Added `chroma_persist_directory=str(tmp_path / "chroma")` to both test fixtures so each test run uses an ephemeral isolated Chroma directory.
+- **Production recovery**: Deleted the three dim-3 collections from `~/.config/asky/chromadb` so they will be recreated with the correct 384-dim schema on next use. `asky_user_memories` (dim=384, real data) was unaffected.
+- **Note**: `tests/test_source_shortlist.py::test_shortlist_default_fetch_emits_transport_error_metadata` was already failing before this session due to a `"source"` → `"tool_name"` rename in `source_shortlist.py` not yet reflected in the test.
+
 ## 2026-02-25 - Playwright Browser Plugin Implementation
 
+- **Bug Fixes**:
+  - Fixed `TypeError` in `PlaywrightBrowserPlugin.activate` by adding missing `plugin_name` keyword argument to `hook_registry.register`.
 - **Features**:
   - Implemented `playwright_browser` plugin for optional drop-in browser-based URL retrieval.
   - Added `FETCH_URL_OVERRIDE` hook to `asky.plugins.hook_types` allowing plugins to intercept `fetch_url_document`.
   - Added `--playwright-login <URL>` CLI command to manually save browser sessions.
   - Integrated CAPTCHA detection and manual solving support in the browser plugin.
   - Added same-site delay logic and anti-fingerprinting measures (AutomationControlled disable, navigator.webdriver override).
+  - Added automatic transparent installation of Playwright browser binaries (e.g., chromium) upon first use.
+  - Improved missing dependency warnings to print front-and-center to `sys.stderr` before falling back to the standard retrieval pipeline.
 - **Architecture**:
   - `retrieval.py`: Added hook invocation at the start of `fetch_url_document`.
   - `research/tools.py`: Added `trace_context` to `fetch_url_document` calls for plugin interception.

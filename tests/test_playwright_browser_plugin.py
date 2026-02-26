@@ -12,13 +12,14 @@ class MockContext:
     def __init__(self, data_dir, config):
         self.data_dir = data_dir
         self.config = config
+        self.plugin_name = "playwright_browser"
         self.hook_registry = MagicMock()
 
 
 @pytest.fixture
 def plugin_context(tmp_path):
     config = {
-        "intercept": ["get_url_content", "get_url_details"],
+        "intercept": ["get_url_content", "get_url_details", "research", "shortlist", "default"],
         "browser": "chromium",
         "persist_session": True,
     }
@@ -30,7 +31,9 @@ def test_plugin_activation(plugin_context):
     plugin.activate(plugin_context)
     
     plugin_context.hook_registry.register.assert_called_once_with(
-        FETCH_URL_OVERRIDE, plugin._on_fetch_url_override
+        FETCH_URL_OVERRIDE, 
+        plugin._on_fetch_url_override,
+        plugin_name=plugin_context.plugin_name
     )
 
 
@@ -52,7 +55,7 @@ def test_intercept_filtering_match(plugin_context):
         plugin._on_fetch_url_override(ctx)
         
         assert ctx.result is not None
-        assert ctx.result["source"] == "playwright"
+        assert "playwright" in ctx.result["source"]
         assert ctx.result["content"] == "Test"
 
 
@@ -114,7 +117,7 @@ def test_result_dict_shape(plugin_context):
         assert res["requested_url"] == "https://example.com"
         assert res["final_url"] == "https://example.com/final"
         assert res["title"] == "Test Title"
-        assert res["source"] == "playwright"
+        assert "playwright" in res["source"]
         assert len(res["links"]) == 1
         assert res["links"][0]["href"] == "https://example.com/link"
 
@@ -149,6 +152,27 @@ def test_same_site_delay_logic(mock_perf, mock_sleep, tmp_path):
     mock_sleep.reset_mock()
     manager._apply_delay("https://other.com")
     mock_sleep.assert_not_called()
+
+
+def test_intercept_filtering_default_fallback(plugin_context):
+    plugin = PlaywrightBrowserPlugin()
+    plugin.activate(plugin_context)
+    
+    ctx = FetchURLContext(
+        url="https://example.com",
+        output_format="markdown",
+        include_links=False,
+        max_links=None,
+        trace_callback=None,
+        trace_context=None, # Missing tool_name and source
+    )
+    
+    with patch.object(plugin._browser_manager, "fetch_page") as mock_fetch:
+        mock_fetch.return_value = ("<html><body>Default</body></html>", "https://example.com")
+        plugin._on_fetch_url_override(ctx)
+        
+        assert ctx.result is not None
+        assert ctx.result["content"] == "Default"
 
 
 def test_try_fetch_url_plugin_override_no_runtime():
