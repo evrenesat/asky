@@ -10,6 +10,7 @@ from asky.daemon import startup
 from asky.daemon.errors import DaemonUserError
 from asky.daemon.service import DaemonService
 from asky.daemon.tray_protocol import TrayPluginEntry, TrayStatus
+from asky.logger import setup_xmpp_logging
 
 logger = logging.getLogger(__name__)
 
@@ -107,6 +108,10 @@ class TrayController:
             self._on_state_change()
             return
         self._last_error = ""
+        try:
+            setup_xmpp_logging()
+        except Exception:
+            logger.exception("failed to initialize xmpp log handler")
         try:
             self._service = DaemonService()
         except DaemonUserError as exc:

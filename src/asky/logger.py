@@ -10,6 +10,7 @@ DEFAULT_LOG_FILE = "~/.config/asky/logs/asky.log"
 LEGACY_DEFAULT_LOG_FILE = "~/.config/asky/asky.log"
 MAX_LOG_FILE_BYTES = 5 * 1024 * 1024  # 5 MiB per rotated file.
 LOG_BACKUP_COUNT = 3
+_ROLLED_LOG_PATHS: set[Path] = set()
 
 
 def resolve_log_file_path(log_file: Union[str, Path]) -> Path:
@@ -28,10 +29,28 @@ def generate_timestamped_log_path(base_path: str) -> Path:
     return path.parent / f"{timestamp}_{path.name}"
 
 
+def _archive_existing_log_file(log_path: Path) -> None:
+    """Archive an existing log file to a timestamp-prefixed name once per process."""
+    resolved_path = log_path.resolve()
+    if resolved_path in _ROLLED_LOG_PATHS:
+        return
+    if not log_path.exists():
+        _ROLLED_LOG_PATHS.add(resolved_path)
+        return
+    timestamp = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    archived_path = log_path.parent / f"{timestamp}_{log_path.name}"
+    suffix = 1
+    while archived_path.exists():
+        archived_path = log_path.parent / f"{timestamp}_{suffix}_{log_path.name}"
+        suffix += 1
+    log_path.rename(archived_path)
+    _ROLLED_LOG_PATHS.add(resolved_path)
+
+
 def setup_logging(
     level_name: str = "INFO", log_file: Optional[Union[str, Path]] = None
 ) -> None:
-    """Configure logging to write to a file."""
+    """Configure root logging and rotate an existing target file at startup."""
     level = getattr(logging, level_name.upper(), logging.INFO)
 
     if not log_file:
@@ -40,6 +59,7 @@ def setup_logging(
 
     # Ensure directory exists
     log_path.parent.mkdir(parents=True, exist_ok=True)
+    _archive_existing_log_file(log_path)
 
     # Configure root logger
     logger = logging.getLogger()
@@ -81,29 +101,47 @@ def setup_logging(
 
 
 XMPP_LOG_FILE = "~/.config/asky/logs/xmpp.log"
+XMPP_LOGGER_NAMES = ("asky.daemon", "asky.plugins.xmpp_daemon", "slixmpp")
+
+
+def _handler_targets_path(handler: logging.Handler, log_path: Path) -> bool:
+    base_filename = getattr(handler, "baseFilename", None)
+    if not base_filename:
+        return False
+    try:
+        return Path(base_filename).resolve() == log_path.resolve()
+    except Exception:
+        return Path(base_filename) == log_path
 
 
 def setup_xmpp_logging(level_name: str = "DEBUG") -> None:
-    """Attach a dedicated log handler for asky.daemon.* to a separate xmpp.log file.
+    """Attach dedicated handlers for XMPP namespaces to xmpp.log.
 
-    This does not affect the root logger - other asky logs continue going to the
-    main log file. Only the asky.daemon namespace is captured here.
+    This does not affect root logger destinations; root output continues to the
+    main log file. Captured namespaces are listed in ``XMPP_LOGGER_NAMES``.
     """
     level = getattr(logging, level_name.upper(), logging.DEBUG)
     log_path = Path(XMPP_LOG_FILE).expanduser()
     log_path.parent.mkdir(parents=True, exist_ok=True)
+    _archive_existing_log_file(log_path)
 
-    handler = RotatingFileHandler(
-        log_path,
-        mode="a",
-        maxBytes=MAX_LOG_FILE_BYTES,
-        backupCount=LOG_BACKUP_COUNT,
-        encoding="utf-8",
-    )
-    handler.setFormatter(
-        logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
-    )
-    handler.setLevel(level)
-
-    daemon_logger = logging.getLogger("asky.daemon")
-    daemon_logger.addHandler(handler)
+    formatter = logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
+    for logger_name in XMPP_LOGGER_NAMES:
+        target_logger = logging.getLogger(logger_name)
+        target_logger.setLevel(level)
+        already_attached = any(
+            _handler_targets_path(existing_handler, log_path)
+            for existing_handler in target_logger.handlers
+        )
+        if already_attached:
+            continue
+        handler = RotatingFileHandler(
+            log_path,
+            mode="a",
+            maxBytes=MAX_LOG_FILE_BYTES,
+            backupCount=LOG_BACKUP_COUNT,
+            encoding="utf-8",
+        )
+        handler.setFormatter(formatter)
+        handler.setLevel(level)
+        target_logger.addHandler(handler)

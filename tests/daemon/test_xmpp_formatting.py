@@ -8,6 +8,7 @@ from asky.plugins.xmpp_daemon.xmpp_formatting import (
     TableStructure,
     ASCIITableRenderer,
     MessageFormatter,
+    extract_markdown_tables,
 )
 
 
@@ -254,3 +255,26 @@ def test_header_conversion():
     
     assert "Header" in result
     assert "======" in result
+
+
+def test_extract_markdown_tables_parses_pipe_table():
+    model = extract_markdown_tables(
+        "Server status:\n\n| Service | Status |\n| --- | --- |\n| XMPP | Online |\n| DB | Maintenance |\n"
+    )
+    assert model.plain_body == "Server status:"
+    assert len(model.tables) == 1
+    assert model.tables[0].headers == ["Service", "Status"]
+    assert model.tables[0].rows == [["XMPP", "Online"], ["DB", "Maintenance"]]
+
+
+def test_extract_markdown_tables_parses_short_alignment_separator_table():
+    model = extract_markdown_tables(
+        "| ID | Name | Value |\n"
+        "| :-- | :------- | :-------- |\n"
+        "| 1 | Alpha | 100 |\n"
+        "| 2 | Beta | 200 |\n"
+    )
+    assert model.plain_body == ""
+    assert len(model.tables) == 1
+    assert model.tables[0].headers == ["ID", "Name", "Value"]
+    assert model.tables[0].rows == [["1", "Alpha", "100"], ["2", "Beta", "200"]]

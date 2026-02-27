@@ -340,6 +340,7 @@ macOS + rumps available:
     -> if not running: spawn `--menubar-child`
   daemon/menubar.py → MacosTrayApp (status bar app)
     -> child acquires singleton lock before creating `rumps.App`
+    -> tray startup initializes dedicated XMPP logging (`~/.config/asky/logs/xmpp.log`)
   menubar controls daemon/service.py lifecycle
 otherwise:
   daemon/service.py (DaemonService, foreground)
@@ -403,6 +404,7 @@ chunked outbound chat replies
 ```
 
 Command presets are expanded at ingress (`\\name`, `\\presets`) before command execution, and remote policy is enforced after expansion/planning so blocked flags cannot be bypassed.
+XMPP outbound formatting extracts markdown pipe tables before send and currently renders through the existing in-band ASCII-table fallback path. Client-identity capability mapping (`[xmpp_client.capabilities]`) and XEP-0030 discovery/token parsing are retained for future client-specific behavior controls.
 Ad-hoc `Run Prompt` / `Run Query` / `Use Transcript` and `Run Preset` (only when preset resolves to LM query) execute asynchronously through the same per-conversation queue as text messages; ad-hoc IQ response remains a confirmation note while final answer arrives in chat.
 XMPP query ingress applies the same recursive slash-expansion behavior as CLI (`/alias`, `/cp`) before model execution, and unresolved slash queries follow CLI prompt-list semantics (`/` lists all prompts, unknown `/prefix` returns filtered prompt listing). This shared query-prep path is used by direct text queries, interface-planned query actions, and `transcript use` query execution.
 Daemon query prep also supports session-scoped media pointers: `#aN`/`#atN` for audio file+transcript and `#iN`/`#itN` for image file+transcript.
@@ -637,7 +639,7 @@ Imports deferred until needed, with two distinct patterns:
 | `email_sender.py`  | SMTP email sending                                        |
 | `rendering.py`     | Browser markdown rendering + Sidebar Index App Generation |
 | `banner.py`        | CLI banner display                                        |
-| `logger.py`        | Rotating file-based logging                               |
+| `logger.py`        | Rotating file-based logging with startup timestamp rollover (`asky.log`, `xmpp.log`) |
 
 ---
 

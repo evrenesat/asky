@@ -29,6 +29,7 @@ from asky.config import (
     XMPP_RESOURCE,
     XMPP_RESPONSE_CHUNK_CHARS,
     XMPP_TRANSCRIPT_MAX_PER_SESSION,
+    XMPP_CLIENT_CAPABILITIES,
     XMPP_VOICE_ALLOWED_MIME_TYPES,
     XMPP_VOICE_AUTO_YES_WITHOUT_INTERFACE_MODEL,
     XMPP_VOICE_ENABLED,
@@ -75,7 +76,7 @@ GENERIC_ADHOC_QUERY_ERROR = (
 from asky.plugins.xmpp_daemon.xmpp_formatting import (
     ASCIITableRenderer,
     MessageFormatter,
-    MessageModel,
+    extract_markdown_tables,
 )
 
 
@@ -126,7 +127,7 @@ class XMPPService:
             allowed_mime_types=XMPP_IMAGE_ALLOWED_MIME_TYPES,
             completion_callback=self._on_image_transcription_complete,
         )
-        
+
         self._table_renderer = ASCIITableRenderer()
         self._formatter = MessageFormatter(self._table_renderer)
 
@@ -161,13 +162,15 @@ class XMPPService:
             resource=XMPP_RESOURCE,
             message_callback=self._on_xmpp_message,
             session_start_callback=self._on_xmpp_session_start,
+            client_capabilities=dict(XMPP_CLIENT_CAPABILITIES),
         )
         logger.debug(
-            "XMPPService initialized host=%s port=%s resource=%s allowed_count=%s",
+            "XMPPService initialized host=%s port=%s resource=%s allowed_count=%s client_capability_map_count=%s",
             XMPP_HOST,
             XMPP_PORT,
             XMPP_RESOURCE,
             len(XMPP_ALLOWED_JIDS),
+            len(XMPP_CLIENT_CAPABILITIES),
         )
 
     def run(self) -> None:
@@ -377,17 +380,25 @@ class XMPPService:
                 jid_queue.task_done()
 
     def _send_chunked(self, jid: str, text: str, *, message_type: str = "chat") -> None:
-        model = MessageModel(plain_body=text)
+        model = extract_markdown_tables(text)
         formatted_text = self._formatter.format_message(model)
-        
-        parts = chunk_text(formatted_text, XMPP_RESPONSE_CHUNK_CHARS)
+        self._send_chunked_text(
+            jid,
+            formatted_text,
+            message_type=str(message_type or "").strip().lower(),
+        )
+
+    def _send_chunked_text(self, jid: str, text: str, *, message_type: str) -> None:
+        if not text:
+            return
+        parts = chunk_text(text, XMPP_RESPONSE_CHUNK_CHARS)
         total = len(parts)
         for index, part in enumerate(parts, start=1):
             if total > 1:
                 body = f"[part {index}/{total}]\n{part}"
             else:
                 body = part
-            if str(message_type or "").strip().lower() == "groupchat":
+            if message_type == "groupchat":
                 self._client.send_group_message(jid, body)
             else:
                 self._client.send_chat_message(jid, body)
@@ -594,3 +605,4 @@ def _merge_unique_urls(urls: list[str]) -> list[str]:
         seen.add(normalized)
         merged.append(normalized)
     return merged
+

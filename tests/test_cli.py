@@ -1624,7 +1624,6 @@ def test_main_completion_script_early_exit(
 @patch("asky.cli.chat.ConversationEngine.run")
 @patch("asky.cli.chat.generate_summaries")
 @patch("asky.cli.chat.save_interaction")
-@patch("asky.cli.main.generate_timestamped_log_path")
 @patch("asky.cli.main.setup_logging")
 @patch("asky.cli.main.ResearchCache")
 @patch("asky.cli.terminal.get_terminal_context")
@@ -1634,7 +1633,6 @@ def test_main_flow(
     mock_get_term,
     mock_research_cache,
     mock_setup_logging,
-    mock_generate_log_path,
     mock_save,
     mock_gen_sum,
     mock_run,
@@ -1691,8 +1689,6 @@ def test_main_flow(
     mock_init.assert_called_once()
     # Should use default logging setup (LOG_LEVEL, LOG_FILE)
     mock_setup_logging.assert_called_once_with(ANY, ANY)
-    # In default flow, it shouldn't be generating a timestamped path
-    mock_generate_log_path.assert_not_called()
 
     mock_run_chat.assert_called_once()
     # Summarization/persistence now run inside asky.api client orchestration.
@@ -1708,7 +1704,6 @@ def test_main_flow(
 @patch("asky.cli.chat.generate_summaries")
 @patch("asky.cli.chat.save_interaction")
 @patch("asky.cli.utils.os.environ.get")
-@patch("asky.cli.main.generate_timestamped_log_path")
 @patch("asky.cli.main.setup_logging")
 @patch("asky.cli.main.ResearchCache")
 @patch("asky.cli.terminal.get_terminal_context")
@@ -1720,7 +1715,6 @@ def test_main_flow_verbose(
     mock_get_term,
     mock_research_cache,
     mock_setup_logging,
-    mock_generate_log_path,
     mock_env_get,
     mock_save,
     mock_gen_sum,
@@ -1733,7 +1727,6 @@ def test_main_flow_verbose(
 ):
     # Mock terminal context to prevent iTerm2 connection attempts in tests
     mock_get_term.return_value = "Mocked Terminal Context"
-    mock_generate_log_path.return_value = "/tmp/test.log"
     mock_env_get.return_value = "fake_key_123456789"
     mock_parse.return_value = argparse.Namespace(
         model="gf",
@@ -1782,8 +1775,7 @@ def test_main_flow_verbose(
     assert "=== CONFIGURATION ===" not in captured.out
 
     # Verify logging setup for verbose mode
-    mock_generate_log_path.assert_called_once()
-    mock_setup_logging.assert_called_once_with("DEBUG", "/tmp/test.log")
+    mock_setup_logging.assert_called_once_with("DEBUG", ANY)
 
     # We can't easily check the root logger level here without mocking logging.getLogger
     # but we can rely on verifying behavior through integration or assuming the code
@@ -1883,7 +1875,6 @@ def test_main_flow_default_no_context(
 @patch("asky.cli.chat.InterfaceRenderer")
 @patch("asky.cli.main.ResearchCache")
 @patch("asky.cli.main.setup_logging")
-@patch("asky.cli.main.generate_timestamped_log_path")
 @patch("asky.cli.chat.shortlist_prompt_sources")
 @patch("asky.cli.chat.SessionManager")
 @patch("asky.cli.chat.get_shell_session_id")
@@ -1891,7 +1882,6 @@ def test_main_terminal_lines_callback(
     mock_get_shell_id,
     mock_session_manager,
     mock_shortlist,
-    mock_generate_log_path,
     mock_setup_logging,
     mock_research_cache,
     mock_renderer_cls,

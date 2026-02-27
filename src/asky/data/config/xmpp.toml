@@ -25,7 +25,7 @@ command_prefix = "/asky"
 interface_planner_include_command_reference = true
 
 # Maximum characters per outbound message chunk.
-response_chunk_chars = 3000
+response_chunk_chars = 10000
 
 # Transcript retention cap per session.
 transcript_max_per_session = 200
@@ -66,3 +66,8 @@ image_allowed_mime_types = [
     "image/webp",
     "image/gif",
 ]
+
+[xmpp_client.capabilities]
+# Client-identity capability overrides for direct-chat behavior.
+# Keys are matched against disco identity tokens (for example identity "name").
+#client_name = ["xep_00XX"]

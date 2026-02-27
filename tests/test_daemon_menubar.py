@@ -235,6 +235,27 @@ def test_start_service_with_daemon_user_error_shows_alert(monkeypatch):
     assert "--edit-daemon" in errors[0]
 
 
+def test_start_service_initializes_xmpp_logging(monkeypatch):
+    """TrayController.start_service configures xmpp log handler in menubar mode."""
+    from asky.daemon.errors import DaemonUserError
+    from asky.daemon.tray_controller import TrayController
+
+    setup_calls = []
+    monkeypatch.setattr(
+        "asky.daemon.tray_controller.setup_xmpp_logging",
+        lambda: setup_calls.append(1),
+    )
+
+    def _raise():
+        raise DaemonUserError("daemon unavailable")
+
+    monkeypatch.setattr("asky.daemon.tray_controller.DaemonService", _raise)
+
+    controller = TrayController(on_state_change=lambda: None, on_error=lambda _: None)
+    controller.start_service()
+    assert setup_calls == [1]
+
+
 def test_menubar_shows_plugin_contributed_status_and_action_items(monkeypatch, tmp_path):
     """TrayController collects status and action entries via TRAY_MENU_REGISTER."""
     monkeypatch.setattr("asky.daemon.menubar.platform.system", lambda: "Darwin")

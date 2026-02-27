@@ -30,7 +30,7 @@ from asky.config import (
     USER_PROMPTS,
 )
 from asky.banner import get_banner, BannerState
-from asky.logger import setup_logging, generate_timestamped_log_path
+from asky.logger import setup_logging
 from asky.storage import init_db, get_db_record_count, get_total_session_count
 from asky.storage.sqlite import SQLiteHistoryRepository
 from asky.cli.completion import (
@@ -1764,9 +1764,8 @@ def main() -> None:
 
     # Configure logging based on verbose flag
     if args.verbose:
-        # Verbose: Timestamped file, DEBUG level
-        session_log_file = generate_timestamped_log_path(LOG_FILE)
-        setup_logging("DEBUG", session_log_file)
+        # Verbose: DEBUG level to canonical asky.log
+        setup_logging("DEBUG", LOG_FILE)
         logging.debug("Verbose mode enabled. Log level set to DEBUG.")
     else:
         # Default: Standard file, Configured level

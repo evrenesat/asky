@@ -8,6 +8,33 @@ from asky.config.loader import load_config, _get_config_dir
 # --- Initialize Configuration ---
 _CONFIG = load_config()
 
+
+def _parse_client_capability_map(raw_map: object) -> dict[str, tuple[str, ...]]:
+    if not isinstance(raw_map, dict):
+        return {}
+    parsed: dict[str, tuple[str, ...]] = {}
+    for raw_client_id, raw_capabilities in raw_map.items():
+        client_id = str(raw_client_id or "").strip().lower()
+        if not client_id:
+            continue
+        if isinstance(raw_capabilities, str):
+            capability_values = [raw_capabilities]
+        elif isinstance(raw_capabilities, (list, tuple, set)):
+            capability_values = [str(value) for value in raw_capabilities]
+        else:
+            continue
+        normalized_capabilities: list[str] = []
+        seen_capabilities: set[str] = set()
+        for raw_capability in capability_values:
+            capability = str(raw_capability or "").strip().lower()
+            if not capability or capability in seen_capabilities:
+                continue
+            seen_capabilities.add(capability)
+            normalized_capabilities.append(capability)
+        if normalized_capabilities:
+            parsed[client_id] = tuple(normalized_capabilities)
+    return parsed
+
 # --- Expose Constants ---
 
 # General
@@ -298,6 +325,8 @@ EMAIL_FROM_ADDRESS = _email.get("from_address") or SMTP_USER
 
 # XMPP / Daemon
 _xmpp = _CONFIG.get("xmpp", {})
+_xmpp_client = _CONFIG.get("xmpp_client", {})
+_xmmp_client = _CONFIG.get("xmmp_client", {})
 XMPP_ENABLED = bool(_xmpp.get("enabled", False))
 XMPP_JID = str(_xmpp.get("jid", "") or "").strip()
 XMPP_PASSWORD_ENV = str(_xmpp.get("password_env", "ASKY_XMPP_PASSWORD") or "").strip()
@@ -313,6 +342,12 @@ XMPP_ALLOWED_JIDS = [
     for raw_jid in _xmpp.get("allowed_jids", [])
     if str(raw_jid).strip()
 ]
+_raw_xmpp_client_capability_map = _xmpp_client.get("capabilities")
+if _raw_xmpp_client_capability_map is None:
+    _raw_xmpp_client_capability_map = _xmmp_client.get("capabilities")
+if _raw_xmpp_client_capability_map is None:
+    _raw_xmpp_client_capability_map = _xmpp.get("client_capabilities", {})
+XMPP_CLIENT_CAPABILITIES = _parse_client_capability_map(_raw_xmpp_client_capability_map)
 XMPP_COMMAND_PREFIX = str(_xmpp.get("command_prefix", "/asky") or "/asky").strip()
 XMPP_INTERFACE_PLANNER_INCLUDE_COMMAND_REFERENCE = bool(
     _xmpp.get("interface_planner_include_command_reference", True)

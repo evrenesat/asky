@@ -1,10 +1,14 @@
 """XMPP message formatting with XEP-0393 styling and ASCII table rendering."""
 
+import re
 import unicodedata
 from dataclasses import dataclass, field
 from typing import List, Optional
 
 MAX_FENCE_LENGTH = 10
+MIN_TABLE_COLUMN_COUNT = 2
+MIN_SEPARATOR_DASH_COUNT = 1
+CODE_FENCE_MARKERS = ("```", "~~~")
 
 
 @dataclass
@@ -171,5 +175,91 @@ class MessageFormatter:
             rendered_table = self.table_renderer.render_table(table)
             if rendered_table:
                 parts.append(rendered_table)
-        
+
         return '\n\n'.join(parts)
+
+
+def extract_markdown_tables(markdown_text: str) -> MessageModel:
+    """Parse pipe-markdown tables into structured tables and plain text."""
+    lines = str(markdown_text or "").splitlines()
+    plain_lines: list[str] = []
+    tables: list[TableStructure] = []
+    index = 0
+    in_code_block = False
+
+    while index < len(lines):
+        line = lines[index]
+        stripped = line.strip()
+        if _is_code_fence_line(stripped):
+            in_code_block = not in_code_block
+            plain_lines.append(line)
+            index += 1
+            continue
+
+        if not in_code_block and index + 1 < len(lines):
+            header_cells = _parse_markdown_table_row(lines[index])
+            separator_cells = _parse_markdown_table_row(lines[index + 1])
+            if _is_markdown_table_header(header_cells, separator_cells):
+                row_index = index + 2
+                rows: list[list[str]] = []
+                while row_index < len(lines):
+                    candidate_cells = _parse_markdown_table_row(lines[row_index])
+                    if not _is_table_row_for_header(candidate_cells, len(header_cells)):
+                        break
+                    rows.append(candidate_cells)
+                    row_index += 1
+                tables.append(TableStructure(headers=header_cells, rows=rows))
+                index = row_index
+                continue
+
+        plain_lines.append(line)
+        index += 1
+
+    plain_body = "\n".join(plain_lines).strip()
+    return MessageModel(plain_body=plain_body, tables=tables)
+
+
+def _is_code_fence_line(stripped_line: str) -> bool:
+    for marker in CODE_FENCE_MARKERS:
+        if stripped_line.startswith(marker):
+            return True
+    return False
+
+
+def _parse_markdown_table_row(line: str) -> list[str]:
+    candidate = str(line or "").strip()
+    if "|" not in candidate:
+        return []
+    if candidate.startswith("|"):
+        candidate = candidate[1:]
+    if candidate.endswith("|"):
+        candidate = candidate[:-1]
+    cells = [cell.strip() for cell in candidate.split("|")]
+    return cells
+
+
+def _is_markdown_table_header(header_cells: list[str], separator_cells: list[str]) -> bool:
+    if len(header_cells) < MIN_TABLE_COLUMN_COUNT:
+        return False
+    if len(separator_cells) != len(header_cells):
+        return False
+    if any(not cell for cell in header_cells):
+        return False
+    return all(_is_separator_cell(cell) for cell in separator_cells)
+
+
+def _is_separator_cell(value: str) -> bool:
+    candidate = value.strip()
+    if not candidate:
+        return False
+    if candidate.startswith(":"):
+        candidate = candidate[1:]
+    if candidate.endswith(":"):
+        candidate = candidate[:-1]
+    if len(candidate) < MIN_SEPARATOR_DASH_COUNT:
+        return False
+    return bool(re.fullmatch(r"-+", candidate))
+
+
+def _is_table_row_for_header(cells: list[str], header_length: int) -> bool:
+    return bool(cells) and len(cells) == header_length

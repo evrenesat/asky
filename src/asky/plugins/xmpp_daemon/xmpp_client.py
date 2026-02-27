@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import inspect
 import logging
+import re
+import threading
 import uuid
 from dataclasses import dataclass
 from typing import Callable, Optional
@@ -13,6 +15,11 @@ from asky.daemon.errors import DaemonUserError
 logger = logging.getLogger(__name__)
 OOB_XML_NAMESPACES = ("jabber:x:oob", "urn:xmpp:oob")
 MUC_USER_NAMESPACE = "http://jabber.org/protocol/muc#user"
+DISCO_INFO_NAMESPACE = "http://jabber.org/protocol/disco#info"
+XEP0004_DATA_FORM_NAMESPACE = "jabber:x:data"
+DISCO_TIMEOUT_SECONDS = 3
+XEP0004_CAPABILITY = "xep_0004"
+RESOURCE_TOKEN_SPLIT_PATTERN = re.compile(r"[^a-z0-9]+")
 
 try:
     import slixmpp  # type: ignore
@@ -43,6 +50,7 @@ class AskyXMPPClient:
         resource: str,
         message_callback: Callable[[dict], None],
         session_start_callback: Optional[Callable[[], None]] = None,
+        client_capabilities: Optional[dict[str, object]] = None,
     ):
         if slixmpp is None:
             raise DaemonUserError(
@@ -62,10 +70,13 @@ class AskyXMPPClient:
         self._host = host
         self._port = int(port)
         self._nick = str(resource or "asky").strip() or "asky"
+        self._xep0004_support_cache: dict[str, bool] = {}
+        self._xep0004_support_lock = threading.Lock()
+        self._client_capabilities = _normalize_client_capabilities(client_capabilities)
 
         register_plugin = getattr(self._client, "register_plugin", None)
         if callable(register_plugin):
-            for _plugin_name in ("xep_0045", "xep_0050", "xep_0004", "xep_0308"):
+            for _plugin_name in ("xep_0045", "xep_0050", "xep_0004", "xep_0030", "xep_0308"):
                 try:
                     register_plugin(_plugin_name)
                 except Exception:
@@ -177,6 +188,32 @@ class AskyXMPPClient:
 
     def supports_message_correction(self) -> bool:
         return self.get_plugin("xep_0308") is not None
+
+    def supports_xep0004_data_forms(self, to_jid: str) -> bool:
+        target_jid = str(to_jid or "").strip()
+        if not target_jid:
+            return False
+        cache_key = _capability_cache_key(target_jid)
+        with self._xep0004_support_lock:
+            cached = self._xep0004_support_cache.get(cache_key)
+        if cached is not None:
+            return cached
+        supported = _probe_data_form_support(
+            self._client,
+            target_jid,
+            client_capabilities=self._client_capabilities,
+            capability_name=XEP0004_CAPABILITY,
+        )
+        if supported:
+            with self._xep0004_support_lock:
+                self._xep0004_support_cache[cache_key] = True
+        logger.debug(
+            "xep_0004 support decision jid=%s cache_key=%s supported=%s",
+            target_jid,
+            cache_key,
+            supported,
+        )
+        return supported
 
     def send_status_message(
         self,
@@ -490,6 +527,319 @@ def _dispatch_client_send_stanza(
         loop.call_soon_threadsafe(_send)
         return
     _send()
+
+
+def _probe_data_form_support(
+    client,
+    to_jid: str,
+    *,
+    client_capabilities: dict[str, set[str]],
+    capability_name: str,
+) -> bool:
+    disco_plugin = _get_disco_plugin(client)
+    if disco_plugin is None:
+        return False
+    get_info = getattr(disco_plugin, "get_info", None)
+    if not callable(get_info):
+        return False
+    for candidate_jid in _disco_jid_candidates(to_jid):
+        try:
+            info = _call_disco_get_info(get_info, candidate_jid)
+        except Exception:
+            logger.debug(
+                "xep_0030 disco probing failed for jid=%s (candidate=%s)",
+                to_jid,
+                candidate_jid,
+                exc_info=True,
+            )
+            continue
+        features = _extract_disco_features(info)
+        identity_tokens = _extract_disco_identity_tokens(info)
+        if not identity_tokens:
+            identity_tokens.update(_extract_jid_resource_identity_tokens(candidate_jid))
+        matched_capabilities = _resolve_capabilities_for_identity_tokens(
+            identity_tokens,
+            client_capabilities,
+        )
+        logger.debug(
+            "xep_0030 disco features jid=%s candidate=%s features=%s identity_tokens=%s matched_capabilities=%s",
+            to_jid,
+            candidate_jid,
+            sorted(features),
+            sorted(identity_tokens),
+            sorted(matched_capabilities),
+        )
+        if _capability_enabled(matched_capabilities, capability_name):
+            return True
+        if XEP0004_DATA_FORM_NAMESPACE in features:
+            return True
+    return False
+
+
+def _disco_jid_candidates(to_jid: str) -> list[str]:
+    normalized = str(to_jid or "").strip()
+    if not normalized:
+        return []
+    bare = _bare_jid(normalized)
+    candidates = [normalized]
+    if bare and bare != normalized:
+        candidates.append(bare)
+    return candidates
+
+
+def _capability_cache_key(to_jid: str) -> str:
+    normalized = str(to_jid or "").strip()
+    if not normalized:
+        return ""
+    return _bare_jid(normalized)
+
+
+def _get_disco_plugin(client):
+    plugins = getattr(client, "plugin", None)
+    if plugins is None:
+        return None
+    if isinstance(plugins, dict):
+        return plugins.get("xep_0030")
+    try:
+        return plugins["xep_0030"]
+    except Exception:
+        return None
+
+
+def _call_disco_get_info(get_info, to_jid: str):
+    signature = inspect.signature(get_info)
+    kwargs = {}
+    parameters = set(signature.parameters.keys())
+    if "jid" in parameters:
+        kwargs["jid"] = to_jid
+    if "block" in parameters:
+        kwargs["block"] = True
+    if "timeout" in parameters:
+        kwargs["timeout"] = DISCO_TIMEOUT_SECONDS
+    if kwargs:
+        return get_info(**kwargs)
+    return get_info(to_jid)
+
+
+def _extract_disco_features(info_payload) -> set[str]:
+    features: set[str] = set()
+    if info_payload is None:
+        return features
+
+    feature_values = getattr(info_payload, "features", None)
+    if isinstance(feature_values, (list, tuple, set)):
+        for value in feature_values:
+            normalized = str(value or "").strip()
+            if normalized:
+                features.add(normalized)
+
+    get_features = getattr(info_payload, "get_features", None)
+    if callable(get_features):
+        try:
+            method_values = get_features()
+            if isinstance(method_values, (list, tuple, set)):
+                for value in method_values:
+                    normalized = str(value or "").strip()
+                    if normalized:
+                        features.add(normalized)
+        except Exception:
+            logger.debug("failed reading disco features via get_features()", exc_info=True)
+
+    if hasattr(info_payload, "xml"):
+        xml = getattr(info_payload, "xml", None)
+        if xml is not None:
+            for feature_node in xml.findall(f".//{{{DISCO_INFO_NAMESPACE}}}feature"):
+                value = str(getattr(feature_node, "attrib", {}).get("var", "") or "").strip()
+                if value:
+                    features.add(value)
+    if isinstance(info_payload, dict):
+        nested_features = info_payload.get("features")
+        if isinstance(nested_features, (list, tuple, set)):
+            for value in nested_features:
+                normalized = str(value or "").strip()
+                if normalized:
+                    features.add(normalized)
+    disco_info = None
+    try:
+        disco_info = info_payload["disco_info"]
+    except Exception:
+        disco_info = None
+    if disco_info is not None:
+        nested_values = getattr(disco_info, "features", None)
+        if isinstance(nested_values, (list, tuple, set)):
+            for value in nested_values:
+                normalized = str(value or "").strip()
+                if normalized:
+                    features.add(normalized)
+        nested_get = getattr(disco_info, "get_features", None)
+        if callable(nested_get):
+            try:
+                nested_method_values = nested_get()
+                if isinstance(nested_method_values, (list, tuple, set)):
+                    for value in nested_method_values:
+                        normalized = str(value or "").strip()
+                        if normalized:
+                            features.add(normalized)
+            except Exception:
+                logger.debug(
+                    "failed reading disco_info features via get_features()",
+                    exc_info=True,
+                )
+    return features
+
+
+def _extract_disco_identity_tokens(info_payload) -> set[str]:
+    identity_tokens: set[str] = set()
+    if info_payload is None:
+        return identity_tokens
+    _collect_identity_tokens(identity_tokens, getattr(info_payload, "identities", None))
+    get_identities = getattr(info_payload, "get_identities", None)
+    if callable(get_identities):
+        try:
+            _collect_identity_tokens(identity_tokens, get_identities())
+        except Exception:
+            logger.debug("failed reading disco identities via get_identities()", exc_info=True)
+    if hasattr(info_payload, "xml"):
+        xml = getattr(info_payload, "xml", None)
+        if xml is not None:
+            for identity_node in xml.findall(f".//{{{DISCO_INFO_NAMESPACE}}}identity"):
+                _add_identity_tokens(
+                    identity_tokens,
+                    name=getattr(identity_node, "attrib", {}).get("name", ""),
+                    category=getattr(identity_node, "attrib", {}).get("category", ""),
+                    identity_type=getattr(identity_node, "attrib", {}).get("type", ""),
+                )
+    if isinstance(info_payload, dict):
+        _collect_identity_tokens(identity_tokens, info_payload.get("identities"))
+    disco_info = None
+    try:
+        disco_info = info_payload["disco_info"]
+    except Exception:
+        disco_info = None
+    if disco_info is not None:
+        _collect_identity_tokens(identity_tokens, getattr(disco_info, "identities", None))
+        nested_get = getattr(disco_info, "get_identities", None)
+        if callable(nested_get):
+            try:
+                _collect_identity_tokens(identity_tokens, nested_get())
+            except Exception:
+                logger.debug(
+                    "failed reading disco_info identities via get_identities()",
+                    exc_info=True,
+                )
+    return identity_tokens
+
+
+def _extract_jid_resource_identity_tokens(jid: str) -> set[str]:
+    normalized = str(jid or "").strip().lower()
+    if "/" not in normalized:
+        return set()
+    resource = normalized.split("/", 1)[1].strip()
+    if not resource:
+        return set()
+    tokens = {resource}
+    for value in RESOURCE_TOKEN_SPLIT_PATTERN.split(resource):
+        token = str(value or "").strip().lower()
+        if token:
+            tokens.add(token)
+    return tokens
+
+
+def _collect_identity_tokens(identity_tokens: set[str], identities: object) -> None:
+    if isinstance(identities, dict):
+        iterable = [identities]
+    elif isinstance(identities, (list, tuple, set)):
+        iterable = list(identities)
+    else:
+        return
+    for entry in iterable:
+        if isinstance(entry, dict):
+            _add_identity_tokens(
+                identity_tokens,
+                name=entry.get("name", ""),
+                category=entry.get("category", ""),
+                identity_type=entry.get("type", ""),
+            )
+            continue
+        _add_identity_tokens(
+            identity_tokens,
+            name=getattr(entry, "name", ""),
+            category=getattr(entry, "category", ""),
+            identity_type=getattr(entry, "type", ""),
+        )
+
+
+def _add_identity_tokens(
+    identity_tokens: set[str],
+    *,
+    name: object,
+    category: object,
+    identity_type: object,
+) -> None:
+    normalized_name = _normalize_identity_token(name)
+    normalized_category = _normalize_identity_token(category)
+    normalized_type = _normalize_identity_token(identity_type)
+    if normalized_name:
+        identity_tokens.add(normalized_name)
+    if normalized_category:
+        identity_tokens.add(normalized_category)
+    if normalized_type:
+        identity_tokens.add(normalized_type)
+    if normalized_category and normalized_type:
+        identity_tokens.add(f"{normalized_category}/{normalized_type}")
+    if normalized_category and normalized_type and normalized_name:
+        identity_tokens.add(f"{normalized_category}/{normalized_type}/{normalized_name}")
+
+
+def _normalize_identity_token(value: object) -> str:
+    return str(value or "").strip().lower()
+
+
+def _normalize_client_capabilities(capabilities: Optional[dict[str, object]]) -> dict[str, set[str]]:
+    normalized: dict[str, set[str]] = {}
+    if not isinstance(capabilities, dict):
+        return normalized
+    for raw_client_id, raw_capabilities in capabilities.items():
+        client_id = _normalize_identity_token(raw_client_id)
+        if not client_id:
+            continue
+        capability_values: list[str] = []
+        if isinstance(raw_capabilities, str):
+            capability_values = [raw_capabilities]
+        elif isinstance(raw_capabilities, (list, tuple, set)):
+            capability_values = [str(value) for value in raw_capabilities]
+        if not capability_values:
+            continue
+        for raw_capability in capability_values:
+            capability = _normalize_capability_token(raw_capability)
+            if not capability:
+                continue
+            normalized.setdefault(client_id, set()).add(capability)
+    return normalized
+
+
+def _normalize_capability_token(value: object) -> str:
+    return str(value or "").strip().lower().replace("-", "_")
+
+
+def _resolve_capabilities_for_identity_tokens(
+    identity_tokens: set[str],
+    client_capabilities: dict[str, set[str]],
+) -> set[str]:
+    resolved: set[str] = set()
+    for token in identity_tokens:
+        resolved.update(client_capabilities.get(token, set()))
+    return resolved
+
+
+def _capability_enabled(capabilities: set[str], capability_name: str) -> bool:
+    target = _normalize_capability_token(capability_name)
+    if not target:
+        return False
+    aliases = {target, target.replace("_", "")}
+    if target == XEP0004_CAPABILITY:
+        aliases.add(_normalize_capability_token(XEP0004_DATA_FORM_NAMESPACE))
+    return any(capability in aliases for capability in capabilities)
 
 
 def _disconnect_client(client) -> None:
