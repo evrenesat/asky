@@ -1,5 +1,31 @@
 # DEVLOG
 
+## 2026-02-27 - Parallel Flake Fixes + Cleanup Refactors
+
+**Changes:**
+
+- Fixed xdist-order-dependent preset behavior by making preset expansion/listing read `COMMAND_PRESETS` from `asky.config` at call time (`cli/presets.py`) instead of relying on module-import-time binding.
+- Updated preset tests to patch `asky.config.COMMAND_PRESETS` consistently (`tests/test_presets.py`, `tests/test_xmpp_adhoc.py`, `tests/test_cli.py`).
+- Removed duplicated remote helper `_handle_clear_memories_non_interactive` from both command executor copies and replaced it with shared `memory_commands.clear_memories_non_interactive()`.
+- Replaced helper `print(...)` output with logger-backed reporting in the shared memory cleanup path; command executors now return explicit response text (`Deleted N memories.`).
+- Hardened remote command semantics for `--all` without a deletion target: now returns `Error: --all requires --delete-messages or --delete-sessions.`
+- Refined response-trace helper in `core/api_client.py`:
+  - renamed `get_response_log_data` -> `_get_response_log_data`,
+  - added type hints,
+  - removed process-narration comments.
+- Updated document URL redaction to preserve inline ordering for non-blocked URLs (`document_ingestion.redact_document_urls`), removing the previous end-append behavior.
+- Improved research cleanup edge-case handling in `AskyClient.cleanup_session_research_data()`:
+  - now resets stale local-source modes (`local_only|mixed`) to `web_only` when research is enabled, even if paths are already empty,
+  - still clears upload links for numeric sessions.
+- Added/updated tests:
+  - `tests/test_xmpp_commands.py`: `--all` target validation + clear-memories dispatch assertion updates.
+  - `tests/test_xmpp_document_ingestion.py`: redaction ordering expectation.
+
+**Verification:**
+- `uv run pytest -n 0 tests/test_presets.py tests/test_xmpp_adhoc.py tests/test_xmpp_commands.py tests/test_xmpp_document_ingestion.py tests/test_cli.py` → `181 passed`
+- `uv run pytest -n auto tests/test_xmpp_adhoc.py -k "test_query_submit_builds_plain_query or test_list_prompts_submit_executes_alias_without_query or test_list_presets_submit_expands_and_executes"` → `3 passed`
+- `uv run pytest` → `1205 passed in 10.18s`
+
 ## 2026-02-27 - XMPP Ad-Hoc Query Confirmation + Reusable Progress Status Updates
 
 **Changes:**

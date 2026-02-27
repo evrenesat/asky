@@ -386,7 +386,7 @@ def test_list_presets_submit_expands_and_executes():
     iq = _MockIQ("user@example.com", {"preset": "search", "args": "python asyncio"})
     presets = {"search": "websearch $*"}
     # Patch the reference used inside expand_preset_invocation at runtime
-    with patch("asky.cli.presets.COMMAND_PRESETS", presets):
+    with patch("asky.config.COMMAND_PRESETS", presets):
         result = _run(handler._cmd_list_presets_submit(iq, {}))
     executor.execute_command_text.assert_called_once()
     assert result["notes"][0][1] == "preset output"
@@ -398,7 +398,7 @@ def test_list_presets_submit_without_args():
     executor.execute_command_text.return_value = "ok"
     iq = _MockIQ("user@example.com", {"preset": "fix", "args": ""})
     presets = {"fix": "fix the following code"}
-    with patch("asky.cli.presets.COMMAND_PRESETS", presets):
+    with patch("asky.config.COMMAND_PRESETS", presets):
         result = _run(handler._cmd_list_presets_submit(iq, {}))
     executor.execute_command_text.assert_called_once()
     assert result["has_next"] is False
@@ -415,7 +415,7 @@ def test_list_presets_submit_error_when_no_preset():
 def test_list_presets_submit_error_on_unknown_preset():
     handler, executor, _ = _make_handler()
     iq = _MockIQ("user@example.com", {"preset": "unknown_preset", "args": ""})
-    with patch("asky.cli.presets.COMMAND_PRESETS", {}):
+    with patch("asky.config.COMMAND_PRESETS", {}):
         result = _run(handler._cmd_list_presets_submit(iq, {}))
     assert "Error" in result["notes"][0][1]
     executor.execute_command_text.assert_not_called()

@@ -144,4 +144,4 @@ def test_redact_document_urls_keeps_unrelated_url():
     body = "compare https://example.com/a.pdf with https://example.com/ref"
     redacted = di.redact_document_urls(body, ["https://example.com/a.pdf"])
     assert "a.pdf" not in redacted
-    assert "https://example.com/ref" in redacted
+    assert redacted == "compare with https://example.com/ref"

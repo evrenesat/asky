@@ -478,6 +478,17 @@ def test_remote_policy_allows_cleanup_related_flags():
     assert error is None
 
 
+def test_all_without_target_selector_returns_error():
+    manager = _FakeTranscriptManager()
+    executor = CommandExecutor(manager)
+    with patch("asky.daemon.command_executor.init_db"):
+        response = executor.execute_command_text(
+            jid="jid",
+            command_text="--all",
+        )
+    assert "requires --delete-messages or --delete-sessions" in response
+
+
 def test_cleanup_commands_dispatch_through_remote_executor():
     manager = _FakeTranscriptManager()
     executor = CommandExecutor(manager)
@@ -493,8 +504,8 @@ def test_cleanup_commands_dispatch_through_remote_executor():
             side_effect=lambda memory_id: print(f"delete-memory:{memory_id}"),
         ),
         patch(
-            "asky.daemon.command_executor._handle_clear_memories_non_interactive",
-            side_effect=lambda confirm=False: print(f"clear:{confirm}"),
+            "asky.daemon.command_executor.memory_commands.clear_memories_non_interactive",
+            side_effect=lambda: 17,
         ),
     ):
         clean_resp = executor.execute_command_text(
@@ -512,4 +523,4 @@ def test_cleanup_commands_dispatch_through_remote_executor():
 
     assert "clean:1" in clean_resp
     assert "delete-memory:9" in delete_resp
-    assert "clear:False" in clear_resp
+    assert "Deleted 17 memories." == clear_resp

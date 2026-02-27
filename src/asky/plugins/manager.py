@@ -6,6 +6,7 @@ import importlib
 import logging
 import os
 import tomllib
+import tomlkit
 from dataclasses import dataclass
 from importlib import resources
 from pathlib import Path
@@ -430,8 +431,9 @@ class PluginManager:
         """Append plugins from the bundled default that are absent in the user roster."""
         try:
             bundled = tomllib.loads(_BUNDLED_PLUGINS_TOML.read_bytes().decode())
-            with self.roster_path.open("rb") as fh:
-                user = tomllib.load(fh)
+            user_text = self.roster_path.read_text(encoding="utf-8")
+            user = tomllib.loads(user_text)
+            user_doc = tomlkit.parse(user_text)
         except Exception:
             logger.debug("Could not parse plugin rosters for sync; skipping", exc_info=True)
             return
@@ -444,24 +446,19 @@ class PluginManager:
         if not missing:
             return
 
-        def _toml_value(v: Any) -> str:
-            if isinstance(v, bool):
-                return "true" if v else "false"
-            if isinstance(v, list):
-                return "[" + ", ".join(f'"{i}"' for i in v) + "]"
-            if isinstance(v, str):
-                return f'"{v}"'
-            return str(v)
-
-        lines: list[str] = []
-        for name, cfg in missing.items():
-            lines.append(f"\n[plugin.{name}]")
-            for key, value in cfg.items():
-                lines.append(f"{key} = {_toml_value(value)}")
-
         try:
-            with self.roster_path.open("a") as fh:
-                fh.write("\n".join(lines) + "\n")
+            plugin_table = user_doc.get("plugin")
+            if plugin_table is None or not isinstance(plugin_table, dict):
+                plugin_table = tomlkit.table()
+                user_doc["plugin"] = plugin_table
+
+            for name, cfg in missing.items():
+                section = tomlkit.table()
+                for key, value in cfg.items():
+                    section[key] = tomlkit.item(value)
+                plugin_table[name] = section
+
+            self.roster_path.write_text(tomlkit.dumps(user_doc), encoding="utf-8")
             logger.info("Added new built-in plugin(s) to roster: %s", list(missing))
         except Exception:
             logger.exception("Failed to append new plugins to roster at %s", self.roster_path)

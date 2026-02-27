@@ -1094,7 +1094,7 @@ def test_main_preset_list_command_prints(mock_setup_logging, mock_parse, capsys)
         ),
     ]
 
-    with patch("asky.cli.presets.COMMAND_PRESETS", {"daily": "foo bar"}):
+    with patch("asky.config.COMMAND_PRESETS", {"daily": "foo bar"}):
         main()
     captured = capsys.readouterr()
     assert "Command Presets:" in captured.out

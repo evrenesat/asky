@@ -528,6 +528,12 @@ class CommandExecutor:
         delete_messages_value = getattr(args, "delete_messages", None)
         delete_sessions_value = getattr(args, "delete_sessions", None)
         delete_all = bool(getattr(args, "all", False))
+        if (
+            delete_all
+            and delete_messages_value is None
+            and delete_sessions_value is None
+        ):
+            return "Error: --all requires --delete-messages or --delete-sessions."
         if delete_messages_value is not None or (
             delete_all and delete_sessions_value is None
         ):
@@ -541,7 +547,8 @@ class CommandExecutor:
         if getattr(args, "delete_memory", None) is not None:
             return _capture_output(memory_commands.handle_delete_memory, args.delete_memory)
         if getattr(args, "clear_memories", False):
-            return _capture_output(_handle_clear_memories_non_interactive)
+            deleted_count = memory_commands.clear_memories_non_interactive()
+            return f"Deleted {deleted_count} memories."
         if getattr(args, "history", None) is not None:
             return _capture_output(history.show_history, args.history)
         if getattr(args, "print_ids", None):
@@ -1032,24 +1039,6 @@ def _download_text_file(url: str, *, timeout_seconds: int, max_bytes: int) -> st
                 )
             chunks.append(chunk)
     return b"".join(chunks).decode("utf-8")
-
-
-def _handle_clear_memories_non_interactive() -> None:
-    """Clear all memories without interactive prompt for remote command execution."""
-    from asky.config import (
-        DB_PATH,
-        RESEARCH_CHROMA_PERSIST_DIRECTORY,
-        USER_MEMORY_CHROMA_COLLECTION,
-    )
-    from asky.memory.store import delete_all_memories_from_db
-    from asky.memory.vector_ops import clear_all_memory_embeddings
-
-    count = delete_all_memories_from_db(DB_PATH)
-    clear_all_memory_embeddings(
-        RESEARCH_CHROMA_PERSIST_DIRECTORY,
-        USER_MEMORY_CHROMA_COLLECTION,
-    )
-    print(f"Deleted {count} memories.")
 
 
 @contextmanager

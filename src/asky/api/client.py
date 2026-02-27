@@ -1156,16 +1156,23 @@ class AskyClient:
 
         session = get_session_by_id(resolved_session_id)
         cleared_corpus_paths = 0
-        if session is not None and getattr(session, "research_local_corpus_paths", None):
-            cleared_corpus_paths = len(session.research_local_corpus_paths or [])
-            update_session_research_profile(
-                resolved_session_id,
-                research_mode=bool(session.research_mode),
-                research_source_mode=(
-                    "web_only" if bool(session.research_mode) else None
-                ),
-                research_local_corpus_paths=[],
+        if session is not None:
+            existing_paths = list(getattr(session, "research_local_corpus_paths", []) or [])
+            cleared_corpus_paths = len(existing_paths)
+            should_reset_source_mode = bool(
+                existing_paths
+                or str(getattr(session, "research_source_mode", "") or "").strip().lower()
+                in {"local_only", "mixed"}
             )
+            if should_reset_source_mode:
+                update_session_research_profile(
+                    resolved_session_id,
+                    research_mode=bool(session.research_mode),
+                    research_source_mode=(
+                        "web_only" if bool(session.research_mode) else None
+                    ),
+                    research_local_corpus_paths=[],
+                )
         cleared_upload_links = clear_session_uploaded_documents(
             session_id=resolved_session_id
         )

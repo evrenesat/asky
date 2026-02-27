@@ -7,7 +7,7 @@ import shlex
 from dataclasses import dataclass
 from typing import Dict, List, Optional
 
-from asky.config import COMMAND_PRESETS
+import asky.config as asky_config
 
 PRESET_PREFIX = "\\"
 PRESET_LIST_COMMAND = "\\presets"
@@ -31,12 +31,13 @@ class PresetExpansion:
 
 def list_presets_text() -> str:
     """Return a human-readable listing of configured command presets."""
-    if not COMMAND_PRESETS:
+    command_presets = dict(asky_config.COMMAND_PRESETS or {})
+    if not command_presets:
         return "No command presets are configured."
 
     lines = ["Command Presets:"]
-    for name in sorted(COMMAND_PRESETS.keys()):
-        template = str(COMMAND_PRESETS.get(name, "") or "").strip()
+    for name in sorted(command_presets.keys()):
+        template = str(command_presets.get(name, "") or "").strip()
         if not template:
             continue
         lines.append(f"  \\{name} -> {template}")
@@ -47,6 +48,7 @@ def list_presets_text() -> str:
 
 def expand_preset_invocation(raw_text: str) -> PresetExpansion:
     """Expand a first-token backslash preset into executable command tokens."""
+    command_presets = dict(asky_config.COMMAND_PRESETS or {})
     raw_value = str(raw_text or "")
     parse_text = raw_value
     if raw_value.lstrip().startswith(PRESET_PREFIX):
@@ -76,7 +78,7 @@ def expand_preset_invocation(raw_text: str) -> PresetExpansion:
     if not preset_name:
         return PresetExpansion(matched=False, error="Preset name is required.")
 
-    template = str(COMMAND_PRESETS.get(preset_name, "") or "").strip()
+    template = str(command_presets.get(preset_name, "") or "").strip()
     if not template:
         return PresetExpansion(
             matched=True,

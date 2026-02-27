@@ -107,16 +107,16 @@ def redact_document_urls(text: str, urls: list[str]) -> str:
     blocked = {str(url).strip() for url in urls if str(url).strip()}
     if not blocked:
         return str(text).strip()
-    kept: list[str] = []
-    for raw in URL_PATTERN.findall(str(text or "")):
+
+    def _replace(match: re.Match[str]) -> str:
+        raw = str(match.group(0) or "")
         candidate = raw.strip().rstrip(".,;:!?)]}\"'")
-        if candidate not in blocked:
-            kept.append(candidate)
-    normalized = URL_PATTERN.sub(" ", str(text or ""))
-    cleaned = " ".join(normalized.split()).strip()
-    if kept:
-        return " ".join([cleaned, *kept]).strip()
-    return cleaned
+        if candidate in blocked:
+            return " "
+        return raw
+
+    normalized = URL_PATTERN.sub(_replace, str(text or ""))
+    return " ".join(normalized.split()).strip()
 
 
 def _slugify_filename(filename: str, fallback_extension: str) -> str:

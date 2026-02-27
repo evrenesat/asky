@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import logging
+
 from rich.console import Console
 from rich.table import Table
 
@@ -22,6 +24,7 @@ from asky.memory.vector_ops import (
 )
 
 console = Console()
+logger = logging.getLogger(__name__)
 
 _MAX_MEMORY_DISPLAY_CHARS = 80
 
@@ -80,3 +83,14 @@ def handle_clear_memories() -> None:
     count = delete_all_memories_from_db(DB_PATH)
     clear_all_memory_embeddings(RESEARCH_CHROMA_PERSIST_DIRECTORY, USER_MEMORY_CHROMA_COLLECTION)
     console.print(f"Deleted {count} memories.")
+
+
+def clear_memories_non_interactive() -> int:
+    """Delete all memories without interactive confirmation and return deleted count."""
+    count = delete_all_memories_from_db(DB_PATH)
+    clear_all_memory_embeddings(
+        RESEARCH_CHROMA_PERSIST_DIRECTORY,
+        USER_MEMORY_CHROMA_COLLECTION,
+    )
+    logger.info("Deleted %s memories via non-interactive cleanup.", count)
+    return int(count)
