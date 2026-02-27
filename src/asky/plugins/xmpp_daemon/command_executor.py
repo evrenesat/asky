@@ -259,7 +259,8 @@ class CommandExecutor:
         command_text: str,
         room_jid: Optional[str] = None,
     ) -> bool:
-        """Return whether command_text resolves to an LM query execution path."""
+        """Return whether command_text structurally resolves to an LM query path."""
+        _ = (jid, room_jid)
         tokens = _split_command_tokens(command_text)
         if not tokens:
             return False
@@ -316,19 +317,7 @@ class CommandExecutor:
         if getattr(args, "session_history", None) is not None:
             return False
         query_tokens = list(getattr(args, "query", []) or [])
-        if not query_tokens:
-            return False
-        session_id = self._resolve_session_id(jid=jid, room_jid=room_jid)
-        profile = self.session_profile_manager.get_effective_profile(
-            session_id=session_id
-        )
-        _, immediate_response = self._prepare_query_text(
-            raw_query=" ".join(query_tokens).strip(),
-            verbose=bool(getattr(args, "verbose", False)),
-            prompt_map=profile.user_prompts,
-            conversation_id=str(room_jid or jid or "").strip(),
-        )
-        return immediate_response is None
+        return bool(query_tokens)
 
     def execute_query_text(
         self,
@@ -665,13 +654,13 @@ class CommandExecutor:
             if double_verbose
             else None
         )
+        progress_adapter = QueryProgressAdapter(
+            jid=jid,
+            room_jid=room_jid,
+            source="command_executor",
+            emit_event=self.query_progress_callback,
+        )
         with _summarization_model_override(profile.summarization_model):
-            progress_adapter = QueryProgressAdapter(
-                jid=jid,
-                room_jid=room_jid,
-                source="command_executor",
-                emit_event=self.query_progress_callback,
-            )
             progress_adapter.emit_start(model_alias=model_alias)
             try:
                 result = client.run_turn(

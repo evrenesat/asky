@@ -27,8 +27,12 @@ class _FakeClient:
 
     def update_status_message(self, handle: StatusMessageHandle, *, body: str) -> StatusMessageHandle:
         self.updated.append((handle.message_id, body))
-        handle.message_id = f"{handle.message_id}u"
-        return handle
+        return StatusMessageHandle(
+            message_id=f"{handle.message_id}u",
+            to_jid=handle.to_jid,
+            message_type=handle.message_type,
+            correction_supported=handle.correction_supported,
+        )
 
 
 def test_query_progress_adapter_emits_start_update_done():

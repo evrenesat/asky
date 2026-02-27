@@ -1,5 +1,37 @@
 # DEVLOG
 
+## 2026-02-27 - XMPP Query Progress Follow-Up Fixes (Correction Stanzas, Safety, Coverage)
+
+**Changes:**
+
+- Fixed XEP-0308 correction wire behavior in `plugins/xmpp_daemon/xmpp_client.py`:
+  - status/correction sends now build real message stanzas via `make_message(...)`,
+  - sets stanza `id` and `replace` fields directly (`msg["replace"]["id"] = ...`) before `send()`,
+  - removed non-standard `mid`/`mreplace` kwargs path.
+- Hardened message-handle contract:
+  - `StatusMessageHandle` is now immutable (`@dataclass(frozen=True)`),
+  - `update_status_message(...)` returns a new handle instead of mutating the existing one.
+- Simplified `command_executes_lm_query(...)` in `plugins/xmpp_daemon/command_executor.py`:
+  - now uses structural command checks only,
+  - removed classifier-time `_prepare_query_text(...)` / session-resolution side effects.
+- Improved robustness and clarity:
+  - moved `progress_adapter` construction outside the summarization override context,
+  - removed unused `final_answer` assignment artifact in `query_progress.py`,
+  - added explicit note in ad-hoc dispatch helper that XEP-0050 execution is direct-JID scoped.
+- Tightened user-facing error handling in `plugins/xmpp_daemon/xmpp_service.py`:
+  - ad-hoc queued execution failures now return a fixed generic error message (no exception string leak),
+  - progress publisher start path now stores publisher under lock before start send, with cleanup on start failure.
+- Added targeted coverage:
+  - `tests/test_xmpp_plugin_progress.py` (new):
+    - verifies correction status updates use replace-stanza path,
+    - verifies structural classifier behavior,
+    - verifies generic error response for queued ad-hoc failures,
+    - verifies progress publisher lifecycle handling in `XMPPService`.
+  - Updated `tests/test_xmpp_query_progress.py` for immutable status handles.
+
+**Verification:**
+- `uv run pytest` → `1209 passed in 9.23s`
+
 ## 2026-02-27 - Parallel Flake Fixes + Cleanup Refactors
 
 **Changes:**

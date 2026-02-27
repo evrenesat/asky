@@ -65,6 +65,9 @@ logger = logging.getLogger(__name__)
 URL_PATTERN = re.compile(r"https?://[^\s<>\"]+")
 AUDIO_EXTENSIONS = (".m4a", ".mp3", ".mp4", ".wav", ".webm", ".ogg", ".flac", ".opus")
 IMAGE_EXTENSIONS = (".jpg", ".jpeg", ".png", ".webp", ".gif")
+GENERIC_ADHOC_QUERY_ERROR = (
+    "Error: failed to execute the requested command. Please try again."
+)
 
 
 """XMPP transport: wires daemon router, background workers, and XMPP client."""
@@ -337,11 +340,11 @@ class XMPPService:
                     )
                 if response_text:
                     self._send_chunked(normalized_jid, response_text, message_type="chat")
-            except Exception as exc:
+            except Exception:
                 logger.exception("failed to execute ad-hoc queued query")
                 self._send_chunked(
                     normalized_jid,
-                    f"Error: {exc}",
+                    GENERIC_ADHOC_QUERY_ERROR,
                     message_type="chat",
                 )
 
@@ -397,15 +400,20 @@ class XMPPService:
         if not target_jid:
             return
         if event.event_type == "start":
-            publisher = QueryStatusPublisher(
-                client=self._client,
-                target_jid=target_jid,
-                message_type=message_type,
-                update_interval_seconds=QUERY_STATUS_UPDATE_SECONDS,
-            )
-            publisher.start(event.text)
             with self._query_publishers_lock:
+                publisher = QueryStatusPublisher(
+                    client=self._client,
+                    target_jid=target_jid,
+                    message_type=message_type,
+                    update_interval_seconds=QUERY_STATUS_UPDATE_SECONDS,
+                )
                 self._query_publishers[key] = publisher
+            try:
+                publisher.start(event.text)
+            except Exception:
+                with self._query_publishers_lock:
+                    self._query_publishers.pop(key, None)
+                raise
             return
         with self._query_publishers_lock:
             publisher = self._query_publishers.get(key)

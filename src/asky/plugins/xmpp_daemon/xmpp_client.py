@@ -20,7 +20,7 @@ except ImportError:
     slixmpp = None  # type: ignore[assignment]
 
 
-@dataclass
+@dataclass(frozen=True)
 class StatusMessageHandle:
     """Handle for updating a previously sent status message."""
 
@@ -151,17 +151,28 @@ class AskyXMPPClient:
         message_id: Optional[str] = None,
         replace_id: Optional[str] = None,
     ) -> None:
+        normalized_message_id = str(message_id or "").strip()
+        normalized_replace_id = str(replace_id or "").strip()
+        if normalized_message_id or normalized_replace_id:
+            try:
+                _dispatch_client_send_stanza(
+                    self._client,
+                    to_jid=to_jid,
+                    body=str(body or ""),
+                    message_type=str(message_type or "chat"),
+                    message_id=normalized_message_id or None,
+                    replace_id=normalized_replace_id or None,
+                )
+                return
+            except Exception:
+                if normalized_replace_id:
+                    raise
+                logger.debug("failed to send stanza with explicit id; falling back", exc_info=True)
         payload = {
             "mto": to_jid,
             "mbody": str(body or ""),
             "mtype": str(message_type or "chat"),
         }
-        normalized_message_id = str(message_id or "").strip()
-        normalized_replace_id = str(replace_id or "").strip()
-        if normalized_message_id:
-            payload["mid"] = normalized_message_id
-        if normalized_replace_id:
-            payload["mreplace"] = {"id": normalized_replace_id}
         _dispatch_client_send(self._client, payload)
 
     def supports_message_correction(self) -> bool:
@@ -204,19 +215,29 @@ class AskyXMPPClient:
                     message_id=new_message_id,
                     replace_id=handle.message_id,
                 )
-                handle.message_id = new_message_id
-                return handle
+                return StatusMessageHandle(
+                    message_id=new_message_id,
+                    to_jid=handle.to_jid,
+                    message_type=handle.message_type,
+                    correction_supported=True,
+                )
             except Exception:
                 logger.debug("status correction send failed, falling back", exc_info=True)
-                handle.correction_supported = False
+                correction_supported = False
+        else:
+            correction_supported = handle.correction_supported
         self.send_message(
             to_jid=handle.to_jid,
             body=body,
             message_type=handle.message_type,
             message_id=new_message_id,
         )
-        handle.message_id = new_message_id
-        return handle
+        return StatusMessageHandle(
+            message_id=new_message_id,
+            to_jid=handle.to_jid,
+            message_type=handle.message_type,
+            correction_supported=correction_supported,
+        )
 
     def join_room(self, room_jid: str) -> None:
         normalized_room = str(room_jid or "").strip()
@@ -432,6 +453,38 @@ def _dispatch_client_send(client, payload: dict) -> None:
 
     def _send() -> None:
         send_method(**payload)
+
+    if loop is not None and hasattr(loop, "call_soon_threadsafe"):
+        loop.call_soon_threadsafe(_send)
+        return
+    _send()
+
+
+def _dispatch_client_send_stanza(
+    client,
+    *,
+    to_jid: str,
+    body: str,
+    message_type: str,
+    message_id: Optional[str],
+    replace_id: Optional[str],
+) -> None:
+    """Dispatch a constructed message stanza (supports XEP-0308 replace)."""
+    loop = getattr(client, "loop", None)
+    make_message = getattr(client, "make_message", None)
+    if not callable(make_message):
+        raise RuntimeError("Invalid slixmpp client: missing make_message()")
+
+    def _send() -> None:
+        msg = make_message(mto=to_jid, mbody=body, mtype=message_type)
+        if message_id:
+            msg["id"] = message_id
+        if replace_id:
+            msg["replace"]["id"] = replace_id
+        send = getattr(msg, "send", None)
+        if not callable(send):
+            raise RuntimeError("Invalid slixmpp stanza: missing send()")
+        send()
 
     if loop is not None and hasattr(loop, "call_soon_threadsafe"):
         loop.call_soon_threadsafe(_send)

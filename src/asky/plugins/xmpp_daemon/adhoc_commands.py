@@ -264,6 +264,7 @@ class AdHocCommandHandler:
         query_text: Optional[str] = None,
         command_text: Optional[str] = None,
     ) -> bool:
+        # XEP-0050 command execution is always scoped to the sender's direct JID.
         callback = self._query_dispatch_callback
         if callback is None:
             return False

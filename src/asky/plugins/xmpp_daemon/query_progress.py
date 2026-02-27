@@ -70,7 +70,6 @@ class QueryProgressAdapter:
         is_final: bool = False,
         final_answer: Optional[str] = None,
     ) -> None:
-        _ = final_answer
         if is_final:
             return
         normalized = str(status_message or "").strip()
