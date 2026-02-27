@@ -386,7 +386,14 @@ Routing:
 command_executor.py
   - remote policy gate
   - transcript command namespace
+  - query progress adapter emits reusable start/update/done events
   - AskyClient.run_turn() for query execution
+    ↓
+query_progress.py + xmpp_service.py
+  - ad-hoc query nodes return immediate confirmation only
+  - final LM/query results are delivered as normal chat messages
+  - status updates are sent as one mutable message (XEP-0308 correction when available,
+    append fallback when unavailable), throttled to ~2s
     ↓
 optional media pipelines:
   oob/pasted audio URL -> background worker -> mlx-whisper -> transcript persistence
@@ -396,6 +403,7 @@ chunked outbound chat replies
 ```
 
 Command presets are expanded at ingress (`\\name`, `\\presets`) before command execution, and remote policy is enforced after expansion/planning so blocked flags cannot be bypassed.
+Ad-hoc `Run Prompt` / `Run Query` / `Use Transcript` and `Run Preset` (only when preset resolves to LM query) execute asynchronously through the same per-conversation queue as text messages; ad-hoc IQ response remains a confirmation note while final answer arrives in chat.
 XMPP query ingress applies the same recursive slash-expansion behavior as CLI (`/alias`, `/cp`) before model execution, and unresolved slash queries follow CLI prompt-list semantics (`/` lists all prompts, unknown `/prefix` returns filtered prompt listing). This shared query-prep path is used by direct text queries, interface-planned query actions, and `transcript use` query execution.
 Daemon query prep also supports session-scoped media pointers: `#aN`/`#atN` for audio file+transcript and `#iN`/`#itN` for image file+transcript.
 Room bindings and session override files are persisted in SQLite; on daemon startup/session-start, previously bound rooms are auto-rejoined and continue with their last active bound sessions.

@@ -120,6 +120,7 @@ Key modules:
 | `image_transcriber.py`      | Background image description via image-capable LLM         |
 | `document_ingestion.py`     | HTTPS document URL ingestion into session local corpus     |
 | `transcript_manager.py`     | Transcript lifecycle, pending confirmation tracking        |
+| `query_progress.py`         | Reusable query progress events + status-message publisher  |
 | `chunking.py`               | Outbound response chunking                                 |
 
 One-way dependency rule: `xmpp_daemon` may import from `asky.daemon.errors`; `daemon/` core must not import from `asky.plugins.xmpp_daemon`.

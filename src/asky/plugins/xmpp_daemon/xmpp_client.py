@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import inspect
 import logging
+import uuid
+from dataclasses import dataclass
 from typing import Callable, Optional
 
 from asky.daemon.errors import DaemonUserError
@@ -16,6 +18,16 @@ try:
     import slixmpp  # type: ignore
 except ImportError:
     slixmpp = None  # type: ignore[assignment]
+
+
+@dataclass
+class StatusMessageHandle:
+    """Handle for updating a previously sent status message."""
+
+    message_id: str
+    to_jid: str
+    message_type: str
+    correction_supported: bool
 
 
 class AskyXMPPClient:
@@ -53,7 +65,7 @@ class AskyXMPPClient:
 
         register_plugin = getattr(self._client, "register_plugin", None)
         if callable(register_plugin):
-            for _plugin_name in ("xep_0045", "xep_0050", "xep_0004"):
+            for _plugin_name in ("xep_0045", "xep_0050", "xep_0004", "xep_0308"):
                 try:
                     register_plugin(_plugin_name)
                 except Exception:
@@ -130,13 +142,81 @@ class AskyXMPPClient:
     def send_group_message(self, room_jid: str, body: str) -> None:
         self.send_message(to_jid=room_jid, body=body, message_type="groupchat")
 
-    def send_message(self, *, to_jid: str, body: str, message_type: str) -> None:
+    def send_message(
+        self,
+        *,
+        to_jid: str,
+        body: str,
+        message_type: str,
+        message_id: Optional[str] = None,
+        replace_id: Optional[str] = None,
+    ) -> None:
         payload = {
             "mto": to_jid,
             "mbody": str(body or ""),
             "mtype": str(message_type or "chat"),
         }
+        normalized_message_id = str(message_id or "").strip()
+        normalized_replace_id = str(replace_id or "").strip()
+        if normalized_message_id:
+            payload["mid"] = normalized_message_id
+        if normalized_replace_id:
+            payload["mreplace"] = {"id": normalized_replace_id}
         _dispatch_client_send(self._client, payload)
+
+    def supports_message_correction(self) -> bool:
+        return self.get_plugin("xep_0308") is not None
+
+    def send_status_message(
+        self,
+        *,
+        to_jid: str,
+        body: str,
+        message_type: str,
+    ) -> StatusMessageHandle:
+        message_id = uuid.uuid4().hex
+        self.send_message(
+            to_jid=to_jid,
+            body=body,
+            message_type=message_type,
+            message_id=message_id,
+        )
+        return StatusMessageHandle(
+            message_id=message_id,
+            to_jid=str(to_jid or "").strip(),
+            message_type=str(message_type or "chat").strip().lower() or "chat",
+            correction_supported=self.supports_message_correction(),
+        )
+
+    def update_status_message(
+        self,
+        handle: StatusMessageHandle,
+        *,
+        body: str,
+    ) -> StatusMessageHandle:
+        new_message_id = uuid.uuid4().hex
+        if handle.correction_supported and handle.message_id:
+            try:
+                self.send_message(
+                    to_jid=handle.to_jid,
+                    body=body,
+                    message_type=handle.message_type,
+                    message_id=new_message_id,
+                    replace_id=handle.message_id,
+                )
+                handle.message_id = new_message_id
+                return handle
+            except Exception:
+                logger.debug("status correction send failed, falling back", exc_info=True)
+                handle.correction_supported = False
+        self.send_message(
+            to_jid=handle.to_jid,
+            body=body,
+            message_type=handle.message_type,
+            message_id=new_message_id,
+        )
+        handle.message_id = new_message_id
+        return handle
 
     def join_room(self, room_jid: str) -> None:
         normalized_room = str(room_jid or "").strip()

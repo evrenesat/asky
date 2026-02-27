@@ -1,5 +1,39 @@
 # DEVLOG
 
+## 2026-02-27 - XMPP Ad-Hoc Query Confirmation + Reusable Progress Status Updates
+
+**Changes:**
+
+- Added reusable query progress infrastructure in `plugins/xmpp_daemon/query_progress.py`:
+  - `QueryProgressAdapter` maps `run_turn` callbacks/events to compact `start/update/done/error` progress events.
+  - `QueryStatusPublisher` sends one status message and updates it with throttling (`~2s`) during long-running LM queries.
+- Extended `plugins/xmpp_daemon/xmpp_client.py` with status-message update support:
+  - registers `xep_0308` message correction plugin,
+  - supports explicit `message_id` + replacement IDs in outbound messages,
+  - adds `send_status_message()` / `update_status_message()` helpers with append fallback when correction is unavailable.
+- Updated `plugins/xmpp_daemon/command_executor.py`:
+  - emits query progress events from `run_turn`,
+  - adds `command_executes_lm_query(...)` to classify command text as LM-query vs non-query without side effects.
+- Updated `plugins/xmpp_daemon/adhoc_commands.py`:
+  - added queue-dispatch callback plumbing for ad-hoc initiated query execution,
+  - `Run Prompt`, `Run Query`, and `Use Transcript` now return immediate confirmation in ad-hoc IQ response and send final answer in chat,
+  - `Run Preset` now branches:
+    - LM-query-resolving presets -> confirmation + queued chat result,
+    - non-query presets -> inline ad-hoc result (unchanged behavior).
+- Updated `plugins/xmpp_daemon/xmpp_service.py`:
+  - wired ad-hoc query dispatch into existing per-conversation queues,
+  - added progress-event handling that publishes mutable status updates to chat/groupchat target.
+- Test updates:
+  - `tests/test_xmpp_adhoc.py` updated for confirmation/dispatch behavior on query-style ad-hoc nodes.
+  - Added `tests/test_xmpp_query_progress.py` covering adapter event emission and publisher update behavior.
+- Docs updated:
+  - `ARCHITECTURE.md` (XMPP daemon flow now includes ad-hoc async delivery + progress status updates),
+  - `src/asky/daemon/AGENTS.md` (ad-hoc node behavior and delivery model),
+  - `src/asky/plugins/AGENTS.md` (new `query_progress.py` module).
+
+**Verification:**
+- `uv run pytest` → `1204 passed in 10.46s`
+
 ## 2026-02-27 - XMPP Document Upload Corpus + Session Cleanup Expansion
 
 **Changes:**

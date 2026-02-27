@@ -109,13 +109,16 @@ def _make_handler(authorized: bool = True, voice_enabled: bool = False, image_en
 
     router = Mock()
     router.is_authorized.return_value = authorized
+    query_dispatch_callback = Mock()
 
     handler = AdHocCommandHandler(
         command_executor=executor,
         router=router,
         voice_enabled=voice_enabled,
         image_enabled=image_enabled,
+        query_dispatch_callback=query_dispatch_callback,
     )
+    handler._query_dispatch_callback_test = query_dispatch_callback
     return handler, executor, router
 
 
@@ -310,21 +313,23 @@ def test_list_prompts_step1_no_form_when_no_xep_0004():
 
 def test_list_prompts_submit_executes_alias_without_query():
     handler, executor, _ = _make_handler()
-    executor.execute_query_text.return_value = "prompt output"
     iq = _MockIQ("user@example.com", {"prompt": "greet", "query": ""})
     result = _run(handler._cmd_list_prompts_submit(iq, {}))
-    executor.execute_query_text.assert_called_once()
-    call_kwargs = executor.execute_query_text.call_args.kwargs
-    assert call_kwargs["query_text"] == "/greet"
-    assert result["notes"][0][1] == "prompt output"
+    executor.execute_query_text.assert_not_called()
+    handler._query_dispatch_callback_test.assert_called_once_with(
+        jid="user@example.com",
+        room_jid=None,
+        query_text="/greet",
+        command_text=None,
+    )
+    assert "Response will be sent to chat." in result["notes"][0][1]
 
 
 def test_list_prompts_submit_appends_query_text():
     handler, executor, _ = _make_handler()
-    executor.execute_query_text.return_value = "result"
     iq = _MockIQ("user@example.com", {"prompt": "recap", "query": "the meeting notes"})
     _run(handler._cmd_list_prompts_submit(iq, {}))
-    call_kwargs = executor.execute_query_text.call_args.kwargs
+    call_kwargs = handler._query_dispatch_callback_test.call_args.kwargs
     assert call_kwargs["query_text"] == "/recap the meeting notes"
 
 
@@ -334,6 +339,7 @@ def test_list_prompts_submit_error_when_no_alias():
     result = _run(handler._cmd_list_prompts_submit(iq, {}))
     assert result["notes"][0][0] == "error"
     executor.execute_query_text.assert_not_called()
+    handler._query_dispatch_callback_test.assert_not_called()
 
 
 def test_list_presets_no_presets_returns_text():
@@ -375,6 +381,7 @@ def test_list_presets_step1_no_form_when_no_xep_0004():
 
 def test_list_presets_submit_expands_and_executes():
     handler, executor, _ = _make_handler()
+    executor.command_executes_lm_query.return_value = False
     executor.execute_command_text.return_value = "preset output"
     iq = _MockIQ("user@example.com", {"preset": "search", "args": "python asyncio"})
     presets = {"search": "websearch $*"}
@@ -387,6 +394,7 @@ def test_list_presets_submit_expands_and_executes():
 
 def test_list_presets_submit_without_args():
     handler, executor, _ = _make_handler()
+    executor.command_executes_lm_query.return_value = False
     executor.execute_command_text.return_value = "ok"
     iq = _MockIQ("user@example.com", {"preset": "fix", "args": ""})
     presets = {"fix": "fix the following code"}
@@ -439,8 +447,9 @@ def test_query_submit_builds_plain_query():
     handler, executor, _ = _make_handler()
     iq = _MockIQ("user@example.com", {"query": "What is Python?", "research": "false"})
     result = _run(handler._cmd_query_submit(iq, {}))
-    executor.execute_command_text.assert_called_once()
-    cmd = executor.execute_command_text.call_args.kwargs["command_text"]
+    executor.execute_command_text.assert_not_called()
+    handler._query_dispatch_callback_test.assert_called_once()
+    cmd = handler._query_dispatch_callback_test.call_args.kwargs["command_text"]
     assert "What is Python?" in cmd
     assert result["has_next"] is False
 
@@ -449,7 +458,7 @@ def test_query_submit_includes_research_flag_when_enabled():
     handler, executor, _ = _make_handler()
     iq = _MockIQ("user@example.com", {"query": "deep topic", "research": "true"})
     _run(handler._cmd_query_submit(iq, {}))
-    cmd = executor.execute_command_text.call_args.kwargs["command_text"]
+    cmd = handler._query_dispatch_callback_test.call_args.kwargs["command_text"]
     assert "-r" in cmd
 
 
@@ -457,7 +466,7 @@ def test_query_submit_includes_model_and_turns():
     handler, executor, _ = _make_handler()
     iq = _MockIQ("user@example.com", {"query": "hello", "model": "opus", "turns": "5"})
     _run(handler._cmd_query_submit(iq, {}))
-    cmd = executor.execute_command_text.call_args.kwargs["command_text"]
+    cmd = handler._query_dispatch_callback_test.call_args.kwargs["command_text"]
     assert "-m" in cmd
     assert "opus" in cmd
     assert "-t" in cmd
@@ -470,6 +479,7 @@ def test_query_submit_returns_error_when_query_empty():
     result = _run(handler._cmd_query_submit(iq, {}))
     assert result["notes"][0][0] == "error"
     executor.execute_command_text.assert_not_called()
+    handler._query_dispatch_callback_test.assert_not_called()
 
 
 # ---------------------------------------------------------------------------
@@ -575,12 +585,11 @@ def test_use_transcript_step1_returns_form_with_options():
 
 def test_use_transcript_submit_executes_transcript_use():
     handler, executor, _ = _make_handler()
-    executor.execute_command_text.return_value = "transcript answer"
     iq = _MockIQ("user@example.com", {"transcript_id": "3"})
     result = _run(handler._cmd_use_transcript_submit(iq, {}))
-    cmd = executor.execute_command_text.call_args.kwargs["command_text"]
+    cmd = handler._query_dispatch_callback_test.call_args.kwargs["command_text"]
     assert "transcript use #at3" in cmd
-    assert result["notes"][0][1] == "transcript answer"
+    assert "Response will be sent to chat." in result["notes"][0][1]
 
 
 def test_use_transcript_submit_error_on_empty_id():
@@ -589,6 +598,7 @@ def test_use_transcript_submit_error_on_empty_id():
     result = _run(handler._cmd_use_transcript_submit(iq, {}))
     assert result["notes"][0][0] == "error"
     executor.execute_command_text.assert_not_called()
+    handler._query_dispatch_callback_test.assert_not_called()
 
 
 # ---------------------------------------------------------------------------
@@ -1026,9 +1036,11 @@ def test_multistep_submit_authorizes_with_session_stored_sender():
     result = _run(handler._cmd_list_prompts_submit(submit_iq, session))
 
     assert result["notes"][0][0] == "info"
-    executor.execute_query_text.assert_called_once_with(
+    handler._query_dispatch_callback_test.assert_called_once_with(
         jid="u@example.com",
+        room_jid=None,
         query_text="/greet there",
+        command_text=None,
     )
 
 
@@ -1054,7 +1066,6 @@ def test_form_values_uses_raw_xml_when_command_interface_missing():
 
 def test_list_prompts_submit_handles_xml_only_command_next_iq():
     handler, executor, _ = _make_handler()
-    executor.execute_query_text.return_value = "prompt output"
     iq = _MockIQXmlOnly(
         "user@example.com/resource",
         form_values={"prompt": "greet", "query": "xml fallback"},
@@ -1062,8 +1073,11 @@ def test_list_prompts_submit_handles_xml_only_command_next_iq():
 
     result = _run(handler._cmd_list_prompts_submit(iq, {}))
 
-    executor.execute_query_text.assert_called_once_with(
+    executor.execute_query_text.assert_not_called()
+    handler._query_dispatch_callback_test.assert_called_once_with(
         jid="user@example.com",
+        room_jid=None,
         query_text="/greet xml fallback",
+        command_text=None,
     )
-    assert result["notes"][0][1] == "prompt output"
+    assert "Response will be sent to chat." in result["notes"][0][1]

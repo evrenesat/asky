@@ -51,6 +51,11 @@ from asky.plugins.xmpp_daemon.document_ingestion import (
 )
 from asky.plugins.xmpp_daemon.image_transcriber import ImageTranscriber
 from asky.plugins.xmpp_daemon.interface_planner import InterfacePlanner
+from asky.plugins.xmpp_daemon.query_progress import (
+    QUERY_STATUS_UPDATE_SECONDS,
+    QueryProgressEvent,
+    QueryStatusPublisher,
+)
 from asky.plugins.xmpp_daemon.router import DaemonRouter
 from asky.plugins.xmpp_daemon.transcript_manager import TranscriptManager
 from asky.plugins.xmpp_daemon.voice_transcriber import VoiceTranscriber
@@ -88,6 +93,7 @@ class XMPPService:
             self.transcript_manager,
             double_verbose=double_verbose,
             plugin_runtime=self.plugin_runtime,
+            query_progress_callback=self._on_query_progress_event,
         )
         self.interface_planner = InterfacePlanner(
             INTERFACE_MODEL,
@@ -137,10 +143,13 @@ class XMPPService:
             router=self.router,
             voice_enabled=XMPP_VOICE_ENABLED,
             image_enabled=XMPP_IMAGE_ENABLED,
+            query_dispatch_callback=self._schedule_adhoc_query,
         )
         self._jid_queues: dict[str, queue.Queue[Callable[[], None]]] = {}
         self._jid_workers: dict[str, threading.Thread] = {}
         self._jid_workers_lock = threading.Lock()
+        self._query_publishers: dict[str, QueryStatusPublisher] = {}
+        self._query_publishers_lock = threading.Lock()
         self._client = AskyXMPPClient(
             jid=XMPP_JID,
             password=XMPP_PASSWORD,
@@ -296,6 +305,48 @@ class XMPPService:
 
         self._enqueue_for_jid(queue_key, _task)
 
+    def _schedule_adhoc_query(
+        self,
+        *,
+        jid: str,
+        room_jid: Optional[str],
+        query_text: Optional[str] = None,
+        command_text: Optional[str] = None,
+    ) -> None:
+        normalized_jid = str(jid or "").strip()
+        if not normalized_jid:
+            return
+        normalized_query_text = str(query_text or "").strip()
+        normalized_command_text = str(command_text or "").strip()
+        if not normalized_query_text and not normalized_command_text:
+            return
+
+        def _task() -> None:
+            try:
+                if normalized_query_text:
+                    response_text = self.command_executor.execute_query_text(
+                        jid=normalized_jid,
+                        room_jid=room_jid,
+                        query_text=normalized_query_text,
+                    )
+                else:
+                    response_text = self.command_executor.execute_command_text(
+                        jid=normalized_jid,
+                        room_jid=room_jid,
+                        command_text=normalized_command_text,
+                    )
+                if response_text:
+                    self._send_chunked(normalized_jid, response_text, message_type="chat")
+            except Exception as exc:
+                logger.exception("failed to execute ad-hoc queued query")
+                self._send_chunked(
+                    normalized_jid,
+                    f"Error: {exc}",
+                    message_type="chat",
+                )
+
+        self._enqueue_for_jid(normalized_jid, _task)
+
     def _enqueue_for_jid(self, jid: str, task: Callable[[], None]) -> None:
         if jid not in self._jid_queues:
             self._jid_queues[jid] = queue.Queue()
@@ -337,6 +388,48 @@ class XMPPService:
                 self._client.send_group_message(jid, body)
             else:
                 self._client.send_chat_message(jid, body)
+
+    def _on_query_progress_event(self, event: QueryProgressEvent) -> None:
+        key = str(event.query_id or "").strip()
+        if not key:
+            return
+        target_jid, message_type = _resolve_query_progress_target(event)
+        if not target_jid:
+            return
+        if event.event_type == "start":
+            publisher = QueryStatusPublisher(
+                client=self._client,
+                target_jid=target_jid,
+                message_type=message_type,
+                update_interval_seconds=QUERY_STATUS_UPDATE_SECONDS,
+            )
+            publisher.start(event.text)
+            with self._query_publishers_lock:
+                self._query_publishers[key] = publisher
+            return
+        with self._query_publishers_lock:
+            publisher = self._query_publishers.get(key)
+        if publisher is None:
+            publisher = QueryStatusPublisher(
+                client=self._client,
+                target_jid=target_jid,
+                message_type=message_type,
+                update_interval_seconds=QUERY_STATUS_UPDATE_SECONDS,
+            )
+            publisher.start("Running query...")
+            with self._query_publishers_lock:
+                self._query_publishers[key] = publisher
+        if event.event_type == "done":
+            publisher.finish(event.text)
+            with self._query_publishers_lock:
+                self._query_publishers.pop(key, None)
+            return
+        if event.event_type == "error":
+            publisher.finish(event.text)
+            with self._query_publishers_lock:
+                self._query_publishers.pop(key, None)
+            return
+        publisher.update(event.text)
 
     def _on_transcription_complete(self, payload: dict) -> None:
         results = self.router.handle_transcription_result(payload)
@@ -408,6 +501,16 @@ def _resolve_reply_target(
         if room_jid:
             return room_jid, "groupchat"
     return from_jid, "chat"
+
+
+def _resolve_query_progress_target(event: QueryProgressEvent) -> tuple[str, str]:
+    room_jid = str(event.room_jid or "").strip().lower()
+    if room_jid:
+        return room_jid, "groupchat"
+    jid = str(event.jid or "").strip()
+    if not jid:
+        return "", "chat"
+    return jid, "chat"
 
 
 def _extract_toml_urls(payload: dict) -> list[str]:

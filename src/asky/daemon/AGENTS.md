@@ -140,8 +140,8 @@ is absent, ad-hoc commands are silently disabled (text command surface still wor
 | `asky#list-transcripts`   | single-step  | Recent audio/image transcripts                   |
 | `asky#list-tools`         | single-step  | All available LLM tool names                     |
 | `asky#list-memories`      | single-step  | All saved user memories                          |
-| `asky#list-prompts`       | single-step  | Configured prompt aliases                        |
-| `asky#list-presets`       | single-step  | Configured command presets                       |
+| `asky#list-prompts`       | two-step     | Run prompt alias (form: alias + optional text)  |
+| `asky#list-presets`       | two-step     | Run preset (form: preset + optional args)        |
 | `asky#query`              | two-step     | Run query (form: text, model, research, turns…)  |
 | `asky#new-session`        | single-step  | Create and switch to a new session               |
 | `asky#switch-session`     | two-step     | Switch to existing session (form: ID/name)       |
@@ -162,6 +162,12 @@ and reused if the follow-up IQ stanza lacks a usable `from` field.
 
 All executor calls (`run_turn`, DB operations) run in `loop.run_in_executor(None, fn)` so the asyncio
 event loop is never blocked.
+
+### Ad-Hoc Query Delivery
+
+- Query-style ad-hoc nodes (`asky#query`, `asky#list-prompts`, `asky#use-transcript`, and query-resolving `asky#list-presets`) return a confirmation note in the IQ response.
+- The actual model result is delivered afterward as a regular chat/groupchat message through the existing per-conversation queue.
+- During execution, a compact progress status message is updated approximately every 2 seconds. Message correction (`xep_0308`) is used when supported; otherwise updates are appended as new messages.
 
 ---
 

@@ -9,7 +9,7 @@ import re
 import threading
 import time
 from contextlib import contextmanager, redirect_stderr, redirect_stdout
-from typing import Optional, TYPE_CHECKING
+from typing import Any, Callable, Optional, TYPE_CHECKING
 from urllib.parse import urlparse
 
 import requests
@@ -27,6 +27,10 @@ from asky.cli.main import (
 )
 from asky.cli.verbose_output import build_verbose_output_callback
 from asky.config import DEFAULT_MODEL
+from asky.plugins.xmpp_daemon.query_progress import (
+    QueryProgressAdapter,
+    QueryProgressEvent,
+)
 from asky.plugins.xmpp_daemon.transcript_manager import TranscriptManager
 from asky.storage import init_db
 
@@ -151,12 +155,14 @@ class CommandExecutor:
         transcript_manager: TranscriptManager,
         double_verbose: bool = False,
         plugin_runtime: Optional["PluginRuntime"] = None,
+        query_progress_callback: Optional[Callable[[QueryProgressEvent], None]] = None,
     ):
         self.transcript_manager = transcript_manager
         self.session_profile_manager = transcript_manager.session_profile_manager
         self.double_verbose = double_verbose
         self.plugin_runtime = plugin_runtime
         self._pending_clear: dict[str, tuple[str, Optional[str]]] = {}
+        self.query_progress_callback = query_progress_callback
 
     def get_interface_command_reference(self) -> str:
         """Return command-surface guidance for interface planner prompting."""
@@ -245,6 +251,84 @@ class CommandExecutor:
             room_jid=room_jid,
             tokens=tokens,
         )
+
+    def command_executes_lm_query(
+        self,
+        *,
+        jid: str,
+        command_text: str,
+        room_jid: Optional[str] = None,
+    ) -> bool:
+        """Return whether command_text resolves to an LM query execution path."""
+        tokens = _split_command_tokens(command_text)
+        if not tokens:
+            return False
+        if tokens[0].lower() in HELP_COMMAND_TOKENS:
+            return False
+        if tokens[0] == TRANSCRIPT_COMMAND:
+            if len(tokens) < 2:
+                return False
+            return str(tokens[1] or "").strip().lower() == "use"
+        if tokens[0] == SESSION_COMMAND_TOKEN:
+            return False
+        try:
+            args = parse_args(tokens)
+        except SystemExit:
+            return False
+
+        policy_error = self._validate_remote_policy(args)
+        if policy_error:
+            return False
+
+        try:
+            research_arg = getattr(args, "research", False)
+            (
+                research_enabled,
+                corpus_paths,
+                leftover,
+                source_mode,
+                replace_corpus,
+            ) = _resolve_research_corpus(research_arg)
+            args.research = research_enabled
+            args.local_corpus = corpus_paths
+            args.research_flag_provided = (
+                research_arg is not False and research_arg is not None
+            )
+            args.research_source_mode = source_mode
+            args.replace_research_corpus = replace_corpus
+            if leftover:
+                args.query = [leftover] + (list(getattr(args, "query", []) or []))
+        except ValueError:
+            return False
+
+        if _manual_corpus_query_arg(args):
+            return False
+        if _manual_section_query_arg(args) is not None:
+            return False
+        if getattr(args, "prompts", False):
+            return False
+        if getattr(args, "history", None) is not None:
+            return False
+        if getattr(args, "print_ids", None):
+            return False
+        if getattr(args, "print_session", None):
+            return False
+        if getattr(args, "session_history", None) is not None:
+            return False
+        query_tokens = list(getattr(args, "query", []) or [])
+        if not query_tokens:
+            return False
+        session_id = self._resolve_session_id(jid=jid, room_jid=room_jid)
+        profile = self.session_profile_manager.get_effective_profile(
+            session_id=session_id
+        )
+        _, immediate_response = self._prepare_query_text(
+            raw_query=" ".join(query_tokens).strip(),
+            verbose=bool(getattr(args, "verbose", False)),
+            prompt_map=profile.user_prompts,
+            conversation_id=str(room_jid or jid or "").strip(),
+        )
+        return immediate_response is None
 
     def execute_query_text(
         self,
@@ -575,13 +659,35 @@ class CommandExecutor:
             else None
         )
         with _summarization_model_override(profile.summarization_model):
-            result = client.run_turn(request, verbose_output_callback=verbose_output_cb)
+            progress_adapter = QueryProgressAdapter(
+                jid=jid,
+                room_jid=room_jid,
+                source="command_executor",
+                emit_event=self.query_progress_callback,
+            )
+            progress_adapter.emit_start(model_alias=model_alias)
+            try:
+                result = client.run_turn(
+                    request,
+                    display_callback=progress_adapter.display_callback,
+                    verbose_output_callback=verbose_output_cb,
+                    summarization_status_callback=(
+                        progress_adapter.summarization_status_callback
+                    ),
+                    event_callback=progress_adapter.event_callback,
+                    preload_status_callback=progress_adapter.preload_status_callback,
+                )
+            except Exception as exc:
+                progress_adapter.emit_error(str(exc))
+                raise
         if result.halted:
+            progress_adapter.emit_error(f"halted ({result.halt_reason or 'unknown'})")
             reason = result.halt_reason or "unknown"
             notices = "\n".join(result.notices) if result.notices else ""
             if notices:
                 return f"Halted: {reason}\n{notices}"
             return f"Halted: {reason}"
+        progress_adapter.emit_done()
         return result.final_answer or "(no response)"
 
     def _prepare_query_text(

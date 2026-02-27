@@ -50,6 +50,7 @@ ADHOC_COMMANDS = [
 
 _FORM_UNAVAILABLE_ERROR = "Data forms not available (xep_0004 missing)."
 XDATA_NAMESPACE = "jabber:x:data"
+QUERY_DISPATCH_UNAVAILABLE_ERROR = "Query dispatch is unavailable."
 
 
 def _format_section(title: str, body: str) -> str:
@@ -77,12 +78,14 @@ class AdHocCommandHandler:
         router: "DaemonRouter",
         voice_enabled: bool = False,
         image_enabled: bool = False,
+        query_dispatch_callback: Optional[Callable[..., None]] = None,
     ):
         self.command_executor = command_executor
         self.router = router
         self.voice_enabled = voice_enabled
         self.image_enabled = image_enabled
         self._xep_0004 = None
+        self._query_dispatch_callback = query_dispatch_callback
 
     def register_all(self, xep_0050, xep_0004=None) -> None:
         """Register all ad-hoc commands with the xep_0050 plugin. Called at session start."""
@@ -253,6 +256,24 @@ class AdHocCommandHandler:
         session["next"] = None
         session["payload"] = None
         return session
+
+    def _enqueue_query_from_adhoc(
+        self,
+        *,
+        sender: str,
+        query_text: Optional[str] = None,
+        command_text: Optional[str] = None,
+    ) -> bool:
+        callback = self._query_dispatch_callback
+        if callback is None:
+            return False
+        callback(
+            jid=sender,
+            room_jid=None,
+            query_text=query_text,
+            command_text=command_text,
+        )
+        return True
 
     async def _run_blocking(self, fn: Callable, *args, **kwargs):
         """Run a blocking function in the default thread pool executor."""
@@ -460,12 +481,15 @@ class AdHocCommandHandler:
             return self._complete_with_error(session, "Prompt selection is required.")
         query = str(values.get("query") or "").strip()
         query_text = f"/{alias} {query}".strip() if query else f"/{alias}"
-        result = await self._run_blocking(
-            self.command_executor.execute_query_text,
-            jid=sender,
+        dispatched = self._enqueue_query_from_adhoc(
+            sender=sender,
             query_text=query_text,
         )
-        return self._complete_with_text(session, result)
+        if not dispatched:
+            return self._complete_with_error(session, QUERY_DISPATCH_UNAVAILABLE_ERROR)
+        return self._complete_with_text(
+            session, "Run Prompt started. Response will be sent to chat."
+        )
 
     async def _cmd_list_presets(self, iq, session: dict) -> dict:
         if not self._is_authorized(iq, session):
@@ -521,17 +545,40 @@ class AdHocCommandHandler:
         args = str(values.get("args") or "").strip()
         raw_invocation = f"\\{name} {args}".strip() if args else f"\\{name}"
 
-        def _expand_and_run() -> str:
+        def _expand() -> tuple[str, str]:
             from asky.cli.presets import expand_preset_invocation
 
             expansion = expand_preset_invocation(raw_invocation)
             if expansion.error:
-                return f"Error: {expansion.error}"
-            return self.command_executor.execute_command_text(
-                jid=sender, command_text=expansion.command_text
-            )
+                return "", f"Error: {expansion.error}"
+            return expansion.command_text, ""
 
-        result = await self._run_blocking(_expand_and_run)
+        expanded_command, expansion_error = await self._run_blocking(_expand)
+        if expansion_error:
+            return self._complete_with_text(session, expansion_error)
+        executes_query = await self._run_blocking(
+            self.command_executor.command_executes_lm_query,
+            jid=sender,
+            room_jid=None,
+            command_text=expanded_command,
+        )
+        if executes_query:
+            dispatched = self._enqueue_query_from_adhoc(
+                sender=sender,
+                command_text=expanded_command,
+            )
+            if not dispatched:
+                return self._complete_with_error(
+                    session, QUERY_DISPATCH_UNAVAILABLE_ERROR
+                )
+            return self._complete_with_text(
+                session, "Run Preset started. Response will be sent to chat."
+            )
+        result = await self._run_blocking(
+            self.command_executor.execute_command_text,
+            jid=sender,
+            command_text=expanded_command,
+        )
         return self._complete_with_text(session, result)
 
     # --- Form-based interactive commands ---
@@ -587,12 +634,15 @@ class AdHocCommandHandler:
         tokens.append(query)
 
         command_text = " ".join(shlex.quote(t) for t in tokens)
-        result = await self._run_blocking(
-            self.command_executor.execute_command_text,
-            jid=sender,
+        dispatched = self._enqueue_query_from_adhoc(
+            sender=sender,
             command_text=command_text,
         )
-        return self._complete_with_text(session, result)
+        if not dispatched:
+            return self._complete_with_error(session, QUERY_DISPATCH_UNAVAILABLE_ERROR)
+        return self._complete_with_text(
+            session, "Run Query started. Response will be sent to chat."
+        )
 
     async def _cmd_new_session(self, iq, session: dict) -> dict:
         if not self._is_authorized(iq, session):
@@ -730,9 +780,13 @@ class AdHocCommandHandler:
         transcript_id = str(values.get("transcript_id") or "").strip()
         if not transcript_id:
             return self._complete_with_error(session, "Transcript selection is required.")
-        result = await self._run_blocking(
-            self.command_executor.execute_command_text,
-            jid=sender,
+        dispatched = self._enqueue_query_from_adhoc(
+            sender=sender,
             command_text=f"transcript use #at{transcript_id}",
         )
-        return self._complete_with_text(session, result)
+        if not dispatched:
+            return self._complete_with_error(session, QUERY_DISPATCH_UNAVAILABLE_ERROR)
+        return self._complete_with_text(
+            session,
+            "Use Transcript as Query started. Response will be sent to chat.",
+        )
