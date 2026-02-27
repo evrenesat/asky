@@ -4,7 +4,9 @@ import sys
 import types
 from pathlib import Path
 
-from asky.plugins.base import AskyPlugin
+import pytest
+
+from asky.plugins.base import AskyPlugin, CapabilityCategory, CLIContribution
 from asky.plugins.manager import (
     ACTIVE_PLUGIN_STATE,
     FAILED_ACTIVATION_STATE,
@@ -15,9 +17,38 @@ from asky.plugins.manager import (
 )
 
 
+@pytest.fixture(autouse=True)
+def _no_bundled_sync(monkeypatch):
+    """Disable bundled-plugin sync so tests use only their own roster content."""
+    monkeypatch.setattr(PluginManager, "_sync_new_bundled_plugins", lambda self: None)
+
+
 def _write_plugins_toml(config_dir: Path, content: str) -> None:
     config_dir.mkdir(parents=True, exist_ok=True)
     (config_dir / "plugins.toml").write_text(content, encoding="utf-8")
+
+
+def _install_plugin_module_with_contributions(
+    monkeypatch, module_name: str, class_name: str, contributions: list, events=None
+):
+    """Install a fake plugin module whose class returns the given CLI contributions."""
+    module = types.ModuleType(module_name)
+
+    class _Plugin(AskyPlugin):
+        @classmethod
+        def get_cli_contributions(cls) -> list:
+            return contributions
+
+        def activate(self, context):
+            if events is not None:
+                events.append(("activate", context.plugin_name))
+
+        def deactivate(self):
+            if events is not None:
+                events.append(("deactivate", module_name))
+
+    setattr(module, class_name, _Plugin)
+    monkeypatch.setitem(sys.modules, module_name, module)
 
 
 def _install_plugin_module(monkeypatch, module_name: str, class_name: str, events):
@@ -199,3 +230,107 @@ config_file = "plugins/alpha.toml"
     statuses = {status.name: status for status in manager.list_status()}
     assert statuses["alpha"].state == FAILED_ACTIVATION_STATE
     assert events == []
+
+
+def test_collect_cli_contributions_returns_plugin_flags(tmp_path, monkeypatch):
+    config_dir = tmp_path / "config"
+    _write_plugins_toml(
+        config_dir,
+        """
+[plugin.alpha]
+enabled = true
+module = "plugins.alpha_cli"
+class = "AlphaPlugin"
+""",
+    )
+    contrib = CLIContribution(
+        category=CapabilityCategory.OUTPUT_DELIVERY,
+        flags=("--alpha-flag",),
+        kwargs=dict(action="store_true", help="Alpha flag"),
+    )
+    _install_plugin_module_with_contributions(
+        monkeypatch, "plugins.alpha_cli", "AlphaPlugin", [contrib]
+    )
+
+    manager = PluginManager(config_dir=config_dir)
+    manager.load_roster()
+    results = manager.collect_cli_contributions()
+
+    assert len(results) == 1
+    plugin_name, contribution = results[0]
+    assert plugin_name == "alpha"
+    assert contribution.flags == ("--alpha-flag",)
+    assert contribution.category == CapabilityCategory.OUTPUT_DELIVERY
+
+
+def test_collect_cli_contributions_skips_disabled_plugins(tmp_path, monkeypatch):
+    config_dir = tmp_path / "config"
+    _write_plugins_toml(
+        config_dir,
+        """
+[plugin.alpha]
+enabled = false
+module = "plugins.alpha_disabled"
+class = "AlphaPlugin"
+""",
+    )
+    contrib = CLIContribution(
+        category=CapabilityCategory.OUTPUT_DELIVERY,
+        flags=("--alpha-flag",),
+        kwargs=dict(action="store_true"),
+    )
+    _install_plugin_module_with_contributions(
+        monkeypatch, "plugins.alpha_disabled", "AlphaPlugin", [contrib]
+    )
+
+    manager = PluginManager(config_dir=config_dir)
+    manager.load_roster()
+    results = manager.collect_cli_contributions()
+
+    assert results == []
+
+
+def test_collect_cli_contributions_skips_on_import_error(tmp_path):
+    config_dir = tmp_path / "config"
+    _write_plugins_toml(
+        config_dir,
+        """
+[plugin.broken]
+enabled = true
+module = "plugins.does_not_exist_xyz"
+class = "BrokenPlugin"
+""",
+    )
+    manager = PluginManager(config_dir=config_dir)
+    manager.load_roster()
+    results = manager.collect_cli_contributions()
+
+    assert results == []
+
+
+def test_parse_args_plugin_contributions_added_to_group(tmp_path, monkeypatch):
+    """parse_args() includes plugin-contributed flags when a plugin_manager is provided."""
+    from asky.cli.main import parse_args, _add_plugin_contributions_to_parser
+    from unittest.mock import MagicMock
+
+    contrib = CLIContribution(
+        category=CapabilityCategory.OUTPUT_DELIVERY,
+        flags=("--my-plugin-flag",),
+        kwargs=dict(dest="my_plugin_flag", action="store_true", help="Plugin flag"),
+    )
+    mock_manager = MagicMock()
+    mock_manager.collect_cli_contributions.return_value = [("my_plugin", contrib)]
+
+    args = parse_args(["--my-plugin-flag", "hello"], plugin_manager=mock_manager)
+
+    assert getattr(args, "my_plugin_flag", False) is True
+    assert args.query == ["hello"]
+
+
+def test_parse_args_without_plugin_manager_still_works(monkeypatch):
+    """parse_args() with no plugin_manager works identically to before for core flags."""
+    from asky.cli.main import parse_args
+
+    args = parse_args(["--open", "some query"])
+    assert args.open is True
+    assert args.query == ["some query"]

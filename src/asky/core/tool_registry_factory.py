@@ -604,14 +604,13 @@ def get_all_available_tool_names() -> List[str]:
         if tool_data.get("enabled", True):
             names.add(tool_name)
 
-    # Push data tools
+    # Push data tools (contributed by push_data plugin when enabled)
     try:
-        from asky.push_data import get_enabled_endpoints
+        from asky.plugins.push_data.executor import get_enabled_endpoints
 
         for endpoint_name in get_enabled_endpoints():
             names.add(f"push_data_{endpoint_name}")
     except Exception:
-        # Fallback if push_data module fails to load or similar
         pass
 
     return sorted(list(names))

@@ -7,7 +7,7 @@ from typing import Optional
 
 from asky.config import XMPP_ENABLED
 from asky.daemon.errors import DaemonUserError
-from asky.plugins.base import AskyPlugin, PluginContext
+from asky.plugins.base import AskyPlugin, CapabilityCategory, CLIContribution, PluginContext
 from asky.plugins.hook_types import (
     DAEMON_TRANSPORT_REGISTER,
     TRAY_MENU_REGISTER,
@@ -25,6 +25,19 @@ class XMPPDaemonPlugin(AskyPlugin):
 
     def __init__(self) -> None:
         self._context: Optional[PluginContext] = None
+
+    @classmethod
+    def get_cli_contributions(cls) -> list[CLIContribution]:
+        return [
+            CLIContribution(
+                category=CapabilityCategory.BACKGROUND_SERVICE,
+                flags=("--daemon",),
+                kwargs=dict(
+                    action="store_true",
+                    help="Run the XMPP daemon in the foreground.",
+                ),
+            ),
+        ]
 
     @property
     def declared_capabilities(self) -> tuple[str, ...]:

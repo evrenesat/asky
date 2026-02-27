@@ -39,8 +39,8 @@ ADHOC_COMMANDS = [
     (NODE_LIST_TRANSCRIPTS, "List Transcripts"),
     (NODE_LIST_TOOLS, "List Tools"),
     (NODE_LIST_MEMORIES, "List Memories"),
-    (NODE_LIST_PROMPTS, "List Prompts"),
-    (NODE_LIST_PRESETS, "List Presets"),
+    (NODE_LIST_PROMPTS, "Run Prompt"),
+    (NODE_LIST_PRESETS, "Run Preset"),
     (NODE_QUERY, "Run Query"),
     (NODE_NEW_SESSION, "New Session"),
     (NODE_SWITCH_SESSION, "Switch Session"),
@@ -49,6 +49,22 @@ ADHOC_COMMANDS = [
 ]
 
 _FORM_UNAVAILABLE_ERROR = "Data forms not available (xep_0004 missing)."
+XDATA_NAMESPACE = "jabber:x:data"
+
+
+def _format_section(title: str, body: str) -> str:
+    """Wrap body text with a titled header and divider."""
+    divider = "-" * max(len(title), 20)
+    return f"{title}\n{divider}\n{body}"
+
+
+def _format_kv_pairs(pairs: list[tuple[str, str]]) -> str:
+    """Format a list of (key, value) tuples with aligned columns."""
+    if not pairs:
+        return ""
+    width = max(len(k) for k, _ in pairs)
+    lines = [f"{k:<{width}}  {v}" for k, v in pairs]
+    return "\n".join(lines)
 
 
 class AdHocCommandHandler:
@@ -104,20 +120,118 @@ class AdHocCommandHandler:
 
     # --- Infrastructure helpers ---
 
-    def _sender_jid(self, iq) -> str:
-        """Extract bare JID string from an IQ stanza."""
+    @staticmethod
+    def _get_stanza_interface_value(iq, interface_name: str):
+        """Safely resolve stanza interface value without triggering noisy warnings."""
         try:
-            from_field = iq["from"]
-            if hasattr(from_field, "bare"):
-                return str(from_field.bare)
-            return str(from_field).split("/")[0]
+            interfaces = getattr(iq, "interfaces", None)
+            if interfaces is not None and interface_name not in interfaces:
+                return None
         except Exception:
-            return ""
+            return None
+        try:
+            return iq[interface_name]
+        except Exception:
+            return None
 
-    def _is_authorized(self, iq) -> bool:
-        """Return True if the IQ sender is on the daemon allowlist."""
-        sender = self._sender_jid(iq)
-        return bool(sender) and self.router.is_authorized(sender)
+    @staticmethod
+    def _bare_jid(jid: str) -> str:
+        normalized = str(jid or "").strip()
+        if not normalized:
+            return ""
+        if "/" not in normalized:
+            return normalized
+        return normalized.split("/", 1)[0]
+
+    def _sender_full_jid(self, iq) -> str:
+        """Extract full sender JID from an IQ stanza with fallback methods."""
+        from_field = self._get_stanza_interface_value(iq, "from")
+
+        if from_field is not None:
+            try:
+                if hasattr(from_field, "full"):
+                    full_jid = str(from_field.full or "").strip()
+                    if full_jid and full_jid.lower() != "none":
+                        return full_jid
+            except Exception:
+                pass
+            try:
+                from_str = str(from_field or "").strip()
+                if from_str and from_str.lower() != "none":
+                    return from_str
+            except Exception:
+                pass
+
+        try:
+            xml = getattr(iq, "xml", None)
+            if xml is not None:
+                from_attr = str(getattr(xml, "attrib", {}).get("from", "") or "").strip()
+                if from_attr and from_attr.lower() != "none":
+                    return from_attr
+        except Exception:
+            pass
+
+        try:
+            iq_str = str(iq)
+            if 'from="' in iq_str:
+                from_attr = iq_str.split('from="', 1)[1].split('"', 1)[0].strip()
+                if from_attr and from_attr.lower() != "none":
+                    return from_attr
+        except Exception:
+            pass
+
+        logger.warning(
+            "failed to resolve sender JID from ad-hoc IQ stanza; from_field_type=%s",
+            type(from_field),
+        )
+        return ""
+
+    def _sender_jid(self, iq, session: Optional[dict] = None) -> str:
+        """Return sender bare JID; fall back to session-stored sender when needed."""
+        bare_jid = self._bare_jid(self._sender_full_jid(iq))
+        if bare_jid:
+            return bare_jid
+        if session is not None:
+            stored_bare = self._bare_jid(str(session.get("_authorized_bare_jid") or ""))
+            if stored_bare:
+                return stored_bare
+            stored_full = self._bare_jid(str(session.get("_authorized_full_jid") or ""))
+            if stored_full:
+                return stored_full
+        return ""
+
+    def _sender_candidates(self, iq, session: Optional[dict] = None) -> list[str]:
+        candidates: list[str] = []
+        full_jid = self._sender_full_jid(iq)
+        bare_jid = self._bare_jid(full_jid)
+        if full_jid:
+            candidates.append(full_jid)
+        if bare_jid and bare_jid != full_jid:
+            candidates.append(bare_jid)
+        if session is not None:
+            stored_full = str(session.get("_authorized_full_jid") or "").strip()
+            stored_bare = self._bare_jid(str(session.get("_authorized_bare_jid") or ""))
+            if stored_full and stored_full not in candidates:
+                candidates.append(stored_full)
+            if stored_bare and stored_bare not in candidates:
+                candidates.append(stored_bare)
+        return candidates
+
+    def _is_authorized(self, iq, session: Optional[dict] = None) -> bool:
+        """Return True if IQ sender or stored sender for this session is allowlisted."""
+        for sender in self._sender_candidates(iq, session=session):
+            if not self.router.is_authorized(sender):
+                continue
+            if session is not None:
+                session["_authorized_bare_jid"] = self._bare_jid(sender)
+                if "/" in sender:
+                    session["_authorized_full_jid"] = sender
+                else:
+                    full_jid = self._sender_full_jid(iq)
+                    if full_jid:
+                        session["_authorized_full_jid"] = full_jid
+            return True
+        return False
 
     def _unauthorized_response(self, session: dict) -> dict:
         session["notes"] = [("error", "Not authorized.")]
@@ -174,29 +288,62 @@ class AdHocCommandHandler:
             return None
 
     @staticmethod
-    def _form_values(iq) -> dict:
-        """Extract submitted form values from an IQ stanza."""
+    def _form_values_from_xml(iq) -> dict:
+        """Extract submitted XEP-0004 form values from raw IQ XML payload."""
+        xml = getattr(iq, "xml", None)
+        if xml is None:
+            return {}
+        ns_prefix = f"{{{XDATA_NAMESPACE}}}"
+        values: dict[str, str] = {}
         try:
-            return dict(iq["command"]["form"].get_values() or {})
+            fields = xml.findall(f".//{ns_prefix}field")
+            for field in fields:
+                var_name = str(getattr(field, "attrib", {}).get("var", "") or "").strip()
+                if not var_name or var_name == "FORM_TYPE":
+                    continue
+                value_nodes = field.findall(f"{ns_prefix}value")
+                if not value_nodes:
+                    values[var_name] = ""
+                    continue
+                raw_values = [
+                    str(getattr(value_node, "text", "") or "").strip()
+                    for value_node in value_nodes
+                ]
+                non_empty_values = [value for value in raw_values if value]
+                values[var_name] = non_empty_values[0] if non_empty_values else ""
+            return values
         except Exception:
             return {}
+
+    def _form_values(self, iq) -> dict:
+        """Extract submitted form values from an IQ stanza."""
+        command_node = self._get_stanza_interface_value(iq, "command")
+        if command_node is not None:
+            try:
+                return dict(command_node["form"].get_values() or {})
+            except Exception:
+                pass
+        xml_values = self._form_values_from_xml(iq)
+        if xml_values:
+            return xml_values
+        return {}
 
     # --- Single-step informational commands ---
 
     async def _cmd_status(self, iq, session: dict) -> dict:
-        if not self._is_authorized(iq):
+        if not self._is_authorized(iq, session):
             return self._unauthorized_response(session)
-        lines = [
-            f"Connected JID: {XMPP_JID}",
-            f"Voice transcription: {'enabled' if self.voice_enabled else 'disabled'}",
-            f"Image transcription: {'enabled' if self.image_enabled else 'disabled'}",
+        pairs = [
+            ("Connected JID", str(XMPP_JID)),
+            ("Voice transcription", "enabled" if self.voice_enabled else "disabled"),
+            ("Image transcription", "enabled" if self.image_enabled else "disabled"),
         ]
-        return self._complete_with_text(session, "\n".join(lines))
+        return self._complete_with_text(session, _format_section("asky Status", _format_kv_pairs(pairs)))
 
     async def _cmd_list_sessions(self, iq, session: dict) -> dict:
-        if not self._is_authorized(iq):
+        if not self._is_authorized(iq, session):
             return self._unauthorized_response(session)
-        sender = self._sender_jid(iq)
+        sender = self._sender_jid(iq, session)
         result = await self._run_blocking(
             self.command_executor.execute_session_command,
             jid=sender,
@@ -206,9 +353,9 @@ class AdHocCommandHandler:
         return self._complete_with_text(session, result)
 
     async def _cmd_list_history(self, iq, session: dict) -> dict:
-        if not self._is_authorized(iq):
+        if not self._is_authorized(iq, session):
             return self._unauthorized_response(session)
-        sender = self._sender_jid(iq)
+        sender = self._sender_jid(iq, session)
         result = await self._run_blocking(
             self.command_executor.execute_command_text,
             jid=sender,
@@ -217,9 +364,9 @@ class AdHocCommandHandler:
         return self._complete_with_text(session, result)
 
     async def _cmd_list_transcripts(self, iq, session: dict) -> dict:
-        if not self._is_authorized(iq):
+        if not self._is_authorized(iq, session):
             return self._unauthorized_response(session)
-        sender = self._sender_jid(iq)
+        sender = self._sender_jid(iq, session)
         result = await self._run_blocking(
             self.command_executor.execute_command_text,
             jid=sender,
@@ -228,7 +375,7 @@ class AdHocCommandHandler:
         return self._complete_with_text(session, result)
 
     async def _cmd_list_tools(self, iq, session: dict) -> dict:
-        if not self._is_authorized(iq):
+        if not self._is_authorized(iq, session):
             return self._unauthorized_response(session)
 
         def _get_tools() -> str:
@@ -236,15 +383,15 @@ class AdHocCommandHandler:
 
             tools = get_all_available_tool_names()
             if not tools:
-                return "No tools available."
-            lines = ["Available LLM tools:"] + [f"  - {t}" for t in sorted(tools)]
-            return "\n".join(lines)
+                return _format_section("Available LLM Tools", "No tools available.")
+            body = "\n".join(f"  {t}" for t in sorted(tools))
+            return _format_section(f"Available LLM Tools ({len(tools)})", body)
 
         result = await self._run_blocking(_get_tools)
         return self._complete_with_text(session, result)
 
     async def _cmd_list_memories(self, iq, session: dict) -> dict:
-        if not self._is_authorized(iq):
+        if not self._is_authorized(iq, session):
             return self._unauthorized_response(session)
 
         def _get_memories() -> str:
@@ -261,32 +408,136 @@ class AdHocCommandHandler:
         return self._complete_with_text(session, result)
 
     async def _cmd_list_prompts(self, iq, session: dict) -> dict:
-        if not self._is_authorized(iq):
+        if not self._is_authorized(iq, session):
             return self._unauthorized_response(session)
-        sender = self._sender_jid(iq)
+
+        def _get_prompts() -> dict:
+            from asky.config import USER_PROMPTS
+
+            return dict(USER_PROMPTS or {})
+
+        prompts = await self._run_blocking(_get_prompts)
+        if not prompts:
+            return self._complete_with_text(session, "No prompt aliases are configured.")
+
+        options = []
+        for alias in sorted(prompts.keys()):
+            template = str(prompts[alias] or "").strip()
+            preview = template[:60] + "..." if len(template) > 60 else template
+            options.append({"value": alias, "label": f"/{alias}: {preview}"})
+
+        form = self._make_form(
+            title="Run Prompt",
+            fields=[
+                {
+                    "var": "prompt",
+                    "ftype": "list-single",
+                    "label": "Select prompt",
+                    "required": True,
+                    "options": options,
+                },
+                {
+                    "var": "query",
+                    "ftype": "text-single",
+                    "label": "Extra query text (optional)",
+                },
+            ],
+        )
+        if form is None:
+            return self._complete_with_error(session, _FORM_UNAVAILABLE_ERROR)
+        session["payload"] = form
+        session["next"] = self._cmd_list_prompts_submit
+        session["has_next"] = True
+        return session
+
+    async def _cmd_list_prompts_submit(self, iq, session: dict) -> dict:
+        if not self._is_authorized(iq, session):
+            return self._unauthorized_response(session)
+        sender = self._sender_jid(iq, session)
+        values = self._form_values(iq)
+        alias = str(values.get("prompt") or "").strip()
+        if not alias:
+            return self._complete_with_error(session, "Prompt selection is required.")
+        query = str(values.get("query") or "").strip()
+        query_text = f"/{alias} {query}".strip() if query else f"/{alias}"
         result = await self._run_blocking(
             self.command_executor.execute_query_text,
             jid=sender,
-            query_text="/",
+            query_text=query_text,
         )
         return self._complete_with_text(session, result)
 
     async def _cmd_list_presets(self, iq, session: dict) -> dict:
-        if not self._is_authorized(iq):
+        if not self._is_authorized(iq, session):
             return self._unauthorized_response(session)
 
-        def _get_presets() -> str:
-            from asky.cli.presets import list_presets_text
+        def _get_presets() -> dict:
+            from asky.config import COMMAND_PRESETS
 
-            return list_presets_text()
+            return dict(COMMAND_PRESETS or {})
 
-        result = await self._run_blocking(_get_presets)
+        presets = await self._run_blocking(_get_presets)
+        if not presets:
+            return self._complete_with_text(session, "No command presets are configured.")
+
+        options = []
+        for name in sorted(presets.keys()):
+            template = str(presets[name] or "").strip()
+            preview = template[:60] + "..." if len(template) > 60 else template
+            options.append({"value": name, "label": f"\\{name}: {preview}"})
+
+        form = self._make_form(
+            title="Run Preset",
+            fields=[
+                {
+                    "var": "preset",
+                    "ftype": "list-single",
+                    "label": "Select preset",
+                    "required": True,
+                    "options": options,
+                },
+                {
+                    "var": "args",
+                    "ftype": "text-single",
+                    "label": "Arguments (optional)",
+                },
+            ],
+        )
+        if form is None:
+            return self._complete_with_error(session, _FORM_UNAVAILABLE_ERROR)
+        session["payload"] = form
+        session["next"] = self._cmd_list_presets_submit
+        session["has_next"] = True
+        return session
+
+    async def _cmd_list_presets_submit(self, iq, session: dict) -> dict:
+        if not self._is_authorized(iq, session):
+            return self._unauthorized_response(session)
+        sender = self._sender_jid(iq, session)
+        values = self._form_values(iq)
+        name = str(values.get("preset") or "").strip()
+        if not name:
+            return self._complete_with_error(session, "Preset selection is required.")
+        args = str(values.get("args") or "").strip()
+        raw_invocation = f"\\{name} {args}".strip() if args else f"\\{name}"
+
+        def _expand_and_run() -> str:
+            from asky.cli.presets import expand_preset_invocation
+
+            expansion = expand_preset_invocation(raw_invocation)
+            if expansion.error:
+                return f"Error: {expansion.error}"
+            return self.command_executor.execute_command_text(
+                jid=sender, command_text=expansion.command_text
+            )
+
+        result = await self._run_blocking(_expand_and_run)
         return self._complete_with_text(session, result)
 
     # --- Form-based interactive commands ---
 
     async def _cmd_query(self, iq, session: dict) -> dict:
-        if not self._is_authorized(iq):
+        if not self._is_authorized(iq, session):
             return self._unauthorized_response(session)
         model_options = [{"value": "", "label": "(default)"}] + [
             {"value": alias, "label": alias} for alias in sorted(MODELS.keys())
@@ -310,9 +561,9 @@ class AdHocCommandHandler:
         return session
 
     async def _cmd_query_submit(self, iq, session: dict) -> dict:
-        if not self._is_authorized(iq):
+        if not self._is_authorized(iq, session):
             return self._unauthorized_response(session)
-        sender = self._sender_jid(iq)
+        sender = self._sender_jid(iq, session)
         values = self._form_values(iq)
 
         query = str(values.get("query") or "").strip()
@@ -344,9 +595,9 @@ class AdHocCommandHandler:
         return self._complete_with_text(session, result)
 
     async def _cmd_new_session(self, iq, session: dict) -> dict:
-        if not self._is_authorized(iq):
+        if not self._is_authorized(iq, session):
             return self._unauthorized_response(session)
-        sender = self._sender_jid(iq)
+        sender = self._sender_jid(iq, session)
         result = await self._run_blocking(
             self.command_executor.execute_session_command,
             jid=sender,
@@ -356,7 +607,7 @@ class AdHocCommandHandler:
         return self._complete_with_text(session, result)
 
     async def _cmd_switch_session(self, iq, session: dict) -> dict:
-        if not self._is_authorized(iq):
+        if not self._is_authorized(iq, session):
             return self._unauthorized_response(session)
         form = self._make_form(
             title="Switch Session",
@@ -372,9 +623,9 @@ class AdHocCommandHandler:
         return session
 
     async def _cmd_switch_session_submit(self, iq, session: dict) -> dict:
-        if not self._is_authorized(iq):
+        if not self._is_authorized(iq, session):
             return self._unauthorized_response(session)
-        sender = self._sender_jid(iq)
+        sender = self._sender_jid(iq, session)
         values = self._form_values(iq)
         selector = str(values.get("selector") or "").strip()
         if not selector:
@@ -388,7 +639,7 @@ class AdHocCommandHandler:
         return self._complete_with_text(session, result)
 
     async def _cmd_clear_session(self, iq, session: dict) -> dict:
-        if not self._is_authorized(iq):
+        if not self._is_authorized(iq, session):
             return self._unauthorized_response(session)
         form = self._make_form(
             title="Clear Session",
@@ -410,9 +661,9 @@ class AdHocCommandHandler:
         return session
 
     async def _cmd_clear_session_submit(self, iq, session: dict) -> dict:
-        if not self._is_authorized(iq):
+        if not self._is_authorized(iq, session):
             return self._unauthorized_response(session)
-        sender = self._sender_jid(iq)
+        sender = self._sender_jid(iq, session)
         values = self._form_values(iq)
         confirm = str(values.get("confirm") or "").strip().lower() in ("true", "1", "yes")
         if not confirm:
@@ -429,9 +680,9 @@ class AdHocCommandHandler:
         return self._complete_with_text(session, result)
 
     async def _cmd_use_transcript(self, iq, session: dict) -> dict:
-        if not self._is_authorized(iq):
+        if not self._is_authorized(iq, session):
             return self._unauthorized_response(session)
-        sender = self._sender_jid(iq)
+        sender = self._sender_jid(iq, session)
 
         def _list() -> list:
             return self.command_executor.transcript_manager.list_for_jid(sender, limit=20)
@@ -472,9 +723,9 @@ class AdHocCommandHandler:
         return session
 
     async def _cmd_use_transcript_submit(self, iq, session: dict) -> dict:
-        if not self._is_authorized(iq):
+        if not self._is_authorized(iq, session):
             return self._unauthorized_response(session)
-        sender = self._sender_jid(iq)
+        sender = self._sender_jid(iq, session)
         values = self._form_values(iq)
         transcript_id = str(values.get("transcript_id") or "").strip()
         if not transcript_id:

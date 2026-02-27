@@ -61,6 +61,7 @@ graph TB
         daemon_planner["interface_planner.py<br/>Interface Model Planner"]
         daemon_voice["voice_transcriber.py<br/>Async Voice Jobs"]
         daemon_image["image_transcriber.py<br/>Async Image Jobs"]
+        daemon_doc_ingest["document_ingestion.py<br/>Upload URL -> Local Corpus Ingestion"]
         daemon_transcripts["transcript_manager.py<br/>Transcript Lifecycle"]
         daemon_chunking["chunking.py<br/>Outbound Chunking"]
     end
@@ -138,12 +139,14 @@ graph TB
     xmpp_service --> daemon_xmpp
     xmpp_service --> daemon_router
     xmpp_service --> daemon_chunking
+    xmpp_service --> daemon_doc_ingest
     daemon_router --> daemon_planner
     daemon_router --> daemon_exec
     daemon_router --> daemon_profiles
     daemon_router --> daemon_voice
     daemon_router --> daemon_image
     daemon_router --> daemon_transcripts
+    daemon_doc_ingest --> sqlite
     daemon_exec --> api_client
     daemon_exec --> daemon_profiles
     daemon_transcripts --> sqlite
@@ -351,6 +354,9 @@ per-conversation queue (serialized processing)
 router.py guards:
   - chat: sender allowlist (bare JID wildcard or exact full-JID)
   - groupchat: room must be pre-bound or trusted-invited
+  - ad-hoc IQ commands: authorize full JID first, then bare JID fallback;
+    multi-step flows reuse session-cached sender identity if follow-up IQ
+    lacks a usable `from` field
     ↓
 Routing:
   - trusted room invite:
@@ -360,6 +366,13 @@ Routing:
       validate supported files (`general.toml`, `user.toml`)
       apply session-scoped overrides (last write wins, no merge)
       ignore unsupported keys with warning
+  - uploaded document URLs (OOB/body):
+      detect supported local-ingestion extensions
+      enforce HTTPS + size/type limits
+      dedupe globally by content hash
+      link documents to the active session
+      persist session research profile as local corpus (`local_only`)
+      preload linked files via local-ingestion pipeline
   - /session command surface:
       /session, /session new, /session child, /session <id|name>
       switches conversation's active session
@@ -409,6 +422,7 @@ Session resolution now owns effective research profile state:
 
 Sessions also persist query-behavior defaults (`sessions.query_defaults` JSON) for CLI flags like model/tool disables/system prompt; shortlist override remains first-class in `sessions.shortlist_override`.
 Defaults-only invocations can auto-create unnamed sessions, which are marked for deferred auto-rename and renamed from the first real query.
+Session research cleanup (`session clean-research` / `--clean-session-research`) removes findings and now also clears session-linked uploaded document associations and persisted local corpus path pointers.
 
 If no session is active and effective research mode is requested, a research
 session is auto-created so research-memory operations remain session-scoped.

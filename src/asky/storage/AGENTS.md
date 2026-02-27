@@ -83,6 +83,18 @@ class SessionOverrideFile:
     filename: str
     content: str
     updated_at: str
+
+@dataclass
+class UploadedDocument:
+    id: int
+    content_hash: str
+    file_path: str
+    original_filename: str
+    file_extension: str
+    mime_type: str
+    file_size: int
+    created_at: str
+    updated_at: str
 ```
 
 ## Database Schema
@@ -149,6 +161,21 @@ class SessionOverrideFile:
 - `content`: Sanitized TOML content persisted with replace semantics
 - `updated_at`: Last write timestamp
 
+**`uploaded_documents`** - Global deduplicated uploaded document artifacts:
+- `content_hash`: SHA-256 hash (unique)
+- `file_path`: Persisted local path under configured research corpus root
+- `original_filename`, `file_extension`, `mime_type`, `file_size`
+- `created_at`, `updated_at`: ingestion metadata
+
+**`uploaded_document_urls`** - URL to uploaded-document mapping cache:
+- `url`: Canonical source URL (primary key)
+- `document_id`: Referenced document row
+- `created_at`, `updated_at`
+
+**`session_uploaded_documents`** - Session/document link table:
+- `(session_id, document_id)`: Composite primary key
+- `linked_at`: association timestamp
+
 ## SQLiteHistoryRepository (`sqlite.py`)
 
 ### History Methods
@@ -195,6 +222,13 @@ class SessionOverrideFile:
 | `get_session_override_file()` | Lookup one override file by session + filename |
 | `list_session_override_files()` | List override file snapshots for one session |
 | `copy_session_override_files()` | Copy override file snapshots across sessions |
+| `upsert_uploaded_document()` | Upsert global uploaded document by content hash |
+| `get_uploaded_document_by_hash()` | Lookup uploaded document by content hash |
+| `get_uploaded_document_by_url()` | Lookup uploaded document by URL mapping |
+| `save_uploaded_document_url()` | Upsert URL->document mapping |
+| `link_session_uploaded_document()` | Link one uploaded document to a session |
+| `list_session_uploaded_documents()` | List uploaded documents linked to a session |
+| `clear_session_uploaded_documents()` | Clear all uploaded-document links for a session |
 
 ## Design Decisions
 

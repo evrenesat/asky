@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 from typing import Any, Dict, Optional
 
-from asky.plugins.base import AskyPlugin, PluginContext
+from asky.plugins.base import AskyPlugin, CapabilityCategory, CLIContribution, PluginContext
 from asky.plugins.hook_types import (
     POST_TURN_RENDER,
     TOOL_REGISTRY_BUILD,
@@ -21,6 +21,21 @@ class PushDataPlugin(AskyPlugin):
 
     def __init__(self) -> None:
         self._context: Optional[PluginContext] = None
+
+    @classmethod
+    def get_cli_contributions(cls) -> list[CLIContribution]:
+        return [
+            CLIContribution(
+                category=CapabilityCategory.OUTPUT_DELIVERY,
+                flags=("--push-data",),
+                kwargs=dict(
+                    dest="push_data",
+                    metavar="ENDPOINT[?KEY=VAL&...]",
+                    help="Push result to a configured endpoint. Params in URL query-string"
+                    " format after a '?': --push-data notion?title=My Doc&status=draft",
+                ),
+            ),
+        ]
 
     def activate(self, context: PluginContext) -> None:
         self._context = context
@@ -39,7 +54,7 @@ class PushDataPlugin(AskyPlugin):
         self._context = None
 
     def _on_tool_registry_build(self, payload: ToolRegistryBuildContext) -> None:
-        from asky.push_data import execute_push_data, get_enabled_endpoints
+        from asky.plugins.push_data.executor import execute_push_data, get_enabled_endpoints
 
         for endpoint_name, endpoint_config in get_enabled_endpoints().items():
             fields_config = endpoint_config.get("fields", {})
@@ -94,13 +109,23 @@ class PushDataPlugin(AskyPlugin):
         cli_args = ctx.cli_args
         if cli_args is None:
             return
-        endpoint = getattr(cli_args, "push_data_endpoint", None)
-        if not ctx.final_answer or not endpoint:
+        push_data_str = getattr(cli_args, "push_data", None)
+        if not ctx.final_answer or not push_data_str:
             return
 
-        from asky.push_data import execute_push_data
+        from asky.plugins.push_data.executor import execute_push_data
 
-        dynamic_args = dict(cli_args.push_params) if getattr(cli_args, "push_params", None) else {}
+        if "?" in push_data_str:
+            endpoint, _, params_str = push_data_str.partition("?")
+            dynamic_args = {
+                k.strip(): v
+                for pair in params_str.split("&")
+                if "=" in pair
+                for k, _, v in [pair.partition("=")]
+            }
+        else:
+            endpoint = push_data_str.strip()
+            dynamic_args = {}
         query_text = ctx.request.query_text if ctx.request is not None else ""
         result = execute_push_data(
             endpoint,

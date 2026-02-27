@@ -23,8 +23,6 @@ from asky.plugins.manual_persona_creator.storage import (
     read_prompt,
     validate_persona_name,
 )
-from asky.plugins.persona_manager.importer import import_persona_archive
-from asky.plugins.persona_manager.knowledge import retrieve_relevant_chunks
 from asky.plugins.persona_manager.session_binding import (
     get_session_binding,
     set_session_binding,
@@ -142,6 +140,8 @@ class PersonaManagerPlugin(AskyPlugin):
 
         persona_dir = self._persona_dir(persona_name)
         top_k = int(context.config.get("knowledge_top_k", DEFAULT_PERSONA_CONTEXT_TOP_K))
+        from asky.plugins.persona_manager.knowledge import retrieve_relevant_chunks
+
         chunks = retrieve_relevant_chunks(
             persona_dir=persona_dir,
             query_text=query_text,
@@ -203,6 +203,8 @@ class PersonaManagerPlugin(AskyPlugin):
         if not archive_path:
             return {"error": "archive_path is required"}
         try:
+            from asky.plugins.persona_manager.importer import import_persona_archive
+
             return import_persona_archive(
                 data_dir=context.data_dir,
                 archive_path=archive_path,

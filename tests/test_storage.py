@@ -536,3 +536,56 @@ def test_clear_session_messages_preserves_transcripts(mock_db_path):
     assert len(get_session_messages(session_id)) == 0
     assert len(repo.list_transcripts(session_id=session_id)) == 1
     assert repo.get_session_by_id(session_id).compacted_summary is None
+
+
+def test_uploaded_documents_dedupe_and_session_links(mock_db_path):
+    from asky.storage.sqlite import SQLiteHistoryRepository
+
+    repo = SQLiteHistoryRepository()
+    init_db()
+    session_a = repo.create_session("model", name="upload-a")
+    session_b = repo.create_session("model", name="upload-b")
+
+    first = repo.upsert_uploaded_document(
+        content_hash="abc123",
+        file_path="/tmp/uploads/report.pdf",
+        original_filename="report.pdf",
+        file_extension=".pdf",
+        mime_type="application/pdf",
+        file_size=1024,
+    )
+    assert first.content_hash == "abc123"
+
+    second = repo.upsert_uploaded_document(
+        content_hash="abc123",
+        file_path="/tmp/uploads/report_2.pdf",
+        original_filename="report.pdf",
+        file_extension=".pdf",
+        mime_type="application/pdf",
+        file_size=1024,
+    )
+    assert second.id == first.id
+    assert second.file_path.endswith("report_2.pdf")
+
+    repo.save_uploaded_document_url(
+        url="https://example.com/files/report.pdf",
+        document_id=first.id,
+    )
+    by_url = repo.get_uploaded_document_by_url(
+        url="https://example.com/files/report.pdf"
+    )
+    assert by_url is not None
+    assert by_url.id == first.id
+
+    repo.link_session_uploaded_document(session_id=session_a, document_id=first.id)
+    repo.link_session_uploaded_document(session_id=session_b, document_id=first.id)
+    listed_a = repo.list_session_uploaded_documents(session_id=session_a)
+    listed_b = repo.list_session_uploaded_documents(session_id=session_b)
+    assert len(listed_a) == 1
+    assert len(listed_b) == 1
+    assert listed_a[0].id == listed_b[0].id
+
+    cleared = repo.clear_session_uploaded_documents(session_id=session_a)
+    assert cleared == 1
+    assert repo.list_session_uploaded_documents(session_id=session_a) == []
+    assert len(repo.list_session_uploaded_documents(session_id=session_b)) == 1

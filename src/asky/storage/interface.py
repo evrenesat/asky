@@ -137,6 +137,21 @@ class SessionOverrideFile:
     updated_at: str
 
 
+@dataclass
+class UploadedDocument:
+    """Represents one globally deduplicated uploaded document artifact."""
+
+    id: int
+    content_hash: str
+    file_path: str
+    original_filename: str
+    file_extension: str
+    mime_type: str
+    file_size: int
+    created_at: str
+    updated_at: str
+
+
 class HistoryRepository(ABC):
     """Abstract interface for message and session storage."""
 
@@ -473,4 +488,74 @@ class HistoryRepository(ABC):
         target_session_id: int,
     ) -> int:
         """Copy all override file snapshots from source session to target session."""
+        pass
+
+    @abstractmethod
+    def upsert_uploaded_document(
+        self,
+        *,
+        content_hash: str,
+        file_path: str,
+        original_filename: str,
+        file_extension: str,
+        mime_type: Optional[str],
+        file_size: int,
+    ) -> UploadedDocument:
+        """Create or update one uploaded document record identified by content hash."""
+        pass
+
+    @abstractmethod
+    def get_uploaded_document_by_hash(
+        self,
+        *,
+        content_hash: str,
+    ) -> Optional[UploadedDocument]:
+        """Lookup one uploaded document by content hash."""
+        pass
+
+    @abstractmethod
+    def get_uploaded_document_by_url(
+        self,
+        *,
+        url: str,
+    ) -> Optional[UploadedDocument]:
+        """Lookup one uploaded document by canonical source URL."""
+        pass
+
+    @abstractmethod
+    def save_uploaded_document_url(
+        self,
+        *,
+        url: str,
+        document_id: int,
+    ) -> None:
+        """Create or update one URL -> uploaded document mapping."""
+        pass
+
+    @abstractmethod
+    def link_session_uploaded_document(
+        self,
+        *,
+        session_id: int,
+        document_id: int,
+    ) -> None:
+        """Link one uploaded document to one session."""
+        pass
+
+    @abstractmethod
+    def list_session_uploaded_documents(
+        self,
+        *,
+        session_id: int,
+    ) -> List[UploadedDocument]:
+        """List uploaded documents linked to a session."""
+        pass
+
+    @abstractmethod
+    def clear_session_uploaded_documents(
+        self,
+        *,
+        session_id: int,
+    ) -> int:
+        """Clear session->uploaded-document links and return deleted link count."""
         pass

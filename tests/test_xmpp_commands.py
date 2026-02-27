@@ -61,7 +61,7 @@ class _FakeTranscriptManager:
 def _blocked_args():
     return SimpleNamespace(
         open=True,
-        mail_recipients=None,
+        sendmail=None,
         terminal_lines=None,
         delete_messages=None,
         delete_sessions=None,
@@ -461,3 +461,55 @@ def test_consume_pending_clear_without_consume_does_not_pop():
     entry2 = executor.consume_pending_clear("key", consume=True)
     assert entry2 == ("jid", None)
     assert "key" not in executor._pending_clear
+
+
+def test_remote_policy_allows_cleanup_related_flags():
+    executor = CommandExecutor(_FakeTranscriptManager())
+    args = _blocked_args()
+    args.open = False
+    args.clean_session_research = "1"
+    args.delete_memory = 3
+    args.clear_memories = True
+    args.delete_messages = "1"
+    args.delete_sessions = "1"
+    args.all = True
+
+    error = executor._validate_remote_policy(args)
+    assert error is None
+
+
+def test_cleanup_commands_dispatch_through_remote_executor():
+    manager = _FakeTranscriptManager()
+    executor = CommandExecutor(manager)
+
+    with (
+        patch("asky.daemon.command_executor.init_db"),
+        patch(
+            "asky.daemon.command_executor.sessions.handle_clean_session_research_command",
+            side_effect=lambda args: print(f"clean:{args.clean_session_research}"),
+        ),
+        patch(
+            "asky.daemon.command_executor.memory_commands.handle_delete_memory",
+            side_effect=lambda memory_id: print(f"delete-memory:{memory_id}"),
+        ),
+        patch(
+            "asky.daemon.command_executor._handle_clear_memories_non_interactive",
+            side_effect=lambda confirm=False: print(f"clear:{confirm}"),
+        ),
+    ):
+        clean_resp = executor.execute_command_text(
+            jid="jid",
+            command_text="--clean-session-research 1",
+        )
+        delete_resp = executor.execute_command_text(
+            jid="jid",
+            command_text="--delete-memory 9",
+        )
+        clear_resp = executor.execute_command_text(
+            jid="jid",
+            command_text="--clear-memories",
+        )
+
+    assert "clean:1" in clean_resp
+    assert "delete-memory:9" in delete_resp
+    assert "clear:False" in clear_resp

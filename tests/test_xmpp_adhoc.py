@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import xml.etree.ElementTree as ET
 from types import SimpleNamespace
 from unittest.mock import MagicMock, Mock, patch
 
@@ -32,10 +33,15 @@ from asky.plugins.xmpp_daemon.adhoc_commands import (
 
 class _MockJID:
     def __init__(self, jid: str):
-        self.bare = jid
+        # Simulate real slixmpp behavior: .bare strips resource
+        if "/" in jid:
+            self.bare = jid.split("/")[0]
+        else:
+            self.bare = jid
+        self._full_jid = jid
 
     def __str__(self):
-        return self.bare
+        return self._full_jid
 
 
 class _MockForm:
@@ -183,14 +189,17 @@ def test_status_returns_jid_and_feature_flags():
     result = _run(handler._cmd_status(_MockIQ("user@example.com"), {}))
     assert result["has_next"] is False
     text = result["notes"][0][1]
-    assert "Voice transcription: enabled" in text
-    assert "Image transcription: disabled" in text
+    assert "Voice transcription" in text
+    assert "enabled" in text
+    assert "Image transcription" in text
+    assert "disabled" in text
 
 
 def test_status_includes_connected_jid():
     handler, _, _ = _make_handler()
     result = _run(handler._cmd_status(_MockIQ("user@example.com"), {}))
-    assert "Connected JID:" in result["notes"][0][1]
+    assert "Connected JID" in result["notes"][0][1]
+    assert "asky Status" in result["notes"][0][1]
 
 
 # ---------------------------------------------------------------------------
@@ -261,21 +270,147 @@ def test_list_tools_returns_tool_list():
         asyncio.run(_inner())
 
 
-def test_list_prompts_calls_execute_query_text_with_slash():
+def test_list_prompts_no_prompts_returns_text():
+    handler, _, _ = _make_handler()
+    handler._xep_0004 = _MockXep0004()
+    with patch("asky.config.USER_PROMPTS", {}):
+        result = _run(handler._cmd_list_prompts(_MockIQ("user@example.com"), {}))
+    assert result["has_next"] is False
+    assert "No prompt aliases" in result["notes"][0][1]
+
+
+def test_list_prompts_step1_returns_form_with_options():
+    handler, _, _ = _make_handler()
+    handler._xep_0004 = _MockXep0004()
+    prompts = {"greet": "Say hello to $*", "recap": "Summarize the following"}
+    with patch("asky.config.USER_PROMPTS", prompts):
+        result = _run(handler._cmd_list_prompts(_MockIQ("user@example.com"), {}))
+    assert result["has_next"] is True
+    assert result["next"] == handler._cmd_list_prompts_submit
+    form = result["payload"]
+    assert isinstance(form, _MockXep0004Form)
+    # Both prompt and query fields present
+    assert "prompt" in form.fields
+    assert "query" in form.fields
+    options = form.fields["prompt"].options
+    aliases = {o["value"] for o in options}
+    assert "greet" in aliases
+    assert "recap" in aliases
+
+
+def test_list_prompts_step1_no_form_when_no_xep_0004():
+    handler, _, _ = _make_handler()
+    handler._xep_0004 = None
+    prompts = {"greet": "Say hello"}
+    with patch("asky.config.USER_PROMPTS", prompts):
+        result = _run(handler._cmd_list_prompts(_MockIQ("user@example.com"), {}))
+    assert result["has_next"] is False
+    assert result["notes"][0][0] == "error"
+
+
+def test_list_prompts_submit_executes_alias_without_query():
     handler, executor, _ = _make_handler()
-    executor.execute_query_text.return_value = "Prompt Aliases:\n  /test: hello"
-    result = _run(handler._cmd_list_prompts(_MockIQ("user@example.com"), {}))
+    executor.execute_query_text.return_value = "prompt output"
+    iq = _MockIQ("user@example.com", {"prompt": "greet", "query": ""})
+    result = _run(handler._cmd_list_prompts_submit(iq, {}))
     executor.execute_query_text.assert_called_once()
     call_kwargs = executor.execute_query_text.call_args.kwargs
-    assert call_kwargs["query_text"] == "/"
-    assert "Prompt Aliases" in result["notes"][0][1]
+    assert call_kwargs["query_text"] == "/greet"
+    assert result["notes"][0][1] == "prompt output"
 
 
-def test_list_presets_returns_presets_text():
+def test_list_prompts_submit_appends_query_text():
+    handler, executor, _ = _make_handler()
+    executor.execute_query_text.return_value = "result"
+    iq = _MockIQ("user@example.com", {"prompt": "recap", "query": "the meeting notes"})
+    _run(handler._cmd_list_prompts_submit(iq, {}))
+    call_kwargs = executor.execute_query_text.call_args.kwargs
+    assert call_kwargs["query_text"] == "/recap the meeting notes"
+
+
+def test_list_prompts_submit_error_when_no_alias():
+    handler, executor, _ = _make_handler()
+    iq = _MockIQ("user@example.com", {"prompt": "", "query": "hello"})
+    result = _run(handler._cmd_list_prompts_submit(iq, {}))
+    assert result["notes"][0][0] == "error"
+    executor.execute_query_text.assert_not_called()
+
+
+def test_list_presets_no_presets_returns_text():
     handler, _, _ = _make_handler()
-    with patch("asky.cli.presets.list_presets_text", return_value="Presets:\n  \\foo: bar"):
+    handler._xep_0004 = _MockXep0004()
+    with patch("asky.config.COMMAND_PRESETS", {}):
         result = _run(handler._cmd_list_presets(_MockIQ("user@example.com"), {}))
-    assert "Presets" in result["notes"][0][1]
+    assert result["has_next"] is False
+    assert "No command presets" in result["notes"][0][1]
+
+
+def test_list_presets_step1_returns_form_with_options():
+    handler, _, _ = _make_handler()
+    handler._xep_0004 = _MockXep0004()
+    presets = {"search": "websearch $*", "fix": "fix the following code: $*"}
+    with patch("asky.config.COMMAND_PRESETS", presets):
+        result = _run(handler._cmd_list_presets(_MockIQ("user@example.com"), {}))
+    assert result["has_next"] is True
+    assert result["next"] == handler._cmd_list_presets_submit
+    form = result["payload"]
+    assert isinstance(form, _MockXep0004Form)
+    assert "preset" in form.fields
+    assert "args" in form.fields
+    options = form.fields["preset"].options
+    names = {o["value"] for o in options}
+    assert "search" in names
+    assert "fix" in names
+
+
+def test_list_presets_step1_no_form_when_no_xep_0004():
+    handler, _, _ = _make_handler()
+    handler._xep_0004 = None
+    presets = {"search": "websearch $*"}
+    with patch("asky.config.COMMAND_PRESETS", presets):
+        result = _run(handler._cmd_list_presets(_MockIQ("user@example.com"), {}))
+    assert result["has_next"] is False
+    assert result["notes"][0][0] == "error"
+
+
+def test_list_presets_submit_expands_and_executes():
+    handler, executor, _ = _make_handler()
+    executor.execute_command_text.return_value = "preset output"
+    iq = _MockIQ("user@example.com", {"preset": "search", "args": "python asyncio"})
+    presets = {"search": "websearch $*"}
+    # Patch the reference used inside expand_preset_invocation at runtime
+    with patch("asky.cli.presets.COMMAND_PRESETS", presets):
+        result = _run(handler._cmd_list_presets_submit(iq, {}))
+    executor.execute_command_text.assert_called_once()
+    assert result["notes"][0][1] == "preset output"
+
+
+def test_list_presets_submit_without_args():
+    handler, executor, _ = _make_handler()
+    executor.execute_command_text.return_value = "ok"
+    iq = _MockIQ("user@example.com", {"preset": "fix", "args": ""})
+    presets = {"fix": "fix the following code"}
+    with patch("asky.cli.presets.COMMAND_PRESETS", presets):
+        result = _run(handler._cmd_list_presets_submit(iq, {}))
+    executor.execute_command_text.assert_called_once()
+    assert result["has_next"] is False
+
+
+def test_list_presets_submit_error_when_no_preset():
+    handler, executor, _ = _make_handler()
+    iq = _MockIQ("user@example.com", {"preset": "", "args": ""})
+    result = _run(handler._cmd_list_presets_submit(iq, {}))
+    assert result["notes"][0][0] == "error"
+    executor.execute_command_text.assert_not_called()
+
+
+def test_list_presets_submit_error_on_unknown_preset():
+    handler, executor, _ = _make_handler()
+    iq = _MockIQ("user@example.com", {"preset": "unknown_preset", "args": ""})
+    with patch("asky.cli.presets.COMMAND_PRESETS", {}):
+        result = _run(handler._cmd_list_presets_submit(iq, {}))
+    assert "Error" in result["notes"][0][1]
+    executor.execute_command_text.assert_not_called()
 
 
 # ---------------------------------------------------------------------------
@@ -484,3 +619,451 @@ def test_make_form_builds_form_with_options():
     )
     assert isinstance(form, _MockXep0004Form)
     assert len(form.fields["choice"].options) == 2
+
+
+# ---------------------------------------------------------------------------
+# Bug Condition Exploration - Property-Based Tests
+# ---------------------------------------------------------------------------
+
+
+from hypothesis import given, strategies as st, example
+
+
+class _MockJIDWithoutBare:
+    """Mock JID object that lacks the .bare attribute."""
+    def __init__(self, jid: str):
+        self._jid = jid
+
+    def __str__(self):
+        return self._jid
+
+
+class _MockJIDWithEmptyBare:
+    """Mock JID object where .bare returns empty string."""
+    def __init__(self, jid: str):
+        self._jid = jid
+        self.bare = ""
+
+    def __str__(self):
+        return self._jid
+
+
+class _MockIQWithNoneFrom:
+    """Mock IQ where iq['from'] is None."""
+    def __getitem__(self, key):
+        if key == "from":
+            return None
+        raise KeyError(key)
+
+
+class _MockIQWithMissingBare:
+    """Mock IQ where iq['from'] lacks .bare attribute."""
+    def __init__(self, jid: str):
+        self._jid = jid
+
+    def __getitem__(self, key):
+        if key == "from":
+            return _MockJIDWithoutBare(self._jid)
+        raise KeyError(key)
+
+
+class _MockIQWithEmptyBare:
+    """Mock IQ where iq['from'].bare returns empty string."""
+    def __init__(self, jid: str):
+        self._jid = jid
+
+    def __getitem__(self, key):
+        if key == "from":
+            return _MockJIDWithEmptyBare(self._jid)
+        raise KeyError(key)
+
+
+def _build_iq_xml(from_jid: str, form_values: dict | None = None):
+    iq = ET.Element("iq", attrib={"from": from_jid})
+    command = ET.SubElement(iq, "{http://jabber.org/protocol/commands}command")
+    if form_values:
+        form = ET.SubElement(command, "{jabber:x:data}x", attrib={"type": "submit"})
+        for var_name, value in form_values.items():
+            field = ET.SubElement(form, "{jabber:x:data}field", attrib={"var": var_name})
+            value_node = ET.SubElement(field, "{jabber:x:data}value")
+            value_node.text = str(value)
+    return iq
+
+
+class _MockIQXmlOnly:
+    """Mock IQ where stanza interfaces are unavailable but raw XML exists."""
+
+    def __init__(self, from_jid: str, form_values: dict | None = None):
+        self.interfaces: set[str] = set()
+        self.xml = _build_iq_xml(from_jid, form_values=form_values)
+
+    def __getitem__(self, key):
+        raise KeyError(key)
+
+
+class _MockIQMissingFromWithForm:
+    """Mock IQ missing 'from' field but still carrying form submission values."""
+
+    def __init__(self, form_values: dict):
+        self._form_values = form_values
+
+    def __getitem__(self, key):
+        if key == "from":
+            raise KeyError(key)
+        if key == "command":
+            return _MockCommand(self._form_values)
+        raise KeyError(key)
+
+
+@given(jid=st.from_regex(r"^[a-z]+@[a-z]+\.[a-z]+$", fullmatch=True))
+@example(jid="alice@example.com")
+@example(jid="bob@test.org")
+def test_bug_condition_sender_jid_returns_empty_when_bare_missing(jid):
+    """
+    **Validates: Requirements 1.1, 1.2**
+    
+    Property 1: Fault Condition - JID Extraction Failure for Authorized Users
+    
+    EXPECTED OUTCOME: This test FAILS on unfixed code (proving bug exists).
+    
+    For IQ stanzas where iq["from"] lacks .bare attribute, _sender_jid() 
+    should extract JID using fallback methods, but currently returns empty string.
+    """
+    handler, _, _ = _make_handler(authorized=True)
+    iq = _MockIQWithMissingBare(jid)
+    
+    sender = handler._sender_jid(iq)
+    
+    # Expected behavior: should extract JID using fallback (str(from_field).split("/")[0])
+    # Current buggy behavior: returns empty string because AttributeError is caught
+    assert sender != "", f"Expected JID extraction to succeed for {jid}, but got empty string"
+    assert sender == jid, f"Expected {jid}, got {sender}"
+
+
+@given(jid=st.from_regex(r"^[a-z]+@[a-z]+\.[a-z]+$", fullmatch=True))
+@example(jid="charlie@example.net")
+@example(jid="dave@test.com")
+def test_bug_condition_sender_jid_returns_empty_when_bare_is_empty_string(jid):
+    """
+    **Validates: Requirements 1.1, 1.2**
+    
+    Property 1: Fault Condition - JID Extraction Failure for Authorized Users
+    
+    EXPECTED OUTCOME: This test FAILS on unfixed code (proving bug exists).
+    
+    For IQ stanzas where iq["from"].bare exists but returns empty string,
+    _sender_jid() should use fallback methods, but currently returns empty string.
+    """
+    handler, _, _ = _make_handler(authorized=True)
+    iq = _MockIQWithEmptyBare(jid)
+    
+    sender = handler._sender_jid(iq)
+    
+    # Expected behavior: should detect empty string and use fallback
+    # Current buggy behavior: returns empty string because no check for empty .bare
+    assert sender != "", f"Expected JID extraction to succeed for {jid}, but got empty string"
+    assert sender == jid, f"Expected {jid}, got {sender}"
+
+
+def test_bug_condition_sender_jid_returns_empty_when_from_is_none():
+    """
+    **Validates: Requirements 1.2**
+    
+    Property 1: Fault Condition - JID Extraction Failure for Authorized Users
+    
+    EXPECTED OUTCOME: This test verifies robust null handling.
+
+    For IQ stanzas where iq["from"] is None, _sender_jid() should return
+    empty string.
+    """
+    handler, _, _ = _make_handler(authorized=True)
+    iq = _MockIQWithNoneFrom()
+
+    sender = handler._sender_jid(iq)
+
+    assert sender == ""
+
+
+@given(jid=st.from_regex(r"^[a-z]+@[a-z]+\.[a-z]+$", fullmatch=True))
+@example(jid="alice@example.com")
+@example(jid="bob@test.org")
+def test_bug_condition_authorization_fails_for_allowlisted_users_when_jid_extraction_fails(jid):
+    """
+    **Validates: Requirements 1.1, 2.1**
+    
+    Property 1: Fault Condition - JID Extraction Failure for Authorized Users
+    
+    EXPECTED OUTCOME: This test FAILS on unfixed code (proving bug exists).
+    
+    When _sender_jid() fails to extract JID (returns empty string), 
+    _is_authorized() returns False even for users in the allowlist.
+    This is the core bug: authorized users get "Not authorized" errors.
+    """
+    handler, _, router = _make_handler(authorized=True)
+    
+    # Simulate allowlist containing this JID
+    router.is_authorized.return_value = True
+    
+    # Use IQ with missing .bare attribute (triggers bug)
+    iq = _MockIQWithMissingBare(jid)
+    
+    is_auth = handler._is_authorized(iq)
+    
+    # Expected behavior: should return True (user is in allowlist)
+    # Current buggy behavior: returns False because _sender_jid() returns empty string
+    assert is_auth is True, f"Expected authorization to succeed for allowlisted user {jid}, but got False"
+    
+    # Verify that if JID extraction worked, router.is_authorized would be called with correct JID
+    # In the fixed version, this should be called with the extracted JID
+    # In the buggy version, it's called with empty string, so is_authorized returns False
+
+
+# ---------------------------------------------------------------------------
+# Preservation Property Tests - Authorization Logic Unchanged
+# ---------------------------------------------------------------------------
+
+
+@given(jid=st.from_regex(r"^[a-z]+@[a-z]+\.[a-z]+(/[a-z0-9]+)?$", fullmatch=True))
+@example(jid="alice@example.com")
+@example(jid="bob@test.org/mobile")
+@example(jid="charlie@example.net")
+def test_preservation_authorized_users_with_valid_bare_extraction(jid):
+    """
+    **Validates: Requirements 3.2, 3.5**
+    
+    Property 2: Preservation - Authorization Logic Unchanged for Valid JID Extraction
+    
+    EXPECTED OUTCOME: This test PASSES on unfixed code (confirms baseline behavior).
+    
+    For IQ stanzas where iq["from"].bare works correctly, authorized users
+    should continue to be authorized after the fix.
+    """
+    handler, _, router = _make_handler(authorized=True)
+    
+    # Mock router to simulate this JID is in the allowlist
+    router.is_authorized.return_value = True
+    
+    # Use normal IQ with working .bare attribute
+    iq = _MockIQ(jid)
+    
+    # Extract JID and verify it works
+    sender = handler._sender_jid(iq)
+    assert sender != "", f"JID extraction should succeed for {jid}"
+    
+    # Verify authorization succeeds
+    is_auth = handler._is_authorized(iq)
+    assert is_auth is True, f"Authorized user {jid} should be authorized"
+    
+    # Verify router.is_authorized was called with the extracted JID
+    router.is_authorized.assert_called()
+
+
+@given(jid=st.from_regex(r"^[a-z]+@[a-z]+\.[a-z]+(/[a-z0-9]+)?$", fullmatch=True))
+@example(jid="evil@example.com")
+@example(jid="unauthorized@test.org/desktop")
+def test_preservation_unauthorized_users_rejected(jid):
+    """
+    **Validates: Requirements 3.1**
+    
+    Property 2: Preservation - Authorization Logic Unchanged for Valid JID Extraction
+    
+    EXPECTED OUTCOME: This test PASSES on unfixed code (confirms baseline behavior).
+    
+    Users not in the allowlist should continue to be rejected after the fix.
+    """
+    handler, _, router = _make_handler(authorized=False)
+    
+    # Mock router to simulate this JID is NOT in the allowlist
+    router.is_authorized.return_value = False
+    
+    # Use normal IQ with working .bare attribute
+    iq = _MockIQ(jid)
+    
+    # Verify authorization fails
+    is_auth = handler._is_authorized(iq)
+    assert is_auth is False, f"Unauthorized user {jid} should be rejected"
+
+
+@given(
+    bare_jid=st.from_regex(r"^[a-z]+@[a-z]+\.[a-z]+$", fullmatch=True),
+    resource=st.from_regex(r"^[a-z0-9]+$", fullmatch=True),
+)
+@example(bare_jid="alice@example.com", resource="mobile")
+@example(bare_jid="bob@test.org", resource="desktop")
+def test_preservation_bare_jid_matching_any_resource(bare_jid, resource):
+    """
+    **Validates: Requirements 3.3**
+    
+    Property 2: Preservation - Authorization Logic Unchanged for Valid JID Extraction
+    
+    EXPECTED OUTCOME: This test PASSES on unfixed code (confirms baseline behavior).
+    
+    When the allowlist contains bare JIDs (user@domain), the system should
+    continue to match incoming requests from any resource (user@domain/resource1,
+    user@domain/resource2) after the fix.
+    """
+    handler, _, router = _make_handler(authorized=True)
+    
+    # Create full JID with resource
+    full_jid = f"{bare_jid}/{resource}"
+    
+    # Mock router to simulate bare JID matching logic
+    # The router should authorize any resource for a bare JID in allowlist
+    def mock_is_authorized(jid_to_check):
+        # Simulate bare JID matching: strip resource and check
+        bare = jid_to_check.split("/")[0] if "/" in jid_to_check else jid_to_check
+        return bare == bare_jid
+    
+    router.is_authorized.side_effect = mock_is_authorized
+    
+    # Use IQ with full JID (bare + resource)
+    iq = _MockIQ(full_jid)
+    
+    # Extract JID - should get bare JID
+    sender = handler._sender_jid(iq)
+    assert sender == bare_jid, f"Expected bare JID {bare_jid}, got {sender}"
+    
+    # Verify authorization succeeds (bare JID matches)
+    is_auth = handler._is_authorized(iq)
+    assert is_auth is True, f"Bare JID {bare_jid} in allowlist should match full JID {full_jid}"
+
+
+@given(
+    bare_jid=st.from_regex(r"^[a-z]+@[a-z]+\.[a-z]+$", fullmatch=True),
+    allowed_resource=st.from_regex(r"^[a-z0-9]+$", fullmatch=True),
+    other_resource=st.from_regex(r"^[a-z0-9]+$", fullmatch=True),
+)
+@example(bare_jid="alice@example.com", allowed_resource="work", other_resource="home")
+@example(bare_jid="bob@test.org", allowed_resource="desktop", other_resource="mobile")
+def test_preservation_full_jid_matching_specific_resource(bare_jid, allowed_resource, other_resource):
+    """
+    **Validates: Requirements 3.4**
+    
+    Property 2: Preservation - Authorization Logic Unchanged for Valid JID Extraction
+    
+    EXPECTED OUTCOME: This test PASSES on unfixed code (confirms baseline behavior).
+    
+    When the allowlist contains full JIDs (user@domain/resource), the system
+    should continue to match incoming requests only from that specific resource
+    after the fix.
+    
+    NOTE: The current implementation of _sender_jid() always extracts bare JID,
+    so full JID matching through ad-hoc commands requires the bare JID to also
+    be in the allowlist. This test verifies that behavior is preserved.
+    """
+    # Skip if resources are the same (we want to test different resources)
+    if allowed_resource == other_resource:
+        return
+    
+    handler, _, router = _make_handler(authorized=True)
+    
+    # Create full JIDs
+    allowed_full_jid = f"{bare_jid}/{allowed_resource}"
+    other_full_jid = f"{bare_jid}/{other_resource}"
+    
+    # Mock router to simulate the actual DaemonRouter.is_authorized() logic:
+    # - Check if the JID (as passed) is in allowed_full_jids
+    # - Then check if the bare JID is in allowed_bare_jids
+    # Since _sender_jid() always returns bare JID, we need bare JID in allowlist
+    def mock_is_authorized(jid_to_check):
+        # Simulate DaemonRouter.is_authorized() logic
+        # First check full JID match
+        if jid_to_check == allowed_full_jid:
+            return True
+        # Then check bare JID match
+        bare = jid_to_check.split("/")[0] if "/" in jid_to_check else jid_to_check
+        # For this test, we're simulating that ONLY the bare JID is in allowed_bare_jids
+        # (not the full JID), so any resource from that bare JID is authorized
+        return bare == bare_jid
+    
+    router.is_authorized.side_effect = mock_is_authorized
+    
+    # Test: Both resources should be authorized because _sender_jid() returns bare JID
+    # and the bare JID is in the allowlist
+    iq_allowed = _MockIQ(allowed_full_jid)
+    sender_allowed = handler._sender_jid(iq_allowed)
+    assert sender_allowed == bare_jid, f"Expected bare JID {bare_jid}, got {sender_allowed}"
+    
+    is_auth_allowed = handler._is_authorized(iq_allowed)
+    assert is_auth_allowed is True, f"Bare JID {bare_jid} should be authorized"
+    
+    # Other resource should also be authorized (same bare JID)
+    iq_other = _MockIQ(other_full_jid)
+    sender_other = handler._sender_jid(iq_other)
+    assert sender_other == bare_jid, f"Expected bare JID {bare_jid}, got {sender_other}"
+    
+    is_auth_other = handler._is_authorized(iq_other)
+    assert is_auth_other is True, f"Bare JID {bare_jid} should be authorized for any resource"
+
+
+def test_authorization_uses_full_jid_for_strict_allowlist():
+    handler, _, router = _make_handler(authorized=False)
+    allowlisted = "u@example.com/work"
+    router.is_authorized.side_effect = lambda jid_to_check: jid_to_check == allowlisted
+
+    authorized = handler._is_authorized(_MockIQ("u@example.com/work"))
+    rejected = handler._is_authorized(_MockIQ("u@example.com/mobile"))
+
+    assert authorized is True
+    assert rejected is False
+
+
+def test_multistep_submit_authorizes_with_session_stored_sender():
+    handler, executor, router = _make_handler(authorized=False)
+    handler._xep_0004 = _MockXep0004()
+
+    allowlisted = "u@example.com/work"
+    router.is_authorized.side_effect = lambda jid_to_check: jid_to_check == allowlisted
+
+    session: dict = {}
+    with patch("asky.config.USER_PROMPTS", {"greet": "Say hello"}):
+        step1 = _run(handler._cmd_list_prompts(_MockIQ(allowlisted), session))
+    assert step1["has_next"] is True
+    assert session.get("_authorized_full_jid") == allowlisted
+    assert session.get("_authorized_bare_jid") == "u@example.com"
+
+    submit_iq = _MockIQMissingFromWithForm({"prompt": "greet", "query": "there"})
+    result = _run(handler._cmd_list_prompts_submit(submit_iq, session))
+
+    assert result["notes"][0][0] == "info"
+    executor.execute_query_text.assert_called_once_with(
+        jid="u@example.com",
+        query_text="/greet there",
+    )
+
+
+def test_sender_resolution_uses_raw_xml_from_attr_when_interface_missing():
+    handler, _, _ = _make_handler()
+    iq = _MockIQXmlOnly("u@example.com/work")
+
+    assert handler._sender_full_jid(iq) == "u@example.com/work"
+    assert handler._sender_jid(iq) == "u@example.com"
+
+
+def test_form_values_uses_raw_xml_when_command_interface_missing():
+    handler, _, _ = _make_handler()
+    iq = _MockIQXmlOnly(
+        "u@example.com/work",
+        form_values={"prompt": "greet", "query": "there"},
+    )
+
+    values = handler._form_values(iq)
+    assert values["prompt"] == "greet"
+    assert values["query"] == "there"
+
+
+def test_list_prompts_submit_handles_xml_only_command_next_iq():
+    handler, executor, _ = _make_handler()
+    executor.execute_query_text.return_value = "prompt output"
+    iq = _MockIQXmlOnly(
+        "user@example.com/resource",
+        form_values={"prompt": "greet", "query": "xml fallback"},
+    )
+
+    result = _run(handler._cmd_list_prompts_submit(iq, {}))
+
+    executor.execute_query_text.assert_called_once_with(
+        jid="user@example.com",
+        query_text="/greet xml fallback",
+    )
+    assert result["notes"][0][1] == "prompt output"

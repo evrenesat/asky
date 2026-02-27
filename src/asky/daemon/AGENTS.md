@@ -150,8 +150,13 @@ is absent, ad-hoc commands are silently disabled (text command surface still wor
 
 ### Authorization
 
-Every handler (including multi-step second steps) checks the IQ sender's bare JID against the daemon
-allowlist via `router.is_authorized()`. Unauthorized requests receive a permission-denied error note.
+Every handler (including multi-step second steps) checks IQ sender identity against the daemon
+allowlist via `router.is_authorized()` using:
+- full JID first (`user@domain/resource`) for strict allowlist entries,
+- bare JID fallback (`user@domain`) for resource-agnostic allowlist entries.
+
+For multi-step form submissions, the first authorized sender is cached in the ad-hoc `session` dict
+and reused if the follow-up IQ stanza lacks a usable `from` field.
 
 ### Blocking Calls
 

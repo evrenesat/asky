@@ -1,13 +1,143 @@
 # DEVLOG
 
-## 2026-02-27 - XEP-0050 Ad-Hoc Commands
+## 2026-02-27 - XMPP Document Upload Corpus + Session Cleanup Expansion
+
+**Changes:**
+
+- Added XMPP document-upload ingestion pipeline in `plugins/xmpp_daemon/document_ingestion.py`:
+  - detects supported document URLs from OOB payloads/body text,
+  - enforces HTTPS-only uploads, extension/MIME validation, and max-file-size limits,
+  - globally deduplicates uploads by content hash,
+  - stores URL mappings and session/document links,
+  - auto-enables session research profile with `research_source_mode=local_only` and merges linked corpus paths,
+  - preloads newly linked local files through existing local ingestion flow.
+- Wired ingestion into `plugins/xmpp_daemon/xmpp_service.py`:
+  - document URLs are processed before text query routing,
+  - ingestion acknowledgements are returned to sender,
+  - uploaded document URLs are redacted from text body before command/query handling.
+- Extended storage model in `storage/interface.py`, `storage/sqlite.py`, and `storage/__init__.py`:
+  - new `UploadedDocument` dataclass,
+  - new tables: `uploaded_documents`, `uploaded_document_urls`, `session_uploaded_documents`,
+  - repository/wrapper methods for upsert/lookups/session linking/clearing.
+- Expanded API cleanup behavior in `api/client.py`:
+  - `cleanup_session_research_data` now also clears session upload links and local corpus path pointers (for numeric session IDs),
+  - returns `deleted`, `cleared_upload_links`, and `cleared_corpus_paths` counts.
+- Updated remote command execution paths (`daemon/command_executor.py` and `plugins/xmpp_daemon/command_executor.py`) so cleanup-related commands are allowed/executable remotely (`--delete-messages`, `--delete-sessions`, `--all`, `--clean-session-research`, `--delete-memory`, `--clear-memories`).
+- Added/updated tests:
+  - `tests/test_xmpp_document_ingestion.py` (new),
+  - `tests/test_xmpp_daemon.py` (document URL-only text-body guard),
+  - `tests/test_xmpp_commands.py` (cleanup flag policy and dispatch),
+  - `tests/test_storage.py` (uploaded-doc dedupe/session-link coverage),
+  - `tests/test_api_turn_resolution.py` (cleanup-session upload/corpus clearing coverage).
+
+**Verification:**
+- `uv run pytest` → `1201 passed in 10.65s`
+
+## 2026-02-27 - CLI Interface Polish: Dynamic Help, Roster Sync, Sendmail/Push-Data Flags
+
+**Changes:**
+
+- `cli/main.py`:
+  - Removed stale hard-coded `--mail`, `--subject`, `--daemon`, `--browser` entries from static help text.
+  - Removed stale `--browser` → `--playwright-login` token translation from `_translate_process_tokens()`.
+  - Removed `--help`/`-h` from `_INTERNAL_ONLY_FLAGS` so plugin bootstrap runs for help requests.
+  - Rewrote `_print_top_level_help()` to dynamically build grouped help from plugin contributions via `PluginManager.collect_cli_contributions()`.
+  - Added `_format_contribution_lines()` helper.
+  - Threaded `plugin_manager` through `_consume_grouped_help()` and `parse_args()`.
+
+- `plugins/playwright_browser/plugin.py`: Moved module-level `trafilatura`, `PlaywrightBrowserManager`, and `asky.retrieval` imports into the methods that use them to avoid import overhead at startup.
+
+- `plugins/persona_manager/plugin.py`: Moved `knowledge.py` and `importer.py` imports into the handlers that use them. `knowledge.py` pulls in `sentence_transformers`/`torch` (1.6 s), making it the dominant contributor to startup latency when help was loaded.
+
+- `plugins/manager.py`: Added `_sync_new_bundled_plugins()` — called by `_ensure_roster_file()` when the user roster already exists. Appends any bundled plugin entries missing from the user's `plugins.toml`. Fixes the case where email_sender/push_data were invisible in help because the user's roster predated their addition.
+
+- `plugins/hook_types.py`: Added `answer_title: str = ""` field to `PostTurnRenderContext`.
+
+- `cli/chat.py`: Passes `answer_title=filename_hint or ""` when invoking `POST_TURN_RENDER`.
+
+- `plugins/email_sender/plugin.py`: Contributes two flags — `--sendmail RECIPIENTS` (comma-separated addresses) and optional `--subject SUBJECT`. Subject priority: explicit flag → `answer_title` → first 80 chars of query → "asky Result".
+
+- `plugins/push_data/plugin.py`: Simplified to a single `--push-data "ENDPOINT[?KEY=VAL&...]"` flag. Params encoded as URL query-string inside a single quoted argument; `?` separates endpoint from params, `&` between pairs. Eliminates argparse ambiguity with trailing positional query tokens.
+
+- Tests and docs updated for all interface changes.
+
+**Verification:**
+- `uv run pytest -x -q` → `1188 passed in 9.95s`
+
+## 2026-02-27 - XEP-0050 Ad-Hoc Authorization: Full-JID Matching + Session Fallback
+
+Fixed a persistent `Not authorized.` failure for allowlisted users running XEP-0050 ad-hoc commands (especially `asky#list-prompts`) when allowlists used strict full JIDs (`user@domain/resource`) or when a follow-up IQ form submission did not expose a usable `from` field.
+
+**Changes:**
+- `src/asky/plugins/xmpp_daemon/adhoc_commands.py`:
+  - Added `_sender_full_jid()` and `_bare_jid()` helpers.
+  - Added `_sender_candidates()` and updated `_is_authorized(iq, session)` to evaluate sender identity in priority order: full JID first, then bare JID, then session-cached sender values.
+  - Stored authorized sender identity in ad-hoc `session` (`_authorized_full_jid`, `_authorized_bare_jid`) for multi-step command continuity.
+  - Updated all ad-hoc command handlers to pass `session` into authorization/JID resolution.
+  - Added safe stanza-interface access (`_get_stanza_interface_value`) so `command_next` IQs without `from`/`command` interfaces no longer trigger noisy slixmpp warnings from direct `iq[...]` access.
+  - Added XML-level fallbacks:
+    - sender JID extraction from raw IQ XML `from` attribute when stanza interfaces are unavailable.
+    - submitted XEP-0004 form value extraction from raw IQ XML (`jabber:x:data`) when `iq["command"]["form"]` is unavailable.
+- `tests/test_xmpp_adhoc.py`:
+  - Added regression tests for strict full-JID allowlist behavior in ad-hoc authorization.
+  - Added regression test for multi-step submit authorization when IQ `from` is missing, using session-cached sender fallback.
+  - Updated null-`from` JID extraction expectation to return empty string (instead of `"None"`).
+  - Added XML-only `command_next` shape tests to validate:
+    - sender extraction from raw IQ XML,
+    - form value extraction from raw IQ XML,
+    - successful `asky#list-prompts` submit execution when stanza interfaces are absent.
+- Documentation updates:
+  - `ARCHITECTURE.md` XMPP daemon flow now documents ad-hoc auth ordering (full JID → bare fallback) and multi-step sender caching.
+  - `src/asky/daemon/AGENTS.md` ad-hoc authorization section updated to match runtime behavior.
+
+**Verification:**
+- `uv run pytest -n 0 tests/test_xmpp_adhoc.py` → `54 passed in 1.31s`
+- `uv run pytest -n 0 tests/test_xmpp_router.py tests/test_xmpp_daemon.py` → `31 passed in 0.14s`
+- `uv run pytest -n 0 tests/test_xmpp_adhoc.py` (after XML fallback updates) → `57 passed in 1.23s`
+- `uv run pytest` (full suite after all updates) → `1180 passed in 9.79s`
+
+## 2026-02-27 - Plugin Boundary Enforcement and Dynamic CLI Contributions
+
+Enforced the one-way plugin dependency rule: core code may only import plugin *infrastructure* (`plugins.runtime`, `plugins.hooks`), never individual plugin packages. Implemented a dynamic CLI contribution system so plugins declare their own argparse flags.
+
+**Changes:**
+- `plugins/base.py`: Added `CLIContribution` dataclass, `CapabilityCategory` constants, `CATEGORY_LABELS` dict, and `AskyPlugin.get_cli_contributions()` classmethod.
+- `plugins/manager.py`: Added `collect_cli_contributions()` — light-imports each enabled plugin class (no `activate()`) to collect their CLI flags.
+- `cli/main.py`: Added `_bootstrap_plugin_manager_for_cli()` and `_add_plugin_contributions_to_parser()`. `parse_args()` now accepts an optional `plugin_manager` and organises flags into named argparse groups (`Output Delivery`, `Browser Setup`, `Background Services`). `--open` is always in the `Output Delivery` group. Internal process-spawning flags (`--xmpp-daemon`, `--edit-daemon`, `--xmpp-menubar-child`) remain as core suppressed args since they're used by the CLI translation pipeline regardless of plugin state.
+- `email_sender/sender.py` created (moved from `asky/email_sender.py`). `asky/email_sender.py` deleted.
+- `push_data/executor.py` created (moved from `asky/push_data.py`). `asky/push_data.py` deleted.
+- `plugins/email_sender/plugin.py`: uses local `sender.py`, contributes `--mail`/`--subject`.
+- `plugins/push_data/plugin.py`: uses local `executor.py`, contributes `--push-data`/`--push-param`.
+- `plugins/playwright_browser/plugin.py`: contributes `--browser` (maps to `playwright_login` dest).
+- `plugins/xmpp_daemon/plugin.py`: contributes `--daemon`.
+- `cli/history.py`, `cli/sessions.py`: removed direct `from asky.email_sender import send_email` calls and the now-unnecessary `mail_recipients`/`subject` parameters from `print_answers_command` / `print_session_command`.
+- `core/tool_registry_factory.py`: fixed last `from asky.push_data` reference to use plugin path.
+- Tests and docs updated accordingly.
+
+**Bootstrap memory fix:** `_bootstrap_plugin_manager_for_cli()` skips plugin loading for internal commands (`--config`, `--help`, `--edit-model`, etc.) to avoid the RSS memory regression detected by the startup performance guardrail.
+
+## 2026-02-27 - XEP-0050 Ad-Hoc Commands (improvements)
+
+- Converted `asky#list-prompts` and `asky#list-presets` from single-step text dumps to two-step actionable flows:
+  - Step 1: XEP-0004 form with a `list-single` selector showing all configured aliases/presets (value = alias/name, label = "alias/\name: template preview"), plus an optional free-text field for extra query args.
+  - Step 2: Selected alias/preset + args are executed directly — no copy-paste required.
+  - Execution path for prompts: `execute_query_text(jid, "/alias [query]")`. For presets: `expand_preset_invocation("\\name [args]")` → `execute_command_text(...)`.
+  - Empty configs return a plain informational note (no form shown).
+  - Command labels renamed: "List Prompts" → "Run Prompt", "List Presets" → "Run Preset".
+- Added module-level formatting helpers in `adhoc_commands.py`:
+  - `_format_section(title, body)` — header + divider + body.
+  - `_format_kv_pairs(pairs)` — column-aligned key→value output.
+- Applied structured formatting to status command (uses `_format_kv_pairs`) and list-tools (uses `_format_section` with count).
+- Updated `tests/test_xmpp_adhoc.py`: removed old single-step prompts/presets tests, added 11 new tests covering the two-step flows, empty config edge cases, submit paths with/without optional fields, and error paths. Total: 44 tests, <1s.
+
+## 2026-02-27 - XEP-0050 Ad-Hoc Commands (initial)
 
 - Implemented XEP-0050 (Ad-Hoc Commands) support for the XMPP daemon, exposing all major asky features as discoverable, form-driven commands that any standards-compliant XMPP client (Conversations, Gajim, etc.) can find and execute via their built-in ad-hoc command GUI.
 
 - **New file: `plugins/xmpp_daemon/adhoc_commands.py`**
   - `AdHocCommandHandler` class with 13 commands:
-    - Single-step info: `asky#status`, `asky#list-sessions`, `asky#list-history`, `asky#list-transcripts`, `asky#list-tools`, `asky#list-memories`, `asky#list-prompts`, `asky#list-presets`
-    - Form-based interactive: `asky#query` (full query with model/research/turns/lean/system-prompt options), `asky#new-session`, `asky#switch-session`, `asky#clear-session`, `asky#use-transcript`
+    - Single-step info: `asky#status`, `asky#list-sessions`, `asky#list-history`, `asky#list-transcripts`, `asky#list-tools`, `asky#list-memories`
+    - Form-based interactive: `asky#query` (full query with model/research/turns/lean/system-prompt options), `asky#new-session`, `asky#switch-session`, `asky#clear-session`, `asky#use-transcript`, `asky#list-prompts` (Run Prompt), `asky#list-presets` (Run Preset)
   - All blocking calls (run_turn, DB reads) go through `loop.run_in_executor()` — asyncio loop is never blocked.
   - Authorization check (daemon allowlist) is enforced at the start of every handler, including multi-step second steps.
   - Graceful degradation: if `xep_0050`/`xep_0004` plugins are absent, ad-hoc commands are disabled and the existing text-based command surface continues working normally.
@@ -20,8 +150,6 @@
 - **Modified `plugins/xmpp_daemon/xmpp_service.py`**
   - `AdHocCommandHandler` is created in `__init__` with `voice_enabled`/`image_enabled` state.
   - Registered in `_on_xmpp_session_start` after room joins; logs info if xep_0050 is available, debug if not.
-
-- **New file: `tests/test_xmpp_adhoc.py`** — 33 unit tests; all mocked, no I/O, <1s total.
 
 ## 2026-02-26 - Unified Config Entrypoint + Grouped Command Surface
 
@@ -3475,3 +3603,29 @@ For older logs, see [DEVLOG_ARCHIVE.md](DEVLOG_ARCHIVE.md).
   - Before fix: API turn tests reported multi-second call durations (up to ~23–34s for a single case).
   - After fix: `uv run pytest -n 0 tests/test_api_turn_resolution.py --durations=10` → `4 passed in 0.10s`.
   - Full suite: `uv run pytest` → `1104 passed in 9.92s` (no warnings).
+
+## 2026-02-27 - Ad-Hoc Command Authorization Bugfix
+
+Fixed "Not Authorized" error that authorized users encountered when invoking XEP-0050 ad-hoc commands (specifically `asky#list-prompts`). The root cause was fragile JID extraction in `_sender_jid()` that failed when `iq["from"].bare` was unavailable or returned an empty string.
+
+**Changes:**
+- `plugins/xmpp_daemon/adhoc_commands.py`: Rewrote `_sender_jid()` with multiple fallback methods:
+  - Primary: Try `iq["from"].bare` attribute (existing behavior)
+  - Fallback 1: String conversion + split (`str(from_field).split("/")[0]`)
+  - Fallback 2: Access `user` and `domain` attributes separately, concatenate as `f"{user}@{domain}"`
+  - Fallback 3: Parse raw XML string to extract JID from `from="..."` attribute
+  - Added comprehensive debug logging with `logger.warning()` when extraction fails, including type info, available attributes, and IQ stanza structure (truncated to 500 chars)
+- `tests/test_xmpp_adhoc.py`: Added property-based tests using Hypothesis:
+  - Bug condition exploration tests (4 tests) that initially failed on unfixed code, confirming the bug
+  - Preservation tests (4 tests) that passed on unfixed code, ensuring no regressions
+  - All tests now pass after fix implementation
+
+**Verification:**
+- Full test suite: 1175 tests pass in 11.30s (no regressions)
+- Ad-hoc command tests: 52 tests pass in 1.02s
+- Debug logging verified: warnings appear when fallback methods are used or extraction fails completely
+- Authorized users can now successfully invoke ad-hoc commands even when `iq["from"].bare` fails
+- Unauthorized users continue to be rejected (preservation requirement met)
+
+**Follow-up:**
+- Optional enhancement (task 3.2) not implemented: session-based JID storage for multi-step commands. Current fix is sufficient; implement only if multi-step failures are observed in production.

@@ -15,6 +15,7 @@ from asky.storage.interface import (
     Session,
     SessionOverrideFile,
     TranscriptRecord,
+    UploadedDocument,
 )
 
 
@@ -237,6 +238,20 @@ class SQLiteHistoryRepository(HistoryRepository):
             updated_at=str(row["updated_at"] or ""),
         )
 
+    def _uploaded_document_from_row(self, row: sqlite3.Row) -> UploadedDocument:
+        """Build an uploaded document dataclass from a sqlite row."""
+        return UploadedDocument(
+            id=int(row["id"]),
+            content_hash=str(row["content_hash"] or ""),
+            file_path=str(row["file_path"] or ""),
+            original_filename=str(row["original_filename"] or ""),
+            file_extension=str(row["file_extension"] or ""),
+            mime_type=str(row["mime_type"] or ""),
+            file_size=int(row["file_size"] or 0),
+            created_at=str(row["created_at"] or ""),
+            updated_at=str(row["updated_at"] or ""),
+        )
+
     def init_db(self) -> None:
         """Initialize the SQLite database and create tables if they don't exist."""
         os.makedirs(DB_PATH.parent, exist_ok=True)
@@ -349,6 +364,47 @@ class SQLiteHistoryRepository(HistoryRepository):
                 updated_at TEXT NOT NULL,
                 PRIMARY KEY (session_id, filename),
                 FOREIGN KEY (session_id) REFERENCES sessions(id)
+            )
+            """
+        )
+
+        c.execute(
+            """
+            CREATE TABLE IF NOT EXISTS uploaded_documents (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                content_hash TEXT NOT NULL UNIQUE,
+                file_path TEXT NOT NULL,
+                original_filename TEXT NOT NULL,
+                file_extension TEXT NOT NULL,
+                mime_type TEXT,
+                file_size INTEGER NOT NULL,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            )
+            """
+        )
+
+        c.execute(
+            """
+            CREATE TABLE IF NOT EXISTS uploaded_document_urls (
+                url TEXT PRIMARY KEY,
+                document_id INTEGER NOT NULL,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                FOREIGN KEY (document_id) REFERENCES uploaded_documents(id)
+            )
+            """
+        )
+
+        c.execute(
+            """
+            CREATE TABLE IF NOT EXISTS session_uploaded_documents (
+                session_id INTEGER NOT NULL,
+                document_id INTEGER NOT NULL,
+                linked_at TEXT NOT NULL,
+                PRIMARY KEY (session_id, document_id),
+                FOREIGN KEY (session_id) REFERENCES sessions(id),
+                FOREIGN KEY (document_id) REFERENCES uploaded_documents(id)
             )
             """
         )
@@ -1820,6 +1876,206 @@ class SQLiteHistoryRepository(HistoryRepository):
             )
             copied += 1
         return copied
+
+    def upsert_uploaded_document(
+        self,
+        *,
+        content_hash: str,
+        file_path: str,
+        original_filename: str,
+        file_extension: str,
+        mime_type: Optional[str],
+        file_size: int,
+    ) -> UploadedDocument:
+        """Create or update one uploaded document keyed by content hash."""
+        normalized_hash = str(content_hash or "").strip().lower()
+        if not normalized_hash:
+            raise ValueError("content_hash is required")
+        normalized_path = str(file_path or "").strip()
+        if not normalized_path:
+            raise ValueError("file_path is required")
+        normalized_name = str(original_filename or "").strip()
+        if not normalized_name:
+            raise ValueError("original_filename is required")
+        normalized_ext = str(file_extension or "").strip().lower()
+        if not normalized_ext:
+            raise ValueError("file_extension is required")
+
+        now = datetime.now().isoformat()
+        conn = self._get_conn()
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            INSERT INTO uploaded_documents
+            (content_hash, file_path, original_filename, file_extension, mime_type, file_size, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(content_hash) DO UPDATE
+            SET file_path = excluded.file_path,
+                original_filename = excluded.original_filename,
+                file_extension = excluded.file_extension,
+                mime_type = excluded.mime_type,
+                file_size = excluded.file_size,
+                updated_at = excluded.updated_at
+            """,
+            (
+                normalized_hash,
+                normalized_path,
+                normalized_name,
+                normalized_ext,
+                str(mime_type or "").strip(),
+                int(file_size),
+                now,
+                now,
+            ),
+        )
+        conn.commit()
+        cursor.execute(
+            "SELECT * FROM uploaded_documents WHERE content_hash = ? LIMIT 1",
+            (normalized_hash,),
+        )
+        row = cursor.fetchone()
+        conn.close()
+        if row is None:
+            raise RuntimeError("Failed to upsert uploaded document.")
+        return self._uploaded_document_from_row(row)
+
+    def get_uploaded_document_by_hash(
+        self,
+        *,
+        content_hash: str,
+    ) -> Optional[UploadedDocument]:
+        """Get uploaded document by content hash."""
+        normalized_hash = str(content_hash or "").strip().lower()
+        if not normalized_hash:
+            return None
+        conn = self._get_conn()
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT * FROM uploaded_documents WHERE content_hash = ? LIMIT 1",
+            (normalized_hash,),
+        )
+        row = cursor.fetchone()
+        conn.close()
+        if row is None:
+            return None
+        return self._uploaded_document_from_row(row)
+
+    def get_uploaded_document_by_url(
+        self,
+        *,
+        url: str,
+    ) -> Optional[UploadedDocument]:
+        """Get uploaded document by canonical URL mapping."""
+        normalized_url = str(url or "").strip()
+        if not normalized_url:
+            return None
+        conn = self._get_conn()
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            SELECT d.*
+            FROM uploaded_document_urls AS u
+            JOIN uploaded_documents AS d ON d.id = u.document_id
+            WHERE u.url = ?
+            LIMIT 1
+            """,
+            (normalized_url,),
+        )
+        row = cursor.fetchone()
+        conn.close()
+        if row is None:
+            return None
+        return self._uploaded_document_from_row(row)
+
+    def save_uploaded_document_url(
+        self,
+        *,
+        url: str,
+        document_id: int,
+    ) -> None:
+        """Create or update one URL -> uploaded document mapping."""
+        normalized_url = str(url or "").strip()
+        if not normalized_url:
+            raise ValueError("url is required")
+        now = datetime.now().isoformat()
+        conn = self._get_conn()
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            INSERT INTO uploaded_document_urls (url, document_id, created_at, updated_at)
+            VALUES (?, ?, ?, ?)
+            ON CONFLICT(url) DO UPDATE
+            SET document_id = excluded.document_id,
+                updated_at = excluded.updated_at
+            """,
+            (normalized_url, int(document_id), now, now),
+        )
+        conn.commit()
+        conn.close()
+
+    def link_session_uploaded_document(
+        self,
+        *,
+        session_id: int,
+        document_id: int,
+    ) -> None:
+        """Link one uploaded document to one session."""
+        now = datetime.now().isoformat()
+        conn = self._get_conn()
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            INSERT OR IGNORE INTO session_uploaded_documents
+            (session_id, document_id, linked_at)
+            VALUES (?, ?, ?)
+            """,
+            (int(session_id), int(document_id), now),
+        )
+        conn.commit()
+        conn.close()
+
+    def list_session_uploaded_documents(
+        self,
+        *,
+        session_id: int,
+    ) -> List[UploadedDocument]:
+        """List uploaded documents linked to a session."""
+        conn = self._get_conn()
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            SELECT d.*
+            FROM session_uploaded_documents AS s
+            JOIN uploaded_documents AS d ON d.id = s.document_id
+            WHERE s.session_id = ?
+            ORDER BY s.linked_at ASC, d.id ASC
+            """,
+            (int(session_id),),
+        )
+        rows = cursor.fetchall()
+        conn.close()
+        return [self._uploaded_document_from_row(row) for row in rows]
+
+    def clear_session_uploaded_documents(
+        self,
+        *,
+        session_id: int,
+    ) -> int:
+        """Clear uploaded-document links for one session."""
+        conn = self._get_conn()
+        cursor = conn.cursor()
+        cursor.execute(
+            "DELETE FROM session_uploaded_documents WHERE session_id = ?",
+            (int(session_id),),
+        )
+        deleted = int(cursor.rowcount or 0)
+        conn.commit()
+        conn.close()
+        return deleted
 
     def get_interaction_by_id(self, interaction_id: int) -> Optional[Interaction]:
         """Fetch a single interaction (assistant message id) with its details."""

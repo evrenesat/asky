@@ -126,3 +126,40 @@ def test_research_mode_resolution_invalid_type_fallback(mock_client):
 
         # Should fallback to config.research_mode (False) because 1 is not a boolean
         assert mock_client.run_messages.call_args[1]["research_mode"] is False
+
+
+def test_cleanup_session_research_data_clears_paths_and_upload_links(mock_client, monkeypatch):
+    class _FakeVectorStore:
+        def delete_findings_by_session(self, _session_id: str) -> int:
+            return 4
+
+    fake_session = MagicMock()
+    fake_session.research_mode = True
+    fake_session.research_local_corpus_paths = ["/tmp/a.pdf", "/tmp/b.pdf"]
+
+    monkeypatch.setattr("asky.research.vector_store.VectorStore", _FakeVectorStore)
+    monkeypatch.setattr(
+        "asky.storage.get_session_by_id",
+        lambda _sid: fake_session,
+    )
+    update_calls = []
+    monkeypatch.setattr(
+        "asky.storage.update_session_research_profile",
+        lambda session_id, **kwargs: update_calls.append((session_id, kwargs)),
+    )
+    monkeypatch.setattr(
+        "asky.storage.clear_session_uploaded_documents",
+        lambda **_kwargs: 3,
+    )
+
+    result = mock_client.cleanup_session_research_data("12")
+
+    assert result == {
+        "deleted": 4,
+        "cleared_upload_links": 3,
+        "cleared_corpus_paths": 2,
+    }
+    assert update_calls
+    assert update_calls[-1][0] == 12
+    assert update_calls[-1][1]["research_source_mode"] == "web_only"
+    assert update_calls[-1][1]["research_local_corpus_paths"] == []

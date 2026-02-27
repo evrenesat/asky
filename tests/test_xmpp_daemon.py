@@ -8,6 +8,10 @@ from asky.plugins.xmpp_daemon.xmpp_service import (
     _split_media_urls,
     _should_process_text_body,
 )
+from asky.plugins.xmpp_daemon.document_ingestion import (
+    redact_document_urls,
+    split_document_urls,
+)
 
 
 def test_chunk_text_splits_in_order():
@@ -96,11 +100,49 @@ def test_split_media_urls_detects_query_filename_extension():
     assert image_urls == ["https://example.com/download?name=image.webp"]
 
 
+def test_split_document_urls_detects_supported_types():
+    doc_urls = split_document_urls(
+        [
+            "https://example.com/a.pdf",
+            "https://example.com/b.epub?download=1",
+            "https://example.com/c.jpg",
+            "http://example.com/d.pdf",
+            "https://example.com/download?filename=paper.md",
+        ]
+    )
+    assert "https://example.com/a.pdf" in doc_urls
+    assert "https://example.com/b.epub?download=1" in doc_urls
+    assert "https://example.com/download?filename=paper.md" in doc_urls
+    assert "https://example.com/c.jpg" not in doc_urls
+    assert "http://example.com/d.pdf" in doc_urls
+
+
+def test_redact_document_urls_removes_uploaded_urls_from_query():
+    query = "answer this https://example.com/a.pdf and compare to https://example.com/b.epub now"
+    redacted = redact_document_urls(
+        query,
+        ["https://example.com/a.pdf", "https://example.com/b.epub"],
+    )
+    assert "a.pdf" not in redacted
+    assert "b.epub" not in redacted
+    assert "answer this" in redacted
+
+
 def test_media_url_list_body_is_not_processed_as_text():
     assert (
         _should_process_text_body(
             has_media=True,
             body="https://example.com/a.m4a https://example.com/b.jpg",
+        )
+        is False
+    )
+
+
+def test_document_url_only_body_is_not_processed_as_text():
+    assert (
+        _should_process_text_body(
+            has_media=True,
+            body="https://example.com/uploaded.pdf",
         )
         is False
     )
@@ -118,5 +160,3 @@ def test_service_stop_logs_and_delegates_to_client():
     service._client = _Client()
     service.stop()
     assert service._client.stop_called is True
-
-

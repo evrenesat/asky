@@ -5,17 +5,38 @@ from __future__ import annotations
 import logging
 from typing import Optional
 
-from asky.plugins.base import AskyPlugin, PluginContext
+from asky.plugins.base import AskyPlugin, CapabilityCategory, CLIContribution, PluginContext
 from asky.plugins.hook_types import POST_TURN_RENDER, PostTurnRenderContext
 
 logger = logging.getLogger(__name__)
 
 
 class EmailSenderPlugin(AskyPlugin):
-    """Built-in plugin that emails the final answer when --mail is used."""
+    """Built-in plugin that emails the final answer when --sendmail is used."""
 
     def __init__(self) -> None:
         self._context: Optional[PluginContext] = None
+
+    @classmethod
+    def get_cli_contributions(cls) -> list[CLIContribution]:
+        return [
+            CLIContribution(
+                category=CapabilityCategory.OUTPUT_DELIVERY,
+                flags=("--sendmail",),
+                kwargs=dict(
+                    metavar="RECIPIENTS",
+                    help="Send the final answer via email to comma-separated addresses.",
+                ),
+            ),
+            CLIContribution(
+                category=CapabilityCategory.OUTPUT_DELIVERY,
+                flags=("--subject",),
+                kwargs=dict(
+                    metavar="SUBJECT",
+                    help="Subject line for --sendmail. Defaults to the answer title.",
+                ),
+            ),
+        ]
 
     def activate(self, context: PluginContext) -> None:
         self._context = context
@@ -32,13 +53,13 @@ class EmailSenderPlugin(AskyPlugin):
         cli_args = ctx.cli_args
         if cli_args is None:
             return
-        recipients_raw = getattr(cli_args, "mail_recipients", None)
+        recipients_raw = getattr(cli_args, "sendmail", None)
         if not ctx.final_answer or not recipients_raw:
             return
 
-        from asky.email_sender import send_email
+        from asky.plugins.email_sender.sender import send_email
 
-        recipients = [x.strip() for x in recipients_raw.split(",")]
+        recipients = [x.strip() for x in recipients_raw.split(",") if x.strip()]
         query_text = ctx.request.query_text if ctx.request is not None else ""
-        subject = getattr(cli_args, "subject", None) or f"asky Result: {query_text[:50]}"
+        subject = getattr(cli_args, "subject", None) or ctx.answer_title or query_text[:80] or "asky Result"
         send_email(recipients, subject, ctx.final_answer)

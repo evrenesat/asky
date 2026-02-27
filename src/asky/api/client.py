@@ -1133,12 +1133,44 @@ class AskyClient:
     def cleanup_session_research_data(self, session_id: str) -> dict:
         """Delete research findings and vectors for a session.
 
-        Returns {"deleted": int} — count of findings/vectors removed.
+        Returns cleanup statistics for findings, corpus paths, and upload links.
         """
         from asky.research.vector_store import VectorStore
+        from asky.storage import (
+            clear_session_uploaded_documents,
+            get_session_by_id,
+            update_session_research_profile,
+        )
 
         vector_store = VectorStore()
         # VectorStore handles both ChromaDB embeddings and SQLite row deletion
         deleted = vector_store.delete_findings_by_session(str(session_id))
+        try:
+            resolved_session_id = int(session_id)
+        except (TypeError, ValueError):
+            return {
+                "deleted": int(deleted),
+                "cleared_upload_links": 0,
+                "cleared_corpus_paths": 0,
+            }
 
-        return {"deleted": deleted}
+        session = get_session_by_id(resolved_session_id)
+        cleared_corpus_paths = 0
+        if session is not None and getattr(session, "research_local_corpus_paths", None):
+            cleared_corpus_paths = len(session.research_local_corpus_paths or [])
+            update_session_research_profile(
+                resolved_session_id,
+                research_mode=bool(session.research_mode),
+                research_source_mode=(
+                    "web_only" if bool(session.research_mode) else None
+                ),
+                research_local_corpus_paths=[],
+            )
+        cleared_upload_links = clear_session_uploaded_documents(
+            session_id=resolved_session_id
+        )
+        return {
+            "deleted": int(deleted),
+            "cleared_upload_links": int(cleared_upload_links),
+            "cleared_corpus_paths": int(cleared_corpus_paths),
+        }

@@ -5,17 +5,8 @@ from __future__ import annotations
 import logging
 from typing import Any, Dict, List, Optional
 
-import trafilatura
-
 from asky.plugins.base import AskyPlugin, PluginContext
 from asky.plugins.hook_types import FETCH_URL_OVERRIDE, FetchURLContext
-from asky.plugins.playwright_browser.browser import PlaywrightBrowserManager
-from asky.retrieval import (
-    MAX_TITLE_CHARS,
-    _extract_and_normalize_links,
-    _extract_main_content,
-    _derive_title,
-)
 
 logger = logging.getLogger(__name__)
 
@@ -23,7 +14,26 @@ logger = logging.getLogger(__name__)
 class PlaywrightBrowserPlugin(AskyPlugin):
     """Plugin that uses Playwright to fetch URLs when certain conditions are met."""
 
+    @classmethod
+    def get_cli_contributions(cls) -> list:
+        from asky.plugins.base import CapabilityCategory, CLIContribution
+
+        return [
+            CLIContribution(
+                category=CapabilityCategory.BROWSER_SETUP,
+                flags=("--browser",),
+                kwargs=dict(
+                    dest="playwright_login",
+                    metavar="URL",
+                    default=None,
+                    help="Open an interactive browser session at URL for login or extension setup.",
+                ),
+            ),
+        ]
+
     def activate(self, context: PluginContext) -> None:
+        from asky.plugins.playwright_browser.browser import PlaywrightBrowserManager
+
         config = context.config or {}
 
         self._intercept = config.get(
@@ -53,6 +63,14 @@ class PlaywrightBrowserPlugin(AskyPlugin):
         self._browser_manager.close()
 
     def _on_fetch_url_override(self, ctx: FetchURLContext) -> None:
+        import trafilatura
+        from asky.retrieval import (
+            MAX_TITLE_CHARS,
+            _extract_and_normalize_links,
+            _extract_main_content,
+            _derive_title,
+        )
+
         tc = ctx.trace_context or {}
         site = tc.get("tool_name") or tc.get("source", "") or "default"
 

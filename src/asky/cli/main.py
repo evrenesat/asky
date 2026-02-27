@@ -84,85 +84,125 @@ logger = logging.getLogger(__name__)
 HELP_FLAG_TOKENS = {"-h", "--help"}
 
 
-def _print_top_level_help() -> None:
+def _format_contribution_lines(contribution: "CLIContribution") -> list[str]:
+    """Format one CLIContribution into indented help lines."""
+    flags_str = ", ".join(contribution.flags)
+    metavar = contribution.kwargs.get("metavar")
+    if isinstance(metavar, tuple):
+        metavar_str = " ".join(metavar)
+    elif metavar:
+        metavar_str = str(metavar)
+    else:
+        metavar_str = ""
+    header = f"  {flags_str} {metavar_str}".rstrip() if metavar_str else f"  {flags_str}"
+    help_text = contribution.kwargs.get("help", "")
+    if help_text:
+        return [header, f"      {help_text}"]
+    return [header]
+
+
+def _print_top_level_help(plugin_manager=None) -> None:
     """Print curated top-level help focused on user-facing command surface."""
-    print(
-        """usage: asky [query ...]
-       asky --config <domain> <action>
-       asky <group> <action> [args]
+    from asky.plugins.base import CATEGORY_LABELS, CapabilityCategory
 
-Tool-calling CLI with grouped operational commands.
+    lines = [
+        "usage: asky [query ...]",
+        "       asky --config <domain> <action>",
+        "       asky <group> <action> [args]",
+        "",
+        "Tool-calling CLI with grouped operational commands.",
+        "",
+        "Grouped commands:",
+        "  history list [count]                    List recent history entries.",
+        "  history show <id_selector>              Show full answer(s) for selected history item(s).",
+        "  history delete <id_selector|--all>      Delete history entries.",
+        "  session list [count]                    List recent sessions.",
+        "  session show <session_selector>         Print session transcript.",
+        "  session create <name>                   Create and activate a named session.",
+        "  session use <session_selector>          Resume a session by id/name.",
+        "  session end                             End active shell-bound session.",
+        "  session delete <session_selector|--all> Delete sessions and their messages.",
+        "  session clean-research <session_selector>",
+        "                                          Remove research cache data for a session.",
+        "  session from-message <history_id|last>  Convert history message into a session.",
+        "  memory list                             List user memories.",
+        "  memory delete <id>                      Delete one memory.",
+        "  memory clear                            Delete all memories.",
+        "  corpus query <text>                     Deterministic corpus query (no main model call).",
+        "  corpus summarize [query]                Deterministic section summary flow.",
+        "  prompts list                            List configured user prompts.",
+        "",
+        "Configuration:",
+        "  --config model add",
+        "  --config model edit [alias]",
+        "  --config daemon edit",
+        "",
+        "Query options:",
+        "  -m, --model ALIAS",
+        "      Select model alias for this run.",
+        "  -r, --research [CORPUS_POINTER]",
+        "      Enable deep research mode; optionally bind local/web corpus source(s).",
+        "  -s, --summarize",
+        "      Summarize URL content before main answer generation.",
+        "  -L, --lean",
+        "      Lean mode: disable all tool calls, skip shortlist/memory recall preload,",
+        "      and skip memory extraction/context compaction side effects.",
+        "  -t, --turns MAX_TURNS",
+        "      Set per-session max turns.",
+        "  -sp, --system-prompt TEXT",
+        "      Override system prompt.",
+        "  -tl, --terminal-lines [LINE_COUNT]",
+        "      Include recent terminal context in query.",
+        "  --shortlist {on,off,reset}",
+        "      Persist shortlist preference to current session (or clear with reset).",
+        "  --tools [off [a,b,c]|reset]",
+        "      List tools, disable all/some tools, or clear tool override.",
+        "  --session <query...>",
+        "      Create a new session named from query text and run the query.",
+        "  -v, --verbose",
+        "      Verbose output (-vv for double-verbose).",
+    ]
 
-Grouped commands:
-  history list [count]                    List recent history entries.
-  history show <id_selector>              Show full answer(s) for selected history item(s).
-  history delete <id_selector|--all>      Delete history entries.
-  session list [count]                    List recent sessions.
-  session show <session_selector>         Print session transcript.
-  session create <name>                   Create and activate a named session.
-  session use <session_selector>          Resume a session by id/name.
-  session end                             End active shell-bound session.
-  session delete <session_selector|--all> Delete sessions and their messages.
-  session clean-research <session_selector>
-                                          Remove research cache data for a session.
-  session from-message <history_id|last>  Convert history message into a session.
-  memory list                             List user memories.
-  memory delete <id>                      Delete one memory.
-  memory clear                            Delete all memories.
-  corpus query <text>                     Deterministic corpus query (no main model call).
-  corpus summarize [query]                Deterministic section summary flow.
-  prompts list                            List configured user prompts.
+    # Collect plugin contributions grouped by category.
+    contributions_by_category: dict[str, list] = {}
+    if plugin_manager is not None:
+        for _, contrib in plugin_manager.collect_cli_contributions():
+            contributions_by_category.setdefault(contrib.category, []).append(contrib)
 
-Configuration:
-  --config model add
-  --config model edit [alias]
-  --config daemon edit
+    # Output Delivery: core --open is always present; plugins may add more.
+    output_title, _ = CATEGORY_LABELS[CapabilityCategory.OUTPUT_DELIVERY]
+    lines += ["", f"{output_title}:", "  -o, --open", "      Open final answer in browser."]
+    for contrib in contributions_by_category.get(CapabilityCategory.OUTPUT_DELIVERY, []):
+        lines += _format_contribution_lines(contrib)
 
-Query options:
-  -m, --model ALIAS
-      Select model alias for this run.
-  -r, --research [CORPUS_POINTER]
-      Enable deep research mode; optionally bind local/web corpus source(s).
-  -s, --summarize
-      Summarize URL content before main answer generation.
-  -L, --lean
-      Lean mode: disable all tool calls, skip shortlist/memory recall preload,
-      and skip memory extraction/context compaction side effects.
-  -t, --turns MAX_TURNS
-      Set per-session max turns.
-  -sp, --system-prompt TEXT
-      Override system prompt.
-  -tl, --terminal-lines [LINE_COUNT]
-      Include recent terminal context in query.
-  --shortlist {on,off,reset}
-      Persist shortlist preference to current session (or clear with reset).
-  --tools [off [a,b,c]|reset]
-      List tools, disable all/some tools, or clear tool override.
-  --session <query...>
-      Create a new session named from query text and run the query.
-  -v, --verbose
-      Verbose output (-vv for double-verbose).
-  -o, --open
-      Open final answer in browser.
-  --mail RECIPIENTS
-      Email final answer to recipients.
-  --subject EMAIL_SUBJECT
-      Subject line for --mail.
+    # Other categories appear only when a plugin contributes to them.
+    for category in (
+        CapabilityCategory.BROWSER_SETUP,
+        CapabilityCategory.BACKGROUND_SERVICE,
+        CapabilityCategory.SESSION_CONTROL,
+    ):
+        contribs = contributions_by_category.get(category, [])
+        if contribs:
+            cat_title, _ = CATEGORY_LABELS[category]
+            lines += ["", f"{cat_title}:"]
+            for contrib in contribs:
+                lines += _format_contribution_lines(contrib)
 
-Process options:
-  --daemon
-  --browser URL
-  --completion-script {bash,zsh}
-
-More help:
-  asky --help-all
-  asky corpus --help
-  asky corpus query --help
-  asky corpus summarize --help
-  asky history --help
-  asky session --help
-  asky memory --help"""
-    )
+    lines += [
+        "",
+        "Process options:",
+        "  --completion-script {bash,zsh}",
+        "",
+        "More help:",
+        "  asky --help-all",
+        "  asky corpus --help",
+        "  asky corpus query --help",
+        "  asky corpus summarize --help",
+        "  asky history --help",
+        "  asky session --help",
+        "  asky memory --help",
+    ]
+    print("\n".join(lines))
 
 
 def _print_corpus_help() -> None:
@@ -269,7 +309,7 @@ Commands:
     )
 
 
-def _consume_grouped_help(tokens: list[str]) -> bool:
+def _consume_grouped_help(tokens: list[str], plugin_manager=None) -> bool:
     """Render grouped help pages and short-circuit parse flow when requested."""
     option_tokens = list(tokens)
     if "--" in option_tokens:
@@ -279,7 +319,7 @@ def _consume_grouped_help(tokens: list[str]) -> bool:
 
     visible_tokens = [t for t in option_tokens if t not in HELP_FLAG_TOKENS]
     if not visible_tokens or str(visible_tokens[0]).startswith("-"):
-        _print_top_level_help()
+        _print_top_level_help(plugin_manager)
         raise SystemExit(0)
 
     group = str(visible_tokens[0]).strip().lower()
@@ -510,14 +550,6 @@ def _translate_process_tokens(tokens: list[str]) -> list[str]:
             translated.append("--xmpp-daemon")
             index += 1
             continue
-        if token == "--browser":
-            translated.append("--playwright-login")
-            if index + 1 < len(tokens):
-                translated.append(str(tokens[index + 1]))
-                index += 2
-            else:
-                index += 1
-            continue
         translated.append(token)
         index += 1
     return translated
@@ -559,10 +591,71 @@ def _flag_present(tokens: list[str], *flag_names: str) -> bool:
     return any(str(token) in available for token in tokens)
 
 
-def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
+_INTERNAL_ONLY_FLAGS = frozenset({
+    # Commands that handle themselves before any plugin flags are needed.
+    "--config", "--add-model", "--edit-model", "-me",
+    "--help-all",
+    "--completion-script", "--prompts", "-p",
+    "--delete-messages", "--delete-sessions",
+})
+
+
+def _bootstrap_plugin_manager_for_cli(argv: Optional[list[str]] = None):
+    """Load the plugin roster for CLI arg collection without activating plugins.
+
+    Returns a PluginManager with roster loaded, or None on any error or when
+    the invocation is clearly an internal-only command that does not benefit
+    from plugin-contributed CLI flags.
+    """
+    raw = list(sys.argv[1:] if argv is None else argv)
+    if any(token in _INTERNAL_ONLY_FLAGS for token in raw):
+        return None
+    try:
+        from asky.plugins.manager import PluginManager
+
+        manager = PluginManager()
+        manager.load_roster()
+        return manager
+    except Exception:
+        logger.debug("Plugin manager bootstrap failed; skipping plugin CLI contributions", exc_info=True)
+        return None
+
+
+def _add_plugin_contributions_to_parser(
+    parser: argparse.ArgumentParser,
+    plugin_manager,
+    pre_created_groups: Optional[dict[str, Any]] = None,
+) -> None:
+    """Add plugin-contributed CLI flags to named argparse groups.
+
+    ``pre_created_groups`` maps category constants to already-created
+    ArgumentGroup objects so they can be reused rather than duplicated.
+    """
+    from asky.plugins.base import CATEGORY_LABELS
+
+    contributions = plugin_manager.collect_cli_contributions()
+    if not contributions:
+        return
+
+    groups_by_category: dict[str, Any] = dict(pre_created_groups or {})
+    for _plugin_name, contribution in contributions:
+        category = contribution.category
+        if category not in groups_by_category:
+            title, description = CATEGORY_LABELS.get(category, (category, ""))
+            groups_by_category[category] = parser.add_argument_group(title, description)
+        try:
+            groups_by_category[category].add_argument(*contribution.flags, **contribution.kwargs)
+        except argparse.ArgumentError:
+            logger.debug(
+                "Plugin CLI contribution conflict for flags %s; skipping",
+                contribution.flags,
+            )
+
+
+def parse_args(argv: Optional[list[str]] = None, plugin_manager=None) -> argparse.Namespace:
     """Parse command-line arguments."""
     raw_tokens = list(sys.argv[1:] if argv is None else argv)
-    _consume_grouped_help(raw_tokens)
+    _consume_grouped_help(raw_tokens, plugin_manager=plugin_manager)
     try:
         legacy_config_flags = {
             "--add-model": "--config model add",
@@ -697,36 +790,16 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
         dest="verbose_level",
         help="Enable verbose output. Use -vv for double-verbose request payload tracing.",
     )
-    parser.add_argument(
+    from asky.plugins.base import CATEGORY_LABELS, CapabilityCategory
+
+    output_delivery_group = parser.add_argument_group(
+        *CATEGORY_LABELS[CapabilityCategory.OUTPUT_DELIVERY]
+    )
+    output_delivery_group.add_argument(
         "-o",
         "--open",
         action="store_true",
         help="Open the final answer in a browser using a markdown template.",
-    )
-    parser.add_argument(
-        "--mail",
-        dest="mail_recipients",
-        metavar="RECIPIENTS",
-        help="Send the final answer via email to comma-separated addresses.",
-    )
-    parser.add_argument(
-        "--subject",
-        metavar="EMAIL_SUBJECT",
-        help="Subject line for the email (used with --mail).",
-    )
-    parser.add_argument(
-        "--push-data",
-        dest="push_data_endpoint",
-        metavar="ENDPOINT",
-        help="Push query result to a configured endpoint after query completes.",
-    )
-    parser.add_argument(
-        "--push-param",
-        dest="push_params",
-        action="append",
-        nargs=2,
-        metavar=("KEY", "VALUE"),
-        help="Dynamic parameter for --push-data. Can be repeated. Example: --push-param title 'My Title'",
     )
 
     parser.add_argument(
@@ -984,38 +1057,16 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
         action="store_true",
         help=argparse.SUPPRESS,
     )
-    parser.add_argument(
-        "--daemon",
-        action="store_true",
-        help="Run foreground XMPP daemon mode.",
-    )
-    parser.add_argument(
-        "--browser",
-        metavar="URL",
-        default=None,
-        help="Open browser session flow for manual interaction at URL.",
-    )
-    parser.add_argument(
-        "--xmpp-daemon",
-        action="store_true",
-        help=argparse.SUPPRESS,
-    )
-    parser.add_argument(
-        "--edit-daemon",
-        action="store_true",
-        help=argparse.SUPPRESS,
-    )
-    parser.add_argument(
-        "--xmpp-menubar-child",
-        action="store_true",
-        help=argparse.SUPPRESS,
-    )
-    parser.add_argument(
-        "--playwright-login",
-        metavar="URL",
-        default=None,
-        help=argparse.SUPPRESS,
-    )
+    # Internal process-spawning flags: always registered regardless of plugin state.
+    parser.add_argument("--xmpp-daemon", action="store_true", help=argparse.SUPPRESS)
+    parser.add_argument("--edit-daemon", action="store_true", help=argparse.SUPPRESS)
+    parser.add_argument("--xmpp-menubar-child", action="store_true", help=argparse.SUPPRESS)
+    if plugin_manager is not None:
+        _add_plugin_contributions_to_parser(
+            parser,
+            plugin_manager,
+            pre_created_groups={CapabilityCategory.OUTPUT_DELIVERY: output_delivery_group},
+        )
     parser.add_argument("query", nargs="*", help="The query string")
 
     model_action.completer = complete_model_aliases
@@ -1055,10 +1106,6 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
         getattr(parsed_args, "xmpp_daemon", False)
     ):
         parsed_args.xmpp_daemon = True
-    if isinstance(getattr(parsed_args, "browser", None), str) and not getattr(
-        parsed_args, "playwright_login", None
-    ):
-        parsed_args.playwright_login = parsed_args.browser
 
     parsed_args.verbose_level = int(getattr(parsed_args, "verbose_level", 0) or 0)
     parsed_args.verbose = parsed_args.verbose_level >= 1
@@ -1115,8 +1162,6 @@ def handle_print_answer_implicit(args) -> bool:
             clean_query_str,
             args.summarize,
             open_browser=args.open,
-            mail_recipients=args.mail_recipients,
-            subject=args.subject,
         )
         return True
     return False
@@ -1308,32 +1353,6 @@ def _resolve_research_corpus(
         return True, [], None, "web_only", True
     return True, resolved_paths, None, "local_only", True
 
-
-def _run_browser_session(url: str) -> None:
-    """Open the browser plugin session flow for user-driven interaction."""
-    from asky.plugins.runtime import get_or_create_plugin_runtime
-
-    runtime = get_or_create_plugin_runtime()
-    if runtime is None:
-        print("Plugin runtime not available.", file=sys.stderr)
-        sys.exit(1)
-
-    for status in runtime.manager.list_status():
-        if status.name == "playwright_browser":
-            if status.active:
-                plugin = runtime.manager.get_plugin(status.name)
-                if plugin and hasattr(plugin, "run_login_session"):
-                    plugin.run_login_session(url)
-                    return
-            else:
-                print(
-                    f"playwright_browser plugin is not active (state: {status.state}).",
-                    file=sys.stderr,
-                )
-                sys.exit(1)
-
-    print("playwright_browser plugin is not enabled.", file=sys.stderr)
-    sys.exit(1)
 
 
 def _parse_tool_off_values(raw_values: list[str]) -> list[str]:
@@ -1621,7 +1640,8 @@ def main() -> None:
         return
     
     # Normal query parsing flow
-    args = parse_args()
+    _cli_plugin_manager = _bootstrap_plugin_manager_for_cli()
+    args = parse_args(plugin_manager=_cli_plugin_manager)
     raw_initial_query = " ".join(getattr(args, "query", []) or [])
     if raw_initial_query.startswith("\\"):
         from asky.cli.presets import expand_preset_invocation, list_presets_text
@@ -1638,7 +1658,7 @@ def main() -> None:
             if not expanded_tokens:
                 print("Error: Preset expansion produced an empty command.")
                 return
-            args = parse_args(expanded_tokens)
+            args = parse_args(expanded_tokens, plugin_manager=_cli_plugin_manager)
 
     _apply_shell_session_defaults(args)
 
@@ -2004,8 +2024,6 @@ def main() -> None:
         sessions.print_session_command(
             args.print_session,
             open_browser=args.open,
-            mail_recipients=args.mail_recipients,
-            subject=args.subject,
         )
         return
     if args.print_ids:
@@ -2014,8 +2032,6 @@ def main() -> None:
                 args.print_ids,
                 args.summarize,
                 open_browser=args.open,
-                mail_recipients=args.mail_recipients,
-                subject=args.subject,
             )
             return
     if handle_print_answer_implicit(args):
@@ -2146,7 +2162,21 @@ def main() -> None:
     plugin_runtime = get_or_create_plugin_runtime()
 
     if getattr(args, "playwright_login", None) and isinstance(args.playwright_login, str):
-        _run_browser_session(args.playwright_login)
+        url = args.playwright_login
+        plugin = plugin_runtime.manager.get_plugin("playwright_browser") if plugin_runtime else None
+        if plugin and hasattr(plugin, "run_login_session"):
+            plugin.run_login_session(url)
+        else:
+            status_list = plugin_runtime.manager.list_status() if plugin_runtime else []
+            pw_status = next((s for s in status_list if s.name == "playwright_browser"), None)
+            if pw_status and not pw_status.active:
+                print(
+                    f"playwright_browser plugin is not active (state: {pw_status.state}).",
+                    file=sys.stderr,
+                )
+            else:
+                print("playwright_browser plugin is not enabled.", file=sys.stderr)
+            sys.exit(1)
         return
 
     chat.run_chat(args, query_text, plugin_runtime=plugin_runtime)

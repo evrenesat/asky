@@ -38,10 +38,9 @@ class TestStartupCleanup:
                 args.prompts = False
                 args.verbose = False
                 args.open = False
-                args.mail_recipients = None
+                args.sendmail = None
                 args.subject = None
-                args.push_data_endpoint = None
-                args.push_params = None
+                args.push_data = None
                 args.sticky_session = None
                 args.resume_session = None
                 args.session_end = False

@@ -85,3 +85,6 @@ Research mode is resolved per turn from effective session state:
   and shortlist sources were preloaded into model-visible context.
 - `AskyConfig.model_parameters_override` can override/extend configured model
   generation parameters for a specific client instance (for evaluation sweeps).
+- `AskyClient.cleanup_session_research_data(session_id)` deletes session findings
+  from vector storage and also clears session-local uploaded-corpus state
+  (session upload links + persisted local corpus paths when session ID is numeric).

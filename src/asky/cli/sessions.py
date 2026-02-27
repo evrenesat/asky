@@ -42,8 +42,6 @@ def show_session_history_command(limit: int) -> None:
 def print_session_command(
     id_or_name: str,
     open_browser: bool = False,
-    mail_recipients: str = None,
-    subject: str = None,
 ) -> None:
     """Print session messages."""
     repo = SQLiteHistoryRepository()
@@ -92,16 +90,6 @@ def print_session_command(
     else:
         console = Console()
         console.print(Markdown(full_text))
-
-    if mail_recipients:
-        from asky.email_sender import send_email
-
-        recipients = [x.strip() for x in mail_recipients.split(",")]
-        email_subject = (
-            subject or f"asky Session #{session.id}: {session.name or 'Untold'}"
-        )
-        send_email(recipients, email_subject, full_text)
-
 
 def end_session_command() -> None:
     """Detach the current shell from its session.
@@ -178,6 +166,8 @@ def handle_clean_session_research_command(args) -> bool:
 
     print(
         f"Cleaned research data for session {session.id} ({session.name or 'unnamed'}): "
-        f"{results['deleted']} findings/vectors removed."
+        f"{results['deleted']} findings/vectors removed, "
+        f"{results.get('cleared_corpus_paths', 0)} corpus path(s) cleared, "
+        f"{results.get('cleared_upload_links', 0)} upload link(s) cleared."
     )
     return True

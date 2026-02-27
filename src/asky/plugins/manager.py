@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Set
 
 from asky.config.loader import _get_config_dir
-from asky.plugins.base import AskyPlugin, PluginContext, PluginStatus
+from asky.plugins.base import AskyPlugin, CLIContribution, PluginContext, PluginStatus
 from asky.plugins.hooks import HookRegistry
 from asky.plugins.manifest import PluginManifest, build_manifest_entry
 
@@ -311,6 +311,29 @@ class PluginManager:
         """Return plugin instance by name."""
         return self._plugins.get(name)
 
+    def collect_cli_contributions(self) -> list[tuple[str, CLIContribution]]:
+        """Light-import each enabled plugin class and collect its CLI contributions.
+
+        Does NOT call activate(). Safe to call before activate_all(). Import
+        errors are logged and skipped so a broken plugin never blocks CLI startup.
+        """
+        results: list[tuple[str, CLIContribution]] = []
+        for name, manifest in sorted(self._manifests.items()):
+            if not manifest.enabled:
+                continue
+            try:
+                plugin_module = importlib.import_module(manifest.module)
+                plugin_class = getattr(plugin_module, manifest.plugin_class)
+                for contribution in plugin_class.get_cli_contributions():
+                    results.append((name, contribution))
+            except Exception:
+                logger.warning(
+                    "Plugin '%s' CLI contribution collection failed; skipping",
+                    name,
+                    exc_info=True,
+                )
+        return results
+
     def has_enabled_plugins(self) -> bool:
         """Return whether manifest contains any enabled plugins."""
         return any(manifest.enabled for manifest in self._manifests.values())
@@ -394,13 +417,54 @@ class PluginManager:
 
     def _ensure_roster_file(self) -> None:
         self.config_dir.mkdir(parents=True, exist_ok=True)
-        if self.roster_path.exists():
+        if not self.roster_path.exists():
+            try:
+                self.roster_path.write_bytes(_BUNDLED_PLUGINS_TOML.read_bytes())
+                logger.info("Created plugin roster template at %s", self.roster_path)
+            except Exception:
+                logger.exception("Failed to create plugin roster template at %s", self.roster_path)
             return
+        self._sync_new_bundled_plugins()
+
+    def _sync_new_bundled_plugins(self) -> None:
+        """Append plugins from the bundled default that are absent in the user roster."""
         try:
-            self.roster_path.write_bytes(_BUNDLED_PLUGINS_TOML.read_bytes())
-            logger.info("Created plugin roster template at %s", self.roster_path)
+            bundled = tomllib.loads(_BUNDLED_PLUGINS_TOML.read_bytes().decode())
+            with self.roster_path.open("rb") as fh:
+                user = tomllib.load(fh)
         except Exception:
-            logger.exception("Failed to create plugin roster template at %s", self.roster_path)
+            logger.debug("Could not parse plugin rosters for sync; skipping", exc_info=True)
+            return
+
+        missing = {
+            name: cfg
+            for name, cfg in bundled.get("plugin", {}).items()
+            if name not in user.get("plugin", {})
+        }
+        if not missing:
+            return
+
+        def _toml_value(v: Any) -> str:
+            if isinstance(v, bool):
+                return "true" if v else "false"
+            if isinstance(v, list):
+                return "[" + ", ".join(f'"{i}"' for i in v) + "]"
+            if isinstance(v, str):
+                return f'"{v}"'
+            return str(v)
+
+        lines: list[str] = []
+        for name, cfg in missing.items():
+            lines.append(f"\n[plugin.{name}]")
+            for key, value in cfg.items():
+                lines.append(f"{key} = {_toml_value(value)}")
+
+        try:
+            with self.roster_path.open("a") as fh:
+                fh.write("\n".join(lines) + "\n")
+            logger.info("Added new built-in plugin(s) to roster: %s", list(missing))
+        except Exception:
+            logger.exception("Failed to append new plugins to roster at %s", self.roster_path)
 
     def _set_status(
         self,

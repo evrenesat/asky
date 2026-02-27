@@ -11,7 +11,43 @@ Optional plugin runtime for asky.
 | `hooks.py` | Ordered hook registration and invocation |
 | `hook_types.py` | Hook constants and mutable payload contracts |
 | `runtime.py` | Runtime bootstrap + process-level cache |
-| `base.py` | `AskyPlugin`, `PluginContext`, `PluginStatus` contracts |
+| `base.py` | `AskyPlugin`, `PluginContext`, `PluginStatus`, `CLIContribution`, `CapabilityCategory` contracts |
+
+## Plugin Boundary Rule
+
+**One-way dependency:** core code may import from `asky.plugins.runtime` / `asky.plugins.hooks` (the infrastructure) only. Core code must NOT import from individual plugin packages (`asky.plugins.email_sender`, `asky.plugins.push_data`, etc.).
+
+Each plugin owns all its business logic. CLI flags, hook handlers, and executable code live exclusively inside the plugin directory.
+
+## Plugin CLI Contributions
+
+Plugins declare CLI flags via the `get_cli_contributions()` classmethod on `AskyPlugin`. This is a classmethod so flags can be collected before full activation (light-import only). Flags are grouped by `CapabilityCategory`:
+
+| Category constant | `--help` group title | Intended use |
+|---|---|---|
+| `OUTPUT_DELIVERY` | Output Delivery | Actions applied to the final answer (email, push, open) |
+| `SESSION_CONTROL` | Session & Query | Query/session behaviour modifiers |
+| `BROWSER_SETUP` | Browser Setup | Browser auth / extension configuration |
+| `BACKGROUND_SERVICE` | Background Services | Daemon process launch flags |
+
+Example contribution:
+
+```python
+@classmethod
+def get_cli_contributions(cls) -> list[CLIContribution]:
+    return [
+        CLIContribution(
+            category=CapabilityCategory.OUTPUT_DELIVERY,
+            flags=("--sendmail",),
+            kwargs=dict(metavar="RECIPIENTS",
+                        help="Send the final answer via email."),
+        ),
+    ]
+```
+
+`PluginManager.collect_cli_contributions()` light-imports each enabled plugin class and collects contributions without calling `activate()`. Import errors per plugin are logged and skipped.
+
+Internal process-spawning flags (`--xmpp-daemon`, `--edit-daemon`, `--xmpp-menubar-child`) are always registered in core as suppressed args because they are used by the CLI translation pipeline regardless of plugin state.
 
 ## Hook Ordering
 
@@ -35,7 +71,7 @@ Hook callback exceptions are logged and isolated; remaining callbacks still run.
 - `PRE_TOOL_EXECUTE`
 - `POST_TOOL_EXECUTE`
 - `TURN_COMPLETED`
-- `POST_TURN_RENDER` — fired after final answer is rendered to CLI; payload is `PostTurnRenderContext` with `final_answer`, `request`, `result`, `cli_args` (argparse Namespace for CLI-only flags like `push_data_endpoint`, `mail_recipients`)
+- `POST_TURN_RENDER` — fired after final answer is rendered to CLI; payload is `PostTurnRenderContext` with `final_answer`, `request`, `result`, `cli_args` (argparse Namespace for CLI-only flags like `push_data`, `sendmail`, `subject`), and `answer_title` (markdown heading extracted from the answer, or query text fallback)
 - `DAEMON_SERVER_REGISTER` — collect sidecar server specs (start/stop callables)
 - `DAEMON_TRANSPORT_REGISTER` — register exactly one daemon transport (run/stop callables)
 - `TRAY_MENU_REGISTER` — contribute tray menu items; payload is `TrayMenuRegisterContext` with `status_entries` (non-clickable) and `action_entries` (clickable) lists plus service lifecycle callbacks
@@ -50,9 +86,9 @@ Deferred in v1:
 - `manual_persona_creator/` — CLI-based persona creation/ingestion/export
 - `persona_manager/` — persona import/session binding/prompt+preload injection with @mention syntax
 - `gui_server/` — NiceGUI daemon sidecar and page extension registry
-- `xmpp_daemon/` — XMPP transport for daemon mode (router, executor, voice/image pipelines)
-- `push_data/` — registers `push_data_*` LLM tools for configured endpoints (`TOOL_REGISTRY_BUILD`) and handles `--push-data-endpoint` CLI flag (`POST_TURN_RENDER`)
-- `email_sender/` — sends the final answer via SMTP when `--mail` is used (`POST_TURN_RENDER`)
+- `xmpp_daemon/` — XMPP transport for daemon mode (router, executor, voice/image/document pipelines)
+- `push_data/` — registers `push_data_*` LLM tools for configured endpoints (`TOOL_REGISTRY_BUILD`) and handles `--push-data "ENDPOINT[?KEY=VAL&...]"` CLI flag (`POST_TURN_RENDER`); params encoded as URL query-string in a single quoted argument
+- `email_sender/` — sends the final answer via SMTP when `--sendmail RECIPIENTS` is used (`POST_TURN_RENDER`); subject taken from `--subject SUBJECT` if provided, then from `answer_title`, then from the first 80 chars of the query
 
 ## Dependency Visibility
 
@@ -82,6 +118,7 @@ Key modules:
 | `interface_planner.py`      | LLM-based intent classification for non-prefixed messages  |
 | `voice_transcriber.py`      | Background audio transcription via `mlx-whisper`           |
 | `image_transcriber.py`      | Background image description via image-capable LLM         |
+| `document_ingestion.py`     | HTTPS document URL ingestion into session local corpus     |
 | `transcript_manager.py`     | Transcript lifecycle, pending confirmation tracking        |
 | `chunking.py`               | Outbound response chunking                                 |
 

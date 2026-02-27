@@ -44,6 +44,11 @@ from asky.daemon.errors import DaemonUserError
 from asky.plugins.xmpp_daemon.adhoc_commands import AdHocCommandHandler
 from asky.plugins.xmpp_daemon.chunking import chunk_text
 from asky.plugins.xmpp_daemon.command_executor import CommandExecutor
+from asky.plugins.xmpp_daemon.document_ingestion import (
+    DocumentIngestionService,
+    redact_document_urls,
+    split_document_urls,
+)
 from asky.plugins.xmpp_daemon.image_transcriber import ImageTranscriber
 from asky.plugins.xmpp_daemon.interface_planner import InterfacePlanner
 from asky.plugins.xmpp_daemon.router import DaemonRouter
@@ -126,6 +131,7 @@ class XMPPService:
             allowed_jids=list(XMPP_ALLOWED_JIDS),
             voice_auto_yes_without_interface_model=XMPP_VOICE_AUTO_YES_WITHOUT_INTERFACE_MODEL,
         )
+        self.document_ingestion = DocumentIngestionService()
         self._adhoc_handler = AdHocCommandHandler(
             command_executor=self.command_executor,
             router=self.router,
@@ -175,6 +181,9 @@ class XMPPService:
             audio_urls_body, image_urls_body = _split_media_urls(body_urls)
             audio_urls = _merge_unique_urls(audio_urls_oob + audio_urls_body)
             image_urls = _merge_unique_urls(image_urls_oob + image_urls_body)
+            document_urls = _merge_unique_urls(
+                split_document_urls(oob_urls) + split_document_urls(body_urls)
+            )
             message_type = str(payload.get("type", "") or "").strip().lower()
             room_jid = str(payload.get("room_jid", "") or "").strip().lower()
             sender_jid = str(payload.get("sender_jid", "") or "").strip()
@@ -242,8 +251,23 @@ class XMPPService:
                             response_text,
                             message_type=target_message_type,
                         )
+                if document_urls:
+                    session_id = self.command_executor.session_profile_manager.resolve_conversation_session_id(
+                        room_jid=room_jid or None,
+                        jid=sender_jid or from_jid,
+                    )
+                    ingestion_report = self.document_ingestion.ingest_for_session(
+                        session_id=int(session_id),
+                        urls=document_urls,
+                    )
+                    self._send_chunked(
+                        target_jid,
+                        self.document_ingestion.format_ack(ingestion_report),
+                        message_type=target_message_type,
+                    )
+                    body = redact_document_urls(body, document_urls)
                 if _should_process_text_body(
-                    has_media=bool(audio_urls or image_urls), body=body
+                    has_media=bool(audio_urls or image_urls or document_urls), body=body
                 ):
                     response_text = self.router.handle_text_message(
                         jid=from_jid,

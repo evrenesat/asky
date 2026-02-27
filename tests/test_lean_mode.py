@@ -35,8 +35,8 @@ class TestLeanModeCLI:
             save_history=False,
             verbose=False,
             system_prompt=None,  # Added this missing field
-            mail_recipients=None,  # Added missing field
-            push_data_endpoint=None,  # Added missing field
+            sendmail=None,  # Added missing field
+            push_data=None,  # Added missing field
         )
 
         with (
@@ -76,8 +76,8 @@ class TestLeanModeCLI:
             save_history=True,  # Enable history to check for "Saving..." suppression
             verbose=False,
             system_prompt=None,
-            mail_recipients=None,
-            push_data_endpoint=None,
+            sendmail=None,
+            push_data=None,
         )
 
         with (

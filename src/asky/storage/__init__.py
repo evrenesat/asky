@@ -9,6 +9,7 @@ from asky.storage.interface import (
     RoomSessionBinding,
     SessionOverrideFile,
     TranscriptRecord,
+    UploadedDocument,
 )
 from asky.storage.sqlite import SQLiteHistoryRepository, Session
 
@@ -148,6 +149,22 @@ def clear_session_messages(session_id: int) -> int:
 
 def list_sessions(limit: int) -> list[Session]:
     return _repo.list_sessions(limit)
+
+
+def update_session_research_profile(
+    session_id: int,
+    *,
+    research_mode: bool,
+    research_source_mode: str | None,
+    research_local_corpus_paths: list[str] | None,
+) -> None:
+    """Update session research profile metadata."""
+    _repo.update_session_research_profile(
+        session_id,
+        research_mode=research_mode,
+        research_source_mode=research_source_mode,
+        research_local_corpus_paths=research_local_corpus_paths,
+    )
 
 
 def get_first_message_preview(session_id: int, max_chars: int = 50) -> str:
@@ -352,3 +369,73 @@ def copy_session_override_files(
         source_session_id=source_session_id,
         target_session_id=target_session_id,
     )
+
+
+def upsert_uploaded_document(
+    *,
+    content_hash: str,
+    file_path: str,
+    original_filename: str,
+    file_extension: str,
+    mime_type: str | None,
+    file_size: int,
+) -> UploadedDocument:
+    """Create or update one uploaded document record keyed by content hash."""
+    return _repo.upsert_uploaded_document(
+        content_hash=content_hash,
+        file_path=file_path,
+        original_filename=original_filename,
+        file_extension=file_extension,
+        mime_type=mime_type,
+        file_size=file_size,
+    )
+
+
+def get_uploaded_document_by_hash(
+    *,
+    content_hash: str,
+) -> UploadedDocument | None:
+    """Lookup one uploaded document by content hash."""
+    return _repo.get_uploaded_document_by_hash(content_hash=content_hash)
+
+
+def get_uploaded_document_by_url(
+    *,
+    url: str,
+) -> UploadedDocument | None:
+    """Lookup one uploaded document by source URL."""
+    return _repo.get_uploaded_document_by_url(url=url)
+
+
+def save_uploaded_document_url(
+    *,
+    url: str,
+    document_id: int,
+) -> None:
+    """Persist one source URL mapping for an uploaded document."""
+    _repo.save_uploaded_document_url(url=url, document_id=document_id)
+
+
+def link_session_uploaded_document(
+    *,
+    session_id: int,
+    document_id: int,
+) -> None:
+    """Link one uploaded document to one session."""
+    _repo.link_session_uploaded_document(session_id=session_id, document_id=document_id)
+
+
+def list_session_uploaded_documents(
+    *,
+    session_id: int,
+) -> list[UploadedDocument]:
+    """List uploaded documents linked to a session."""
+    return _repo.list_session_uploaded_documents(session_id=session_id)
+
+
+def clear_session_uploaded_documents(
+    *,
+    session_id: int,
+) -> int:
+    """Clear uploaded document links for one session and return deleted link count."""
+    return _repo.clear_session_uploaded_documents(session_id=session_id)

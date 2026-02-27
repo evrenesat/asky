@@ -11,6 +11,27 @@ from typing import Any, Callable, Dict, List, Optional
 logger = logging.getLogger(__name__)
 TraceCallback = Callable[[Dict[str, Any]], None]
 
+def get_response_log_data(response):
+    """
+    Extracts all textual and diagnostic data from a response object.
+    Returns a dictionary for easy logging or JSON serialization.
+    """
+    log_entry = {
+        "status_code": response.status_code,
+        "url": response.url,
+        "headers": dict(response.headers),
+        "content_type": response.headers.get('Content-Type', 'unknown')
+    }
+
+    # Attempt to extract the message body
+    try:
+        # Prioritize JSON if the content type suggests it
+        log_entry["body"] = response.json()
+    except (ValueError, AttributeError):
+        # Fallback to plain text if JSON parsing fails
+        log_entry["body"] = response.text
+
+    return log_entry
 
 def _emit_trace_event(
     trace_callback: Optional[TraceCallback],
@@ -278,6 +299,7 @@ def get_llm_msg(
                         f"Rate limit exceeded (429). Retrying in {wait_time} seconds..."
                     )
                     logger.info(msg)
+                    logger.debug(get_response_log_data(e.response))
                     if status_callback:
                         status_callback(msg)
 

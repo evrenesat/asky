@@ -1,18 +1,69 @@
 """Tests for push_data module."""
 
 import os
+import types
 from unittest.mock import Mock, patch
 
 import pytest
 import requests
 
-from asky.push_data import (
+from asky.plugins.hook_types import PostTurnRenderContext
+from asky.plugins.push_data.executor import (
     _build_payload,
     _resolve_field_value,
     _resolve_headers,
     execute_push_data,
     get_enabled_endpoints,
 )
+from asky.plugins.push_data.plugin import PushDataPlugin
+
+
+def _make_push_ctx(push_data, answer="The answer.", query_text="my query"):
+    request = types.SimpleNamespace(query_text=query_text)
+    cli_args = types.SimpleNamespace(push_data=push_data, lean=False, model=None)
+    return PostTurnRenderContext(
+        final_answer=answer,
+        request=request,
+        result=None,
+        cli_args=cli_args,
+    )
+
+
+class TestPushDataPlugin:
+    @patch("asky.plugins.push_data.executor.execute_push_data")
+    def test_endpoint_only(self, mock_exec):
+        mock_exec.return_value = {"success": True, "endpoint": "ep", "status_code": 200}
+        plugin = PushDataPlugin()
+        ctx = _make_push_ctx("myendpoint")
+        plugin._on_post_turn_render(ctx)
+        mock_exec.assert_called_once()
+        assert mock_exec.call_args[0][0] == "myendpoint"
+        assert mock_exec.call_args[1]["dynamic_args"] == {}
+
+    @patch("asky.plugins.push_data.executor.execute_push_data")
+    def test_endpoint_with_params(self, mock_exec):
+        mock_exec.return_value = {"success": True, "endpoint": "ep", "status_code": 200}
+        plugin = PushDataPlugin()
+        ctx = _make_push_ctx("notion?title=My Doc&status=draft")
+        plugin._on_post_turn_render(ctx)
+        call_kwargs = mock_exec.call_args[1]
+        assert mock_exec.call_args[0][0] == "notion"
+        assert call_kwargs["dynamic_args"] == {"title": "My Doc", "status": "draft"}
+
+    @patch("asky.plugins.push_data.executor.execute_push_data")
+    def test_value_with_equals_in_val_preserved(self, mock_exec):
+        mock_exec.return_value = {"success": True, "endpoint": "ep", "status_code": 200}
+        plugin = PushDataPlugin()
+        ctx = _make_push_ctx("ep?url=https://example.com/a=b")
+        plugin._on_post_turn_render(ctx)
+        assert mock_exec.call_args[1]["dynamic_args"]["url"] == "https://example.com/a=b"
+
+    def test_skips_when_no_push_data(self):
+        plugin = PushDataPlugin()
+        ctx = _make_push_ctx(None)
+        with patch("asky.plugins.push_data.executor.execute_push_data") as mock_exec:
+            plugin._on_post_turn_render(ctx)
+            mock_exec.assert_not_called()
 
 
 class TestResolveFieldValue:
@@ -166,7 +217,7 @@ class TestBuildPayload:
 class TestExecutePushData:
     """Tests for execute_push_data function."""
 
-    @patch("asky.push_data.requests.post")
+    @patch("asky.plugins.push_data.executor.requests.post")
     @patch("asky.config._CONFIG")
     def test_successful_post(self, mock_config, mock_post):
         """Test successful POST request."""
@@ -197,7 +248,7 @@ class TestExecutePushData:
         assert result["endpoint"] == "test_endpoint"
         mock_post.assert_called_once()
 
-    @patch("asky.push_data.requests.get")
+    @patch("asky.plugins.push_data.executor.requests.get")
     @patch("asky.config._CONFIG")
     def test_successful_get(self, mock_config, mock_get):
         """Test successful GET request."""
@@ -255,7 +306,7 @@ class TestExecutePushData:
         with pytest.raises(ValueError, match="invalid method: put"):
             execute_push_data("test_endpoint")
 
-    @patch("asky.push_data.requests.post")
+    @patch("asky.plugins.push_data.executor.requests.post")
     @patch("asky.config._CONFIG")
     def test_http_error(self, mock_config, mock_post):
         """Test handling HTTP errors."""
@@ -291,7 +342,7 @@ class TestExecutePushData:
         assert result["success"] is False
         assert "Missing required parameter: title" in result["error"]
 
-    @patch("asky.push_data.requests.post")
+    @patch("asky.plugins.push_data.executor.requests.post")
     @patch("asky.config._CONFIG")
     def test_with_dynamic_args(self, mock_config, mock_post):
         """Test passing dynamic arguments."""

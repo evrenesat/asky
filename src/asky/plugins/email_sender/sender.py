@@ -1,21 +1,21 @@
-"""Email sending functionality for asky."""
+"""SMTP email sending logic for the email_sender plugin."""
 
 import logging
 import smtplib
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
-from typing import List, Optional
+from typing import List
 
 import markdown
 
 from asky.config import (
+    EMAIL_FROM_ADDRESS,
     SMTP_HOST,
+    SMTP_PASSWORD,
     SMTP_PORT,
     SMTP_USE_SSL,
     SMTP_USE_TLS,
     SMTP_USER,
-    SMTP_PASSWORD,
-    EMAIL_FROM_ADDRESS,
 )
 
 logger = logging.getLogger(__name__)
@@ -23,7 +23,6 @@ logger = logging.getLogger(__name__)
 
 def markdown_to_html(md_content: str) -> str:
     """Convert markdown string to HTML."""
-    # Use standard extensions for better compatibility
     extensions = [
         "extra",
         "codehilite",
@@ -32,7 +31,6 @@ def markdown_to_html(md_content: str) -> str:
     ]
     html_body = markdown.markdown(md_content, extensions=extensions)
 
-    # Basic HTML wrapper with some styling for email clients
     html_template = f"""
     <!DOCTYPE html>
     <html>
@@ -101,8 +99,8 @@ def send_email(
     subject: str,
     markdown_content: str,
 ) -> bool:
-    """
-    Send an HTML email with the rendered markdown content.
+    """Send an HTML email with the rendered markdown content.
+
     Returns True on success, False on failure.
     """
     if not SMTP_USER or not SMTP_PASSWORD:
@@ -120,20 +118,16 @@ def send_email(
         msg["From"] = EMAIL_FROM_ADDRESS
         msg["To"] = ", ".join(to_addresses)
 
-        # Attach plain text version (though here it's just the markdown)
         msg.attach(MIMEText(markdown_content, "plain"))
-        # Attach HTML version
         msg.attach(MIMEText(html_content, "html"))
 
         print(f"[Connecting to SMTP server {SMTP_HOST}:{SMTP_PORT}...]")
 
         if SMTP_USE_SSL:
-            # Direct SSL/TLS connection (typically port 465)
             with smtplib.SMTP_SSL(SMTP_HOST, SMTP_PORT) as server:
                 server.login(SMTP_USER, SMTP_PASSWORD)
                 server.send_message(msg)
         else:
-            # Standard SMTP with optional STARTTLS (typically port 587)
             with smtplib.SMTP(SMTP_HOST, SMTP_PORT) as server:
                 if SMTP_USE_TLS:
                     server.starttls()
@@ -144,6 +138,6 @@ def send_email(
         return True
 
     except Exception as e:
-        logger.error(f"Failed to send email: {e}")
+        logger.error("Failed to send email: %s", e)
         print(f"Error sending email: {e}")
         return False

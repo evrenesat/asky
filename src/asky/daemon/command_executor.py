@@ -16,7 +16,7 @@ import requests
 
 from asky import summarization
 from asky.api import AskyClient, AskyConfig, AskyTurnRequest
-from asky.cli import history, sessions, utils
+from asky.cli import history, memory_commands, sessions, utils
 from asky.cli.main import (
     _manual_corpus_query_arg,
     _manual_section_query_arg,
@@ -60,15 +60,9 @@ REMOTE_BLOCKED_FLAGS = (
     "--open",
     "-tl",
     "--terminal-lines",
-    "--delete-messages",
-    "--delete-sessions",
-    "--all",
-    "--clean-session-research",
     "--config",
     "--add-model",
     "--edit-model",
-    "--clear-memories",
-    "--delete-memory",
     "--xmpp-daemon",
     "--xmpp-menubar-child",
     "--edit-daemon",
@@ -450,6 +444,23 @@ class CommandExecutor:
 
         if getattr(args, "prompts", False):
             return self._render_prompt_list(prompt_map=profile.user_prompts)
+        delete_messages_value = getattr(args, "delete_messages", None)
+        delete_sessions_value = getattr(args, "delete_sessions", None)
+        delete_all = bool(getattr(args, "all", False))
+        if delete_messages_value is not None or (
+            delete_all and delete_sessions_value is None
+        ):
+            return _capture_output(history.handle_delete_messages_command, args)
+        if delete_sessions_value is not None or (
+            delete_all and delete_messages_value is None
+        ):
+            return _capture_output(sessions.handle_delete_sessions_command, args)
+        if getattr(args, "clean_session_research", None):
+            return _capture_output(sessions.handle_clean_session_research_command, args)
+        if getattr(args, "delete_memory", None) is not None:
+            return _capture_output(memory_commands.handle_delete_memory, args.delete_memory)
+        if getattr(args, "clear_memories", False):
+            return _capture_output(_handle_clear_memories_non_interactive)
         if getattr(args, "history", None) is not None:
             return _capture_output(history.show_history, args.history)
         if getattr(args, "print_ids", None):
@@ -707,15 +718,9 @@ class CommandExecutor:
                 bool(getattr(args, "open", False)),
                 bool(getattr(args, "mail_recipients", None)),
                 getattr(args, "terminal_lines", None) is not None,
-                bool(getattr(args, "delete_messages", None)),
-                bool(getattr(args, "delete_sessions", None)),
-                bool(getattr(args, "all", False)),
-                bool(getattr(args, "clean_session_research", None)),
                 bool(getattr(args, "config", None)),
                 bool(getattr(args, "add_model", False)),
                 getattr(args, "edit_model", None) is not None,
-                bool(getattr(args, "clear_memories", False)),
-                getattr(args, "delete_memory", None) is not None,
                 bool(getattr(args, "xmpp_daemon", False)),
                 bool(getattr(args, "xmpp_menubar_child", False)),
                 bool(getattr(args, "edit_daemon", False)),
@@ -924,6 +929,24 @@ def _download_text_file(url: str, *, timeout_seconds: int, max_bytes: int) -> st
                 )
             chunks.append(chunk)
     return b"".join(chunks).decode("utf-8")
+
+
+def _handle_clear_memories_non_interactive() -> None:
+    """Clear all memories without interactive prompt for remote command execution."""
+    from asky.config import (
+        DB_PATH,
+        RESEARCH_CHROMA_PERSIST_DIRECTORY,
+        USER_MEMORY_CHROMA_COLLECTION,
+    )
+    from asky.memory.store import delete_all_memories_from_db
+    from asky.memory.vector_ops import clear_all_memory_embeddings
+
+    count = delete_all_memories_from_db(DB_PATH)
+    clear_all_memory_embeddings(
+        RESEARCH_CHROMA_PERSIST_DIRECTORY,
+        USER_MEMORY_CHROMA_COLLECTION,
+    )
+    print(f"Deleted {count} memories.")
 
 
 @contextmanager

@@ -151,14 +151,18 @@ class PostTurnRenderContext:
     """Payload fired after the final answer has been rendered to the CLI.
 
     ``cli_args`` carries the argparse Namespace so plugins can read
-    CLI-only flags (e.g. ``push_data_endpoint``, ``mail_recipients``)
+    CLI-only flags (e.g. ``push_data_args``, ``sendmail``)
     that are not part of ``AskyTurnRequest``.
+
+    ``answer_title`` is the extracted markdown heading from the final answer,
+    falling back to the query text. Plugins can use it as a default subject/title.
     """
 
     final_answer: str
     request: Any
     result: Any
     cli_args: Any = None
+    answer_title: str = ""
 
 
 @dataclass

@@ -1043,6 +1043,7 @@ def run_chat(
                     request=turn_request,
                     result=turn_result,
                     cli_args=args,
+                    answer_title=filename_hint or "",
                 ),
             )
 
