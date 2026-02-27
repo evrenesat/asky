@@ -38,3 +38,14 @@ class CandidateRecord:
     penalty_score: float = 0.0
     final_score: float = 0.0
     why_selected: List[str] = field(default_factory=list)
+
+
+@dataclass
+class CorpusContext:
+    """Corpus metadata extracted from preloaded local documents."""
+
+    titles: List[str]
+    keyphrases: List[str]
+    lead_texts: Dict[str, str]
+    source_handles: List[str]
+    cache_ids: List[int]

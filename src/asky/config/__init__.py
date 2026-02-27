@@ -278,6 +278,13 @@ SOURCE_SHORTLIST_OVERLAP_BONUS_WEIGHT = _source_shortlist.get(
 )
 SOURCE_SHORTLIST_SHORT_TEXT_PENALTY = _source_shortlist.get("short_text_penalty", 0.10)
 SOURCE_SHORTLIST_NOISE_PATH_PENALTY = _source_shortlist.get("noise_path_penalty", 0.15)
+SOURCE_SHORTLIST_CORPUS_LEAD_CHARS = _source_shortlist.get("corpus_lead_chars", 4000)
+SOURCE_SHORTLIST_CORPUS_MAX_KEYPHRASES = _source_shortlist.get(
+    "corpus_max_keyphrases", 15
+)
+SOURCE_SHORTLIST_CORPUS_MAX_QUERY_TITLES = _source_shortlist.get(
+    "corpus_max_query_titles", 3
+)
 
 # Research Embedding Settings
 _research_embedding = _research.get("embedding", {})

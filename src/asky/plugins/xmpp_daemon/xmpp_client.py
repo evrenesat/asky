@@ -7,6 +7,7 @@ import logging
 import re
 import threading
 import uuid
+import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 from typing import Callable, Optional
 
@@ -20,6 +21,8 @@ XEP0004_DATA_FORM_NAMESPACE = "jabber:x:data"
 DISCO_TIMEOUT_SECONDS = 3
 XEP0004_CAPABILITY = "xep_0004"
 RESOURCE_TOKEN_SPLIT_PATTERN = re.compile(r"[^a-z0-9]+")
+XHTML_IM_NAMESPACE = "http://jabber.org/protocol/xhtml-im"
+XHTML_BODY_NAMESPACE = "http://www.w3.org/1999/xhtml"
 
 try:
     import slixmpp  # type: ignore
@@ -76,7 +79,14 @@ class AskyXMPPClient:
 
         register_plugin = getattr(self._client, "register_plugin", None)
         if callable(register_plugin):
-            for _plugin_name in ("xep_0045", "xep_0050", "xep_0004", "xep_0030", "xep_0308"):
+            for _plugin_name in (
+                "xep_0045",
+                "xep_0050",
+                "xep_0004",
+                "xep_0030",
+                "xep_0071",
+                "xep_0308",
+            ):
                 try:
                     register_plugin(_plugin_name)
                 except Exception:
@@ -161,10 +171,12 @@ class AskyXMPPClient:
         message_type: str,
         message_id: Optional[str] = None,
         replace_id: Optional[str] = None,
+        xhtml_body: Optional[str] = None,
     ) -> None:
         normalized_message_id = str(message_id or "").strip()
         normalized_replace_id = str(replace_id or "").strip()
-        if normalized_message_id or normalized_replace_id:
+        normalized_xhtml_body = str(xhtml_body or "").strip()
+        if normalized_message_id or normalized_replace_id or normalized_xhtml_body:
             try:
                 _dispatch_client_send_stanza(
                     self._client,
@@ -173,6 +185,7 @@ class AskyXMPPClient:
                     message_type=str(message_type or "chat"),
                     message_id=normalized_message_id or None,
                     replace_id=normalized_replace_id or None,
+                    xhtml_body=normalized_xhtml_body or None,
                 )
                 return
             except Exception:
@@ -505,6 +518,7 @@ def _dispatch_client_send_stanza(
     message_type: str,
     message_id: Optional[str],
     replace_id: Optional[str],
+    xhtml_body: Optional[str] = None,
 ) -> None:
     """Dispatch a constructed message stanza (supports XEP-0308 replace)."""
     loop = getattr(client, "loop", None)
@@ -518,6 +532,8 @@ def _dispatch_client_send_stanza(
             msg["id"] = message_id
         if replace_id:
             msg["replace"]["id"] = replace_id
+        if xhtml_body:
+            _attach_xhtml_payload(msg, xhtml_body)
         send = getattr(msg, "send", None)
         if not callable(send):
             raise RuntimeError("Invalid slixmpp stanza: missing send()")
@@ -527,6 +543,23 @@ def _dispatch_client_send_stanza(
         loop.call_soon_threadsafe(_send)
         return
     _send()
+
+
+def _attach_xhtml_payload(msg, xhtml_body: str) -> None:
+    stanza_xml = getattr(msg, "xml", None)
+    if stanza_xml is None:
+        raise RuntimeError("Invalid slixmpp stanza: missing xml payload")
+    html_node = ET.Element(f"{{{XHTML_IM_NAMESPACE}}}html")
+    body_node = ET.SubElement(html_node, f"{{{XHTML_BODY_NAMESPACE}}}body")
+    fragment_text = str(xhtml_body or "").strip()
+    if fragment_text:
+        wrapped = f"<root>{fragment_text}</root>"
+        root = ET.fromstring(wrapped)
+        body_node.text = root.text
+        for child in list(root):
+            root.remove(child)
+            body_node.append(child)
+    stanza_xml.append(html_node)
 
 
 def _probe_data_form_support(

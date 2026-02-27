@@ -5,6 +5,7 @@ from __future__ import annotations
 import threading
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
+import xml.etree.ElementTree as ET
 
 import asky.plugins.xmpp_daemon.xmpp_client as plugin_xmpp_client
 from asky.plugins.xmpp_daemon.command_executor import CommandExecutor
@@ -28,6 +29,7 @@ class _MessageStanza:
         self._message_type = message_type
         self._attrs: dict[str, str] = {}
         self._replace: dict[str, str] = {}
+        self.xml = ET.Element("message")
 
     def __getitem__(self, key):
         if key == "replace":
@@ -45,6 +47,7 @@ class _MessageStanza:
                 "type": self._message_type,
                 "id": self._attrs.get("id"),
                 "replace_id": self._replace.get("id"),
+                "xml": ET.tostring(self.xml, encoding="unicode"),
             }
         )
 
@@ -121,6 +124,32 @@ def test_status_message_update_uses_replace_stanza(monkeypatch):
     assert second["replace_id"] == original.message_id
     assert second["id"] == updated.message_id
     assert updated.message_id != original.message_id
+
+
+def test_send_message_with_xhtml_payload_attaches_xhtml_node(monkeypatch):
+    module = SimpleNamespace(ClientXMPP=_ClientWithStanzaSupport)
+    monkeypatch.setattr(plugin_xmpp_client, "slixmpp", module)
+    client = plugin_xmpp_client.AskyXMPPClient(
+        jid="bot@example.com",
+        password="secret",
+        host="xmpp.example.com",
+        port=5222,
+        resource="asky",
+        message_callback=lambda _payload: None,
+    )
+
+    client.send_message(
+        to_jid="u@example.com",
+        body="My Header",
+        message_type="chat",
+        xhtml_body="<p><strong>My Header</strong></p>",
+    )
+
+    assert len(client._client.sent_stanzas) == 1
+    xml_payload = client._client.sent_stanzas[0]["xml"]
+    assert "jabber.org/protocol/xhtml-im" in xml_payload
+    assert "www.w3.org/1999/xhtml" in xml_payload
+    assert "<strong>My Header</strong>" in xml_payload
 
 
 def test_command_executes_lm_query_is_structural_only():

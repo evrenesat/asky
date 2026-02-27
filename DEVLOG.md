@@ -1,5 +1,60 @@
 # DEVLOG
 
+## 2026-02-27 - Corpus-Aware Shortlisting
+
+**Problem:** When a user uploads a document (e.g., PDF book) and asks a vague question like "tell me what this book is about?", the shortlisting pipeline searched the web with that literal query, producing irrelevant results. The local corpus was completely ignored by shortlisting.
+
+**Changes:**
+
+- Added `CorpusContext` dataclass to `research/shortlist_types.py` to carry corpus metadata (titles, keyphrases, lead texts, source handles) into the shortlist pipeline.
+- Created `research/corpus_context.py` with three public functions:
+  - `extract_corpus_context()` — reads document titles + lead text from `ResearchCache`, runs YAKE keyphrase extraction
+  - `build_corpus_enriched_queries()` — builds search queries using document titles + corpus keyphrases instead of vague user queries
+  - `build_corpus_candidates()` — creates `CandidateRecord` objects from corpus documents for corpus-only mode
+- Modified `research/source_shortlist.py`:
+  - `shortlist_prompt_sources()` accepts `corpus_context` and `skip_web_search` params
+  - When corpus context is available: enriches search queries with corpus metadata
+  - When `skip_web_search=True` (local_only mode): skips web search, uses corpus candidates directly
+  - Mixed mode: injects corpus candidates alongside web candidates
+  - Corpus candidates pass through the fetch stage without HTTP requests (content already loaded)
+- Modified `api/preload.py`:
+  - `run_preload_pipeline()` accepts `research_source_mode`
+  - After local ingestion, extracts corpus context and passes it to shortlisting
+  - Sets `skip_web_search=True` when `research_source_mode == "local_only"`
+- Modified `api/client.py` to forward `research_source_mode` to `run_preload_pipeline()`
+- Added config constants (`corpus_lead_chars`, `corpus_max_keyphrases`, `corpus_max_query_titles`) in `research.toml`
+
+**Key design decisions:**
+- Zero LLM calls — all corpus analysis uses YAKE keyphrase extraction
+- Zero behavioral change when no corpus is present (all new params default to None/False)
+- Corpus candidates scored through the same embedding pipeline as web candidates
+
+**Verification:**
+- `uv run pytest -x -q` → 1232 passed (14 new tests)
+
+## 2026-02-27 - XMPP XHTML-IM Header Rendering (Setext/ATX -> Bold)
+
+**Changes:**
+
+- Added XHTML-IM payload support for outbound XMPP messages in `plugins/xmpp_daemon/xmpp_client.py`:
+  - registers `xep_0071`,
+  - extends `send_message(...)`/stanza dispatch to attach `<html xmlns='http://jabber.org/protocol/xhtml-im'><body xmlns='http://www.w3.org/1999/xhtml'>...</body></html>` when provided.
+- Added header-aware XHTML generation in `plugins/xmpp_daemon/xmpp_formatting.py`:
+  - detects setext headers (`Title` + `====`/`----`) and ATX headers (`# Title`),
+  - renders those as `<p><strong>...</strong></p>`,
+  - returns `None` when no headers are present so plain-body-only messages remain unchanged.
+- Wired XHTML generation into outbound response flow in `plugins/xmpp_daemon/xmpp_service.py`:
+  - when a response is single-chunk and XHTML exists, sends both plain `body` and XHTML-IM payload.
+  - multi-chunk responses still use plain body fallback.
+- Added/updated tests:
+  - `tests/daemon/test_xmpp_formatting.py` covers setext header conversion and no-header fallback.
+  - `tests/test_xmpp_plugin_progress.py` verifies XHTML payload namespaces/content are attached to sent stanza XML.
+- Updated `ARCHITECTURE.md` with the outbound XHTML-IM behavior note for single-chunk messages.
+
+**Verification:**
+- `uv run pytest -n 0 tests/daemon/test_xmpp_formatting.py tests/test_xmpp_plugin_progress.py` -> `23 passed in 2.36s`
+- `uv run pytest` -> `1218 passed in 10.06s`
+
 ## 2026-02-27 - XMPP Query Progress Follow-Up Fixes (Correction Stanzas, Safety, Coverage)
 
 **Changes:**

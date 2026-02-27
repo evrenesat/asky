@@ -11,6 +11,7 @@ from asky.research.source_shortlist import (
     normalize_source_url,
     shortlist_prompt_sources,
 )
+from asky.research.shortlist_types import CorpusContext
 
 
 class FakeEmbeddingClient:
@@ -680,3 +681,163 @@ def test_shortlist_uses_research_cache(monkeypatch):
     # Cache hit content should be present
     assert payload["candidates"][0]["title"] == "Cached Title"
     assert "cached content" in payload["candidates"][0]["snippet"]
+
+
+def _make_corpus_context(
+    titles: List[str] = None,
+    keyphrases: List[str] = None,
+    lead_texts: Dict[str, str] = None,
+) -> CorpusContext:
+    titles = titles or ["Machine Learning Fundamentals"]
+    keyphrases = keyphrases or ["supervised learning", "neural networks"]
+    lead_texts = lead_texts or {
+        "local:///ml.pdf": "Machine Learning Fundamentals covers supervised learning, "
+        "neural networks, deep learning, and gradient descent optimization."
+    }
+    return CorpusContext(
+        titles=titles,
+        keyphrases=keyphrases,
+        lead_texts=lead_texts,
+        source_handles=["corpus://cache/1"],
+        cache_ids=[1],
+    )
+
+
+def test_shortlist_corpus_context_enriches_search_queries(monkeypatch):
+    """When corpus_context is provided, search queries use corpus keyphrases."""
+    from asky.research import source_shortlist as shortlist_mod
+
+    monkeypatch.setattr(shortlist_mod, "SOURCE_SHORTLIST_ENABLED", True)
+    monkeypatch.setattr(shortlist_mod, "SOURCE_SHORTLIST_ENABLE_RESEARCH_MODE", True)
+    monkeypatch.setattr(shortlist_mod, "SOURCE_SHORTLIST_MIN_CONTENT_CHARS", 20)
+
+    captured_queries: List[str] = []
+
+    def fake_search_executor(args: Dict[str, Any]) -> Dict[str, Any]:
+        captured_queries.append(args.get("q", ""))
+        return {"results": []}
+
+    payload = shortlist_prompt_sources(
+        user_prompt="tell me what this book is about",
+        research_mode=True,
+        search_executor=fake_search_executor,
+        embedding_client=FakeEmbeddingClient(),
+        corpus_context=_make_corpus_context(),
+    )
+
+    assert payload["enabled"] is True
+    assert len(captured_queries) > 0
+    all_queries_text = " ".join(captured_queries)
+    assert "Machine Learning Fundamentals" in all_queries_text or \
+        "supervised learning" in all_queries_text
+
+
+def test_shortlist_skip_web_search_uses_corpus_candidates(monkeypatch):
+    """With skip_web_search=True, candidates come from corpus only."""
+    from asky.research import source_shortlist as shortlist_mod
+
+    monkeypatch.setattr(shortlist_mod, "SOURCE_SHORTLIST_ENABLED", True)
+    monkeypatch.setattr(shortlist_mod, "SOURCE_SHORTLIST_ENABLE_RESEARCH_MODE", True)
+    monkeypatch.setattr(shortlist_mod, "SOURCE_SHORTLIST_MIN_CONTENT_CHARS", 20)
+
+    search_calls = {"count": 0}
+
+    def fake_search_executor(_args: Dict[str, Any]) -> Dict[str, Any]:
+        search_calls["count"] += 1
+        return {"results": []}
+
+    payload = shortlist_prompt_sources(
+        user_prompt="what is this book about?",
+        research_mode=True,
+        search_executor=fake_search_executor,
+        embedding_client=FakeEmbeddingClient(),
+        corpus_context=_make_corpus_context(),
+        skip_web_search=True,
+    )
+
+    assert payload["enabled"] is True
+    assert search_calls["count"] == 0
+    assert len(payload["candidates"]) >= 1
+    assert payload["candidates"][0]["source_type"] == "corpus"
+
+
+def test_shortlist_no_corpus_context_unchanged_behavior(monkeypatch):
+    """Without corpus_context, behavior is identical to baseline."""
+    from asky.research import source_shortlist as shortlist_mod
+
+    monkeypatch.setattr(shortlist_mod, "SOURCE_SHORTLIST_ENABLED", True)
+    monkeypatch.setattr(shortlist_mod, "SOURCE_SHORTLIST_ENABLE_RESEARCH_MODE", True)
+    monkeypatch.setattr(shortlist_mod, "SOURCE_SHORTLIST_MIN_CONTENT_CHARS", 20)
+    monkeypatch.setattr(shortlist_mod, "SOURCE_SHORTLIST_TOP_K", 2)
+
+    captured_queries: List[str] = []
+
+    def fake_search_executor(args: Dict[str, Any]) -> Dict[str, Any]:
+        captured_queries.append(args.get("q", ""))
+        return {
+            "results": [
+                {
+                    "title": "Some Result",
+                    "url": "https://example.com/result",
+                    "snippet": "A result snippet.",
+                }
+            ]
+        }
+
+    def fake_fetch_executor(_url: str) -> Dict[str, Any]:
+        return {"title": "Some Result", "text": "Result content for shortlist scoring."}
+
+    payload = shortlist_prompt_sources(
+        user_prompt="tell me what this book is about",
+        research_mode=True,
+        search_executor=fake_search_executor,
+        fetch_executor=fake_fetch_executor,
+        embedding_client=FakeEmbeddingClient(),
+        corpus_context=None,
+    )
+
+    assert payload["enabled"] is True
+    all_queries_text = " ".join(captured_queries)
+    assert "Machine Learning" not in all_queries_text
+
+
+def test_shortlist_mixed_mode_includes_corpus_and_web(monkeypatch):
+    """With corpus_context but no skip_web_search, both corpus and web candidates appear."""
+    from asky.research import source_shortlist as shortlist_mod
+
+    monkeypatch.setattr(shortlist_mod, "SOURCE_SHORTLIST_ENABLED", True)
+    monkeypatch.setattr(shortlist_mod, "SOURCE_SHORTLIST_ENABLE_RESEARCH_MODE", True)
+    monkeypatch.setattr(shortlist_mod, "SOURCE_SHORTLIST_MIN_CONTENT_CHARS", 20)
+    monkeypatch.setattr(shortlist_mod, "SOURCE_SHORTLIST_TOP_K", 5)
+
+    def fake_search_executor(_args: Dict[str, Any]) -> Dict[str, Any]:
+        return {
+            "results": [
+                {
+                    "title": "Web Result",
+                    "url": "https://example.com/web",
+                    "snippet": "Web search result content.",
+                }
+            ]
+        }
+
+    def fake_fetch_executor(_url: str) -> Dict[str, Any]:
+        return {
+            "title": "Web Result",
+            "text": "Web result content for ranking and scoring purposes.",
+        }
+
+    payload = shortlist_prompt_sources(
+        user_prompt="what is this book about?",
+        research_mode=True,
+        search_executor=fake_search_executor,
+        fetch_executor=fake_fetch_executor,
+        embedding_client=FakeEmbeddingClient(),
+        corpus_context=_make_corpus_context(),
+        skip_web_search=False,
+    )
+
+    assert payload["enabled"] is True
+    source_types = {c["source_type"] for c in payload["candidates"]}
+    assert "corpus" in source_types
+    assert "search" in source_types

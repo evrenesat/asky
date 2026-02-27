@@ -257,6 +257,28 @@ def test_header_conversion():
     assert "======" in result
 
 
+def test_setext_header_xhtml_conversion():
+    renderer = ASCIITableRenderer()
+    formatter = MessageFormatter(renderer)
+    model = MessageModel(plain_body="My Header\n========\nLine")
+
+    xhtml_body = formatter.format_xhtml_body(model)
+
+    assert xhtml_body is not None
+    assert "<strong>My Header</strong>" in xhtml_body
+    assert "<p>Line</p>" in xhtml_body
+
+
+def test_setext_header_xhtml_conversion_returns_none_without_headers():
+    renderer = ASCIITableRenderer()
+    formatter = MessageFormatter(renderer)
+    model = MessageModel(plain_body="Just a line\nAnother line")
+
+    xhtml_body = formatter.format_xhtml_body(model)
+
+    assert xhtml_body is None
+
+
 def test_extract_markdown_tables_parses_pipe_table():
     model = extract_markdown_tables(
         "Server status:\n\n| Service | Status |\n| --- | --- |\n| XMPP | Online |\n| DB | Maintenance |\n"

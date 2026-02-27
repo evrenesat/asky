@@ -54,6 +54,7 @@ from asky.research.shortlist_collect import collect_candidates
 from asky.research.shortlist_score import resolve_scoring_queries, score_candidates
 from asky.research.shortlist_types import (
     CandidateRecord,
+    CorpusContext,
     FetchExecutor,
     SearchExecutor,
     SeedLinkExtractor,
@@ -236,6 +237,8 @@ def shortlist_prompt_sources(
     status_callback: Optional[StatusCallback] = None,
     queries: Optional[List[str]] = None,
     trace_callback: Optional[TraceCallback] = None,
+    corpus_context: Optional[CorpusContext] = None,
+    skip_web_search: bool = False,
 ) -> Dict[str, Any]:
     """Build a ranked shortlist of relevant sources without using an LLM."""
     total_start = time.perf_counter()
@@ -305,6 +308,21 @@ def shortlist_prompt_sources(
     else:
         search_queries = [build_search_query(query_text, keyphrases)]
 
+    # Enrich search queries with corpus metadata when available
+    if corpus_context is not None and corpus_context.keyphrases:
+        from asky.research.corpus_context import build_corpus_enriched_queries
+
+        enriched = build_corpus_enriched_queries(
+            corpus_context, query_text, keyphrases
+        )
+        if enriched:
+            logger.debug(
+                "corpus-enriched search queries: original=%s enriched=%s",
+                search_queries,
+                enriched,
+            )
+            search_queries = enriched
+
     parse_ms = _elapsed_ms(parse_start)
 
     active_search_executor = search_executor or _default_search_executor
@@ -327,28 +345,51 @@ def shortlist_prompt_sources(
     warnings: List[str] = []
     _notify_status(status_callback, "Shortlist: collecting candidates")
     collect_start = time.perf_counter()
-    candidates = collect_candidates(
-        seed_urls=seed_urls,
-        search_queries=search_queries,
-        search_executor=search_executor_with_trace,
-        seed_link_extractor=seed_link_extractor_with_trace,
-        warnings=warnings,
-        metrics=metrics,
-        seed_link_expansion_enabled=SOURCE_SHORTLIST_SEED_LINK_EXPANSION_ENABLED,
-        seed_link_max_pages=SOURCE_SHORTLIST_SEED_LINK_MAX_PAGES,
-        seed_links_per_page=SOURCE_SHORTLIST_SEED_LINKS_PER_PAGE,
-        search_with_seed_urls=SOURCE_SHORTLIST_SEARCH_WITH_SEED_URLS,
-        search_result_count=SOURCE_SHORTLIST_SEARCH_RESULT_COUNT,
-        max_candidates=SOURCE_SHORTLIST_MAX_CANDIDATES,
-        max_title_chars=MAX_TITLE_CHARS,
-        normalize_source_url=normalize_source_url,
-        extract_path_tokens=_extract_path_tokens,
-        normalize_whitespace=_normalize_whitespace,
-        is_http_url=_is_http_url,
-        is_blocked_seed_link=_is_blocked_seed_link,
-        elapsed_ms=_elapsed_ms,
-        logger=logger,
-    )
+
+    if skip_web_search and corpus_context is not None:
+        # Corpus-only mode: inject corpus documents as candidates directly
+        from asky.research.corpus_context import build_corpus_candidates
+
+        _notify_status(
+            status_callback, "Shortlist: building candidates from corpus"
+        )
+        candidates = build_corpus_candidates(corpus_context)
+        metrics["corpus_candidates"] = len(candidates)
+    else:
+        candidates = collect_candidates(
+            seed_urls=seed_urls,
+            search_queries=search_queries,
+            search_executor=search_executor_with_trace,
+            seed_link_extractor=seed_link_extractor_with_trace,
+            warnings=warnings,
+            metrics=metrics,
+            seed_link_expansion_enabled=SOURCE_SHORTLIST_SEED_LINK_EXPANSION_ENABLED,
+            seed_link_max_pages=SOURCE_SHORTLIST_SEED_LINK_MAX_PAGES,
+            seed_links_per_page=SOURCE_SHORTLIST_SEED_LINKS_PER_PAGE,
+            search_with_seed_urls=SOURCE_SHORTLIST_SEARCH_WITH_SEED_URLS,
+            search_result_count=SOURCE_SHORTLIST_SEARCH_RESULT_COUNT,
+            max_candidates=SOURCE_SHORTLIST_MAX_CANDIDATES,
+            max_title_chars=MAX_TITLE_CHARS,
+            normalize_source_url=normalize_source_url,
+            extract_path_tokens=_extract_path_tokens,
+            normalize_whitespace=_normalize_whitespace,
+            is_http_url=_is_http_url,
+            is_blocked_seed_link=_is_blocked_seed_link,
+            elapsed_ms=_elapsed_ms,
+            logger=logger,
+        )
+
+        # Mixed mode: also inject corpus documents alongside web candidates
+        if corpus_context is not None:
+            from asky.research.corpus_context import build_corpus_candidates
+
+            corpus_candidates = build_corpus_candidates(corpus_context)
+            existing_urls = {c.url for c in candidates}
+            for cc in corpus_candidates:
+                if cc.url not in existing_urls:
+                    candidates.append(cc)
+            metrics["corpus_candidates"] = len(corpus_candidates)
+
     collect_ms = _elapsed_ms(collect_start)
     processed_candidates = [
         {
@@ -650,6 +691,13 @@ def _fetch_candidate_content(
     seen_canonical_urls = set()
     seed_url_set = set(seed_urls)
     for index, candidate in enumerate(candidates):
+        # Corpus candidates already have content; pass through without fetching
+        if candidate.source_type == "corpus" and candidate.fetched_content:
+            candidate.text = candidate.fetched_content[:SOURCE_SHORTLIST_MAX_SCORING_CHARS]
+            candidate.snippet = candidate.text[:SOURCE_SHORTLIST_SNIPPET_CHARS]
+            extracted.append(candidate)
+            continue
+
         should_fetch_for_scoring = index < SOURCE_SHORTLIST_MAX_FETCH_URLS
         should_fetch_seed_document = (
             candidate.source_type == "seed" and candidate.requested_url in seed_url_set

@@ -382,13 +382,22 @@ class XMPPService:
     def _send_chunked(self, jid: str, text: str, *, message_type: str = "chat") -> None:
         model = extract_markdown_tables(text)
         formatted_text = self._formatter.format_message(model)
+        xhtml_body = self._formatter.format_xhtml_body(model)
         self._send_chunked_text(
             jid,
             formatted_text,
             message_type=str(message_type or "").strip().lower(),
+            xhtml_body=xhtml_body,
         )
 
-    def _send_chunked_text(self, jid: str, text: str, *, message_type: str) -> None:
+    def _send_chunked_text(
+        self,
+        jid: str,
+        text: str,
+        *,
+        message_type: str,
+        xhtml_body: Optional[str] = None,
+    ) -> None:
         if not text:
             return
         parts = chunk_text(text, XMPP_RESPONSE_CHUNK_CHARS)
@@ -398,7 +407,14 @@ class XMPPService:
                 body = f"[part {index}/{total}]\n{part}"
             else:
                 body = part
-            if message_type == "groupchat":
+            if total == 1 and xhtml_body:
+                self._client.send_message(
+                    to_jid=jid,
+                    body=body,
+                    message_type=message_type,
+                    xhtml_body=xhtml_body,
+                )
+            elif message_type == "groupchat":
                 self._client.send_group_message(jid, body)
             else:
                 self._client.send_chat_message(jid, body)
@@ -605,4 +621,3 @@ def _merge_unique_urls(urls: list[str]) -> list[str]:
         seen.add(normalized)
         merged.append(normalized)
     return merged
-

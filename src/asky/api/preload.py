@@ -84,6 +84,16 @@ def preload_local_research_sources(*args: Any, **kwargs: Any) -> Dict[str, Any]:
     )
 
 
+def _extract_corpus_context(*args: Any, **kwargs: Any) -> Any:
+    """Lazy import corpus context extraction."""
+    return call_attr(
+        "asky.research.corpus_context",
+        "extract_corpus_context",
+        *args,
+        **kwargs,
+    )
+
+
 def format_local_ingestion_context(local_payload: Dict[str, Any]) -> Optional[str]:
     """Lazy import local-ingestion context formatter."""
     return call_attr(
@@ -435,6 +445,7 @@ def run_preload_pipeline(
     llm_client: Any = None,
     expansion_executor: Callable[..., List[str]] = expand_query,
     trace_callback: Optional[Callable[[Dict[str, Any]], None]] = None,
+    research_source_mode: Optional[str] = None,
 ) -> PreloadResolution:
     """Run local+shortlist preloads and return their combined context payload."""
     preload = PreloadResolution()
@@ -489,6 +500,22 @@ def run_preload_pipeline(
     else:
         preload.local_payload = {"enabled": False, "ingested": []}
 
+    # Extract corpus context from ingested documents for shortlist enrichment
+    corpus_context = None
+    skip_web_search = False
+    ingested_docs = preload.local_payload.get("ingested") or []
+    if ingested_docs:
+        try:
+            corpus_context = _extract_corpus_context(preload.local_payload)
+        except Exception:
+            import logging as _logging
+
+            _logging.getLogger(__name__).debug(
+                "corpus context extraction failed", exc_info=True
+            )
+        if research_source_mode == "local_only":
+            skip_web_search = True
+
     shortlist_enabled, shortlist_reason = shortlist_enabled_for_request(
         lean=lean,
         model_config=model_config,
@@ -534,6 +561,9 @@ def run_preload_pipeline(
             supports_trace = False
         if supports_trace:
             shortlist_kwargs["trace_callback"] = trace_callback
+        if corpus_context is not None:
+            shortlist_kwargs["corpus_context"] = corpus_context
+            shortlist_kwargs["skip_web_search"] = skip_web_search
         shortlist_payload = shortlist_executor(**shortlist_kwargs)
         shortlist_elapsed_ms = (time.perf_counter() - shortlist_start) * 1000
         if shortlist_payload.get("enabled"):

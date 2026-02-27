@@ -5,25 +5,21 @@
 
 asky is an AI-powered web search CLI with LLM tool-calling capabilities and an optional XMPP remote-chat mode.
 
-It (invoked as `asky` or `ask`) provides a command-line interface that brings AI-powered search and research capabilities directly to your terminal. It uses LLMs and tools to synthesize answers from the web (or from local files and CLI commands).
+It (invoked as `asky` or `ask`) provides a command-line interface that brings AI-powered search and research capabilities directly to your terminal.
 
-asky is a single-command application.\*\* You provide a command, and you receive an output.
-
-It intentionally avoids being a Terminal User Interface (TUI). While TUIs have their place, they can sometimes feel confusing and unintuitive for text-based conversational tasks. When using a terminal, the expectation is a straightforward, streamlined experience: input a command, read the output, and move on.
-
-asky embraces this philosophy. It does not take over your screen. It feels like a native Unix tool that happens to be an AI agent, plugging seamlessly into your existing workflows.
+The CLI of asky is a simple, single-command application.\*\* You provide a command, and you receive an output.
 
 ## Key Features
 
 - **Multi-Model Support**: Easily define and switch between various LLMs and providers that support OpenAI compatible APIs.
 - **Deep Research Mode**: A specialized mode for an iterative, RAG-backed investigation across web sources and local data.
 - **Tool-Calling Integration**: Models autonomously search the web, fetch URLs, and use the current date/time to provide accurate answers.
-- **Plugin Runtime (v1)**: Optional local plugin roster (`~/.config/asky/plugins.toml`) with deterministic hooks and failure-isolated activation.
-- **XMPP Remote Daemon (Optional)**: Run asky as an XMPP client daemon (`asky --daemon`) so authorized contacts can use asky from mobile/desktop XMPP apps.
-- **macOS Menubar Daemon (Optional)**: On macOS with `rumps` installed, `asky --daemon` launches a menubar app and runs daemon lifecycle controls from the status bar.
-- **Voice Transcription & Voice Commands (Optional)**: In XMPP daemon mode, voice attachments can be transcribed (`mlx-whisper`) and routed as transcript-driven commands/queries.
+- **XMPP Client (optional, built-in plugin)**: Run asky as an XMPP client daemon (`asky --daemon`) so authorized contacts can use asky from mobile/desktop XMPP apps.
+- **macOS Menubar App (optional)**: On macOS, `asky --daemon` adds a menubar daemon app to your Applications folder. Simplifies controlling the lifecycle of the background daemon (Linux/Windows support planned).
+- **Voice Transcription & Voice Commands (optional, Mac only for now)**: In XMPP daemon mode, voice attachments can be transcribed (`mlx-whisper`) and routed as transcript-driven commands/queries (Linux/Windows support planned).
+- **Talk with your documents**: Upload documents over any XMPP client or use documents from the configured local corpus directories. Together with voice transcription, you can dig into your documents by just talking!
 - **Custom Tools**: Expose any CLI command as a tool for the LLM.
-- **User Memory (Elephant Mode)**: Cross-session persistent memory that allows the LLM to learn facts and preferences about you across different conversations.
+- **User Memory**: Cross-session persistent memory that allows the LLM to learn facts and preferences about you across different conversations.
 - **Smart Context Management**: Automatically summarizes older conversation history to maximize context window usage.
 - **File Prompts**: Load complex prompts directly from files using `file://` URIs.
 - **Token Efficient**: It counts token usage and keeps the model informed about remaining context capacity.

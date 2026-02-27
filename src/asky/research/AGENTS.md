@@ -20,6 +20,7 @@ RAG-powered research mode with caching, semantic search, and persistent memory.
 | `shortlist_collect.py`           | Candidate/seed-link collection stage            |
 | `shortlist_score.py`             | Semantic + heuristic scoring stage              |
 | `shortlist_types.py`             | Shared shortlist datatypes and callback aliases |
+| `corpus_context.py`              | Corpus-aware context extraction for shortlist query enrichment |
 | `sections.py`                    | Deterministic section indexing + strict matching |
 | `adapters.py`                    | Built-in local-source loading helpers           |
 

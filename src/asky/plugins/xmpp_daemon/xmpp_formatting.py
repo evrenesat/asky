@@ -1,5 +1,6 @@
 """XMPP message formatting with XEP-0393 styling and ASCII table rendering."""
 
+import html
 import re
 import unicodedata
 from dataclasses import dataclass, field
@@ -9,6 +10,8 @@ MAX_FENCE_LENGTH = 10
 MIN_TABLE_COLUMN_COUNT = 2
 MIN_SEPARATOR_DASH_COUNT = 1
 CODE_FENCE_MARKERS = ("```", "~~~")
+ATX_HEADER_PATTERN = re.compile(r"^\s*#{1,6}\s+(.+?)\s*$")
+SETEXT_UNDERLINE_PATTERN = re.compile(r"^\s*(=+|-+)\s*$")
 
 
 @dataclass
@@ -178,6 +181,44 @@ class MessageFormatter:
 
         return '\n\n'.join(parts)
 
+    def format_xhtml_body(self, model: MessageModel) -> Optional[str]:
+        """Return XHTML-IM body fragment for header-aware rendering."""
+        lines = str(model.plain_body or "").splitlines()
+        if not lines:
+            return None
+        html_parts: list[str] = []
+        has_header = False
+        index = 0
+        while index < len(lines):
+            line = lines[index]
+            stripped = line.strip()
+            if not stripped:
+                index += 1
+                continue
+            if (
+                index + 1 < len(lines)
+                and _is_setext_underline(lines[index + 1])
+            ):
+                html_parts.append(
+                    f"<p><strong>{html.escape(stripped)}</strong></p>"
+                )
+                has_header = True
+                index += 2
+                continue
+            atx_match = ATX_HEADER_PATTERN.match(line)
+            if atx_match is not None:
+                html_parts.append(
+                    f"<p><strong>{html.escape(atx_match.group(1).strip())}</strong></p>"
+                )
+                has_header = True
+                index += 1
+                continue
+            html_parts.append(f"<p>{html.escape(line)}</p>")
+            index += 1
+        if not has_header or not html_parts:
+            return None
+        return "".join(html_parts)
+
 
 def extract_markdown_tables(markdown_text: str) -> MessageModel:
     """Parse pipe-markdown tables into structured tables and plain text."""
@@ -263,3 +304,7 @@ def _is_separator_cell(value: str) -> bool:
 
 def _is_table_row_for_header(cells: list[str], header_length: int) -> bool:
     return bool(cells) and len(cells) == header_length
+
+
+def _is_setext_underline(line: str) -> bool:
+    return bool(SETEXT_UNDERLINE_PATTERN.fullmatch(str(line or "").strip()))

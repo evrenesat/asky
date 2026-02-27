@@ -405,6 +405,7 @@ chunked outbound chat replies
 
 Command presets are expanded at ingress (`\\name`, `\\presets`) before command execution, and remote policy is enforced after expansion/planning so blocked flags cannot be bypassed.
 XMPP outbound formatting extracts markdown pipe tables before send and currently renders through the existing in-band ASCII-table fallback path. Client-identity capability mapping (`[xmpp_client.capabilities]`) and XEP-0030 discovery/token parsing are retained for future client-specific behavior controls.
+For single-chunk outbound messages, the transport can now attach XHTML-IM payloads (with plain-body fallback) so setext/ATX markdown headers render as bold in supporting clients.
 Ad-hoc `Run Prompt` / `Run Query` / `Use Transcript` and `Run Preset` (only when preset resolves to LM query) execute asynchronously through the same per-conversation queue as text messages; ad-hoc IQ response remains a confirmation note while final answer arrives in chat.
 XMPP query ingress applies the same recursive slash-expansion behavior as CLI (`/alias`, `/cp`) before model execution, and unresolved slash queries follow CLI prompt-list semantics (`/` lists all prompts, unknown `/prefix` returns filtered prompt listing). This shared query-prep path is used by direct text queries, interface-planned query actions, and `transcript use` query execution.
 Daemon query prep also supports session-scoped media pointers: `#aN`/`#atN` for audio file+transcript and `#iN`/`#itN` for image file+transcript.
@@ -583,6 +584,12 @@ Research mode combines ChromaDB vectors for semantic search with SQLite FTS5 for
 ### 6. Shared Source Shortlisting
 
 Single implementation reused by research and standard chat modes with per-mode enablement flags.
+When a local corpus is preloaded (documents ingested before shortlisting), the pipeline
+becomes corpus-aware: `corpus_context.py` extracts document titles and YAKE keyphrases
+from lead text, then enriches web search queries with corpus metadata. In `local_only`
+mode, web search is skipped entirely and corpus documents are injected as shortlist
+candidates directly. In mixed mode, corpus candidates are scored alongside web candidates
+through the same embedding pipeline.
 
 ### 7. Lazy Loading
 

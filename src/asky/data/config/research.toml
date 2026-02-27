@@ -98,6 +98,11 @@ overlap_bonus_weight = 0.10
 short_text_penalty = 0.10
 noise_path_penalty = 0.15
 
+# Corpus-aware shortlisting: use ingested document content to build better queries
+corpus_lead_chars = 4000
+corpus_max_keyphrases = 15
+corpus_max_query_titles = 3
+
 # Query expansion before shortlist and local-source ingestion
 query_expansion_enabled = true
 query_expansion_mode = "deterministic" # or "llm"

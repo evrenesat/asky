@@ -759,6 +759,7 @@ class AskyClient:
                 local_ingestion_formatter or format_local_ingestion_context
             ),
             trace_callback=(verbose_output_callback if self.config.verbose else None),
+            research_source_mode=effective_source_mode,
         )
         effective_query_text = preload_query_text
 
