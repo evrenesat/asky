@@ -1,5 +1,47 @@
 # DEVLOG
 
+## 2026-03-01 - Evidence Extraction Heuristic and Ingestion Logging Fixes
+
+**Problem:**
+
+1. The evidence extraction skip heuristic in `preload.py:607` used a magic number `>= 3`.
+2. `local_ingestion_flow.py` used `print()` for a truncation warning instead of the logger.
+3. No test verified the evidence extraction shortlist-skip boundary.
+
+**Changes:**
+
+- Modified `src/asky/config/__init__.py`: Added `RESEARCH_EVIDENCE_SKIP_SHORTLIST_THRESHOLD` constant.
+- Modified `src/asky/api/preload.py`: Replaced magic number `3` with the new constant.
+- Modified `src/asky/cli/local_ingestion_flow.py`: Replaced `print()` with `logger.warning()`.
+- Updated `tests/test_api_preload.py`: Added `test_run_preload_pipeline_evidence_extraction_skip_on_high_quality_shortlist` and `test_run_preload_pipeline_evidence_extraction_runs_on_low_quality_shortlist`.
+- Updated `src/asky/config/AGENTS.md`: Documented the new research setting.
+
+**Why:** To comply with "no magic numbers" and "no print() in library layer" rules, and ensure core heuristics are covered by unit tests.
+
+**Verification:**
+
+- `uv run pytest tests/test_api_preload.py` -> 16 passed.
+- Full suite passed: 1254 passed in 10.81s.
+
+## 2026-03-01 - ARCHITECTURE.md Cleanup and Lean Mode Memory Test
+
+**Problem:**
+
+1. `ARCHITECTURE.md` listed `POST_TURN_RENDER` as an unimplemented deferred hook, but it is fully functional and used.
+2. The lean mode guard for memory recall at `preload.py:454` had no test coverage, risking silent context injections if regressed.
+
+**Changes:**
+
+- Updated `ARCHITECTURE.md`: Removed `POST_TURN_RENDER` from the deferred hooks list.
+- Added `tests/test_api_preload.py`: Added `test_run_preload_pipeline_lean_mode_suppresses_memory_recall` to verify recollection is bypassed in lean mode.
+
+**Why:** To maintain documentation accuracy and ensure lean mode's privacy/efficiency guarantees are verified.
+
+**Verification:**
+
+- `uv run pytest tests/test_api_preload.py` -> 14 passed.
+- Full suite passed: 1252 passed in 10.71s.
+
 ## 2026-02-28 - Added Auto-reload Dev Script and Development Guide
 
 **Problem:** Manually restarting `asky --daemon` after code or configuration changes during development is tedious.

@@ -217,6 +217,9 @@ RESEARCH_EVIDENCE_EXTRACTION_ENABLED = _research.get(
 RESEARCH_EVIDENCE_EXTRACTION_MAX_CHUNKS = _research.get(
     "evidence_extraction_max_chunks", 10
 )
+RESEARCH_EVIDENCE_SKIP_SHORTLIST_THRESHOLD = _research.get(
+    "evidence_extraction_skip_shortlist_threshold", 3
+)
 RESEARCH_SUMMARIZATION_WORKERS = _research.get("summarization_workers", 2)
 RESEARCH_MEMORY_MAX_RESULTS = _research.get("memory_max_results", 10)
 RESEARCH_LOCAL_DOCUMENT_ROOTS = [

@@ -18,6 +18,7 @@ from asky.config import (
     QUERY_EXPANSION_MAX_SUB_QUERIES,
     RESEARCH_EVIDENCE_EXTRACTION_ENABLED,
     RESEARCH_EVIDENCE_EXTRACTION_MAX_CHUNKS,
+    RESEARCH_EVIDENCE_SKIP_SHORTLIST_THRESHOLD,
     USER_MEMORY_ENABLED,
     USER_MEMORY_RECALL_TOP_K,
     USER_MEMORY_RECALL_MIN_SIMILARITY,
@@ -601,10 +602,13 @@ def run_preload_pipeline(
 
     # Post-retrieval evidence extraction (optional)
     #
-    # HEURISTIC: In Research Mode, if we have a high-quality shortlist (>= 3 sources),
+    # HEURISTIC: In Research Mode, if we have a high-quality shortlist,
     # we SKIP bootstrap evidence extraction. This prevents the LLM from feeling
     # "finished" too early and forces it to use its RAG tools for deeper reading.
-    has_good_shortlist = len(preload.shortlist_payload.get("candidates", []) or []) >= 3
+    has_good_shortlist = (
+        len(preload.shortlist_payload.get("candidates", []) or [])
+        >= RESEARCH_EVIDENCE_SKIP_SHORTLIST_THRESHOLD
+    )
     should_run_evidence = (
         research_mode
         and RESEARCH_EVIDENCE_EXTRACTION_ENABLED

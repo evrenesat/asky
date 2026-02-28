@@ -102,8 +102,8 @@ def preload_local_research_sources(
 
     if explicit_targets and len(explicit_targets) > max_targets:
         # Warn about truncation
-        print(
-            f"Warning: {len(explicit_targets)} local corpus paths provided, but max is {max_targets}. Truncating."
+        logger.warning(
+            f"{len(explicit_targets)} local corpus paths provided, but max is {max_targets}. Truncating."
         )
 
     targets = _dedupe_preserve_order(discovered_targets)[:max_targets]

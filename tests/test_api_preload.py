@@ -145,9 +145,9 @@ def test_run_preload_pipeline_includes_seed_context_before_shortlist(monkeypatch
         preload_local_sources=False,
         preload_shortlist=True,
         shortlist_executor=shortlist_executor,
-        shortlist_formatter=lambda payload: "SHORTLIST_CONTEXT"
-        if payload.get("enabled")
-        else "",
+        shortlist_formatter=lambda payload: (
+            "SHORTLIST_CONTEXT" if payload.get("enabled") else ""
+        ),
         shortlist_stats_builder=lambda payload, elapsed_ms: {
             "enabled": payload.get("enabled"),
             "elapsed_ms": elapsed_ms,
@@ -157,9 +157,9 @@ def test_run_preload_pipeline_includes_seed_context_before_shortlist(monkeypatch
     assert preload.seed_url_context is not None
     assert preload.seed_url_direct_answer_ready is True
     assert preload.combined_context is not None
-    assert preload.combined_context.index("Seed URL Content from Query:") < preload.combined_context.index(
-        "SHORTLIST_CONTEXT"
-    )
+    assert preload.combined_context.index(
+        "Seed URL Content from Query:"
+    ) < preload.combined_context.index("SHORTLIST_CONTEXT")
 
 
 def test_seed_url_context_allows_direct_answer_false_on_errors():
@@ -297,3 +297,134 @@ def test_collect_source_handles_maps_handle_and_target():
 
     assert handle_map["corpus://cache/88"] == "corpus://cache/88"
     assert handle_map["local:///tmp/books/book.epub"] == "corpus://cache/88"
+
+
+def test_run_preload_pipeline_lean_mode_suppresses_memory_recall(monkeypatch):
+    import asky.api.preload as preload_mod
+    from unittest.mock import MagicMock
+
+    # 1. Enable memory recall globally
+    monkeypatch.setattr(preload_mod, "USER_MEMORY_ENABLED", True)
+
+    # 2. Mock recall_memories to track calls
+    mock_recall = MagicMock(return_value="Some memory")
+    monkeypatch.setattr(preload_mod, "recall_memories", mock_recall)
+
+    # 3. Suppress other parts of the pipeline to isolate memory check
+    monkeypatch.setattr(preload_mod, "QUERY_EXPANSION_ENABLED", False)
+
+    def mock_executor(**_kwargs):
+        return {"enabled": False, "ingested": []}
+
+    # Run in LEAN mode
+    run_preload_pipeline(
+        query_text="Hi",
+        research_mode=False,
+        model_config={},
+        lean=True,  # Lean mode ACTIVE
+        preload_local_sources=False,
+        preload_shortlist=False,
+        local_ingestion_executor=mock_executor,
+    )
+
+    # Verify memory recall was NOT called
+    assert mock_recall.called is False
+
+    # Run in NON-LEAN mode
+    run_preload_pipeline(
+        query_text="Hi",
+        research_mode=False,
+        model_config={},
+        lean=False,  # Lean mode INACTIVE
+        preload_local_sources=False,
+        preload_shortlist=False,
+        local_ingestion_executor=mock_executor,
+    )
+
+    # Verify memory recall WAS called
+    assert mock_recall.called is True
+
+
+def test_run_preload_pipeline_evidence_extraction_skip_on_high_quality_shortlist(
+    monkeypatch,
+):
+    import asky.api.preload as preload_mod
+    from unittest.mock import MagicMock
+
+    monkeypatch.setattr(preload_mod, "RESEARCH_EVIDENCE_EXTRACTION_ENABLED", True)
+    monkeypatch.setattr(preload_mod, "USER_MEMORY_ENABLED", False)
+    monkeypatch.setattr(preload_mod, "QUERY_EXPANSION_ENABLED", False)
+
+    # Mock extract_evidence to track calls
+    mock_extract = MagicMock(return_value=[])
+    monkeypatch.setattr(preload_mod, "extract_evidence", mock_extract)
+
+    def shortlist_executor_good(**_kwargs):
+        return {
+            "enabled": True,
+            "candidates": [
+                {"url": "1"},
+                {"url": "2"},
+                {"url": "3"},
+            ],  # 3 sources -> good
+            "fetched_count": 3,
+            "stats": {"metrics": {"fetch_calls": 3}},
+            "seed_url_documents": [],
+        }
+
+    run_preload_pipeline(
+        query_text="Hi",
+        research_mode=True,
+        model_config={},
+        lean=False,
+        preload_local_sources=False,
+        preload_shortlist=True,
+        shortlist_executor=shortlist_executor_good,
+    )
+
+    # Should be skipped because has_good_shortlist is True (count >= THRESHOLD (3))
+    assert mock_extract.called is False
+
+
+def test_run_preload_pipeline_evidence_extraction_runs_on_low_quality_shortlist(
+    monkeypatch,
+):
+    import asky.api.preload as preload_mod
+    from unittest.mock import MagicMock
+
+    monkeypatch.setattr(preload_mod, "RESEARCH_EVIDENCE_EXTRACTION_ENABLED", True)
+    monkeypatch.setattr(preload_mod, "USER_MEMORY_ENABLED", False)
+    monkeypatch.setattr(preload_mod, "QUERY_EXPANSION_ENABLED", False)
+
+    # Mock extract_evidence to track calls
+    mock_extract = MagicMock(return_value=[])
+    monkeypatch.setattr(preload_mod, "extract_evidence", mock_extract)
+
+    # Mock retrieval to return some chunks so extraction isn't empty-skipped
+    monkeypatch.setattr(
+        preload_mod,
+        "get_relevant_content",
+        lambda _payload: {"url1": {"chunks": [{"text": "chunk1"}]}},
+    )
+
+    def shortlist_executor_poor(**_kwargs):
+        return {
+            "enabled": True,
+            "candidates": [{"url": "1"}, {"url": "2"}],  # 2 sources -> poor
+            "fetched_count": 2,
+            "stats": {"metrics": {"fetch_calls": 2}},
+            "seed_url_documents": [],
+        }
+
+    run_preload_pipeline(
+        query_text="Hi",
+        research_mode=True,
+        model_config={},
+        lean=False,
+        preload_local_sources=False,
+        preload_shortlist=True,
+        shortlist_executor=shortlist_executor_poor,
+    )
+
+    # Should run because has_good_shortlist is False (count < THRESHOLD (3))
+    assert mock_extract.called is True

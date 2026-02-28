@@ -206,19 +206,19 @@ For test organization, see `tests/AGENTS.md`.
 
 ## Package Documentation
 
-| Package     | Documentation                                     | Key Components                                                                      |
-| ----------- | ------------------------------------------------- | ----------------------------------------------------------------------------------- |
-| `cli/`      | [cli/AGENTS.md](src/asky/cli/AGENTS.md)           | Entry point, chat flow, commands                                                    |
-| `daemon/`   | [daemon/AGENTS.md](src/asky/daemon/AGENTS.md)     | Transport-agnostic `DaemonService`, menubar launcher, `TrayApp` abstraction          |
-| `api/`      | [api/AGENTS.md](src/asky/api/AGENTS.md)           | `AskyClient`, turn orchestration services                                           |
-| `core/`     | [core/AGENTS.md](src/asky/core/AGENTS.md)         | ConversationEngine, ToolRegistry, API client                                        |
-| `storage/`  | [storage/AGENTS.md](src/asky/storage/AGENTS.md)   | SQLite repository, data model                                                       |
-| `research/` | [research/AGENTS.md](src/asky/research/AGENTS.md) | Cache, vector store, embeddings                                                     |
-| `memory/`   | [memory/AGENTS.md](src/asky/memory/AGENTS.md)     | Cross-session user memory store, recall, tools                                      |
-| `plugins/`  | [plugins/AGENTS.md](src/asky/plugins/AGENTS.md)   | Plugin manager/runtime, hook registry, persona plugins, GUI server plugin           |
-| `evals/`    | (manual harness)                                  | Dual-mode research integration evaluation runner                                    |
-| `config/`   | [config/AGENTS.md](src/asky/config/AGENTS.md)     | TOML loading, constants                                                             |
-| `tests/`    | [tests/AGENTS.md](tests/AGENTS.md)                | Test organization, patterns                                                         |
+| Package     | Documentation                                     | Key Components                                                              |
+| ----------- | ------------------------------------------------- | --------------------------------------------------------------------------- |
+| `cli/`      | [cli/AGENTS.md](src/asky/cli/AGENTS.md)           | Entry point, chat flow, commands                                            |
+| `daemon/`   | [daemon/AGENTS.md](src/asky/daemon/AGENTS.md)     | Transport-agnostic `DaemonService`, menubar launcher, `TrayApp` abstraction |
+| `api/`      | [api/AGENTS.md](src/asky/api/AGENTS.md)           | `AskyClient`, turn orchestration services                                   |
+| `core/`     | [core/AGENTS.md](src/asky/core/AGENTS.md)         | ConversationEngine, ToolRegistry, API client                                |
+| `storage/`  | [storage/AGENTS.md](src/asky/storage/AGENTS.md)   | SQLite repository, data model                                               |
+| `research/` | [research/AGENTS.md](src/asky/research/AGENTS.md) | Cache, vector store, embeddings                                             |
+| `memory/`   | [memory/AGENTS.md](src/asky/memory/AGENTS.md)     | Cross-session user memory store, recall, tools                              |
+| `plugins/`  | [plugins/AGENTS.md](src/asky/plugins/AGENTS.md)   | Plugin manager/runtime, hook registry, persona plugins, GUI server plugin   |
+| `evals/`    | (manual harness)                                  | Dual-mode research integration evaluation runner                            |
+| `config/`   | [config/AGENTS.md](src/asky/config/AGENTS.md)     | TOML loading, constants                                                     |
+| `tests/`    | [tests/AGENTS.md](tests/AGENTS.md)                | Test organization, patterns                                                 |
 
 ---
 
@@ -641,15 +641,15 @@ Imports deferred until needed, with two distinct patterns:
 
 ## Supporting Modules
 
-| Module             | Purpose                                                   |
-| ------------------ | --------------------------------------------------------- |
-| `summarization.py` | Bounded hierarchical summarization (map + single reduce)  |
-| `retrieval.py`     | Shared URL retrieval via Trafilatura                      |
-| `html.py`          | HTML stripping, link extraction                           |
-| `push_data.py`     | HTTP data push to endpoints                               |
-| `email_sender.py`  | SMTP email sending                                        |
-| `rendering.py`     | Browser markdown rendering + Sidebar Index App Generation |
-| `banner.py`        | CLI banner display                                        |
+| Module             | Purpose                                                                              |
+| ------------------ | ------------------------------------------------------------------------------------ |
+| `summarization.py` | Bounded hierarchical summarization (map + single reduce)                             |
+| `retrieval.py`     | Shared URL retrieval via Trafilatura                                                 |
+| `html.py`          | HTML stripping, link extraction                                                      |
+| `push_data.py`     | HTTP data push to endpoints                                                          |
+| `email_sender.py`  | SMTP email sending                                                                   |
+| `rendering.py`     | Browser markdown rendering + Sidebar Index App Generation                            |
+| `banner.py`        | CLI banner display                                                                   |
 | `logger.py`        | Rotating file-based logging with startup timestamp rollover (`asky.log`, `xmpp.log`) |
 
 ---
@@ -733,7 +733,7 @@ A simplified "retrieval-only" system prompt guidance is injected in these cases 
   - No enabled plugins means behavior stays identical to pre-plugin baseline.
   - Plugin load/activation failures never crash normal chat/daemon execution.
   - Hook order is deterministic: `(priority, plugin_name, registration_index)`.
-  - Deferred hooks (`CONFIG_LOADED`, `POST_TURN_RENDER`, `SESSION_END`) remain unimplemented in v1.
+  - Deferred hooks (`CONFIG_LOADED`, `SESSION_END`) remain unimplemented in v1.
 
 ### Decision 21: Plugin-Contributed Tray Entries + Dependency Visibility
 

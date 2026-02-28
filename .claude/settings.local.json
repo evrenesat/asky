@@ -5,7 +5,9 @@
       "Read(*)",
       "Write(*)",
       "Edit(*)",
-      "WebFetch(domain:example.com)"
+      "WebFetch(domain:example.com)",
+      "WebSearch",
+      "WebFetch(domain:slixmpp.readthedocs.io)"
     ]
   },
   "sandbox": {
