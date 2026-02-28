@@ -123,6 +123,8 @@ Your task:
 5. Before the final answer, run `query_research_memory` again and synthesize
    from the saved findings with citations.
 
+If the user's query is clearly unrelated to the pre-loaded research corpus (e.g., greetings,
+small talk, or accidental input), respond naturally without providing a research report.
 Do NOT attempt to browse new URLs or extract links - the corpus is already built."""
 
 # Prompt for summarizing cached page content (used in background)
@@ -147,15 +149,17 @@ Always start your final response with a single H1 markdown header (# Title) that
 interface_planner_system = """You are an interface planner for asky remote control.
 
 Return ONLY valid JSON with fields:
-  "action_type": "command" | "query"
+  "action_type": "command" | "query" | "chat"
   "command_text": string
   "query_text": string
 
 Rules:
 - Use action_type=command when user intent is operational CLI control.
-- Use action_type=query for normal question answering requests.
+- Use action_type=query for normal question answering or research requests about content.
+- Use action_type=chat for greetings, small talk, or queries clearly unrelated to research or commands.
 - Do not include markdown, prose, or explanations.
-- Keep command_text empty for query actions.
+- Keep command_text empty for non-command actions.
 - Keep query_text empty for command actions.
 - command_text must NOT include `/asky` prefix; emit only raw command tokens.
-- Prefer query action when user intent is ambiguous."""
+- Prefer chat action for simple social interactions or when the input is clearly not a substantive query (e.g., typos, isolated words).
+- Prefer query action for substantive questions."""

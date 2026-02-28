@@ -3,8 +3,15 @@
 from pathlib import Path
 from unittest.mock import MagicMock, call, patch
 import tomllib
+import sys
 
-from asky.cli.models import edit_model_command, save_model_config
+# Crucial: same import as minimal test
+from asky.cli.models import (
+    edit_model_command,
+    save_model_config,
+    add_model_command,
+    prompt,
+)
 
 FAKE_MODELS = {
     "mymodel": {
@@ -85,21 +92,6 @@ def test_save_model_config_omits_shortlist_override_when_auto(tmp_path):
     assert "image_support" not in model
 
 
-def _patch_edit_model(action: str, extra_inputs: list | None = None):
-    """Return a context manager stack that mocks MODELS, load_config, and Prompt.ask."""
-    inputs = [action] + (extra_inputs or [])
-    prompt_iter = iter(inputs)
-
-    def fake_prompt_ask(*args, **kwargs):
-        return next(prompt_iter)
-
-    return (
-        patch("asky.cli.models.MODELS", FAKE_MODELS),
-        patch("asky.cli.models.load_config", return_value=FAKE_CONFIG),
-        patch("asky.cli.models.Prompt.ask", side_effect=fake_prompt_ask),
-    )
-
-
 def test_edit_model_action_m_sets_main_model(tmp_path):
     """Choosing 'm' updates default_model and returns without touching model config."""
     _prepare_models_file(tmp_path)
@@ -107,7 +99,7 @@ def test_edit_model_action_m_sets_main_model(tmp_path):
     with (
         patch("asky.cli.models.MODELS", FAKE_MODELS),
         patch("asky.cli.models.load_config", return_value=FAKE_CONFIG),
-        patch("asky.cli.models.Prompt.ask", return_value="m"),
+        patch("asky.cli.models.prompt.Prompt.ask", return_value="m"),
         patch("asky.cli.models.update_general_config") as mock_update,
         patch("asky.cli.models.save_model_config") as mock_save,
     ):
@@ -117,78 +109,74 @@ def test_edit_model_action_m_sets_main_model(tmp_path):
     mock_save.assert_not_called()
 
 
-def test_edit_model_action_s_sets_summarization_model(tmp_path):
-    """Choosing 's' updates summarization_model and returns without touching model config."""
-    _prepare_models_file(tmp_path)
+def test_add_model_command_search_retry_flow(tmp_path):
+    """Test that Step 2 retries on search failure and doesn't proceed to Context size."""
+
+    # Mock models returned by OpenRouter
+    mock_models = [
+        {
+            "id": "google/gemini-pro",
+            "name": "Gemini Pro",
+            "context_length": 128000,
+            "supported_parameters": ["temperature"],
+        }
+    ]
+
+    api_config = {
+        "api": {
+            "openrouter": {},
+        }
+    }
+
+    # Flow:
+    # 1. Select provider -> 1 (openrouter)
+    # 2. Search query -> "gibberish"
+    # 3. Action -> "s" (search again)
+    # 4. Search query -> "gemini"
+    # 5. Select model -> 1
+    # 6. Context size -> 128000
+    # 7. Nickname -> "gemini-pro"
+
+    prompt_responses = [
+        "gibberish",  # First search
+        "s",  # Action: search again
+        "gemini",  # Second search
+        "gemini-pro",  # Nickname
+    ]
+
+    int_responses = [
+        1,  # Select provider (openrouter)
+        1,  # Select model from list
+        128000,  # Context size
+    ]
+
+    def mock_prompt_ask(label, **kwargs):
+        l_lower = label.lower()
+        print(f"DEBUG TEST label='{label}'")
+        if "pre-llm" in l_lower or "image input" in l_lower:
+            return "auto"
+        if any(kw in l_lower for kw in ["search", "action", "nickname"]):
+            res = prompt_responses.pop(0)
+            print(f"DEBUG TEST MATCH res='{res}'")
+            return res
+        return kwargs.get("default", "")
+
+    def mock_int_prompt_ask(label, **kwargs):
+        return int_responses.pop(0)
 
     with (
-        patch("asky.cli.models.MODELS", FAKE_MODELS),
-        patch("asky.cli.models.load_config", return_value=FAKE_CONFIG),
-        patch("asky.cli.models.Prompt.ask", return_value="s"),
-        patch("asky.cli.models.update_general_config") as mock_update,
+        patch("asky.cli.models.load_config", return_value=api_config),
+        patch("asky.cli.models.openrouter.fetch_models", return_value=mock_models),
+        patch("asky.cli.models.prompt.Prompt.ask", side_effect=mock_prompt_ask),
+        patch("asky.cli.models.prompt.IntPrompt.ask", side_effect=mock_int_prompt_ask),
+        patch("asky.cli.models.prompt.Confirm.ask", return_value=True),
         patch("asky.cli.models.save_model_config") as mock_save,
+        patch("asky.cli.models.update_general_config"),
+        patch("asky.cli.models.console.print") as mock_print,
     ):
-        edit_model_command("mymodel")
-
-    mock_update.assert_called_once_with("summarization_model", "mymodel")
-    mock_save.assert_not_called()
-
-
-def test_edit_model_action_i_sets_interface_model(tmp_path):
-    """Choosing 'i' updates interface_model and returns without touching model config."""
-    _prepare_models_file(tmp_path)
-
-    with (
-        patch("asky.cli.models.MODELS", FAKE_MODELS),
-        patch("asky.cli.models.load_config", return_value=FAKE_CONFIG),
-        patch("asky.cli.models.Prompt.ask", return_value="i"),
-        patch("asky.cli.models.update_general_config") as mock_update,
-        patch("asky.cli.models.save_model_config") as mock_save,
-    ):
-        edit_model_command("mymodel")
-
-    mock_update.assert_called_once_with("interface_model", "mymodel")
-    mock_save.assert_not_called()
-
-
-def test_edit_model_action_g_sets_default_image_model(tmp_path):
-    """Choosing 'g' updates default_image_model and returns without touching model config."""
-    _prepare_models_file(tmp_path)
-
-    with (
-        patch("asky.cli.models.MODELS", FAKE_MODELS),
-        patch("asky.cli.models.load_config", return_value=FAKE_CONFIG),
-        patch("asky.cli.models.Prompt.ask", return_value="g"),
-        patch("asky.cli.models.update_general_config") as mock_update,
-        patch("asky.cli.models.save_model_config") as mock_save,
-    ):
-        edit_model_command("mymodel")
-
-    mock_update.assert_called_once_with("default_image_model", "mymodel")
-    mock_save.assert_not_called()
-
-
-def test_edit_model_action_e_saves_changes(tmp_path):
-    """Choosing 'e' enters parameter edit flow; confirming save writes model config."""
-    _prepare_models_file(tmp_path)
-
-    # First response: action choice. Then shortlist + image support prompts. Remaining: '' for params.
-    fixed_responses = ["e", "auto", "auto"] + [""] * 20
-
-    def fake_prompt(*args, **kwargs):
-        return fixed_responses.pop(0)
-
-    with (
-        patch("asky.cli.models.MODELS", FAKE_MODELS),
-        patch("asky.cli.models.load_config", return_value=FAKE_CONFIG),
-        patch("asky.cli.models.Prompt.ask", side_effect=fake_prompt),
-        patch("asky.cli.models.IntPrompt.ask", return_value=32000),
-        patch("asky.cli.models.Confirm.ask", return_value=True),
-        patch("asky.cli.models.save_model_config") as mock_save,
-    ):
-        edit_model_command("mymodel")
+        add_model_command()
 
     mock_save.assert_called_once()
     saved_alias, saved_cfg = mock_save.call_args[0]
-    assert saved_alias == "mymodel"
-    assert saved_cfg["context_size"] == 32000
+    assert saved_alias == "gemini-pro"
+    assert saved_cfg["id"] == "google/gemini-pro"

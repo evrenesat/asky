@@ -59,7 +59,11 @@ def setup_logging(
 
     # Ensure directory exists
     log_path.parent.mkdir(parents=True, exist_ok=True)
-    _archive_existing_log_file(log_path)
+
+    from asky.config import LOG_LEVEL
+
+    if LOG_LEVEL.upper() == "DEBUG":
+        _archive_existing_log_file(log_path)
 
     # Configure root logger
     logger = logging.getLogger()
@@ -124,7 +128,11 @@ def setup_xmpp_logging(level_name: str = "DEBUG") -> None:
     level = getattr(logging, level_name.upper(), logging.DEBUG)
     log_path = Path(XMPP_LOG_FILE).expanduser()
     log_path.parent.mkdir(parents=True, exist_ok=True)
-    _archive_existing_log_file(log_path)
+
+    from asky.config import LOG_LEVEL
+
+    if LOG_LEVEL.upper() == "DEBUG":
+        _archive_existing_log_file(log_path)
 
     formatter = logging.Formatter(
         "%(asctime)s - %(name)s - %(levelname)s - %(message)s"

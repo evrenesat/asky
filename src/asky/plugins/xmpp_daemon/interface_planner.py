@@ -12,7 +12,8 @@ from asky.core.api_client import get_llm_msg
 
 ACTION_COMMAND = "command"
 ACTION_QUERY = "query"
-VALID_ACTIONS = {ACTION_COMMAND, ACTION_QUERY}
+ACTION_CHAT = "chat"
+VALID_ACTIONS = {ACTION_COMMAND, ACTION_QUERY, ACTION_CHAT}
 JSON_BLOCK_PATTERN = re.compile(r"\{.*\}", re.DOTALL)
 
 
@@ -94,6 +95,8 @@ class InterfacePlanner:
                 reason="planner_empty_command",
             )
         if action_type == ACTION_QUERY and not query_text:
+            query_text = normalized
+        if action_type == ACTION_CHAT and not query_text:
             query_text = normalized
         return InterfaceAction(
             action_type=action_type,

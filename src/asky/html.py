@@ -7,7 +7,12 @@ from urllib.parse import urljoin
 
 _HEADING_TAGS = frozenset({"h1", "h2", "h3", "h4", "h5", "h6"})
 _ZONE_TAGS = frozenset({"nav", "footer", "header", "aside"})
-_ZONE_LABELS = {"nav": "Navigation", "footer": "Footer", "header": "Header", "aside": "Sidebar"}
+_ZONE_LABELS = {
+    "nav": "Navigation",
+    "footer": "Footer",
+    "header": "Header",
+    "aside": "Sidebar",
+}
 
 
 class HTMLStripper(HTMLParser):
@@ -35,7 +40,12 @@ class HTMLStripper(HTMLParser):
         self._current_heading: str = ""
         self._in_heading: bool = False
         self._heading_buffer: List[str] = []
-        self._zone_depths: Dict[str, int] = {"nav": 0, "footer": 0, "header": 0, "aside": 0}
+        self._zone_depths: Dict[str, int] = {
+            "nav": 0,
+            "footer": 0,
+            "header": 0,
+            "aside": 0,
+        }
         self._links_sectioned: List[Dict[str, str]] = []
 
     def handle_starttag(self, tag: str, attrs: List[Any]) -> None:
@@ -94,11 +104,13 @@ class HTMLStripper(HTMLParser):
                         href = urljoin(self.base_url, href)
                     self.links.append({"text": text, "href": href})
                     if not self._in_heading:
-                        self._links_sectioned.append({
-                            "text": text,
-                            "href": href,
-                            "section": self._current_section_label(),
-                        })
+                        self._links_sectioned.append(
+                            {
+                                "text": text,
+                                "href": href,
+                                "section": self._current_section_label(),
+                            }
+                        )
 
     def _current_section_label(self) -> str:
         """Return the current structural zone name or heading text."""
@@ -142,7 +154,9 @@ class HTMLStripper(HTMLParser):
                 href = href.split("#")[0]
             if href and href not in seen_urls:
                 seen_urls.add(href)
-                unique_links.append({"text": link["text"], "href": href, "section": link["section"]})
+                unique_links.append(
+                    {"text": link["text"], "href": href, "section": link["section"]}
+                )
         return unique_links
 
 
@@ -153,7 +167,9 @@ def strip_tags(html: str) -> str:
     return s.get_data()
 
 
-_ANALYSIS_PREFIX = re.compile(r"^analysis(?:The\s|\s).+?(?=\n\n|\nassistantcommentary)", re.DOTALL)
+_ANALYSIS_PREFIX = re.compile(
+    r"^analysis(?:The\s|\s).+?(?=\n\n|\nassistantcommentary)", re.DOTALL
+)
 _ACTION_PHRASE = re.compile(r"^Action:\s*.+?(?=\n\n|$)", re.DOTALL | re.MULTILINE)
 # Matches any line starting with "assistantcommentary" (with optional tool routing prefix),
 # whether followed by JSON braces or plain prose.
@@ -167,15 +183,22 @@ def strip_think_tags(text: str) -> str:
     """Remove model-specific thinking/scratchpad blocks from LLM output.
 
     Handles:
-    - <think>...</think> blocks (DeepSeek / Qwen style)
+    - <think>...</think> or <thought>...</thought> blocks (DeepSeek / Qwen / others style)
+    - [thought]...[/thought] blocks
     - analysis<text> preamble + assistantcommentary tool-replay blocks
       (Gemini inline thinking format when accessed via OpenAI-compatible API)
     """
     if not text:
         return ""
-    result = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL)
-    if "assistantcommentary" in result:
-        result = _ANALYSIS_PREFIX.sub("", result)
-        result = _ACTION_PHRASE.sub("", result)
-        result = _ASSISTANTCOMMENTARY_LINE.sub("", result)
-    return result.strip()
+    # Handle various XML-style thinking tags
+    for tag in ["think", "thought"]:
+        text = re.sub(rf"<{tag}>.*?</{tag}>", "", text, flags=re.DOTALL)
+
+    # Handle bracketed thinking tags
+    text = re.sub(r"\[thought\].*?\[/thought\]", "", text, flags=re.DOTALL)
+
+    if "assistantcommentary" in text:
+        text = _ANALYSIS_PREFIX.sub("", text)
+        text = _ACTION_PHRASE.sub("", text)
+        text = _ASSISTANTCOMMENTARY_LINE.sub("", text)
+    return text.strip()

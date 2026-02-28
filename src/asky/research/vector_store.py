@@ -107,9 +107,11 @@ class VectorStore:
 
         try:
             import chromadb
+            from chromadb.config import Settings
 
             self._chroma_client = chromadb.PersistentClient(
-                path=self.chroma_persist_directory
+                path=self.chroma_persist_directory,
+                settings=Settings(anonymized_telemetry=False),
             )
             self._chroma_ready = True
             return self._chroma_client

@@ -14,13 +14,20 @@ from asky.config import (
     XMPP_VOICE_STORAGE_DIR,
 )
 from asky.plugins.xmpp_daemon.command_executor import CommandExecutor
-from asky.plugins.xmpp_daemon.image_transcriber import ImageTranscriber, ImageTranscriptionJob
+from asky.plugins.xmpp_daemon.image_transcriber import (
+    ImageTranscriber,
+    ImageTranscriptionJob,
+)
 from asky.plugins.xmpp_daemon.interface_planner import (
     ACTION_COMMAND,
+    ACTION_CHAT,
     InterfacePlanner,
 )
 from asky.plugins.xmpp_daemon.transcript_manager import TranscriptManager
-from asky.plugins.xmpp_daemon.voice_transcriber import TranscriptionJob, VoiceTranscriber
+from asky.plugins.xmpp_daemon.voice_transcriber import (
+    TranscriptionJob,
+    VoiceTranscriber,
+)
 from asky.cli.presets import expand_preset_invocation, list_presets_text
 
 logger = logging.getLogger(__name__)
@@ -137,7 +144,7 @@ class DaemonRouter:
 
         if self.interface_planner.enabled:
             if self.command_prefix and text.startswith(self.command_prefix):
-                command_text = text[len(self.command_prefix):].strip()
+                command_text = text[len(self.command_prefix) :].strip()
                 if not command_text:
                     return "Error: command body is required after prefix."
                 return self.command_executor.execute_command_text(
@@ -157,6 +164,12 @@ class DaemonRouter:
                     jid=actor_jid,
                     command_text=action.command_text,
                     room_jid=normalized_room or None,
+                )
+            if action.action_type == ACTION_CHAT:
+                return self.command_executor.execute_chat_text(
+                    jid=actor_jid,
+                    room_jid=normalized_room or None,
+                    query_text=action.query_text,
                 )
             return self.command_executor.execute_query_text(
                 jid=actor_jid,

@@ -368,6 +368,58 @@ class CommandExecutor:
             profile=profile,
         )
 
+    def execute_chat_text(
+        self,
+        *,
+        jid: str,
+        query_text: str,
+        room_jid: Optional[str] = None,
+    ) -> str:
+        """Execute a casual chat query, bypassing any session-level research mode."""
+        session_id = self._resolve_session_id(jid=jid, room_jid=room_jid)
+        profile = self.session_profile_manager.get_effective_profile(
+            session_id=session_id
+        )
+        prepared_query, immediate_response = self._prepare_query_text(
+            raw_query=query_text,
+            verbose=False,
+            prompt_map=profile.user_prompts,
+            conversation_id=str(room_jid or jid or "").strip(),
+        )
+        if immediate_response is not None:
+            return immediate_response
+
+        # Use an explicit namespace that overrides session research mode.
+        args = argparse.Namespace(
+            model=None,
+            summarize=False,
+            verbose=False,
+            open=False,
+            continue_ids=None,
+            sticky_session=None,
+            resume_session=None,
+            lean=True,  # Prefer lean mode for casual chat to keep it fast
+            tool_off=[],
+            elephant_mode=False,
+            turns=None,
+            research=False,  # Explicitly disable research
+            research_flag_provided=True,  # Signal that this is a deliberate override
+            research_source_mode=None,
+            replace_research_corpus=False,
+            local_corpus=None,
+            shortlist="off",  # Disable shortlisting for chat
+            system_prompt=None,
+            terminal_lines=None,
+        )
+        return self._run_query_with_args(
+            jid=jid,
+            room_jid=room_jid,
+            args=args,
+            query_text=prepared_query or "",
+            session_id=session_id,
+            profile=profile,
+        )
+
     def ensure_room_binding(self, room_jid: str) -> int:
         """Ensure room has a persisted bound session and return session id."""
         return self.transcript_manager.get_or_create_room_session_id(room_jid)
@@ -534,7 +586,9 @@ class CommandExecutor:
         if getattr(args, "clean_session_research", None):
             return _capture_output(sessions.handle_clean_session_research_command, args)
         if getattr(args, "delete_memory", None) is not None:
-            return _capture_output(memory_commands.handle_delete_memory, args.delete_memory)
+            return _capture_output(
+                memory_commands.handle_delete_memory, args.delete_memory
+            )
         if getattr(args, "clear_memories", False):
             deleted_count = memory_commands.clear_memories_non_interactive()
             return f"Deleted {deleted_count} memories."
@@ -993,7 +1047,7 @@ def _parse_prefixed_index(raw: str, prefix: str) -> int:
         expected = f"#{normalized_prefix}"
         if not value.startswith(expected):
             raise ValueError("invalid prefix")
-        value = value[len(expected):]
+        value = value[len(expected) :]
     return int(value)
 
 

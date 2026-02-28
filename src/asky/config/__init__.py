@@ -35,6 +35,7 @@ def _parse_client_capability_map(raw_map: object) -> dict[str, tuple[str, ...]]:
             parsed[client_id] = tuple(normalized_capabilities)
     return parsed
 
+
 # --- Expose Constants ---
 
 # General
@@ -61,6 +62,7 @@ REQUEST_TIMEOUT = _gen.get("request_timeout", 60)
 DEFAULT_CONTEXT_SIZE = _gen.get("default_context_size", 4096)
 LOG_LEVEL = _gen.get("log_level", "INFO")
 LOG_FILE = _gen.get("log_file", "~/.config/asky/logs/asky.log")
+TRUNCATE_MESSAGES_IN_LOGS = _gen.get("truncate_messages_in_logs", False)
 LIVE_BANNER = True
 COMPACT_BANNER = _gen.get("compact_banner", False)
 ARCHIVE_DIR = Path(_gen.get("archive_dir", "~/.config/asky/archive")).expanduser()
@@ -338,8 +340,7 @@ XMPP_ENABLED = bool(_xmpp.get("enabled", False))
 XMPP_JID = str(_xmpp.get("jid", "") or "").strip()
 XMPP_PASSWORD_ENV = str(_xmpp.get("password_env", "ASKY_XMPP_PASSWORD") or "").strip()
 XMPP_PASSWORD = (
-    os.environ.get(XMPP_PASSWORD_ENV)
-    or str(_xmpp.get("password", "") or "").strip()
+    os.environ.get(XMPP_PASSWORD_ENV) or str(_xmpp.get("password", "") or "").strip()
 )
 XMPP_HOST = str(_xmpp.get("host", "") or "").strip()
 XMPP_PORT = int(_xmpp.get("port", 5222) or 5222)
@@ -368,13 +369,16 @@ XMPP_VOICE_ENABLED = bool(_xmpp.get("voice_enabled", False))
 XMPP_VOICE_WORKERS = int(_xmpp.get("voice_workers", 1) or 1)
 XMPP_VOICE_MAX_SIZE_MB = int(_xmpp.get("voice_max_size_mb", 500) or 500)
 XMPP_VOICE_MODEL = str(
-    _xmpp.get("voice_model", "mlx-community/whisper-tiny") or "mlx-community/whisper-tiny"
+    _xmpp.get("voice_model", "mlx-community/whisper-tiny")
+    or "mlx-community/whisper-tiny"
 ).strip()
 XMPP_VOICE_LANGUAGE = str(_xmpp.get("voice_language", "") or "").strip()
 XMPP_VOICE_STORAGE_DIR = Path(
     _xmpp.get("voice_storage_dir", "~/.config/asky/voice")
 ).expanduser()
-XMPP_VOICE_HF_TOKEN_ENV = str(_xmpp.get("voice_hf_token_env", "HF_TOKEN") or "HF_TOKEN").strip()
+XMPP_VOICE_HF_TOKEN_ENV = str(
+    _xmpp.get("voice_hf_token_env", "HF_TOKEN") or "HF_TOKEN"
+).strip()
 XMPP_VOICE_HF_TOKEN = (
     os.environ.get(XMPP_VOICE_HF_TOKEN_ENV)
     or str(_xmpp.get("voice_hf_token", "") or "").strip()

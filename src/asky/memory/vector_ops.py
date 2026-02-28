@@ -19,8 +19,11 @@ def _get_chroma_client(chroma_dir: Path) -> Optional[Any]:
     """Return a Chroma persistent client, or None if ChromaDB is unavailable."""
     try:
         import chromadb  # type: ignore
+        from chromadb.config import Settings
 
-        return chromadb.PersistentClient(path=str(chroma_dir))
+        return chromadb.PersistentClient(
+            path=str(chroma_dir), settings=Settings(anonymized_telemetry=False)
+        )
     except Exception as exc:
         logger.debug("ChromaDB unavailable for memory ops: %s", exc)
         return None

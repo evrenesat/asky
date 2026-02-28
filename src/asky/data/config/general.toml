@@ -3,12 +3,13 @@
 # Name of the environment variable that stores the path to the SQLite history database.
 # Default if not set: SEARXNG_HISTORY_DB_PATH
 db_path_env_var = "ASKY_DB_PATH"
-
+truncate_messages_in_logs = true
 # Logging Configuration
 # Level: DEBUG, INFO, WARNING, ERROR, CRITICAL
 log_level = "INFO"
 # Log file path. Defaults to ~/.config/asky/logs/asky.log
 log_file = "~/.config/asky/logs/asky.log"
+# Truncate large messages in debug logs (keeps 20 words on each side)
 
 # Maximum length of the query and answer summaries shown in 'asky -H'.
 query_summary_max_chars = 100

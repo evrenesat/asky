@@ -29,6 +29,41 @@ def _get_response_log_data(response: requests.Response) -> Dict[str, Any]:
     return log_entry
 
 
+def _middle_truncate_words(text: str, side_words: int = 20) -> str:
+    """Truncate text by keeping words at start and end."""
+    if not isinstance(text, str):
+        return str(text)
+    words = text.split()
+    if len(words) <= side_words * 2:
+        return text
+    return (
+        " ".join(words[:side_words])
+        + " ... [TRUNCATED] ... "
+        + " ".join(words[-side_words:])
+    )
+
+
+def format_log_content(m: Dict[str, Any], verbose: bool = False) -> str:
+    """Format message content for logging, applying truncation if enabled."""
+    from asky.config import TRUNCATE_MESSAGES_IN_LOGS
+
+    role = m.get("role")
+    content = m.get("content") or ""
+    if not isinstance(content, str):
+        content = json.dumps(content)
+
+    # Apply middle truncation if enabled for system/assistant
+    if TRUNCATE_MESSAGES_IN_LOGS and role in ("system", "assistant"):
+        return _middle_truncate_words(content)
+
+    # Fallback to existing logic for other roles or if truncation is disabled
+    if role == "system" or verbose:
+        return content
+    if len(content) > 200:
+        return content[:200] + "..."
+    return content
+
+
 def _emit_trace_event(
     trace_callback: Optional[TraceCallback],
     event: Dict[str, Any],
@@ -169,25 +204,15 @@ def get_llm_msg(
 
     current_backoff = INITIAL_BACKOFF
 
-    logger.info(f"Sending request to LLM: {model_id} as {LLM_USER_AGENT}")
-    # Log system messages separately
-    for m in messages:
-        if m.get("role") == "system":
-            logger.debug(f"System Message: {m.get('content')}")
+    from asky.config import TRUNCATE_MESSAGES_IN_LOGS
 
-    def format_log_content(m: Dict[str, Any]) -> str:
-        content = m.get("content") or ""
-        if not isinstance(content, str):
-            content = json.dumps(content)
-        if m.get("role") == "system" or verbose:
-            return content
-        if len(content) > 200:
-            return content[:200] + "..."
-        return content
+    logger.info(f"Sending request to LLM: {model_id} as {LLM_USER_AGENT}")
 
     log_payload = {
         **payload,
-        "messages": [{**m, "content": format_log_content(m)} for m in messages],
+        "messages": [
+            {**m, "content": format_log_content(m, verbose)} for m in messages
+        ],
     }
     logger.debug(f"Payload: {json.dumps(log_payload)}")
 
@@ -224,7 +249,14 @@ def get_llm_msg(
             prompt_tokens = usage.get("prompt_tokens", tokens_sent)
             completion_tokens = usage.get("completion_tokens", 0)
             response_message = resp_json["choices"][0]["message"]
-            logger.debug(f"Response message: {response_message}")
+
+            log_resp = dict(response_message)
+            if TRUNCATE_MESSAGES_IN_LOGS:
+                log_resp["content"] = _middle_truncate_words(
+                    log_resp.get("content", "")
+                )
+            logger.debug(f"Response message: {log_resp}")
+
             if "completion_tokens" not in usage:
                 completion_tokens = len(json.dumps(response_message)) // 4
 

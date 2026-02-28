@@ -56,6 +56,7 @@ def test_setup_logging_archives_existing_file_and_keeps_canonical_name(
 ):
     monkeypatch.setenv("HOME", str(tmp_path))
     monkeypatch.setattr(logger_module, "_ROLLED_LOG_PATHS", set())
+    monkeypatch.setattr("asky.config.LOG_LEVEL", "DEBUG")
     expected_log_path = tmp_path / ".config" / "asky" / "logs" / "asky.log"
     expected_log_path.parent.mkdir(parents=True, exist_ok=True)
     expected_log_path.write_text("old asky log\n", encoding="utf-8")
@@ -139,6 +140,7 @@ def test_setup_xmpp_logging_archives_existing_file_and_uses_xmpp_log(
     log_path.write_text("old xmpp log\n", encoding="utf-8")
     monkeypatch.setattr(logger_module, "XMPP_LOG_FILE", str(log_path))
     monkeypatch.setattr(logger_module, "_ROLLED_LOG_PATHS", set())
+    monkeypatch.setattr("asky.config.LOG_LEVEL", "DEBUG")
 
     daemon_logger = logging.getLogger("asky.daemon")
     plugin_logger = logging.getLogger("asky.plugins.xmpp_daemon.xmpp_client")
@@ -205,3 +207,72 @@ def test_setup_xmpp_logging_disables_propagation(monkeypatch, tmp_path):
                 logger.addHandler(handler)
             logger.setLevel(level)
             logger.propagate = propagate
+
+
+def test_setup_logging_no_archive_on_info(monkeypatch, tmp_path):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setattr(logger_module, "_ROLLED_LOG_PATHS", set())
+    monkeypatch.setattr("asky.config.LOG_LEVEL", "INFO")
+    expected_log_path = tmp_path / ".config" / "asky" / "logs" / "asky.log"
+    expected_log_path.parent.mkdir(parents=True, exist_ok=True)
+    expected_log_path.write_text("existing log content\n", encoding="utf-8")
+
+    root_logger = logging.getLogger()
+    original_handlers = list(root_logger.handlers)
+    original_level = root_logger.level
+
+    try:
+        setup_logging("INFO", "~/.config/asky/asky.log")
+        logging.getLogger("asky.tests.logger").info("appended line")
+        for handler in logging.getLogger().handlers:
+            handler.flush()
+
+        # No archived files should exist
+        archived = list(expected_log_path.parent.glob("*_asky.log"))
+        assert len(archived) == 0
+        # Content should be appended
+        content = expected_log_path.read_text(encoding="utf-8")
+        assert "existing log content" in content
+        assert "appended line" in content
+    finally:
+        _restore_root_logger(original_handlers, original_level)
+
+
+def test_setup_xmpp_logging_no_archive_on_info(monkeypatch, tmp_path):
+    log_path = tmp_path / "xmpp.log"
+    log_path.write_text("existing xmpp content\n", encoding="utf-8")
+    monkeypatch.setattr(logger_module, "XMPP_LOG_FILE", str(log_path))
+    monkeypatch.setattr(logger_module, "_ROLLED_LOG_PATHS", set())
+    monkeypatch.setattr("asky.config.LOG_LEVEL", "INFO")
+
+    daemon_logger = logging.getLogger("asky.daemon")
+    plugin_logger = logging.getLogger("asky.plugins.xmpp_daemon.xmpp_client")
+    slixmpp_logger = logging.getLogger("slixmpp")
+    tracked_loggers = (daemon_logger, plugin_logger, slixmpp_logger)
+    original_state = {
+        logger: (list(logger.handlers), logger.level) for logger in tracked_loggers
+    }
+
+    try:
+        logger_module.setup_xmpp_logging("DEBUG")
+        plugin_logger.debug("appended xmpp line")
+        for logger in tracked_loggers:
+            for handler in logger.handlers:
+                handler.flush()
+
+        # No archived files should exist
+        archived = list(log_path.parent.glob("*_xmpp.log"))
+        assert len(archived) == 0
+        # Content should be appended
+        content = log_path.read_text(encoding="utf-8")
+        assert "existing xmpp content" in content
+        assert "appended xmpp line" in content
+    finally:
+        for logger, (handlers, level) in original_state.items():
+            for handler in list(logger.handlers):
+                logger.removeHandler(handler)
+                if handler not in handlers:
+                    handler.close()
+            for handler in handlers:
+                logger.addHandler(handler)
+            logger.setLevel(level)

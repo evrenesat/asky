@@ -16,3 +16,5 @@ review_context.md
 .hypothesis
 .claude/settings.local.json
 .claude/
+.agents
+.agents/workflows

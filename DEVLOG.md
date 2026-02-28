@@ -1,5 +1,89 @@
 # DEVLOG
 
+## 2026-02-28 - Added Auto-reload Dev Script and Development Guide
+
+**Problem:** Manually restarting `asky --daemon` after code or configuration changes during development is tedious.
+
+**Changes:**
+
+- Created `scripts/watch_daemon.sh`:
+  - Uses `entr` to monitor repository files and `~/.config/asky/*.toml`.
+  - Automatically restarts the daemon on any change.
+- Created `docs/development.md`:
+  - Documentation for using the watch script.
+  - General development tips (running tests, requirements).
+- Updated `README.md`:
+  - Linked the new Development Guide in the Documentation Index.
+
+**Why:** To improve the developer experience and provide an easy way to verify real-time daemon behavior changes.
+
+**Verification:**
+
+- Verified `scripts/watch_daemon.sh` script permissions and logic.
+- Linked documentation is accessible from README.
+- Full suite passed: `1251 passed`.
+
+## 2026-02-28 - Disabled ChromaDB Anonymized Telemetry
+
+**Problem:** ChromaDB sends anonymized telemetry by default, which may not be desired for privacy-conscious users.
+
+**Changes:**
+
+- Modified `src/asky/research/vector_store.py`:
+  - Updated `_get_chroma_client` to pass `settings=Settings(anonymized_telemetry=False)` to `chromadb.PersistentClient`.
+- Modified `src/asky/memory/vector_ops.py`:
+  - Updated `_get_chroma_client` to pass `settings=Settings(anonymized_telemetry=False)` to `chromadb.PersistentClient`.
+
+**Why:** To ensure user privacy by explicitly disabling third-party telemetry within the vector store components.
+
+**Verification:**
+
+- `uv run pytest tests/test_research_vector_store.py tests/test_user_memory.py` -> 67 passed.
+- Full suite passed: `1250 passed in 10.38s`.
+
+## 2026-02-28 - Conditional Startup Log Archiving
+
+**Problem:** Log files (`asky.log`, `xmpp.log`) were unconditionally renamed to timestamped archives at every startup, which was noisy for non-debug runs.
+
+**Changes:**
+
+- Modified `src/asky/logger.py`:
+  - Updated `setup_logging()` and `setup_xmpp_logging()` to import `LOG_LEVEL` from `asky.config` inside the functions.
+  - Added conditional logic to only call `_archive_existing_log_file()` when `LOG_LEVEL.upper() == "DEBUG"`.
+- Updated `tests/test_logger.py`:
+  - Updated existing archival tests to mock `LOG_LEVEL` as `"DEBUG"`.
+  - Added `test_setup_logging_no_archive_on_info()` and `test_setup_xmpp_logging_no_archive_on_info()` to verify non-archival behavior in `"INFO"` mode.
+
+**Why:** To provide a fresh log file for every session when debugging, while maintaining a more traditional continuous log for standard production-like runs.
+
+**Verification:**
+
+- Full suite for logger passed: `pytest -v tests/test_logger.py` (8 passed).
+- Confirmed that behavior is configuration-driven and consistent across CLI and daemon entry points.
+
+## 2026-02-28 - Configurable Log Message Truncation
+
+**Problem:** Large system messages and model responses were cluttering debug logs, making it hard to follow the logic flow. Previous truncation was a hardcoded 200-char prefix only for non-system messages.
+
+**Changes:**
+
+- Modified `src/asky/data/config/general.toml`:
+  - Added `truncate_messages_in_logs = false` setting.
+- Modified `src/asky/config/__init__.py`:
+  - Exported `TRUNCATE_MESSAGES_IN_LOGS`.
+- Modified `src/asky/core/api_client.py`:
+  - Extracted `format_log_content()` to module level for testability.
+  - Implemented `_middle_truncate_words()` to keep 20 words on each side of the message.
+  - Updated debug log emission for both request payloads and response messages to honor the new truncation setting for `system` and `assistant` roles.
+- Added `tests/test_log_truncation.py` with 3 tests covering the truncation logic and config integration.
+
+**Why:** To allow users to see the "head and tail" of large prompts/responses in logs without overwhelming the log file, while keeping the full text for small messages.
+
+**Verification:**
+
+- `pytest -v tests/test_log_truncation.py` -> 3 passed.
+- Full logger suite passed.
+
 ## 2026-02-28 - Fixed XMPP Log Leakage into ASky.log
 
 **Problem:** XMPP logs were appearing in both `XMPP.log` and `ASky.log` because the XMPP namespaces were propagating to the root logger.
@@ -3918,3 +4002,21 @@ Fixed "Not Authorized" error that authorized users encountered when invoking XEP
 **Follow-up:**
 
 - Optional enhancement (task 3.2) not implemented: session-based JID storage for multi-step commands. Current fix is sufficient; implement only if multi-step failures are observed in production.
+
+## 2026-02-28
+
+### Fixed Model Selection Bug in CLI
+
+- Problem: In `asky --config model add`, if an OpenRouter model search returned no results, the CLI incorrectly used the search query as the model ID and proceeded to the "Context size" step.
+- Fix: Wrapped the model selection step in a retry loop. If no results are found, the user is now prompted to Search again (`s`), Enter custom ID (`c`), or Cancel (`x`).
+- Tests: Added an integration test `test_add_model_command_search_retry_flow` in `tests/test_models_cli.py` that mocks the OpenRouter search failure and verify the retry behavior.
+
+### Fixed Research Mode "Parrot" Behavior and Interface Planning
+
+- **Problem:** In research mode with an ingested corpus, the model would often "parrot" book summaries even for unrelated inputs (greetings, small talk) due to strict system guidance.
+- **Fix:**
+  - Upgraded `InterfacePlanner` (XMPP) to support a new `chat` action type for non-research/non-command inputs.
+  - Added `execute_chat_text` to `CommandExecutor` which overrides session-level research mode for specific "chat" turns (using `lean=True` and `research=False`).
+  - Relaxed `research_retrieval_only_guidance` in `prompts.toml` to allow natural responses for unrelated queries.
+  - Improved `strip_think_tags` in `html.py` to handle more variants like `<thought>` and `[thought]`.
+- **Tests:** Added unit and integration tests for the planner's `chat` intent and the executor's parrot avoidance logic.

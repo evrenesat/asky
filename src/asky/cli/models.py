@@ -6,6 +6,7 @@ from typing import Optional, Dict, Any, List
 
 from rich.console import Console
 from rich.table import Table
+from rich import prompt
 from rich.prompt import Prompt, Confirm, FloatPrompt, IntPrompt
 
 import tomlkit
@@ -132,42 +133,66 @@ def add_model_command():
     context_size = 4096
     supported_params = []
 
-    if models:
-        search_query = Prompt.ask("Search for model (or enter full model ID)")
-        results = openrouter.search_models(search_query, models)
-
-        if results:
-            console.print(f"\nFound {len(results)} matches:")
-            # Limit display to 20
-            display_limit = 20
-            for i, m in enumerate(results[:display_limit], 1):
-                name = m.get("name") or m.get("id")
-                console.print(f"  {i}. {m.get('id')} - {name}")
-
-            if len(results) > display_limit:
-                console.print(f"  ... and {len(results) - display_limit} more")
-
-            choice_default = 1
-            choice = IntPrompt.ask(
-                "Select model (0 to enter custom ID)", default=choice_default
+    while True:
+        if models:
+            search_query = prompt.Prompt.ask(
+                "Search for model (or enter full model ID)"
             )
+            results = openrouter.search_models(search_query, models)
 
-            if choice > 0 and choice <= len(results):
-                selected_model_data = results[choice - 1]
-                model_id = selected_model_data.get("id")
-                context_size = selected_model_data.get("context_length", 4096)
-                supported_params = selected_model_data.get("supported_parameters", [])
+            if results:
+                console.print(f"\nFound {len(results)} matches:")
+                # Limit display to 20
+                display_limit = 20
+                for i, m in enumerate(results[:display_limit], 1):
+                    name = m.get("name") or m.get("id")
+                    console.print(f"  {i}. {m.get('id')} - {name}")
+
+                if len(results) > display_limit:
+                    console.print(f"  ... and {len(results) - display_limit} more")
+
+                choice_default = 1
+                choice = prompt.IntPrompt.ask(
+                    "Select model (0 to enter custom ID)", default=choice_default
+                )
+
+                if choice > 0 and choice <= len(results):
+                    selected_model_data = results[choice - 1]
+                    model_id = selected_model_data.get("id")
+                    context_size = selected_model_data.get("context_length", 4096)
+                    supported_params = selected_model_data.get(
+                        "supported_parameters", []
+                    )
+                    break
+                elif choice == 0:
+                    model_id = search_query
+                    supported_params = list(openrouter.KNOWN_PARAMETERS.keys())
+                    break
             else:
-                model_id = search_query if choice == 0 else ""
+                console.print(
+                    f"[yellow]No matches found for '{search_query}'.[/yellow]"
+                )
+                action = prompt.Prompt.ask(
+                    "Action",
+                    choices=["s", "c", "x"],
+                    default="s",
+                )
+                # s: search again (continue loop)
+                # c: enter custom ID (break loop after prompt)
+                # x: cancel (return)
+                if action == "c":
+                    model_id = prompt.Prompt.ask("Enter custom model ID")
+                    supported_params = list(openrouter.KNOWN_PARAMETERS.keys())
+                    break
+                elif action == "x":
+                    console.print("[yellow]Cancelled[/yellow]")
+                    return
+                # if action == "s", loop continues
         else:
-            console.print("[yellow]No matches found.[/yellow]")
-            model_id = search_query
-            # If explicit ID entered, assume generic defaults or ask
+            # Fallback for empty models or other APIs
+            model_id = Prompt.ask("Enter model ID")
             supported_params = list(openrouter.KNOWN_PARAMETERS.keys())
-
-    if not model_id:
-        model_id = Prompt.ask("Enter model ID")
-        supported_params = list(openrouter.KNOWN_PARAMETERS.keys())
+            break
 
     context_size = IntPrompt.ask("Context size", default=int(context_size or 4096))
 
@@ -179,7 +204,11 @@ def add_model_command():
     shortlist_enabled = _shortlist_value_from_mode(shortlist_mode)
     image_support_mode = Prompt.ask(
         "Image input support for this model",
-        choices=[IMAGE_SUPPORT_MODE_AUTO, IMAGE_SUPPORT_MODE_ON, IMAGE_SUPPORT_MODE_OFF],
+        choices=[
+            IMAGE_SUPPORT_MODE_AUTO,
+            IMAGE_SUPPORT_MODE_ON,
+            IMAGE_SUPPORT_MODE_OFF,
+        ],
         default=IMAGE_SUPPORT_MODE_AUTO,
     )
     image_support = _image_support_value_from_mode(image_support_mode)
@@ -413,7 +442,11 @@ def edit_model_command(model_alias: Optional[str] = None):
     shortlist_enabled = _shortlist_value_from_mode(shortlist_mode)
     image_support_mode = Prompt.ask(
         "Image input support for this model",
-        choices=[IMAGE_SUPPORT_MODE_AUTO, IMAGE_SUPPORT_MODE_ON, IMAGE_SUPPORT_MODE_OFF],
+        choices=[
+            IMAGE_SUPPORT_MODE_AUTO,
+            IMAGE_SUPPORT_MODE_ON,
+            IMAGE_SUPPORT_MODE_OFF,
+        ],
         default=_image_support_mode_from_value(current_config.get("image_support")),
     )
     image_support = _image_support_value_from_mode(image_support_mode)
