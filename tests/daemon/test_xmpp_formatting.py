@@ -279,6 +279,41 @@ def test_setext_header_xhtml_conversion_returns_none_without_headers():
     assert xhtml_body is None
 
 
+def test_xhtml_conversion_includes_inline_markdown_tags():
+    renderer = ASCIITableRenderer()
+    formatter = MessageFormatter(renderer)
+    model = MessageModel(plain_body="# Header\n**Bold** and *italic* and `code`")
+
+    xhtml_body = formatter.format_xhtml_body(model)
+
+    assert xhtml_body is not None
+    assert "<strong>Header</strong>" in xhtml_body
+    assert "<strong>Bold</strong>" in xhtml_body
+    assert "<em>italic</em>" in xhtml_body
+    assert "<code>code</code>" in xhtml_body
+
+
+def test_plain_body_for_xhtml_fallback_strips_markdown_markers():
+    renderer = ASCIITableRenderer()
+    formatter = MessageFormatter(renderer)
+    model = MessageModel(
+        plain_body=(
+            "My Header\n"
+            "========\n"
+            "*   **Understanding Modes:** Overview\n"
+            "The core is *Schema Therapy*."
+        )
+    )
+
+    plain_body = formatter.format_plain_body_for_xhtml_fallback(model)
+
+    assert "========" not in plain_body
+    assert "**" not in plain_body
+    assert "*Schema Therapy*" not in plain_body
+    assert "- Understanding Modes: Overview" in plain_body
+    assert "The core is Schema Therapy." in plain_body
+
+
 def test_extract_markdown_tables_parses_pipe_table():
     model = extract_markdown_tables(
         "Server status:\n\n| Service | Status |\n| --- | --- |\n| XMPP | Online |\n| DB | Maintenance |\n"

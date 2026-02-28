@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import re
 from typing import Any, Dict, List, Optional
 
 from asky.config import (
@@ -16,6 +17,28 @@ from asky.research.shortlist_types import CandidateRecord, CorpusContext
 logger = logging.getLogger(__name__)
 
 KEYPHRASE_MIN_CHARS_FOR_CORPUS = 50
+
+_FILENAME_EXTENSIONS = re.compile(
+    r"\.(pdf|epub|txt|md|html|htm|json|csv)$", re.IGNORECASE
+)
+_PUNCTUATION_RUN = re.compile(r"[_\-]+")
+_PAREN_SUFFIX = re.compile(r"\s*[\(\[].{0,60}[\)\]]$")
+
+
+def _clean_document_title(title: str) -> str:
+    """Convert a raw filename-style title into a readable title string.
+
+    Strips file extensions, replaces underscores/hyphens with spaces,
+    trims trailing parenthetical suffixes (e.g., author names, site names),
+    and normalizes whitespace.
+    """
+    if not title:
+        return title
+    cleaned = _FILENAME_EXTENSIONS.sub("", title)
+    cleaned = _PUNCTUATION_RUN.sub(" ", cleaned)
+    cleaned = _PAREN_SUFFIX.sub("", cleaned)
+    cleaned = " ".join(cleaned.split())
+    return cleaned
 
 
 def extract_corpus_context(
@@ -55,7 +78,7 @@ def extract_corpus_context(
         if not isinstance(item, dict):
             continue
 
-        title = str(item.get("title", "") or "").strip()
+        title = _clean_document_title(str(item.get("title", "") or "").strip())
         target = str(item.get("target", "") or "").strip()
         handle = str(item.get("source_handle", "") or "").strip()
         cache_id = item.get("source_id")

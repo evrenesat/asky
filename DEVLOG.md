@@ -1,5 +1,49 @@
 # DEVLOG
 
+## 2026-02-28 - Corpus Title Cleanup and Gemini Thinking Leakage Fix
+
+**Changes:**
+
+- Added `_clean_document_title()` to `research/corpus_context.py`:
+  - strips file extensions (`.pdf`, `.epub`, etc.)
+  - replaces underscore/hyphen runs with spaces
+  - trims author suffixes in parentheses/brackets
+  - applied to all titles in `extract_corpus_context()`
+- Extended `strip_think_tags()` in `html.py`:
+  - replaced the brace-only `_ASSISTANTCOMMENTARY_BLOCK` regex with a simpler `_ASSISTANTCOMMENTARY_LINE` pattern that strips any line starting with `assistantcommentary`, whether followed by JSON braces or plain prose
+  - covers all Gemini inline thinking formats: `assistantcommentary{json}`, `assistantcommentary to=functions.X json{...}`, and `assistantcommentaryThe user wants...`
+- Added corresponding tests in `tests/test_corpus_context.py` and `tests/test_html.py`
+
+**Why:**
+- Raw filenames like `Breaking_Negative_Thinking_Patterns_...pdf` were appearing verbatim in search queries, producing useless results
+- Gemini's plain-text `assistantcommentary<prose>` transition phrases were not matched by the previous brace-only regex, leaking model scratchpad into XMPP replies
+
+**Verification:**
+- `uv run pytest -x -q` → 1243 passed
+
+## 2026-02-28 - XMPP XHTML Fallback Alignment for Header/Bold Rendering
+
+**Changes:**
+
+- Updated `plugins/xmpp_daemon/xmpp_formatting.py`:
+  - added inline markdown-to-XHTML conversion for `**bold**`, `*italic*`, and `` `code` `` spans inside XHTML paragraphs.
+  - added `format_plain_body_for_xhtml_fallback(...)` to normalize markdown headers/emphasis into clean plain text (removes setext underlines and inline marker characters).
+  - normalizes markdown bullet lines to `- ...` in the plain fallback path.
+- Updated `plugins/xmpp_daemon/xmpp_service.py`:
+  - when XHTML payload is present, outbound plain `<body>` now uses normalized fallback text instead of XEP-0393 marker text.
+  - keeps existing behavior for messages without XHTML payload.
+- Added tests:
+  - `tests/daemon/test_xmpp_formatting.py` now covers inline markdown XHTML conversion and plain fallback normalization.
+  - `tests/test_xmpp_plugin_progress.py` now verifies `_send_chunked(...)` sends normalized plain body together with XHTML payload.
+- Updated `ARCHITECTURE.md` note for XHTML/plain fallback semantic alignment.
+
+**Why:**
+- Some clients may ignore XHTML rendering if plain and rich payloads are not sufficiently aligned; this also avoids visible markdown marker artifacts when plain fallback is displayed.
+
+**Verification:**
+- `uv run pytest -n 0 tests/daemon/test_xmpp_formatting.py tests/test_xmpp_plugin_progress.py` -> `26 passed in 2.97s`
+- `uv run pytest` -> `1235 passed in 10.86s`
+
 ## 2026-02-27 - Corpus-Aware Shortlisting
 
 **Problem:** When a user uploads a document (e.g., PDF book) and asks a vague question like "tell me what this book is about?", the shortlisting pipeline searched the web with that literal query, producing irrelevant results. The local corpus was completely ignored by shortlisting.

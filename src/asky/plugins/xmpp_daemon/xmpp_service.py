@@ -381,8 +381,11 @@ class XMPPService:
 
     def _send_chunked(self, jid: str, text: str, *, message_type: str = "chat") -> None:
         model = extract_markdown_tables(text)
-        formatted_text = self._formatter.format_message(model)
         xhtml_body = self._formatter.format_xhtml_body(model)
+        if xhtml_body:
+            formatted_text = self._formatter.format_plain_body_for_xhtml_fallback(model)
+        else:
+            formatted_text = self._formatter.format_message(model)
         self._send_chunked_text(
             jid,
             formatted_text,

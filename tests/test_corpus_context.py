@@ -4,6 +4,7 @@ from typing import Any, Dict, List, Optional
 from unittest.mock import MagicMock
 
 from asky.research.corpus_context import (
+    _clean_document_title,
     build_corpus_candidates,
     build_corpus_enriched_queries,
     extract_corpus_context,
@@ -217,3 +218,58 @@ def test_build_corpus_candidates_empty_context():
 
     candidates = build_corpus_candidates(ctx)
     assert candidates == []
+
+
+def test_clean_document_title_strips_pdf_extension():
+    assert _clean_document_title("my_book.pdf") == "my book"
+
+
+def test_clean_document_title_replaces_underscores():
+    result = _clean_document_title(
+        "Breaking_Negative_Thinking_Patterns_A_Schema_Therapy_Self-Help.pdf"
+    )
+    assert "_" not in result
+    assert "Breaking" in result
+    assert "Negative Thinking Patterns" in result
+
+
+def test_clean_document_title_strips_author_suffix():
+    result = _clean_document_title(
+        "Breaking_Negative_Thinking_Patterns (Hannie van Genderen, Gitta Jacob).pdf"
+    )
+    assert "Hannie" not in result
+    assert "Breaking" in result
+
+
+def test_clean_document_title_real_filename():
+    raw = "Breaking_Negative_Thinking_Patterns_A_Schema_Therapy_Self-Help_and_Support_Book__Hannie_van_Genderen__Gitta_Jacob_etc.___Z-Library_.pdf"
+    result = _clean_document_title(raw)
+    assert "Breaking Negative Thinking Patterns" in result
+    assert "Z-Library" not in result
+    assert "_" not in result
+
+
+def test_clean_document_title_plain_title_unchanged():
+    title = "Breaking Negative Thinking Patterns"
+    assert _clean_document_title(title) == title
+
+
+def test_extract_corpus_context_cleans_filename_title():
+    content = "Schema therapy content for testing purposes."
+    payload = _make_local_payload(
+        ingested=[
+            {
+                "target": "local:///books/schema_therapy_guide.pdf",
+                "source_id": 1,
+                "source_handle": "corpus://cache/1",
+                "title": "schema_therapy_guide.pdf",
+                "content_chars": len(content),
+            }
+        ]
+    )
+    cache = FakeCache({"local:///books/schema_therapy_guide.pdf": content})
+
+    result = extract_corpus_context(payload, cache=cache)
+
+    assert result is not None
+    assert result.titles == ["schema therapy guide"]

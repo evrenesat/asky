@@ -64,6 +64,27 @@ def test_strip_think_tags_no_tags():
     assert strip_think_tags(text) == text
 
 
+def test_strip_think_tags_strips_assistantcommentary_inline_thinking():
+    text = (
+        "analysisThe user is asking about schema therapy.\n"
+        "Action: Summarize findings and present to the user.\n\n"
+        'assistantcommentary to=functions.query_research_memoryjson{"query": "schema therapy"}\n'
+        'assistantcommentary{"findings": []}\n'
+        "assistantcommentaryThe user wants to know more about emotional techniques.\n\n"
+        "# Schema Therapy\n\nSchema Therapy uses imagery exercises."
+    )
+    result = strip_think_tags(text)
+    assert "analysisThe user" not in result
+    assert "assistantcommentary" not in result
+    assert "Schema Therapy" in result
+    assert "imagery exercises" in result
+
+
+def test_strip_think_tags_no_assistantcommentary_unchanged():
+    text = "The book covers imagery exercises and emotional techniques."
+    assert strip_think_tags(text) == text
+
+
 def test_html_stripper_links_with_hashes_and_duplicates():
     html = """
     <a href="http://example.com/page#section1">Link 1</a>

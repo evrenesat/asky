@@ -10,6 +10,10 @@ import xml.etree.ElementTree as ET
 import asky.plugins.xmpp_daemon.xmpp_client as plugin_xmpp_client
 from asky.plugins.xmpp_daemon.command_executor import CommandExecutor
 from asky.plugins.xmpp_daemon.query_progress import QueryProgressEvent
+from asky.plugins.xmpp_daemon.xmpp_formatting import (
+    ASCIITableRenderer,
+    MessageFormatter,
+)
 from asky.plugins.xmpp_daemon.xmpp_service import (
     GENERIC_ADHOC_QUERY_ERROR,
     XMPPService,
@@ -150,6 +154,29 @@ def test_send_message_with_xhtml_payload_attaches_xhtml_node(monkeypatch):
     assert "jabber.org/protocol/xhtml-im" in xml_payload
     assert "www.w3.org/1999/xhtml" in xml_payload
     assert "<strong>My Header</strong>" in xml_payload
+
+
+def test_send_chunked_uses_plain_fallback_body_when_xhtml_attached():
+    sent: list[dict] = []
+    service = XMPPService.__new__(XMPPService)
+    service._formatter = MessageFormatter(ASCIITableRenderer())
+    service._client = SimpleNamespace(
+        send_message=lambda **kwargs: sent.append(kwargs),
+        send_group_message=lambda _jid, _body: None,
+        send_chat_message=lambda _jid, _body: None,
+    )
+
+    service._send_chunked(
+        "u@example.com",
+        "# Header\n\nThe core is *Schema Therapy* and **Modes**.",
+        message_type="chat",
+    )
+
+    assert len(sent) == 1
+    payload = sent[0]
+    assert payload["body"] == "Header\n\nThe core is Schema Therapy and Modes."
+    assert payload["xhtml_body"] is not None
+    assert "<strong>Header</strong>" in payload["xhtml_body"]
 
 
 def test_command_executes_lm_query_is_structural_only():

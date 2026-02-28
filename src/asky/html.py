@@ -153,8 +153,29 @@ def strip_tags(html: str) -> str:
     return s.get_data()
 
 
+_ANALYSIS_PREFIX = re.compile(r"^analysis(?:The\s|\s).+?(?=\n\n|\nassistantcommentary)", re.DOTALL)
+_ACTION_PHRASE = re.compile(r"^Action:\s*.+?(?=\n\n|$)", re.DOTALL | re.MULTILINE)
+# Matches any line starting with "assistantcommentary" (with optional tool routing prefix),
+# whether followed by JSON braces or plain prose.
+_ASSISTANTCOMMENTARY_LINE = re.compile(
+    r"^assistantcommentary[^\n]*\n?",
+    re.MULTILINE,
+)
+
+
 def strip_think_tags(text: str) -> str:
-    """Remove <think>...</think> blocks from LLM output."""
+    """Remove model-specific thinking/scratchpad blocks from LLM output.
+
+    Handles:
+    - <think>...</think> blocks (DeepSeek / Qwen style)
+    - analysis<text> preamble + assistantcommentary tool-replay blocks
+      (Gemini inline thinking format when accessed via OpenAI-compatible API)
+    """
     if not text:
         return ""
-    return re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL).strip()
+    result = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL)
+    if "assistantcommentary" in result:
+        result = _ANALYSIS_PREFIX.sub("", result)
+        result = _ACTION_PHRASE.sub("", result)
+        result = _ASSISTANTCOMMENTARY_LINE.sub("", result)
+    return result.strip()

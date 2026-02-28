@@ -12,6 +12,10 @@ MIN_SEPARATOR_DASH_COUNT = 1
 CODE_FENCE_MARKERS = ("```", "~~~")
 ATX_HEADER_PATTERN = re.compile(r"^\s*#{1,6}\s+(.+?)\s*$")
 SETEXT_UNDERLINE_PATTERN = re.compile(r"^\s*(=+|-+)\s*$")
+BOLD_MARKDOWN_PATTERN = re.compile(r"\*\*(.+?)\*\*")
+ITALIC_MARKDOWN_PATTERN = re.compile(r"(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)")
+CODE_SPAN_PATTERN = re.compile(r"`([^`]+)`")
+BULLET_LINE_PATTERN = re.compile(r"^(\s*)[*-]\s+(.*)$")
 
 
 @dataclass
@@ -200,7 +204,7 @@ class MessageFormatter:
                 and _is_setext_underline(lines[index + 1])
             ):
                 html_parts.append(
-                    f"<p><strong>{html.escape(stripped)}</strong></p>"
+                    f"<p><strong>{_inline_markdown_to_xhtml(stripped)}</strong></p>"
                 )
                 has_header = True
                 index += 2
@@ -208,16 +212,54 @@ class MessageFormatter:
             atx_match = ATX_HEADER_PATTERN.match(line)
             if atx_match is not None:
                 html_parts.append(
-                    f"<p><strong>{html.escape(atx_match.group(1).strip())}</strong></p>"
+                    f"<p><strong>{_inline_markdown_to_xhtml(atx_match.group(1).strip())}</strong></p>"
                 )
                 has_header = True
                 index += 1
                 continue
-            html_parts.append(f"<p>{html.escape(line)}</p>")
+            html_parts.append(f"<p>{_inline_markdown_to_xhtml(line)}</p>")
             index += 1
         if not has_header or not html_parts:
             return None
         return "".join(html_parts)
+
+    def format_plain_body_for_xhtml_fallback(self, model: MessageModel) -> str:
+        """Normalize markdown to plain text when XHTML payload is attached."""
+        lines = str(model.plain_body or "").splitlines()
+        normalized_lines: list[str] = []
+        index = 0
+        while index < len(lines):
+            line = lines[index]
+            stripped = line.strip()
+            if (
+                stripped
+                and index + 1 < len(lines)
+                and _is_setext_underline(lines[index + 1])
+            ):
+                normalized_lines.append(_inline_markdown_to_plain(stripped))
+                index += 2
+                continue
+            atx_match = ATX_HEADER_PATTERN.match(line)
+            if atx_match is not None:
+                normalized_lines.append(_inline_markdown_to_plain(atx_match.group(1).strip()))
+                index += 1
+                continue
+            bullet_match = BULLET_LINE_PATTERN.match(line)
+            if bullet_match is not None:
+                indent, content = bullet_match.groups()
+                plain_bullet = _inline_markdown_to_plain(content)
+                normalized_lines.append(f"{indent}- {plain_bullet}")
+                index += 1
+                continue
+            normalized_lines.append(_inline_markdown_to_plain(line))
+            index += 1
+        plain_text = "\n".join(normalized_lines).strip()
+        parts = [plain_text] if plain_text else []
+        for table in model.tables:
+            rendered_table = self.table_renderer.render_table(table)
+            if rendered_table:
+                parts.append(rendered_table)
+        return "\n\n".join(parts)
 
 
 def extract_markdown_tables(markdown_text: str) -> MessageModel:
@@ -308,3 +350,19 @@ def _is_table_row_for_header(cells: list[str], header_length: int) -> bool:
 
 def _is_setext_underline(line: str) -> bool:
     return bool(SETEXT_UNDERLINE_PATTERN.fullmatch(str(line or "").strip()))
+
+
+def _inline_markdown_to_xhtml(text: str) -> str:
+    escaped = html.escape(str(text or ""))
+    escaped = BOLD_MARKDOWN_PATTERN.sub(r"<strong>\1</strong>", escaped)
+    escaped = ITALIC_MARKDOWN_PATTERN.sub(r"<em>\1</em>", escaped)
+    escaped = CODE_SPAN_PATTERN.sub(r"<code>\1</code>", escaped)
+    return escaped
+
+
+def _inline_markdown_to_plain(text: str) -> str:
+    plain = str(text or "")
+    plain = BOLD_MARKDOWN_PATTERN.sub(r"\1", plain)
+    plain = ITALIC_MARKDOWN_PATTERN.sub(r"\1", plain)
+    plain = CODE_SPAN_PATTERN.sub(r"\1", plain)
+    return plain
