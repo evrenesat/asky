@@ -50,12 +50,14 @@ class DaemonRouter:
         command_prefix: str = XMPP_COMMAND_PREFIX,
         allowed_jids: Optional[list[str]] = None,
         voice_auto_yes_without_interface_model: bool = True,
+        double_verbose: bool = False,
     ):
         self.transcript_manager = transcript_manager
         self.command_executor = command_executor
         self.interface_planner = interface_planner
         self.voice_transcriber = voice_transcriber
         self.image_transcriber = image_transcriber
+        self.double_verbose = bool(double_verbose)
         self.command_prefix = str(command_prefix or XMPP_COMMAND_PREFIX).strip()
         self.voice_auto_yes_without_interface_model = bool(
             voice_auto_yes_without_interface_model
@@ -159,6 +161,11 @@ class DaemonRouter:
                     room_jid=normalized_room or None,
                 )
             action = self.interface_planner.plan(text)
+            logger.info(
+                "Interface planner classified message as %s: %s",
+                action.action_type,
+                action.query_text or action.command_text,
+            )
             if action.action_type == ACTION_COMMAND:
                 return self.command_executor.execute_command_text(
                     jid=actor_jid,

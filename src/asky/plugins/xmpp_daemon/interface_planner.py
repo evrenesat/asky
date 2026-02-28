@@ -37,6 +37,7 @@ class InterfacePlanner:
         system_prompt: str,
         command_reference: str = "",
         include_command_reference: bool = True,
+        double_verbose: bool = False,
     ):
         self.model_alias = str(model_alias or "").strip()
         if self.model_alias and self.model_alias not in MODELS:
@@ -44,6 +45,7 @@ class InterfacePlanner:
         self.system_prompt = str(system_prompt or "").strip()
         self.command_reference = str(command_reference or "").strip()
         self.include_command_reference = bool(include_command_reference)
+        self.double_verbose = bool(double_verbose)
 
     @property
     def enabled(self) -> bool:
@@ -69,6 +71,11 @@ class InterfacePlanner:
             ],
             use_tools=False,
             model_alias=self.model_alias,
+            verbose=self.double_verbose,
+            trace_context={
+                "phase": "interface_planner",
+                "source": "interface_planner",
+            },
         )
         content = str(response.get("content", "") or "").strip()
         payload = self._parse_action_payload(content)

@@ -104,6 +104,7 @@ class XMPPService:
             system_prompt=INTERFACE_PLANNER_SYSTEM_PROMPT,
             command_reference=self.command_executor.get_interface_command_reference(),
             include_command_reference=XMPP_INTERFACE_PLANNER_INCLUDE_COMMAND_REFERENCE,
+            double_verbose=self.double_verbose,
         )
         self.voice_transcriber = VoiceTranscriber(
             enabled=XMPP_VOICE_ENABLED,
@@ -140,6 +141,7 @@ class XMPPService:
             command_prefix=XMPP_COMMAND_PREFIX,
             allowed_jids=list(XMPP_ALLOWED_JIDS),
             voice_auto_yes_without_interface_model=XMPP_VOICE_AUTO_YES_WITHOUT_INTERFACE_MODEL,
+            double_verbose=self.double_verbose,
         )
         self.document_ingestion = DocumentIngestionService()
         self._adhoc_handler = AdHocCommandHandler(
@@ -342,7 +344,9 @@ class XMPPService:
                         command_text=normalized_command_text,
                     )
                 if response_text:
-                    self._send_chunked(normalized_jid, response_text, message_type="chat")
+                    self._send_chunked(
+                        normalized_jid, response_text, message_type="chat"
+                    )
             except Exception:
                 logger.exception("failed to execute ad-hoc queued query")
                 self._send_chunked(

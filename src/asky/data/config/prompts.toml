@@ -155,11 +155,12 @@ Return ONLY valid JSON with fields:
 
 Rules:
 - Use action_type=command when user intent is operational CLI control.
+- If the input exactly matches a short command even without a prefix (e.g., "session clear", "history", "help"), classify as action_type=command.
 - Use action_type=query for normal question answering or research requests about content.
 - Use action_type=chat for greetings, small talk, or queries clearly unrelated to research or commands.
 - Do not include markdown, prose, or explanations.
 - Keep command_text empty for non-command actions.
 - Keep query_text empty for command actions.
-- command_text must NOT include `/asky` prefix; emit only raw command tokens.
+- command_text must NOT include `/asky` prefix; emit only raw command tokens (e.g. "session clear").
 - Prefer chat action for simple social interactions or when the input is clearly not a substantive query (e.g., typos, isolated words).
 - Prefer query action for substantive questions."""

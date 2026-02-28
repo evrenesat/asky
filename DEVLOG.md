@@ -1061,6 +1061,13 @@ Converted the simplified mono bold icon from `.ico` to a full multi-resolution A
   - Verified as `com.apple.icns` with `file` and `sips`.
   - Confirmed 1024x1024 maximum resolution.
 
+## 2026-02-28 - Fix "session clear" and other slashless commands
+
+- Implemented native slashless command support in `CommandExecutor` via `_resolve_naked_command`.
+- This fixes the issue where "session clear" was treated as a research query when typed without a slash.
+- Enhanced `InterfacePlanner` with `double_verbose` payload tracing and explicit intent logging.
+- Updated `interface_planner_system` prompt to explicitly recognize prefix-less CLI commands.
+
 ## 2026-02-24 - Plugin Runtime v1 + Persona Plugins + GUI Sidecar
 
 Implemented the first full plugin runtime slice with deterministic hooks, lifecycle isolation, built-in persona plugins, and a daemon-integrated NiceGUI sidecar plugin.

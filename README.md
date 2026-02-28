@@ -44,7 +44,7 @@ The extensive details of asky's operation are documented in the following guides
 - [Deep Research Mode (`-r`)](./docs/research_mode.md): Advanced web and local document research workflow.
 - [User Memory & Elephant Mode (`-em`)](./docs/elephant_mode.md): Persistent cross-session global and session-scoped memory.
 - [Custom Tools](./docs/custom_tools.md): Extending asky by allowing the LLM to run local CLI commands.
-- [Playwright Browser Plugin](./docs/playwright_browser.md): Browser-based retrieval for bypassing bot protection.
+- [Playwright Browser Plugin](./docs/playwright_browser.md): Browser-based retrieval to help with bypassing bot protection to some extent.
 - [Library Usage Guide](./docs/library_usage.md): Programmatic usage (`asky.api`), including full configuration and request options.
 - [Development Guide](./docs/development.md): Guide for developing `asky`, including auto-reloading tools.
 - [Research Evaluation](./docs/research_eval.md): Guide for evaluating retrieval quality across models and parameters.

@@ -163,11 +163,37 @@ class CommandExecutor:
         self.plugin_runtime = plugin_runtime
         self._pending_clear: dict[str, tuple[str, Optional[str]]] = {}
         self.query_progress_callback = query_progress_callback
+        self._naked_command_map = {
+            "session": "/session",
+            "history": "--history",
+            "sessions": "--session-history",
+            "help": "/help",
+            "v": "/v",
+            "h": "/help",
+        }
+
+    def _resolve_naked_command(self, tokens: List[str]) -> List[str]:
+        """Normalize short naked commands (e.g. 'session clear') to canonical forms."""
+        if not tokens:
+            return tokens
+
+        head = tokens[0].lower()
+        if head in self._naked_command_map:
+            # Only normalize if it's "short": max 3 tokens for legacy safety
+            if len(tokens) <= 3:
+                return [self._naked_command_map[head]] + tokens[1:]
+        return tokens
 
     def get_interface_command_reference(self) -> str:
         """Return command-surface guidance for interface planner prompting."""
         lines = [
             "Remote command surface (emit as command_text):",
+            "- help: Show this help documentation",
+            "- session clear: Reset conversation history while keeping context",
+            "- session [ID]: Switch to a specific session",
+            "- history [N]: View last N messages in current session",
+            "- sessions [N]: List last N sessions",
+            "- /v [PATH]: Vocalize text or file contents",
             "- history: --history <count>, --print-answer <ids>",
             "- sessions: --print-session <selector>, --session-history [count]",
             "- daemon session switch: /session, /session new, /session child, /session <id|name>",
@@ -236,6 +262,7 @@ class CommandExecutor:
     ) -> str:
         """Execute one command text and return response string."""
         tokens = _split_command_tokens(command_text)
+        tokens = self._resolve_naked_command(tokens)
         if not tokens:
             return "Error: empty command."
         if tokens[0].lower() in HELP_COMMAND_TOKENS:
@@ -262,6 +289,7 @@ class CommandExecutor:
         """Return whether command_text structurally resolves to an LM query path."""
         _ = (jid, room_jid)
         tokens = _split_command_tokens(command_text)
+        tokens = self._resolve_naked_command(tokens)
         if not tokens:
             return False
         if tokens[0].lower() in HELP_COMMAND_TOKENS:
