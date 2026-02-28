@@ -79,7 +79,8 @@ def test_delete_messages_integration(setup_test_data, capsys):
         # Add more and delete all
         save_interaction("q4", "a4", "m")
         count = delete_messages(delete_all=True)
-        assert count == 4
+        # Includes session-bound and non-session messages.
+        assert count == 6
 
 
 def test_delete_sessions_integration(setup_test_data):

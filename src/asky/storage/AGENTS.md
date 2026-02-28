@@ -183,9 +183,9 @@ class UploadedDocument:
 | Method | Purpose |
 |--------|---------|
 | `save_interaction()` | Save query/answer as User + Assistant row pair |
-| `get_history()` | Fetch recent interactions |
-| `get_interaction_context()` | Build context string from IDs |
-| `delete_messages()` | Delete by ID, range, or all |
+| `get_history()` | Fetch recent interactions across all messages (session-bound and non-session) |
+| `get_interaction_context()` | Build context string from IDs with same-scope partner expansion |
+| `delete_messages()` | Delete by ID, range, or all across all messages (same-scope smart expansion) |
 | `get_db_record_count()` | Count non-session records |
 
 ### Session Methods

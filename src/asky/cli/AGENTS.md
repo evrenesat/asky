@@ -65,6 +65,11 @@ Preset invocation notes:
 - first-token `\\name ...` expands using `[command_presets]` from config before normal CLI parsing.
 - `\\presets` lists configured command presets and exits.
 
+History command behavior:
+
+- `history list/show/delete` operate across all messages in the unified store and do not filter by session binding.
+- Partner expansion for query/answer pairs is still session-scoped (same session for bound messages, global scope for `session_id IS NULL` messages).
+
 ### Chat Flow (`chat.py`)
 
 Main conversation entry point via `run_chat()`:
@@ -75,6 +80,8 @@ Main conversation entry point via `run_chat()`:
 4. **API Orchestration**: `AskyClient.run_turn()` performs context/session/preload/model/persist flow.
 5. **UI Rendering**: `chat.py` maps API notices/events into Rich output + banner updates.
 6. **Interface Side Effects**: optional browser/email/push/report handling (including dynamic sidebar index updates).
+
+`POST_TURN_RENDER` hooks always receive a populated `answer_title` for non-empty answers (markdown title when present, otherwise query-text fallback), including lean mode (`-L`) turns.
 
 Research mode is session-owned:
 
@@ -114,6 +121,7 @@ Section CLI behavior:
 
 - Argcomplete integration for bash/zsh
 - Dynamic completers for history IDs, session names, model aliases
+- Answer-ID completion includes assistant messages from both session-bound and non-session history.
 - Preview labels show context in completions
 - Lazy-gated by `_ARGCOMPLETE` env var for normal CLI performance
 

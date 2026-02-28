@@ -27,7 +27,7 @@ uv run pytest tests/test_cli.py::test_function_name
 
 | File                 | Coverage                                                                           |
 | -------------------- | ---------------------------------------------------------------------------------- |
-| `test_cli.py`        | Argument parsing, grouped command surface translation (`history/session/memory/corpus`), `--config` routing, and command handlers |
+| `test_cli.py`        | Argument parsing, grouped command surface translation (`history/session/memory/corpus`), `--config` routing, command handlers, and lean-mode post-render hook regressions |
 | `test_presets.py`    | Command preset parsing/substitution/listing behavior                               |
 | `test_completion.py` | Shell completion logic                                                             |
 | `test_models_cli.py` | Model add/edit commands and role assignment actions (main/summarization/interface) |
@@ -56,7 +56,7 @@ uv run pytest tests/test_cli.py::test_function_name
 
 | File               | Coverage                                                                                                |
 | ------------------ | ------------------------------------------------------------------------------------------------------- |
-| `test_storage.py`  | Database operations, CRUD, transcript records, room/session bindings, session override file persistence |
+| `test_storage.py`  | Database operations, CRUD, unified history/session message behavior, transcript records, room/session bindings, session override file persistence |
 | `test_sessions.py` | Session lifecycle, compaction                                                                           |
 
 ### Research Tests

@@ -165,6 +165,49 @@ class SQLiteHistoryRepository(HistoryRepository):
     def _get_conn(self):
         return sqlite3.connect(self.db_path)
 
+    def _find_partner_message_id(
+        self,
+        cursor: sqlite3.Cursor,
+        *,
+        current_id: int,
+        role: str,
+        direction: str,
+        session_id: Optional[int],
+    ) -> Optional[int]:
+        """Find partner message ID for a user/assistant turn within the same scope."""
+        if role not in {"user", "assistant"}:
+            return None
+        if direction not in {"before", "after"}:
+            return None
+
+        order = "DESC" if direction == "before" else "ASC"
+        operator = "<" if direction == "before" else ">"
+
+        if session_id is None:
+            cursor.execute(
+                f"""
+                SELECT id
+                FROM messages
+                WHERE role = ? AND id {operator} ? AND session_id IS NULL
+                ORDER BY id {order}
+                LIMIT 1
+                """,
+                (role, current_id),
+            )
+        else:
+            cursor.execute(
+                f"""
+                SELECT id
+                FROM messages
+                WHERE role = ? AND id {operator} ? AND session_id = ?
+                ORDER BY id {order}
+                LIMIT 1
+                """,
+                (role, current_id, int(session_id)),
+            )
+        row = cursor.fetchone()
+        return int(row[0]) if row else None
+
     def _session_from_row(self, row: sqlite3.Row) -> Session:
         """Build a Session dataclass from a sqlite row."""
         return Session(
@@ -643,107 +686,116 @@ class SQLiteHistoryRepository(HistoryRepository):
         fetch_limit = limit * 3
 
         c.execute(
-            """SELECT * FROM messages 
-            WHERE session_id IS NULL 
-            ORDER BY timestamp DESC, id DESC LIMIT ?""",
+            """SELECT * FROM messages ORDER BY timestamp DESC, id DESC LIMIT ?""",
             (fetch_limit,),
         )
         rows = c.fetchall()
-        conn.close()
 
         interactions = []
-        # Process rows in temporal order (ASC) to pair them?
-        # Rows are DESC (Newest first).
-        # Expected pattern: [Asst, User, Asst, User, ...]
+        row_by_id = {int(row["id"]): row for row in rows}
+        consumed_ids: set[int] = set()
 
-        i = 0
-        while i < len(rows):
-            current = rows[i]
+        for current in rows:
+            current_id = int(current["id"])
+            if current_id in consumed_ids:
+                continue
 
-            # If we find an assistant message, look for the next one being a user message (older)
-            if current["role"] == "assistant":
-                # Check next message
-                if i + 1 < len(rows):
-                    next_msg = rows[i + 1]
-                    if next_msg["role"] == "user":
-                        # Found a pair: next_msg (User) -> current (Assistant)
-                        interactions.append(
-                            Interaction(
-                                id=current["id"],  # Use Assistant ID as Interaction ID
-                                timestamp=current["timestamp"],
-                                session_id=None,
-                                role=None,
-                                content=f"Query: {next_msg['content']}\n\nAnswer: {current['content']}",  # Legacy back-compat
-                                query=next_msg["content"],
-                                answer=current["content"],
-                                summary=current[
-                                    "summary"
-                                ],  # Summary of the interaction (usually Answer summary matters more/last)
-                                model=current["model"],
-                                token_count=None,
-                            )
-                        )
-                        i += 2
-                        continue
+            role = current["role"]
+            session_id = current["session_id"]
+            model = current["model"] or ""
+            summary = current["summary"] or ""
 
-                # Orphan assistant message? Treat as interaction with unknown query?
+            if role == "assistant":
+                partner_id = self._find_partner_message_id(
+                    c,
+                    current_id=current_id,
+                    role="user",
+                    direction="before",
+                    session_id=session_id,
+                )
+                partner = row_by_id.get(partner_id) if partner_id is not None else None
+                query_text = partner["content"] if partner is not None else "<unknown>"
                 interactions.append(
                     Interaction(
-                        id=current["id"],
+                        id=current_id,
                         timestamp=current["timestamp"],
-                        session_id=None,
+                        session_id=session_id,
                         role=None,
-                        content="",
-                        query="<unknown>",
+                        content=f"Query: {query_text}\n\nAnswer: {current['content']}",
+                        query=query_text,
                         answer=current["content"],
-                        summary=current["summary"],
-                        model=current["model"],
+                        summary=summary,
+                        model=model,
                         token_count=None,
                     )
                 )
-                i += 1
-
-            elif current["role"] == "user":
-                # Orphan user message (interrupted?)
-                interactions.append(
-                    Interaction(
-                        id=current["id"],
-                        timestamp=current["timestamp"],
-                        session_id=None,
-                        role=None,
-                        content="",
-                        query=current["content"],
-                        answer="<no answer>",
-                        summary=current["summary"],
-                        model=current["model"],
-                        token_count=None,
-                    )
+                consumed_ids.add(current_id)
+                if partner_id is not None:
+                    consumed_ids.add(partner_id)
+            elif role == "user":
+                partner_id = self._find_partner_message_id(
+                    c,
+                    current_id=current_id,
+                    role="assistant",
+                    direction="after",
+                    session_id=session_id,
                 )
-                i += 1
+                partner = row_by_id.get(partner_id) if partner_id is not None else None
+                if partner is not None:
+                    partner_id_int = int(partner["id"])
+                    interactions.append(
+                        Interaction(
+                            id=partner_id_int,
+                            timestamp=partner["timestamp"],
+                            session_id=session_id,
+                            role=None,
+                            content=f"Query: {current['content']}\n\nAnswer: {partner['content']}",
+                            query=current["content"],
+                            answer=partner["content"],
+                            summary=(partner["summary"] or ""),
+                            model=(partner["model"] or model),
+                            token_count=None,
+                        )
+                    )
+                    consumed_ids.add(current_id)
+                    consumed_ids.add(partner_id_int)
+                else:
+                    interactions.append(
+                        Interaction(
+                            id=current_id,
+                            timestamp=current["timestamp"],
+                            session_id=session_id,
+                            role=None,
+                            content="",
+                            query=current["content"],
+                            answer="<no answer>",
+                            summary=summary,
+                            model=model,
+                            token_count=None,
+                        )
+                    )
+                    consumed_ids.add(current_id)
             else:
-                # Fallback for old legacy rows (role IS NULL)
-                # If content contains "Query:" parse it? Or just dump content to 'answer' and put query in 'query'.
-                # The old 'content' had "Query: ... Answer: ..."
-                # Let's just put it all in Answer for visibility if we can't parse.
-                # Or better: check for legacy columns? No, row factory keys depend on schema.
-                # If schema changed, old rows still return 'role' as None.
-
                 interactions.append(
                     Interaction(
-                        id=current["id"],
+                        id=current_id,
                         timestamp=current["timestamp"],
-                        session_id=None,
+                        session_id=session_id,
                         role=None,
-                        content=current["content"],  # use content
+                        content=current["content"],
                         query="",
                         answer="",
-                        summary=current["summary"] or "",
-                        model=current["model"],
+                        summary=summary,
+                        model=model,
                         token_count=current["token_count"],
                     )
                 )
-                i += 1
+                consumed_ids.add(current_id)
 
+            if len(interactions) >= limit:
+                break
+
+        conn.close()
         return interactions[:limit]
 
     def get_interaction_context(self, ids: List[int], full: bool = False) -> str:
@@ -753,34 +805,38 @@ class SQLiteHistoryRepository(HistoryRepository):
         try:
             c = conn.cursor()
 
-            # Smart Expansion: Include partners for global history interactions
+            # Smart Expansion: Include partners from the same session scope
             expanded_ids = set(ids)
             if ids:
                 placeholders = ",".join(["?"] * len(ids))
                 c.execute(
-                    f"SELECT id, role FROM messages WHERE id IN ({placeholders}) AND session_id IS NULL",
+                    f"SELECT id, role, session_id FROM messages WHERE id IN ({placeholders})",
                     tuple(ids),
                 )
                 rows = c.fetchall()
 
                 for r in rows:
-                    curr_id, role = r
+                    curr_id, role, session_id = r
                     if role == "assistant":
-                        c.execute(
-                            "SELECT id FROM messages WHERE role='user' AND id < ? AND session_id IS NULL ORDER BY id DESC LIMIT 1",
-                            (curr_id,),
+                        partner_id = self._find_partner_message_id(
+                            c,
+                            current_id=int(curr_id),
+                            role="user",
+                            direction="before",
+                            session_id=session_id,
                         )
-                        partner = c.fetchone()
-                        if partner:
-                            expanded_ids.add(partner[0])
+                        if partner_id is not None:
+                            expanded_ids.add(partner_id)
                     elif role == "user":
-                        c.execute(
-                            "SELECT id FROM messages WHERE role='assistant' AND id > ? AND session_id IS NULL ORDER BY id ASC LIMIT 1",
-                            (curr_id,),
+                        partner_id = self._find_partner_message_id(
+                            c,
+                            current_id=int(curr_id),
+                            role="assistant",
+                            direction="after",
+                            session_id=session_id,
                         )
-                        partner = c.fetchone()
-                        if partner:
-                            expanded_ids.add(partner[0])
+                        if partner_id is not None:
+                            expanded_ids.add(partner_id)
 
             final_ids = sorted(list(expanded_ids))
             if not final_ids:
@@ -856,7 +912,7 @@ class SQLiteHistoryRepository(HistoryRepository):
         c = conn.cursor()
 
         if delete_all:
-            c.execute("DELETE FROM messages WHERE session_id IS NULL")
+            c.execute("DELETE FROM messages")
             deleted_count = c.rowcount
             conn.commit()
             conn.close()
@@ -870,7 +926,7 @@ class SQLiteHistoryRepository(HistoryRepository):
                     if start_id > end_id:
                         start_id, end_id = end_id, start_id
                     c.execute(
-                        "SELECT id FROM messages WHERE id BETWEEN ? AND ? AND session_id IS NULL",
+                        "SELECT id FROM messages WHERE id BETWEEN ? AND ?",
                         (start_id, end_id),
                     )
                     target_ids = [r[0] for r in c.fetchall()]
@@ -900,32 +956,34 @@ class SQLiteHistoryRepository(HistoryRepository):
             if target_ids:
                 placeholders = ",".join(["?"] * len(target_ids))
                 c.execute(
-                    f"SELECT id, role, timestamp FROM messages WHERE id IN ({placeholders})",
+                    f"SELECT id, role, session_id FROM messages WHERE id IN ({placeholders})",
                     tuple(target_ids),
                 )
                 rows = c.fetchall()
 
                 for r in rows:
-                    curr_id, role, ts = r
+                    curr_id, role, session_id = r
 
                     if role == "assistant":
-                        # Look for preceding user message
-                        c.execute(
-                            "SELECT id FROM messages WHERE role='user' AND id < ? AND session_id IS NULL ORDER BY id DESC LIMIT 1",
-                            (curr_id,),
+                        partner_id = self._find_partner_message_id(
+                            c,
+                            current_id=int(curr_id),
+                            role="user",
+                            direction="before",
+                            session_id=session_id,
                         )
-                        partner = c.fetchone()
-                        if partner:
-                            expanded_ids.add(partner[0])
+                        if partner_id is not None:
+                            expanded_ids.add(partner_id)
                     elif role == "user":
-                        # Look for succeding assistant message
-                        c.execute(
-                            "SELECT id FROM messages WHERE role='assistant' AND id > ? AND session_id IS NULL ORDER BY id ASC LIMIT 1",
-                            (curr_id,),
+                        partner_id = self._find_partner_message_id(
+                            c,
+                            current_id=int(curr_id),
+                            role="assistant",
+                            direction="after",
+                            session_id=session_id,
                         )
-                        partner = c.fetchone()
-                        if partner:
-                            expanded_ids.add(partner[0])
+                        if partner_id is not None:
+                            expanded_ids.add(partner_id)
 
             if expanded_ids:
                 final_list = list(expanded_ids)

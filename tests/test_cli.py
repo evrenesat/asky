@@ -385,6 +385,66 @@ def test_run_chat_renders_answer_before_final_history_finalize():
     mock_wait_for_summaries.assert_called_once()
 
 
+def test_run_chat_lean_mode_sets_answer_title_for_post_turn_render():
+    from asky.cli.chat import run_chat
+
+    mock_args = argparse.Namespace(
+        model="gf",
+        research=False,
+        local_corpus=None,
+        summarize=False,
+        open=False,
+        continue_ids=None,
+        sticky_session=None,
+        resume_session=None,
+        lean=True,
+        tool_off=[],
+        terminal_lines=None,
+        save_history=True,
+        verbose=False,
+        system_prompt=None,
+        elephant_mode=False,
+        turns=None,
+        sendmail=None,
+        subject=None,
+        push_data=None,
+    )
+
+    turn_result = MagicMock()
+    turn_result.final_answer = "Why don't scientists trust atoms?"
+    turn_result.halted = False
+    turn_result.notices = []
+    turn_result.session_id = None
+    turn_result.preload = MagicMock(shortlist_stats={}, shortlist_payload=None)
+    turn_result.session = MagicMock(matched_sessions=[])
+
+    plugin_runtime = MagicMock()
+
+    with (
+        patch("asky.cli.chat.MODELS", {"gf": {"id": "gemini-flash"}}),
+        patch("asky.cli.chat.get_shell_session_id", return_value=None),
+        patch("asky.cli.chat.InterfaceRenderer") as mock_renderer_cls,
+        patch("asky.cli.chat.LIVE_BANNER", False),
+        patch("asky.cli.chat.AskyClient") as mock_client_cls,
+        patch("asky.rendering.extract_markdown_title", return_value=""),
+    ):
+        renderer = MagicMock()
+        renderer.live = None
+        renderer.current_turn = 1
+        renderer.console = MagicMock()
+        mock_renderer_cls.return_value = renderer
+
+        mock_client = MagicMock()
+        mock_client.run_turn.return_value = turn_result
+        mock_client_cls.return_value = mock_client
+
+        run_chat(plugin_runtime=plugin_runtime, args=mock_args, query_text="tell me a joke")
+
+    assert plugin_runtime.hooks.invoke.call_count == 1
+    post_turn_context = plugin_runtime.hooks.invoke.call_args[0][1]
+    assert post_turn_context.answer_title == "tell me a joke"
+
+
 def test_run_chat_double_verbose_payload_streams_via_live_console():
     from asky.cli.chat import run_chat
 

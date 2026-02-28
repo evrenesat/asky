@@ -342,7 +342,7 @@ def _get_recent_answer_hints() -> Mapping[str, str]:
             """
             SELECT id, content, summary
             FROM messages
-            WHERE session_id IS NULL AND role = 'assistant'
+            WHERE role = 'assistant'
             ORDER BY timestamp DESC, id DESC
             LIMIT ?
             """,

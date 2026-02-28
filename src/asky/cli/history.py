@@ -109,15 +109,15 @@ def handle_delete_messages_command(args) -> bool:
     ):
         if args.all:
             count = delete_messages(delete_all=True)
-            print(f"Deleted all {count} message records from history.")
+            print(f"Deleted all {count} message records.")
         elif args.delete_messages and (
             "-" in args.delete_messages or "," in args.delete_messages
         ):
             count = delete_messages(ids=args.delete_messages)
-            print(f"Deleted {count} message records from history.")
+            print(f"Deleted {count} message records.")
         elif args.delete_messages:
             # Single ID
             count = delete_messages(ids=args.delete_messages)
-            print(f"Deleted {count} message record(s) from history.")
+            print(f"Deleted {count} message record(s).")
         return True
     return False

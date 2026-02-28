@@ -561,6 +561,10 @@ History and session messages share the `messages` table:
 - **History**: `session_id IS NULL`, stored as User + Assistant pairs
 - **Sessions**: `session_id IS NOT NULL`, individual messages
 
+CLI history operations (`history list/show/delete`) resolve against the same unified
+table and do not distinguish by `session_id`; pairing/expansion is constrained to
+same-session scope when linking user/assistant partner rows.
+
 ### 2. Shell-Sticky Sessions
 
 Sessions tied to terminal via lock files (`/tmp/asky_session_{PID}`) for automatic resumption.

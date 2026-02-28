@@ -1,5 +1,47 @@
 # DEVLOG
 
+## 2026-02-28 - Unified History Commands Across Session-Bound and Non-Session Messages
+
+**Changes:**
+
+- Updated `storage/sqlite.py` history paths to be session-agnostic:
+  - `get_history()` now lists recent turns from all messages and pairs user/assistant turns within the same session scope.
+  - `get_interaction_context()` now expands partner messages for selected IDs in both session and non-session scopes.
+  - `delete_messages()` now deletes by ID/range/list/`--all` across all messages and keeps smart partner expansion within the same session scope.
+- Updated CLI completion in `cli/completion.py`:
+  - answer-ID suggestions now include assistant messages regardless of session binding.
+- Updated history delete text in `cli/history.py` to avoid implying non-session-only behavior.
+- Added/updated tests:
+  - `tests/test_storage.py`:
+    - `test_history_includes_session_bound_messages`
+    - `test_get_interaction_context_expands_session_partner`
+    - `test_delete_messages_expands_within_session_scope`
+  - `tests/test_integration.py`:
+    - updated `delete_messages(delete_all=True)` expectation to include session-bound rows.
+
+**Why:**
+- `history list/show/delete` should not distinguish between session-bound and non-session messages.
+
+**Verification:**
+- `uv run pytest -n 0 tests/test_storage.py tests/test_cli.py tests/test_completion.py tests/test_integration.py` -> `127 passed`
+- `uv run pytest` -> `1247 passed in 10.08s`
+
+## 2026-02-28 - Lean Mode POST_TURN_RENDER `filename_hint` Crash Fix
+
+**Changes:**
+
+- Fixed `src/asky/cli/chat.py` so `filename_hint` is initialized for any turn with a `final_answer`, not only inside the non-lean HTML-report path.
+- `answer_title` passed to `POST_TURN_RENDER` now works in lean mode (`-L`) and falls back to query text when no markdown title is extracted.
+- Added regression test `test_run_chat_lean_mode_sets_answer_title_for_post_turn_render` in `tests/test_cli.py`.
+
+**Why:**
+- In lean mode, HTML-report generation is skipped, so `filename_hint` was never assigned before plugin hook invocation, causing:
+  - `cannot access local variable 'filename_hint' where it is not associated with a value`
+
+**Verification:**
+- `uv run pytest -n 0 tests/test_cli.py::test_run_chat_lean_mode_sets_answer_title_for_post_turn_render` -> `1 passed`
+- `uv run pytest` -> `1244 passed in 10.56s`
+
 ## 2026-02-28 - Corpus Title Cleanup and Gemini Thinking Leakage Fix
 
 **Changes:**

@@ -100,6 +100,65 @@ def test_get_interaction_context(mock_db_path):
     assert "a1" in context_full
 
 
+def test_history_includes_session_bound_messages(mock_db_path):
+    init_db()
+
+    save_interaction("history query", "history answer", "m")
+
+    session_id = create_session("m", name="session-one")
+    save_message(session_id, "user", "session query", "session q sum", 1)
+    assistant_id = save_message(
+        session_id,
+        "assistant",
+        "session answer",
+        "session a sum",
+        1,
+    )
+
+    rows = get_history(limit=5)
+    assert len(rows) >= 2
+    matching = [row for row in rows if row.id == assistant_id]
+    assert matching
+    interaction = matching[0]
+    assert interaction.session_id == session_id
+    assert interaction.query == "session query"
+    assert interaction.answer == "session answer"
+    assert interaction.summary == "session a sum"
+
+
+def test_get_interaction_context_expands_session_partner(mock_db_path):
+    init_db()
+    session_id = create_session("m", name="ctx-session")
+    save_message(session_id, "user", "user in session", "user sum", 1)
+    assistant_id = save_message(session_id, "assistant", "assistant in session", "", 1)
+
+    context = get_interaction_context([assistant_id], full=False)
+    assert "Query: user sum" in context
+    assert "Answer: assistant in session" in context
+
+
+def test_delete_messages_expands_within_session_scope(mock_db_path):
+    from asky.storage.sqlite import SQLiteHistoryRepository
+
+    init_db()
+    repo = SQLiteHistoryRepository()
+    session_id = create_session("m", name="delete-session")
+    user_id = save_message(session_id, "user", "session user", "session user sum", 1)
+    assistant_id = save_message(
+        session_id,
+        "assistant",
+        "session assistant",
+        "session assistant sum",
+        1,
+    )
+
+    deleted = delete_messages(str(assistant_id))
+    assert deleted == 2
+    assert repo.get_session_messages(session_id) == []
+    assert repo.get_interaction_by_id(user_id) is None
+    assert repo.get_interaction_by_id(assistant_id) is None
+
+
 def test_save_message(mock_db_path):
     init_db()
     session_id = create_session("model")

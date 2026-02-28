@@ -936,12 +936,18 @@ def run_chat(
         if turn_result.halted:
             return
 
+        filename_hint = ""
+        if final_answer:
+            from asky.rendering import extract_markdown_title
+
+            filename_hint = extract_markdown_title(final_answer) or effective_query_text
+
         # Auto-generate HTML Report FIRST, before saving history (so the CLI responds faster)
         pre_reserved_ids = None
         saved_message_id_for_archive = None
 
         if final_answer and not is_lean:
-            from asky.rendering import save_html_report, extract_markdown_title
+            from asky.rendering import save_html_report
 
             html_source = ""
             if turn_result.session_id:
@@ -977,12 +983,6 @@ def run_chat(
                     saved_message_id_for_archive = pre_reserved_ids[1]  # assistant_id
                 except Exception as e:
                     logger.debug(f"Failed to pre-reserve history IDs: {e}")
-
-            # Extract title explicitly from the new answer to fix "untitled" archives
-            filename_hint = extract_markdown_title(final_answer)
-            if not filename_hint:
-                # Fallback: use query text if assistant provided no clear title
-                filename_hint = effective_query_text
 
             session_name = ""
             session_id_int = None
