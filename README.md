@@ -46,6 +46,7 @@ The extensive details of asky's operation are documented in the following guides
 - [Custom Tools](./docs/custom_tools.md): Extending asky by allowing the LLM to run local CLI commands.
 - [Playwright Browser Plugin](./docs/playwright_browser.md): Browser-based retrieval for bypassing bot protection.
 - [Library Usage Guide](./docs/library_usage.md): Programmatic usage (`asky.api`), including full configuration and request options.
+- [Development Guide](./docs/development.md): Guide for developing `asky`, including auto-reloading tools.
 - [Research Evaluation](./docs/research_eval.md): Guide for evaluating retrieval quality across models and parameters.
 
 Plugin details, entry points, and current limitations are documented in
