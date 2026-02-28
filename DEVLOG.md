@@ -1,5 +1,25 @@
 # DEVLOG
 
+## 2026-02-28 - Fixed XMPP Log Leakage into ASky.log
+
+**Problem:** XMPP logs were appearing in both `XMPP.log` and `ASky.log` because the XMPP namespaces were propagating to the root logger.
+
+**Changes:**
+
+- Modified `src/asky/logger.py`:
+  - Updated `setup_xmpp_logging()` to set `propagate = False` for all loggers in `XMPP_LOGGER_NAMES`.
+  - Updated docstring to reflect that root output is now suppressed for these namespaces.
+- Updated `tests/test_logger.py`:
+  - Added `test_setup_xmpp_logging_disables_propagation` to verify that propagation is disabled.
+
+**Why:** To ensure clear separation of concern in logging and prevent the main application log from being cluttered with verbose XMPP/slixmpp traffic.
+
+**Verification:**
+
+- Confirmed fix with reproduction script `temp/verify_leakage.py`.
+- Regression test passed: `uv run pytest tests/test_logger.py`.
+- Full suite passed: `1248 passed in 10.82s`.
+
 ## 2026-02-28 - Unified History Commands Across Session-Bound and Non-Session Messages
 
 **Changes:**
@@ -20,9 +40,11 @@
     - updated `delete_messages(delete_all=True)` expectation to include session-bound rows.
 
 **Why:**
+
 - `history list/show/delete` should not distinguish between session-bound and non-session messages.
 
 **Verification:**
+
 - `uv run pytest -n 0 tests/test_storage.py tests/test_cli.py tests/test_completion.py tests/test_integration.py` -> `127 passed`
 - `uv run pytest` -> `1247 passed in 10.08s`
 
@@ -35,10 +57,12 @@
 - Added regression test `test_run_chat_lean_mode_sets_answer_title_for_post_turn_render` in `tests/test_cli.py`.
 
 **Why:**
+
 - In lean mode, HTML-report generation is skipped, so `filename_hint` was never assigned before plugin hook invocation, causing:
   - `cannot access local variable 'filename_hint' where it is not associated with a value`
 
 **Verification:**
+
 - `uv run pytest -n 0 tests/test_cli.py::test_run_chat_lean_mode_sets_answer_title_for_post_turn_render` -> `1 passed`
 - `uv run pytest` -> `1244 passed in 10.56s`
 
@@ -57,10 +81,12 @@
 - Added corresponding tests in `tests/test_corpus_context.py` and `tests/test_html.py`
 
 **Why:**
+
 - Raw filenames like `Breaking_Negative_Thinking_Patterns_...pdf` were appearing verbatim in search queries, producing useless results
 - Gemini's plain-text `assistantcommentary<prose>` transition phrases were not matched by the previous brace-only regex, leaking model scratchpad into XMPP replies
 
 **Verification:**
+
 - `uv run pytest -x -q` → 1243 passed
 
 ## 2026-02-28 - XMPP XHTML Fallback Alignment for Header/Bold Rendering
@@ -80,9 +106,11 @@
 - Updated `ARCHITECTURE.md` note for XHTML/plain fallback semantic alignment.
 
 **Why:**
+
 - Some clients may ignore XHTML rendering if plain and rich payloads are not sufficiently aligned; this also avoids visible markdown marker artifacts when plain fallback is displayed.
 
 **Verification:**
+
 - `uv run pytest -n 0 tests/daemon/test_xmpp_formatting.py tests/test_xmpp_plugin_progress.py` -> `26 passed in 2.97s`
 - `uv run pytest` -> `1235 passed in 10.86s`
 
@@ -111,11 +139,13 @@
 - Added config constants (`corpus_lead_chars`, `corpus_max_keyphrases`, `corpus_max_query_titles`) in `research.toml`
 
 **Key design decisions:**
+
 - Zero LLM calls — all corpus analysis uses YAKE keyphrase extraction
 - Zero behavioral change when no corpus is present (all new params default to None/False)
 - Corpus candidates scored through the same embedding pipeline as web candidates
 
 **Verification:**
+
 - `uv run pytest -x -q` → 1232 passed (14 new tests)
 
 ## 2026-02-27 - XMPP XHTML-IM Header Rendering (Setext/ATX -> Bold)
@@ -138,6 +168,7 @@
 - Updated `ARCHITECTURE.md` with the outbound XHTML-IM behavior note for single-chunk messages.
 
 **Verification:**
+
 - `uv run pytest -n 0 tests/daemon/test_xmpp_formatting.py tests/test_xmpp_plugin_progress.py` -> `23 passed in 2.36s`
 - `uv run pytest` -> `1218 passed in 10.06s`
 
@@ -171,6 +202,7 @@
   - Updated `tests/test_xmpp_query_progress.py` for immutable status handles.
 
 **Verification:**
+
 - `uv run pytest` → `1209 passed in 9.23s`
 
 ## 2026-02-27 - Parallel Flake Fixes + Cleanup Refactors
@@ -195,6 +227,7 @@
   - `tests/test_xmpp_document_ingestion.py`: redaction ordering expectation.
 
 **Verification:**
+
 - `uv run pytest -n 0 tests/test_presets.py tests/test_xmpp_adhoc.py tests/test_xmpp_commands.py tests/test_xmpp_document_ingestion.py tests/test_cli.py` → `181 passed`
 - `uv run pytest -n auto tests/test_xmpp_adhoc.py -k "test_query_submit_builds_plain_query or test_list_prompts_submit_executes_alias_without_query or test_list_presets_submit_expands_and_executes"` → `3 passed`
 - `uv run pytest` → `1205 passed in 10.18s`
@@ -231,6 +264,7 @@
   - `src/asky/plugins/AGENTS.md` (new `query_progress.py` module).
 
 **Verification:**
+
 - `uv run pytest` → `1204 passed in 10.46s`
 
 ## 2026-02-27 - XMPP Document Upload Corpus + Session Cleanup Expansion
@@ -264,6 +298,7 @@
   - `tests/test_api_turn_resolution.py` (cleanup-session upload/corpus clearing coverage).
 
 **Verification:**
+
 - `uv run pytest` → `1201 passed in 10.65s`
 
 ## 2026-02-27 - CLI Interface Polish: Dynamic Help, Roster Sync, Sendmail/Push-Data Flags
@@ -295,6 +330,7 @@
 - Tests and docs updated for all interface changes.
 
 **Verification:**
+
 - `uv run pytest -x -q` → `1188 passed in 9.95s`
 
 ## 2026-02-27 - XEP-0050 Ad-Hoc Authorization: Full-JID Matching + Session Fallback
@@ -302,6 +338,7 @@
 Fixed a persistent `Not authorized.` failure for allowlisted users running XEP-0050 ad-hoc commands (especially `asky#list-prompts`) when allowlists used strict full JIDs (`user@domain/resource`) or when a follow-up IQ form submission did not expose a usable `from` field.
 
 **Changes:**
+
 - `src/asky/plugins/xmpp_daemon/adhoc_commands.py`:
   - Added `_sender_full_jid()` and `_bare_jid()` helpers.
   - Added `_sender_candidates()` and updated `_is_authorized(iq, session)` to evaluate sender identity in priority order: full JID first, then bare JID, then session-cached sender values.
@@ -324,6 +361,7 @@ Fixed a persistent `Not authorized.` failure for allowlisted users running XEP-0
   - `src/asky/daemon/AGENTS.md` ad-hoc authorization section updated to match runtime behavior.
 
 **Verification:**
+
 - `uv run pytest -n 0 tests/test_xmpp_adhoc.py` → `54 passed in 1.31s`
 - `uv run pytest -n 0 tests/test_xmpp_router.py tests/test_xmpp_daemon.py` → `31 passed in 0.14s`
 - `uv run pytest -n 0 tests/test_xmpp_adhoc.py` (after XML fallback updates) → `57 passed in 1.23s`
@@ -331,9 +369,10 @@ Fixed a persistent `Not authorized.` failure for allowlisted users running XEP-0
 
 ## 2026-02-27 - Plugin Boundary Enforcement and Dynamic CLI Contributions
 
-Enforced the one-way plugin dependency rule: core code may only import plugin *infrastructure* (`plugins.runtime`, `plugins.hooks`), never individual plugin packages. Implemented a dynamic CLI contribution system so plugins declare their own argparse flags.
+Enforced the one-way plugin dependency rule: core code may only import plugin _infrastructure_ (`plugins.runtime`, `plugins.hooks`), never individual plugin packages. Implemented a dynamic CLI contribution system so plugins declare their own argparse flags.
 
 **Changes:**
+
 - `plugins/base.py`: Added `CLIContribution` dataclass, `CapabilityCategory` constants, `CATEGORY_LABELS` dict, and `AskyPlugin.get_cli_contributions()` classmethod.
 - `plugins/manager.py`: Added `collect_cli_contributions()` — light-imports each enabled plugin class (no `activate()`) to collect their CLI flags.
 - `cli/main.py`: Added `_bootstrap_plugin_manager_for_cli()` and `_add_plugin_contributions_to_parser()`. `parse_args()` now accepts an optional `plugin_manager` and organises flags into named argparse groups (`Output Delivery`, `Browser Setup`, `Background Services`). `--open` is always in the `Output Delivery` group. Internal process-spawning flags (`--xmpp-daemon`, `--edit-daemon`, `--xmpp-menubar-child`) remain as core suppressed args since they're used by the CLI translation pipeline regardless of plugin state.
@@ -527,6 +566,7 @@ Added automatic detection of portal/listing pages (news homepages, category indi
 - **`tests/test_retrieval.py`** [NEW]: 9 tests for `_detect_page_type` and `_format_portal_content`.
 
 **Gotchas:**
+
 - `excluded_link_container_tags` takes priority over zone tracking in `handle_starttag` to preserve the existing exclusion contract.
 - The fast path (`extracted_chars >= PORTAL_DETECTION_MIN_VISIBLE_CHARS`) avoids an extra `strip_tags` call on normal article pages.
 
@@ -560,6 +600,7 @@ Implemented XEP-0393 message styling and ASCII table rendering for XMPP messages
   - Added `hypothesis>=6.0.0` to dev dependencies for property-based testing.
 
 **Key features:**
+
 - Markdown-to-XEP-0393 conversion: Converts markdown bold/italic/headers to XEP-0393 styling.
 - Unicode-aware column width calculation (handles full-width CJK characters correctly).
 - Automatic fence length selection to avoid conflicts with backticks in content.
@@ -567,11 +608,13 @@ Implemented XEP-0393 message styling and ASCII table rendering for XMPP messages
 - Integration into existing XMPP message send path without breaking changes.
 
 **Validation:**
+
 - All 1074 tests pass (14 new tests added).
 - Test execution time: ~9 seconds (no significant regression).
 - Property-based tests run 100 examples each to validate correctness properties.
 
 **Notes:**
+
 - Markdown formatting (`**bold**`, `# headers`) is now converted to XEP-0393 styling (`*bold*`, underlined headers).
 - Optional features (size limits, capability detection) were marked complete but not fully implemented as they're not required for MVP.
 - The core table rendering, markdown conversion, and integration is complete and functional.
@@ -646,6 +689,7 @@ interactive `input()` prompts.
 - Tests updated: `test_daemon_menubar.py` rewritten for dynamic menu; `test_plugin_integration.py` + `test_gui_server_plugin.py` extended with new hook and dependency tests.
 
 **Key invariants:**
+
 - `daemon/` core imports nothing from `plugins/xmpp_daemon/`.
 - `tray_controller.py` contains no XMPP/GUI/voice references.
 - `get_startup_warnings()` returns warnings collected at startup.
@@ -664,6 +708,7 @@ Moved all display-label computation out of the macOS-specific tray file into `Tr
 - `ARCHITECTURE.md`, `docs/xmpp_daemon.md`, `daemon/AGENTS.md` — label references updated.
 
 **Key invariants:**
+
 - `MacosTrayApp._refresh_status()` contains no business logic; all label decisions live in `TrayController.get_state()`.
 - All 1053 tests pass.
 
@@ -680,6 +725,7 @@ Fixed the "Open Settings" URL (was opening `/` → 404; now opens `/settings/gen
 - `tests/test_daemon_menubar.py` — asserts `action_gui_toggle` present and labelled "Start Web GUI"; new tests for `open_gui_server` URL path, toggle-without-daemon error, and start/stop cycle.
 
 **Key invariants:**
+
 - Daemon core does not import from plugin packages; sidecar is accessed by name via `DaemonService.get_plugin_server()`.
 - Toggling the GUI server while daemon is not running surfaces a user-facing error via `on_error` callback.
 - All 1052 tests pass.
@@ -698,6 +744,7 @@ Extracted all platform-agnostic tray business logic from the `AskyMenubarApp` in
 - `ARCHITECTURE.md` — added `daemon_tray_ctrl` node and edges in Daemon subgraph.
 
 **Key invariants:**
+
 - `TrayController` has no platform-specific imports (no `rumps`, `Tk`, etc.).
 - `GUI_SERVER_DEFAULT_URL = "http://127.0.0.1:8766"` defined as module-level constant in `tray_controller.py`; daemon core does not import from plugin packages.
 - All 1050 tests pass, no regressions.
@@ -716,6 +763,7 @@ Converted the XMPP daemon from hard-coded core into a built-in plugin, making `d
 - `plugins/manager.py` — `MANIFEST_TEMPLATE` updated to include `xmpp_daemon` built-in plugin.
 
 **Key invariants:**
+
 - One-way dependency: `plugins/xmpp_daemon` may import from `asky.daemon.errors`; daemon core must not import from `plugins/xmpp_daemon`.
 - `DaemonService` raises `DaemonUserError` if zero or multiple transports are registered.
 - Daemon mode itself (singleton lock, macOS menubar, startup-at-login) stays in core `daemon/`.
@@ -726,6 +774,7 @@ Converted the XMPP daemon from hard-coded core into a built-in plugin, making `d
 Successfully completed all 15 tasks for the persona-plugin-deterministic-ux spec, transforming persona management from model-driven tool-discovery to deterministic user-first command pattern with @mention syntax.
 
 **Implementation Summary:**
+
 - **Phase 1 (Tasks 1-4)**: Core infrastructure
   - Plugin KVStore with SQLite backend (27 tests)
   - @mention parser with regex extraction (20 tests)
@@ -745,6 +794,7 @@ Successfully completed all 15 tasks for the persona-plugin-deterministic-ux spec
   - End-to-end integration tests (13 tests)
 
 **Key Features Delivered:**
+
 - CLI commands: `asky persona create/load/unload/list/alias/import/export`
 - @mention syntax: `@persona_name query text` for deterministic persona loading
 - Alias support: `@alias → persona_name` resolution
@@ -753,18 +803,21 @@ Successfully completed all 15 tasks for the persona-plugin-deterministic-ux spec
 - Hook integration for context injection (SESSION_RESOLVED, SYSTEM_PROMPT_EXTEND, PRE_PRELOAD)
 
 **Test Coverage:**
+
 - Total: 1048 tests passing
 - New tests added: 209 tests across 12 new test files
 - Test execution time: ~8 seconds
 - No regressions introduced
 
 **Files Modified/Created:**
+
 - Created: 12 new modules (kvstore, mention_parser, resolver, persona_commands, errors, etc.)
 - Created: 12 new test files
 - Modified: 8 existing modules (plugin.py files, main.py, chat.py, types.py)
 - Updated: 6 AGENTS.md documentation files
 
 **Breaking Changes:**
+
 - Persona creation/management tools removed from LLM tool registry
 - All persona operations now CLI-only (deterministic, user-driven)
 
@@ -3842,6 +3895,7 @@ For older logs, see [DEVLOG_ARCHIVE.md](DEVLOG_ARCHIVE.md).
 Fixed "Not Authorized" error that authorized users encountered when invoking XEP-0050 ad-hoc commands (specifically `asky#list-prompts`). The root cause was fragile JID extraction in `_sender_jid()` that failed when `iq["from"].bare` was unavailable or returned an empty string.
 
 **Changes:**
+
 - `plugins/xmpp_daemon/adhoc_commands.py`: Rewrote `_sender_jid()` with multiple fallback methods:
   - Primary: Try `iq["from"].bare` attribute (existing behavior)
   - Fallback 1: String conversion + split (`str(from_field).split("/")[0]`)
@@ -3854,6 +3908,7 @@ Fixed "Not Authorized" error that authorized users encountered when invoking XEP
   - All tests now pass after fix implementation
 
 **Verification:**
+
 - Full test suite: 1175 tests pass in 11.30s (no regressions)
 - Ad-hoc command tests: 52 tests pass in 1.02s
 - Debug logging verified: warnings appear when fallback methods are used or extraction fails completely
@@ -3861,4 +3916,5 @@ Fixed "Not Authorized" error that authorized users encountered when invoking XEP
 - Unauthorized users continue to be rejected (preservation requirement met)
 
 **Follow-up:**
+
 - Optional enhancement (task 3.2) not implemented: session-based JID storage for multi-step commands. Current fix is sufficient; implement only if multi-step failures are observed in production.

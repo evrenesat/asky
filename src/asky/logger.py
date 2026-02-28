@@ -117,18 +117,22 @@ def _handler_targets_path(handler: logging.Handler, log_path: Path) -> bool:
 def setup_xmpp_logging(level_name: str = "DEBUG") -> None:
     """Attach dedicated handlers for XMPP namespaces to xmpp.log.
 
-    This does not affect root logger destinations; root output continues to the
-    main log file. Captured namespaces are listed in ``XMPP_LOGGER_NAMES``.
+    This does not affect root logger destinations; root output is suppressed for
+    these namespaces via ``propagate = False``. Captured namespaces are listed
+    in ``XMPP_LOGGER_NAMES``.
     """
     level = getattr(logging, level_name.upper(), logging.DEBUG)
     log_path = Path(XMPP_LOG_FILE).expanduser()
     log_path.parent.mkdir(parents=True, exist_ok=True)
     _archive_existing_log_file(log_path)
 
-    formatter = logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
+    formatter = logging.Formatter(
+        "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+    )
     for logger_name in XMPP_LOGGER_NAMES:
         target_logger = logging.getLogger(logger_name)
         target_logger.setLevel(level)
+        target_logger.propagate = False
         already_attached = any(
             _handler_targets_path(existing_handler, log_path)
             for existing_handler in target_logger.handlers
