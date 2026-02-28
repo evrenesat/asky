@@ -18,7 +18,7 @@ from asky.plugins.xmpp_daemon.image_transcriber import (
     ImageTranscriber,
     ImageTranscriptionJob,
 )
-from asky.plugins.xmpp_daemon.interface_planner import (
+from asky.daemon.interface_planner import (
     ACTION_COMMAND,
     ACTION_CHAT,
     InterfacePlanner,

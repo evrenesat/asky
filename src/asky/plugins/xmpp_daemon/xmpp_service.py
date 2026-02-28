@@ -51,7 +51,7 @@ from asky.plugins.xmpp_daemon.document_ingestion import (
     split_document_urls,
 )
 from asky.plugins.xmpp_daemon.image_transcriber import ImageTranscriber
-from asky.plugins.xmpp_daemon.interface_planner import InterfacePlanner
+from asky.daemon.interface_planner import InterfacePlanner
 from asky.plugins.xmpp_daemon.query_progress import (
     QUERY_STATUS_UPDATE_SECONDS,
     QueryProgressEvent,

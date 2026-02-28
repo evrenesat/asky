@@ -11,7 +11,7 @@ def _any_model_alias() -> str:
 def test_planner_injects_command_reference_when_enabled(monkeypatch):
     captured = {}
 
-    def _fake_get_llm(model_id, messages, use_tools, model_alias):
+    def _fake_get_llm(model_id, messages, use_tools, model_alias, **kwargs):
         captured["model_id"] = model_id
         captured["messages"] = messages
         captured["use_tools"] = use_tools
@@ -41,7 +41,7 @@ def test_planner_injects_command_reference_when_enabled(monkeypatch):
 def test_planner_skips_command_reference_when_disabled(monkeypatch):
     captured = {}
 
-    def _fake_get_llm(model_id, messages, use_tools, model_alias):
+    def _fake_get_llm(model_id, messages, use_tools, model_alias, **kwargs):
         captured["messages"] = messages
         return {
             "content": '{"action_type":"query","command_text":"","query_text":"hello"}'
@@ -61,7 +61,7 @@ def test_planner_skips_command_reference_when_disabled(monkeypatch):
 
 
 def test_planner_invalid_json_falls_back_to_query(monkeypatch):
-    def _fake_get_llm(model_id, messages, use_tools, model_alias):
+    def _fake_get_llm(model_id, messages, use_tools, model_alias, **kwargs):
         return {"content": "not-json"}
 
     monkeypatch.setattr("asky.daemon.interface_planner.get_llm_msg", _fake_get_llm)
@@ -76,3 +76,22 @@ def test_planner_invalid_json_falls_back_to_query(monkeypatch):
     assert action.action_type == ACTION_QUERY
     assert action.query_text == "hello world"
     assert action.reason == "planner_parse_fallback"
+
+
+def test_planner_parses_chat_action(monkeypatch):
+    from asky.daemon.interface_planner import ACTION_CHAT
+
+    def _fake_get_llm(model_id, messages, use_tools, model_alias, **kwargs):
+        return {
+            "content": '{"action_type":"chat","command_text":"","query_text":"hi there"}'
+        }
+
+    monkeypatch.setattr("asky.daemon.interface_planner.get_llm_msg", _fake_get_llm)
+    planner = InterfacePlanner(
+        _any_model_alias(),
+        system_prompt="BASE PROMPT",
+    )
+
+    action = planner.plan("hi")
+    assert action.action_type == ACTION_CHAT
+    assert action.query_text == "hi there"
