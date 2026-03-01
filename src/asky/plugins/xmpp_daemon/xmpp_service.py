@@ -45,6 +45,10 @@ from asky.daemon.errors import DaemonUserError
 from asky.plugins.xmpp_daemon.adhoc_commands import AdHocCommandHandler
 from asky.plugins.xmpp_daemon.chunking import chunk_text
 from asky.plugins.xmpp_daemon.command_executor import CommandExecutor
+from asky.plugins.xmpp_daemon.file_upload import (
+    FileUploadService,
+    set_file_upload_service,
+)
 from asky.plugins.xmpp_daemon.document_ingestion import (
     DocumentIngestionService,
     redact_document_urls,
@@ -166,6 +170,8 @@ class XMPPService:
             session_start_callback=self._on_xmpp_session_start,
             client_capabilities=dict(XMPP_CLIENT_CAPABILITIES),
         )
+        self._file_upload_service = FileUploadService(self._client)
+        set_file_upload_service(self._file_upload_service)
         logger.debug(
             "XMPPService initialized host=%s port=%s resource=%s allowed_count=%s client_capability_map_count=%s",
             XMPP_HOST,
@@ -182,6 +188,7 @@ class XMPPService:
     def stop(self) -> None:
         """Request graceful shutdown of the XMPP client."""
         logger.info("XMPPService stop requested")
+        set_file_upload_service(None)
         self._client.stop()
 
     def _on_xmpp_message(self, payload: dict) -> None:

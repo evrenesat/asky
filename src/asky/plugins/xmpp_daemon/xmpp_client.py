@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import inspect
 import logging
 import re
@@ -86,11 +87,14 @@ class AskyXMPPClient:
                 "xep_0030",
                 "xep_0071",
                 "xep_0308",
+                "xep_0363",
             ):
                 try:
                     register_plugin(_plugin_name)
                 except Exception:
-                    logger.debug("failed to register %s plugin", _plugin_name, exc_info=True)
+                    logger.debug(
+                        "failed to register %s plugin", _plugin_name, exc_info=True
+                    )
 
         self._client.add_event_handler("session_start", self._on_session_start)
         self._client.add_event_handler("message", self._on_message)
@@ -125,7 +129,9 @@ class AskyXMPPClient:
 
     def start_foreground(self) -> None:
         """Connect and enter processing loop."""
-        logger.info("xmpp client starting foreground host=%s port=%s", self._host, self._port)
+        logger.info(
+            "xmpp client starting foreground host=%s port=%s", self._host, self._port
+        )
         connected = _connect_client(self._client, self._host, self._port)
         connected = _resolve_connect_result(self._client, connected)
         if connected is False:
@@ -191,7 +197,10 @@ class AskyXMPPClient:
             except Exception:
                 if normalized_replace_id:
                     raise
-                logger.debug("failed to send stanza with explicit id; falling back", exc_info=True)
+                logger.debug(
+                    "failed to send stanza with explicit id; falling back",
+                    exc_info=True,
+                )
         payload = {
             "mto": to_jid,
             "mbody": str(body or ""),
@@ -272,7 +281,9 @@ class AskyXMPPClient:
                     correction_supported=True,
                 )
             except Exception:
-                logger.debug("status correction send failed, falling back", exc_info=True)
+                logger.debug(
+                    "status correction send failed, falling back", exc_info=True
+                )
                 correction_supported = False
         else:
             correction_supported = handle.correction_supported
@@ -295,7 +306,9 @@ class AskyXMPPClient:
             return
         muc_plugin = _get_muc_plugin(self._client)
         if muc_plugin is None:
-            logger.debug("xep_0045 plugin is not available; cannot join room=%s", room_jid)
+            logger.debug(
+                "xep_0045 plugin is not available; cannot join room=%s", room_jid
+            )
             return
         join_method = getattr(muc_plugin, "join_muc", None)
         if not callable(join_method):
@@ -313,6 +326,81 @@ class AskyXMPPClient:
         except TypeError:
             # Fallback for plugin variants that prefer keyword-only room/nick.
             join_method(room=normalized_room, nick=self._nick)
+
+    def upload_file(self, file_path: str, *, content_type: str = "") -> str:
+        """Upload a local file using XEP-0363 and return the download URL."""
+        if self.loop is None:
+            raise DaemonUserError("XMPP client is not connected (loop is None).")
+
+        plugin = self.get_plugin("xep_0363")
+        if plugin is None:
+            raise DaemonUserError(
+                "XMPP upload service not available (xep_0363 plugin not loaded)."
+            )
+
+        import os
+
+        if not os.path.exists(file_path):
+            raise FileNotFoundError(f"File not found: {file_path}")
+
+        file_size = os.path.getsize(file_path)
+        filename = os.path.basename(file_path)
+
+        async def _upload():
+            with open(file_path, "rb") as f:
+                # slixmpp xep_0363.upload_file signature:
+                # upload_file(filename, size, content_type, input=None, ...)
+                try:
+                    return await plugin.upload_file(
+                        filename,
+                        file_size,
+                        content_type,
+                        input=f,
+                    )
+                except TypeError:
+                    # Fallback for older slixmpp variants
+                    return await plugin.upload_file(
+                        name=filename,
+                        size=file_size,
+                        mime_type=content_type,
+                        file=f,
+                    )
+
+        future = asyncio.run_coroutine_threadsafe(_upload(), self.loop)
+        try:
+            return future.result(timeout=60)
+        except Exception as e:
+            logger.debug("XMPP file upload failed: %s", e, exc_info=True)
+            raise
+
+    def send_oob_message(
+        self, *, to_jid: str, url: str, body: str, message_type: str
+    ) -> None:
+        """Send a message with an OOB x element (XEP-0066)."""
+        make_message = getattr(self._client, "make_message", None)
+        if not callable(make_message):
+            raise RuntimeError("Invalid slixmpp client: missing make_message()")
+
+        msg = make_message(mto=to_jid, mbody=body, mtype=message_type)
+        x_node = ET.Element("{jabber:x:oob}x")
+        url_node = ET.SubElement(x_node, "{jabber:x:oob}url")
+        url_node.text = url
+        msg.xml.append(x_node)
+
+        _dispatch_client_send_stanza_direct(self._client, msg)
+
+
+def _dispatch_client_send_stanza_direct(client, msg) -> None:
+    """Dispatch an already constructed message stanza on client loop."""
+    loop = getattr(client, "loop", None)
+    send = getattr(msg, "send", None)
+    if not callable(send):
+        raise RuntimeError("Invalid slixmpp stanza: missing send()")
+
+    if loop is not None and hasattr(loop, "call_soon_threadsafe"):
+        loop.call_soon_threadsafe(send)
+        return
+    send()
 
 
 def _full_jid(from_value) -> str:
@@ -676,13 +764,17 @@ def _extract_disco_features(info_payload) -> set[str]:
                     if normalized:
                         features.add(normalized)
         except Exception:
-            logger.debug("failed reading disco features via get_features()", exc_info=True)
+            logger.debug(
+                "failed reading disco features via get_features()", exc_info=True
+            )
 
     if hasattr(info_payload, "xml"):
         xml = getattr(info_payload, "xml", None)
         if xml is not None:
             for feature_node in xml.findall(f".//{{{DISCO_INFO_NAMESPACE}}}feature"):
-                value = str(getattr(feature_node, "attrib", {}).get("var", "") or "").strip()
+                value = str(
+                    getattr(feature_node, "attrib", {}).get("var", "") or ""
+                ).strip()
                 if value:
                     features.add(value)
     if isinstance(info_payload, dict):
@@ -731,7 +823,9 @@ def _extract_disco_identity_tokens(info_payload) -> set[str]:
         try:
             _collect_identity_tokens(identity_tokens, get_identities())
         except Exception:
-            logger.debug("failed reading disco identities via get_identities()", exc_info=True)
+            logger.debug(
+                "failed reading disco identities via get_identities()", exc_info=True
+            )
     if hasattr(info_payload, "xml"):
         xml = getattr(info_payload, "xml", None)
         if xml is not None:
@@ -750,7 +844,9 @@ def _extract_disco_identity_tokens(info_payload) -> set[str]:
     except Exception:
         disco_info = None
     if disco_info is not None:
-        _collect_identity_tokens(identity_tokens, getattr(disco_info, "identities", None))
+        _collect_identity_tokens(
+            identity_tokens, getattr(disco_info, "identities", None)
+        )
         nested_get = getattr(disco_info, "get_identities", None)
         if callable(nested_get):
             try:
@@ -821,14 +917,18 @@ def _add_identity_tokens(
     if normalized_category and normalized_type:
         identity_tokens.add(f"{normalized_category}/{normalized_type}")
     if normalized_category and normalized_type and normalized_name:
-        identity_tokens.add(f"{normalized_category}/{normalized_type}/{normalized_name}")
+        identity_tokens.add(
+            f"{normalized_category}/{normalized_type}/{normalized_name}"
+        )
 
 
 def _normalize_identity_token(value: object) -> str:
     return str(value or "").strip().lower()
 
 
-def _normalize_client_capabilities(capabilities: Optional[dict[str, object]]) -> dict[str, set[str]]:
+def _normalize_client_capabilities(
+    capabilities: Optional[dict[str, object]],
+) -> dict[str, set[str]]:
     normalized: dict[str, set[str]] = {}
     if not isinstance(capabilities, dict):
         return normalized
@@ -884,7 +984,11 @@ def _disconnect_client(client) -> None:
         except Exception:
             logger.debug("xmpp disconnect() failed", exc_info=True)
     loop = getattr(client, "loop", None)
-    if loop is not None and hasattr(loop, "call_soon_threadsafe") and hasattr(loop, "stop"):
+    if (
+        loop is not None
+        and hasattr(loop, "call_soon_threadsafe")
+        and hasattr(loop, "stop")
+    ):
         try:
             loop.call_soon_threadsafe(loop.stop)
         except Exception:

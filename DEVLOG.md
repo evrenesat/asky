@@ -1,5 +1,30 @@
 # DEVLOG
 
+2:
+3: ## 2026-03-01 - XEP-0363 HTTP File Upload for XMPP Plugin
+4:
+5: **Problem:** XMPP daemon lacked a way to upload local files and share them via OOB (XEP-0066) links.
+6:
+7: **Changes:**
+8:
+9: - Modified `src/asky/plugins/xmpp_daemon/xmpp_client.py`:
+10: - Registered `xep_0363` slixmpp plugin.
+11: - Added `upload_file()` for asynchronous upload bridged to sync caller via `run_coroutine_threadsafe`.
+12: - Added `send_oob_message()` for sending XEP-0066 OOB stanzas.
+13: - Created `src/asky/plugins/xmpp_daemon/file_upload.py`:
+14: - Implemented `FileUploadService` to orchestrate upload and OOB delivery.
+15: - Added singleton `get_file_upload_service()` for cross-plugin access.
+16: - Modified `src/asky/plugins/xmpp_daemon/xmpp_service.py`:
+17: - Initialized `FileUploadService` on startup and cleared on stop.
+18: - Added `tests/test_xmpp_file_upload.py` with 7 new tests covering happy paths and error states.
+19:
+20: **Why:** To enable XMPP-based file sharing, allowing the daemon to deliver generated reports, images, or audio transcripts to clients using standard XMPP file-transfer protocols.
+21:
+22: **Verification:**
+23:
+24: - `uv run pytest tests/test_xmpp_file_upload.py` -> 7 passed.
+25: - Full suite passed: 1265 passed in 10.97s.
+
 ## 2026-03-01 - Phase 3 Code Review: Session Compaction Bug Fix
 
 **Problem:**

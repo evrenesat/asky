@@ -4,14 +4,14 @@ Optional plugin runtime for asky.
 
 ## Module Overview
 
-| Module | Purpose |
-| --- | --- |
-| `manifest.py` | Plugin roster entry validation (`plugins.toml`) |
-| `manager.py` | Plugin discovery/import/dependency order/lifecycle |
-| `hooks.py` | Ordered hook registration and invocation |
-| `hook_types.py` | Hook constants and mutable payload contracts |
-| `runtime.py` | Runtime bootstrap + process-level cache |
-| `base.py` | `AskyPlugin`, `PluginContext`, `PluginStatus`, `CLIContribution`, `CapabilityCategory` contracts |
+| Module          | Purpose                                                                                          |
+| --------------- | ------------------------------------------------------------------------------------------------ |
+| `manifest.py`   | Plugin roster entry validation (`plugins.toml`)                                                  |
+| `manager.py`    | Plugin discovery/import/dependency order/lifecycle                                               |
+| `hooks.py`      | Ordered hook registration and invocation                                                         |
+| `hook_types.py` | Hook constants and mutable payload contracts                                                     |
+| `runtime.py`    | Runtime bootstrap + process-level cache                                                          |
+| `base.py`       | `AskyPlugin`, `PluginContext`, `PluginStatus`, `CLIContribution`, `CapabilityCategory` contracts |
 
 ## Plugin Boundary Rule
 
@@ -23,12 +23,12 @@ Each plugin owns all its business logic. CLI flags, hook handlers, and executabl
 
 Plugins declare CLI flags via the `get_cli_contributions()` classmethod on `AskyPlugin`. This is a classmethod so flags can be collected before full activation (light-import only). Flags are grouped by `CapabilityCategory`:
 
-| Category constant | `--help` group title | Intended use |
-|---|---|---|
-| `OUTPUT_DELIVERY` | Output Delivery | Actions applied to the final answer (email, push, open) |
-| `SESSION_CONTROL` | Session & Query | Query/session behaviour modifiers |
-| `BROWSER_SETUP` | Browser Setup | Browser auth / extension configuration |
-| `BACKGROUND_SERVICE` | Background Services | Daemon process launch flags |
+| Category constant    | `--help` group title | Intended use                                            |
+| -------------------- | -------------------- | ------------------------------------------------------- |
+| `OUTPUT_DELIVERY`    | Output Delivery      | Actions applied to the final answer (email, push, open) |
+| `SESSION_CONTROL`    | Session & Query      | Query/session behaviour modifiers                       |
+| `BROWSER_SETUP`      | Browser Setup        | Browser auth / extension configuration                  |
+| `BACKGROUND_SERVICE` | Background Services  | Daemon process launch flags                             |
 
 Example contribution:
 
@@ -107,21 +107,22 @@ The XMPP config completeness check (`has_minimum_requirements()`) runs inside `_
 
 Key modules:
 
-| Module                      | Purpose                                                    |
-| --------------------------- | ---------------------------------------------------------- |
-| `plugin.py`                 | `XMPPDaemonPlugin` — registers XMPP transport via hook     |
-| `xmpp_service.py`           | `XMPPService` — per-JID queue + XMPP client wiring        |
-| `xmpp_client.py`            | Slixmpp transport wrapper                                  |
-| `router.py`                 | `DaemonRouter` — ingress policy (allowlist, room binding)  |
-| `command_executor.py`       | Command/query bridge — policy gate, `AskyClient.run_turn`  |
-| `session_profile_manager.py`| Room/session bindings + session override file management   |
-| `interface_planner.py`      | LLM-based intent classification for non-prefixed messages  |
-| `voice_transcriber.py`      | Background audio transcription via `mlx-whisper`           |
-| `image_transcriber.py`      | Background image description via image-capable LLM         |
-| `document_ingestion.py`     | HTTPS document URL ingestion into session local corpus     |
-| `transcript_manager.py`     | Transcript lifecycle, pending confirmation tracking        |
-| `query_progress.py`         | Reusable query progress events + status-message publisher  |
-| `chunking.py`               | Outbound response chunking                                 |
+| Module                       | Purpose                                                   |
+| ---------------------------- | --------------------------------------------------------- |
+| `plugin.py`                  | `XMPPDaemonPlugin` — registers XMPP transport via hook    |
+| `xmpp_service.py`            | `XMPPService` — per-JID queue + XMPP client wiring        |
+| `xmpp_client.py`             | Slixmpp transport wrapper                                 |
+| `router.py`                  | `DaemonRouter` — ingress policy (allowlist, room binding) |
+| `command_executor.py`        | Command/query bridge — policy gate, `AskyClient.run_turn` |
+| `session_profile_manager.py` | Room/session bindings + session override file management  |
+| `interface_planner.py`       | LLM-based intent classification for non-prefixed messages |
+| `voice_transcriber.py`       | Background audio transcription via `mlx-whisper`          |
+| `image_transcriber.py`       | Background image description via image-capable LLM        |
+| `document_ingestion.py`      | HTTPS document URL ingestion into session local corpus    |
+| `transcript_manager.py`      | Transcript lifecycle, pending confirmation tracking       |
+| `query_progress.py`          | Reusable query progress events + status-message publisher |
+| `chunking.py`                | Outbound response chunking                                |
+| `file_upload.py`             | XEP-0363 HTTP file upload service                         |
 
 One-way dependency rule: `xmpp_daemon` may import from `asky.daemon.errors`; `daemon/` core must not import from `asky.plugins.xmpp_daemon`.
 
