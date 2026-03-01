@@ -345,11 +345,8 @@ def test_run_chat_renders_answer_before_final_history_finalize():
         patch("asky.cli.chat.AskyClient") as mock_client_cls,
         patch("asky.rendering.extract_markdown_title", return_value="title"),
         patch("asky.rendering.save_html_report", return_value=(None, None)),
-        patch(
-            "asky.research.cache.ResearchCache.wait_for_background_summaries",
-            return_value=True,
-        ) as mock_wait_for_summaries,
-    ):
+        ):
+
         renderer = MagicMock()
         renderer.live = None
         renderer.current_turn = 1
@@ -383,7 +380,6 @@ def test_run_chat_renders_answer_before_final_history_finalize():
         run_chat(mock_args, "query")
 
     assert call_order == ["printed", "finalize"]
-    mock_wait_for_summaries.assert_called_once()
 
 
 def test_run_chat_lean_mode_sets_answer_title_for_post_turn_render():

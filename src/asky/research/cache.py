@@ -50,24 +50,9 @@ class ResearchCache:
 
         self.db_path = db_path or str(DB_PATH)
         self.ttl_hours = ttl_hours or RESEARCH_CACHE_TTL_HOURS
-        self._summarization_workers = (
-            summarization_workers or RESEARCH_SUMMARIZATION_WORKERS
-        )
-        self._executor: Optional[ThreadPoolExecutor] = None
-        self._pending_summary_futures: Set[Future[Any]] = set()
-        self._pending_futures_lock = threading.Lock()
         self._db_lock = threading.Lock()
         self._initialized = True
         self.init_db()
-
-    def _get_executor(self) -> ThreadPoolExecutor:
-        """Lazy initialization of thread pool executor."""
-        if self._executor is None:
-            self._executor = ThreadPoolExecutor(
-                max_workers=self._summarization_workers,
-                thread_name_prefix="research_summarizer",
-            )
-        return self._executor
 
     def _get_conn(self) -> sqlite3.Connection:
         """Get a database connection."""
@@ -538,68 +523,8 @@ class ResearchCache:
             conn.commit()
             conn.close()
 
-        # Trigger background summarization if content changed
-        if trigger_summarization and content_changed and content:
-            self._schedule_summarization(cache_id, url, content, usage_tracker)
-
         logger.debug(f"Cached URL {url} with id={cache_id}")
         return cache_id
-
-    def _schedule_summarization(
-        self, cache_id: int, url: str, content: str, usage_tracker: Optional[Any] = None
-    ) -> None:
-        """Schedule background summarization task."""
-
-        def summarize_task():
-            try:
-                self._update_summary_status(cache_id, "processing")
-
-                # Import here to avoid circular imports
-                from asky.summarization import _summarize_content
-
-                summary = _summarize_content(
-                    content=content[:BACKGROUND_SUMMARY_INPUT_CHARS],
-                    prompt_template=SUMMARIZE_PAGE_PROMPT,
-                    max_output_chars=BACKGROUND_SUMMARY_MAX_OUTPUT_CHARS,
-                    usage_tracker=usage_tracker,
-                )
-
-                self._save_summary(cache_id, summary)
-                logger.debug(f"Background summarization completed for {url}")
-
-            except Exception as e:
-                logger.error(f"Background summarization failed for {url}: {e}")
-                self._update_summary_status(cache_id, "failed")
-
-        executor = self._get_executor()
-        future = executor.submit(summarize_task)
-        self._track_summary_future(future)
-        logger.debug(f"Scheduled background summarization for {url}")
-
-    def _track_summary_future(self, future: Future[Any]) -> None:
-        """Track active background summary futures for optional final draining."""
-        with self._pending_futures_lock:
-            self._pending_summary_futures.add(future)
-
-        def _on_done(completed_future: Future[Any]) -> None:
-            with self._pending_futures_lock:
-                self._pending_summary_futures.discard(completed_future)
-
-        future.add_done_callback(_on_done)
-
-    def wait_for_background_summaries(self, timeout: Optional[float] = None) -> bool:
-        """Wait for currently pending background summary tasks.
-
-        Returns True when all known tasks completed before the timeout.
-        """
-        with self._pending_futures_lock:
-            pending_futures = list(self._pending_summary_futures)
-
-        if not pending_futures:
-            return True
-
-        _, not_done = wait(pending_futures, timeout=timeout)
-        return len(not_done) == 0
 
     def _update_summary_status(self, cache_id: int, status: str) -> None:
         """Update summary status in database."""
@@ -917,15 +842,3 @@ class ResearchCache:
         count = c.fetchone()[0]
         conn.close()
         return count
-
-    def shutdown(self) -> None:
-        """Shutdown the background executor gracefully."""
-        executor_was_active = self._executor is not None
-        if self._executor:
-            logger.debug("Shutting down research cache executor...")
-            self._executor.shutdown(wait=True)
-            self._executor = None
-        with self._pending_futures_lock:
-            self._pending_summary_futures.clear()
-        if executor_was_active:
-            logger.debug("Research cache executor shutdown complete")

@@ -171,6 +171,9 @@ def preload_local_research_sources(
             candidate_documents.append((link_target, doc_payload, "discovered"))
 
         for document_target, document_payload, source_type in candidate_documents:
+            if document_payload.get("is_directory_discovery"):
+                continue
+
             canonical_target = str(
                 document_payload.get("resolved_target") or document_target
             )

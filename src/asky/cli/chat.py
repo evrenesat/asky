@@ -60,7 +60,6 @@ from asky.cli.verbose_output import (
 )
 
 logger = logging.getLogger(__name__)
-BACKGROUND_SUMMARY_DRAIN_STATUS = "Finalizing background page summaries..."
 QUERY_DEFAULT_PENDING_AUTO_NAME_KEY = "pending_auto_name"
 QUERY_DEFAULT_MODEL_KEY = "model"
 QUERY_DEFAULT_SUMMARIZE_KEY = "summarize"
@@ -455,16 +454,6 @@ def _combine_preloaded_source_context(
 ) -> Optional[str]:
     """Merge multiple preloaded-source context blocks into one message section."""
     return api_combine_preloaded_source_context(*context_blocks)
-
-
-def _drain_research_background_summaries() -> None:
-    """Wait for pending research cache background summaries."""
-    try:
-        from asky.research.cache import ResearchCache
-
-        ResearchCache().wait_for_background_summaries()
-    except Exception as exc:
-        logger.debug("Skipping background summary drain: %s", exc)
 
 
 def _render_tool_schema_table(tool_schemas: List[Dict[str, Any]]) -> Optional[Table]:
@@ -1043,12 +1032,6 @@ def run_chat(
                 )
                 for notice in finalize_result.notices:
                     console.print(f"\n[{notice}]")
-                if use_banner and effective_research_mode:
-                    renderer.update_banner(
-                        renderer.current_turn,
-                        status_message=BACKGROUND_SUMMARY_DRAIN_STATUS,
-                    )
-                    _drain_research_background_summaries()
             finally:
                 if use_banner:
                     renderer.update_banner(renderer.current_turn, status_message=None)

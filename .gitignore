@@ -18,3 +18,5 @@ review_context.md
 .claude/
 .agents
 .agents/workflows
+.gemini/settings.json
+.gemini/policies/safe-commands.toml

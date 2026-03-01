@@ -3,6 +3,23 @@
 For full detailed entries, see [DEVLOG_ARCHIVE.md](DEVLOG_ARCHIVE.md).
 
 
+## 2026-03-01: Removed Background Summarization, Added On-Demand Summaries, and Fixed Shell Lock Persistence
+
+- **Summary**: Implemented a set of performance and reliability fixes for research mode and session management.
+- **Changes**:
+  - **Removed Background Document Summarization**: Stopped all background "warm-up" document summarization in `ResearchCache` to save tokens and reduce background noise.
+  - **On-Demand Synchronous Summaries**: Updated `get_link_summaries` tool to perform synchronous, on-demand summarization if a summary is missing or stale.
+  - **Fixed Local Directory Ingestion**: Stopped creating and counting a pseudo-document for directories during local ingestion. Only discovered files are now counted.
+  - **Fixed Shell Lock Persistence**: Removed the `atexit` registration that cleared the shell session ID on process exit. Sticky session locks now persist in the same shell until explicit detach or cleanup.
+  - **CLI Refinements**: Removed the end-of-turn background-summary drain in `chat.py`.
+- **Verification**:
+  - Targeted tests: `uv run pytest tests/test_research_adapters.py tests/test_local_ingestion_flow.py tests/test_research_cache.py tests/test_research_tools.py tests/test_cli.py tests/test_safety_and_resilience_guards.py -q`
+  - Full suite: `uv run pytest`
+- **Gotchas**:
+  - `get_link_summaries` may now take longer if it needs to generate a summary synchronously during the tool call.
+  - `wait_for_background_summaries` and `shutdown` methods were removed from `ResearchCache`.
+- **Status**: All targeted tests passed.
+
 ## 2026-03-01: Router/Transcriber Boundary Decoupling Fix
 
 - **Summary**: Removed direct compile-time dependency from `xmpp_daemon.router` to transcriber plugin internals.

@@ -478,10 +478,8 @@ Evidence Extraction (optional)
 Structured facts injected into context
 ```
 
-Research cache summarization for cached pages runs in a background thread pool.
-CLI research turns now perform an explicit post-answer drain
-(`wait_for_background_summaries`) before final banner teardown so late
-summarization token usage appears in the final live snapshot.
+Document summaries are generated on-demand and synchronously via `get_link_summaries` when needed.
+The CLI no longer performs an end-of-turn background-summary drain for research turns.
 
 Local-file targets are preloaded/indexed through a built-in local loader:
 

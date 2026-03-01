@@ -9,5 +9,11 @@
       "terminal",
       "web_fetch"
     ]
+  },
+  "general": {
+    "defaultApprovalMode": "auto_edit"
+  },
+  "security": {
+    "enablePermanentToolApproval": true
   }
 }

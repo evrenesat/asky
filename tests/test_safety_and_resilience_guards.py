@@ -119,11 +119,9 @@ def test_set_shell_session_id_writes_lock_atomically(tmp_path):
 
     lock_file = tmp_path / "session.lock"
     with patch.object(sm, "_get_lock_file_path", return_value=lock_file):
-        with patch("asky.core.session_manager.atexit") as mock_atexit:
-            sm.set_shell_session_id(42)
-            assert lock_file.exists()
-            assert lock_file.read_text().strip() == "42"
-            mock_atexit.register.assert_called_once_with(sm.clear_shell_session)
+        sm.set_shell_session_id(42)
+        assert lock_file.exists()
+        assert lock_file.read_text().strip() == "42"
 
 
 def test_set_shell_session_id_removes_tmp_file_after_replace(tmp_path):

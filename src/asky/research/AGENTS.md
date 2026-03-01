@@ -88,19 +88,18 @@ Hybrid ranking (dense + lexical)
 Diverse chunk selection
 ```
 
-## ResearchCache (`cache.py`)
+### ResearchCache (`cache.py`)
 
 Caches fetched URL content and extracted links with TTL.
 
-### Key Features
+#### Key Features
 
 - **TTL-based expiry**: Configurable `cache_ttl_hours`
 - **Startup cleanup**: Expired entries purged on init (daemon thread)
 - **Content + links**: Both cached together per URL
 - **Invalidation**: Clears related vectors when content changes
-- **Background summary drain support**: Tracks pending thread-pool summary futures
-  and exposes `wait_for_background_summaries()` so callers can perform a final
-  synchronized banner refresh before UI teardown.
+- **On-demand summarization**: `get_link_summaries` performs synchronous summarization if the cache entry is missing or stale.
+
 
 ### Schema (SQLite)
 
@@ -272,7 +271,7 @@ context cutoff.
 - Absolute paths are accepted only when they are inside configured roots.
 - Root-relative targets (for example `/nested/doc.txt`) resolve under configured roots.
 - `extract_local_source_targets(...)` provides deterministic token extraction from prompts for pre-LLM local preload.
-- Directory targets (discover): produce file links as `local://...` (non-recursive in v1).
+- Directory targets (discover): produce file links as `local://...` (non-recursive in v1). Directory itself is not ingested as a pseudo-document and does not count towards document totals.
 - File targets (read/discover): normalize to plain text for cache/indexing.
   - Text-like: `.txt`, `.md`, `.markdown`, `.html`, `.htm`, `.json`, `.csv`
   - Document-like: `.pdf`, `.epub` via PyMuPDF

@@ -17,7 +17,6 @@ class TestStartupCleanup:
         db_path = str(tmp_path / "test_startup.db")
         cache = ResearchCache(db_path=db_path, ttl_hours=24)
         yield cache
-        cache.shutdown()
         ResearchCache._instance = None
 
     @pytest.fixture

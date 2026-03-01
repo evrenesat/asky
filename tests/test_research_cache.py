@@ -22,9 +22,8 @@ class TestResearchCache:
         ResearchCache._instance = None
 
         db_path = str(tmp_path / "test_research.db")
-        cache = ResearchCache(db_path=db_path, ttl_hours=24, summarization_workers=1)
+        cache = ResearchCache(db_path=db_path, ttl_hours=24)
         yield cache
-        cache.shutdown()
 
     def test_init_creates_tables(self, cache):
         """Test that initialization creates required tables."""
@@ -378,56 +377,6 @@ class TestResearchCache:
         assert stats["valid_entries"] == 2
         assert stats["expired_entries"] == 0
 
-    @patch("asky.summarization._summarize_content")
-    def test_background_summarization_triggered(self, mock_summarize, cache):
-        """Test that background summarization is triggered."""
-        mock_summarize.return_value = "Test summary"
-
-        cache.cache_url(
-            url="http://example.com",
-            content="Content to summarize",
-            title="Title",
-            links=[],
-            trigger_summarization=True,
-        )
-
-        # Wait for background task
-        time.sleep(0.5)
-
-        # Check that summary was saved
-        cached = cache.get_cached("http://example.com")
-        # Summary might be completed or still processing depending on timing
-        assert cached["summary_status"] in ["processing", "completed", "failed"]
-
-    @patch("asky.summarization._summarize_content")
-    def test_wait_for_background_summaries_drains_pending_tasks(
-        self, mock_summarize, cache
-    ):
-        """Test that pending background summaries can be explicitly drained."""
-        release_event = threading.Event()
-        started_event = threading.Event()
-
-        def delayed_summary(**_kwargs):
-            started_event.set()
-            release_event.wait(timeout=1.0)
-            return "Delayed summary"
-
-        mock_summarize.side_effect = delayed_summary
-
-        cache.cache_url(
-            url="http://drain.example.com",
-            content="Content to summarize slowly",
-            title="Drain test",
-            links=[],
-            trigger_summarization=True,
-        )
-
-        assert started_event.wait(timeout=1.0) is True
-        assert cache.wait_for_background_summaries(timeout=0.01) is False
-
-        release_event.set()
-        assert cache.wait_for_background_summaries(timeout=1.0) is True
-
     def test_url_hash_consistency(self, cache):
         """Test that URL hashing is consistent."""
         url = "http://example.com/path?query=1"
@@ -459,8 +408,6 @@ class TestResearchCacheSingleton:
         cache2 = ResearchCache()
 
         assert cache1 is cache2
-        cache1.shutdown()
-
 
 class TestResearchFindings:
     """Tests for research findings (memory) functionality."""
@@ -473,9 +420,8 @@ class TestResearchFindings:
         ResearchCache._instance = None
 
         db_path = str(tmp_path / "test_findings.db")
-        cache = ResearchCache(db_path=db_path, ttl_hours=24, summarization_workers=1)
+        cache = ResearchCache(db_path=db_path, ttl_hours=24)
         yield cache
-        cache.shutdown()
 
     def test_findings_table_created(self, cache):
         """Test that research_findings table is created."""

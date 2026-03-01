@@ -79,13 +79,14 @@ History command behavior:
 ### Chat Flow (`chat.py`)
 
 Main conversation entry point via `run_chat()`:
-
-1. **Session Identification**: Resolve session variables (`SS`, `RS`, shell-id) and run `_check_idle_session_timeout()` **before** starting the banner.
+1. **Session Identification**: Resolve session variables (`SS`, `RS`, shell-id) and run `_check_idle_session_timeout()` **before** starting the banner. Shell-session locks persist across process exits in the same shell until explicit end/detach.
 2. **Mention Parsing**: Parse `@persona_name` syntax from query and load persona before model invocation.
 3. **CLI Adaptation**: Parse args into `AskyTurnRequest` + UI callbacks.
 4. **API Orchestration**: `AskyClient.run_turn()` performs context/session/preload/model/persist flow.
 5. **UI Rendering**: `chat.py` maps API notices/events into Rich output + banner updates.
 6. **Interface Side Effects**: optional browser/email/push/report handling (including dynamic sidebar index updates).
+
+Research mode is session-owned:
 
 `POST_TURN_RENDER` hooks always receive a populated `answer_title` for non-empty answers (markdown title when present, otherwise query-text fallback), including lean mode (`-L`) turns.
 
@@ -120,8 +121,7 @@ Section CLI behavior:
 - Preload stage emits a `Preloaded Context Sent To Main Model` panel summarizing seed-document status, selected shortlist URLs, and warnings before the first model call.
 - Tool/summarization/shortlist internals in verbose mode are rendered as transport metadata panels (endpoint, status, response type/size) rather than full payload bodies.
 - After final answer rendering, research-mode chat keeps Live active during deferred
-  history finalization and drains pending background research summaries before the
-  last banner refresh/stop so summary-token usage is reflected in the final banner.
+  history finalization.
 
 ## Shell Completion (`completion.py`)
 

@@ -235,7 +235,6 @@ def set_shell_session_id(session_id: int) -> None:
     tmp = lock_file.with_suffix(".tmp")
     tmp.write_text(str(session_id))
     os.replace(tmp, lock_file)
-    atexit.register(clear_shell_session)
     logger.info(f"Session lock file created: {lock_file}")
 
 

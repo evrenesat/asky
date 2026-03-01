@@ -224,25 +224,30 @@ class TestGetLinkSummaries:
         assert result["http://example.com"]["summary"] == "This is a test summary."
         assert result["http://example.com"]["title"] == "Test Title"
 
-    def test_get_summaries_processing(self, mock_cache):
-        """Test handling of summaries still processing."""
+    @patch("asky.research.tools._summarize_content")
+    def test_get_summaries_on_demand(self, mock_summarize, mock_cache):
+        """Test that summaries are generated on-demand if not completed."""
         from asky.research.tools import execute_get_link_summaries
 
         mock_cache.get_summary.return_value = {
             "title": "Test Title",
             "summary": None,
-            "summary_status": "processing",
+            "summary_status": "pending",
         }
+        mock_cache.get_content.return_value = "Content to summarize"
+        mock_cache.get_cache_id.return_value = 123
+        mock_summarize.return_value = "Generated summary"
 
         result = execute_get_link_summaries({"urls": ["http://example.com"]})
 
-        # Check that it indicates summary is being generated
-        assert "generated" in result["http://example.com"]["summary"].lower() or \
-               "processing" in result["http://example.com"]["summary"].lower()
-        assert result["http://example.com"]["status"] == "processing"
+        assert result["http://example.com"]["summary"] == "Generated summary"
+        mock_summarize.assert_called_once()
+        mock_cache._update_summary_status.assert_any_call(123, "processing")
+        mock_cache._save_summary.assert_called_once_with(123, "Generated summary")
 
-    def test_get_summaries_failed(self, mock_cache):
-        """Test handling of failed summaries."""
+    @patch("asky.research.tools._summarize_content")
+    def test_get_summaries_failed_retry(self, mock_summarize, mock_cache):
+        """Test that failed summaries are retried on-demand."""
         from asky.research.tools import execute_get_link_summaries
 
         mock_cache.get_summary.return_value = {
@@ -250,10 +255,14 @@ class TestGetLinkSummaries:
             "summary": None,
             "summary_status": "failed",
         }
+        mock_cache.get_content.return_value = "Content to retry"
+        mock_cache.get_cache_id.return_value = 456
+        mock_summarize.return_value = "Retried summary"
 
         result = execute_get_link_summaries({"urls": ["http://example.com"]})
 
-        assert result["http://example.com"]["status"] == "failed"
+        assert result["http://example.com"]["summary"] == "Retried summary"
+        mock_summarize.assert_called_once()
 
     def test_get_summaries_rejects_local_targets(self):
         """Local filesystem URLs should be rejected."""

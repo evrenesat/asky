@@ -457,6 +457,7 @@ def fetch_source_via_adapter(
             "title": relative_label,
             "links": links,
             "error": "Directory targets support discovery only; select file links to read content.",
+            "is_directory_discovery": True,
         }
     summary = (
         f"Local directory '{relative_label}' with {len(links)} discoverable files."
@@ -467,4 +468,5 @@ def fetch_source_via_adapter(
         "links": links,
         "error": None,
         "resolved_target": _local_target_from_path(resolved_paths[0]),
+        "is_directory_discovery": True,
     }

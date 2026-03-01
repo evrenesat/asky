@@ -962,6 +962,7 @@ def execute_get_link_summaries(args: Dict[str, Any]) -> Dict[str, Any]:
 
     cache = _get_cache()
     results = dict(rejected_results)
+    usage_tracker = args.get("summarization_tracker")
 
     for url in urls:
         summary_info = cache.get_summary(url)
@@ -980,23 +981,49 @@ def execute_get_link_summaries(args: Dict[str, Any]) -> Dict[str, Any]:
                 "title": summary_info.get("title", ""),
                 "summary": summary,
             }
-        elif status == "processing":
+            continue
+
+        # Synchronous summarization if not ready
+        content = cache.get_content(url)
+        if not content:
             results[url] = {
                 "title": summary_info.get("title", ""),
-                "summary": "(Summary is being generated... try again in a moment)",
-                "status": "processing",
-            }
-        elif status == "failed":
-            results[url] = {
-                "title": summary_info.get("title", ""),
-                "summary": "(Summary generation failed)",
+                "summary": "(No content available to summarize)",
                 "status": "failed",
             }
-        else:
+            continue
+
+        cache_id = cache.get_cache_id(url)
+        if not cache_id:
+            results[url] = {"error": "Cache ID lookup failed for existing entry."}
+            continue
+
+        try:
+            cache._update_summary_status(cache_id, "processing")
+            from asky.research.cache import (
+                BACKGROUND_SUMMARY_INPUT_CHARS,
+                BACKGROUND_SUMMARY_MAX_OUTPUT_CHARS,
+            )
+            from asky.config import SUMMARIZE_PAGE_PROMPT
+
+            summary = _summarize_content(
+                content=content[:BACKGROUND_SUMMARY_INPUT_CHARS],
+                prompt_template=SUMMARIZE_PAGE_PROMPT,
+                max_output_chars=BACKGROUND_SUMMARY_MAX_OUTPUT_CHARS,
+                usage_tracker=usage_tracker,
+            )
+            cache._save_summary(cache_id, summary)
             results[url] = {
                 "title": summary_info.get("title", ""),
-                "summary": "(Summary pending)",
-                "status": status,
+                "summary": summary,
+            }
+        except Exception as e:
+            logger.error(f"On-demand summarization failed for {url}: {e}")
+            cache._update_summary_status(cache_id, "failed")
+            results[url] = {
+                "title": summary_info.get("title", ""),
+                "summary": f"(Summary generation failed: {str(e)})",
+                "status": "failed",
             }
 
     return results
