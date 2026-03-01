@@ -273,6 +273,7 @@ asky session show S12
 asky memory list
 asky corpus query "what did I index about MoE scaling?"
 asky corpus summarize "Section heading text"
+asky corpus summarize --section-id section-001
 
 # query behavior defaults persisted to session
 asky --shortlist off
@@ -285,6 +286,7 @@ Notes:
 - `--tools` supports: list (`--tools`), disable (`--tools off`), and clear session override (`--tools reset`).
 - Query-behavior flags without a query auto-create/bind a session, persist defaults, and exit.
 - `--session <query...>` creates a new session named from query text and runs the query.
+- `corpus summarize <value>` maps to `--summarize-section <SECTION_QUERY>`; exact section IDs must use `--section-id`.
 
 ## 14. Prompt and Tool Text Overrides
 

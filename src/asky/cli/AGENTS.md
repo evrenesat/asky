@@ -105,6 +105,9 @@ Section CLI behavior:
 - `--summarize-section` with no value lists canonical body sections by default.
 - `--section-include-toc` reveals TOC/micro heading rows for debugging.
 - list output includes copy-pastable `section_ref` values (`corpus://cache/<id>#section=<section-id>`).
+- positional `--summarize-section <value>` is always `SECTION_QUERY` (strict title/query match fallback), not `SECTION_ID`.
+- grouped `corpus summarize <value>` translates to `--summarize-section <SECTION_QUERY>` with identical semantics.
+- deterministic ID targeting must use `--section-id <section-id>`; wrappers should not treat positional values as section IDs.
 
 ### Error Handling
 

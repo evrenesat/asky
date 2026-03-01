@@ -177,6 +177,38 @@ Behavior:
   to the canonical body section when available.
 - Tiny resolved sections are rejected with actionable errors instead of being summarized.
 
+### Common Pitfall: `SECTION_QUERY` vs `--section-id`
+
+`--summarize-section` positional text is always interpreted as `SECTION_QUERY` (title-like
+strict match), not as a section ID.
+
+This means the following shape is expected to fail when `section-001` is an ID and not a
+title:
+
+```bash
+asky -r mybook.epub --summarize-section section-001
+```
+
+Use one of these instead:
+
+```bash
+# Deterministic by exact ID
+asky -r mybook.epub --summarize-section --section-id section-001
+
+# By title query (strict title matching)
+asky -r mybook.epub --summarize-section "Full Document"
+```
+
+Grouped command parity uses the same rule:
+
+```bash
+# Interpreted as SECTION_QUERY, not SECTION_ID
+asky corpus summarize section-001
+
+# Deterministic ID selection
+asky corpus summarize --section-id section-001
+```
+
 ## Research Toolset
 
 Research mode exposes retrieval-first tools:

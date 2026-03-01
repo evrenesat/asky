@@ -57,6 +57,8 @@ Section-scoped retrieval contract:
 - Preferred: `section_ref` (`corpus://cache/<id>#section=<section-id>`) or explicit `section_id`.
 - Compatibility: legacy `corpus://cache/<id>/<section-id>` source suffixes are accepted.
 - `list_sections` defaults to canonical body sections and emits `section_ref` for each row.
+- CLI boundary note: positional `--summarize-section <value>` is a title/query strict-match input (`SECTION_QUERY`), not a `section_id`.
+- CLI wrappers that need deterministic section targeting must pass `section_id` explicitly (for example via `--section-id`).
 
 Parameter priority in `get_relevant_content`:
 

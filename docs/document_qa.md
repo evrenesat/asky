@@ -86,6 +86,15 @@ Summarize a specific section by title:
 asky -r mybook.epub --summarize-section "Chapter 3"
 ```
 
+Summarize a specific section by exact section ID:
+
+```bash
+asky -r mybook.epub --summarize-section --section-id section-001
+```
+
+Important: `--summarize-section section-001` treats `section-001` as a title query, not an
+ID. For deterministic ID selection, always pass `--section-id`.
+
 Three detail levels are available:
 
 ```bash

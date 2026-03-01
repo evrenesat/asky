@@ -2,6 +2,27 @@
 
 For full detailed entries, see [DEVLOG_ARCHIVE.md](DEVLOG_ARCHIVE.md).
 
+## 2026-03-02: Clarified Section Query vs Section ID Documentation
+
+- **Summary**: Updated docs to explain why positional `section-001` fails under `--summarize-section` / `corpus summarize` and how to use deterministic ID selection correctly.
+- **Changes**:
+  - Updated user docs:
+    - `docs/research_mode.md`
+    - `docs/document_qa.md`
+    - `docs/configuration.md`
+  - Updated internal docs:
+    - `ARCHITECTURE.md`
+    - `src/asky/cli/AGENTS.md`
+    - `src/asky/research/AGENTS.md`
+  - Added explicit contract notes:
+    - positional `--summarize-section <value>` is always `SECTION_QUERY` (strict title/query matching),
+    - `corpus summarize <value>` maps to the same `SECTION_QUERY` path,
+    - exact section IDs must use `--section-id`.
+  - Added explicit pitfall + fix examples (failing positional `section-001` vs correct `--section-id section-001` and title-query usage).
+- **Verification**:
+  - `rg -n "SECTION_QUERY|section-id|Common Pitfall|strict section match|corpus summarize" docs ARCHITECTURE.md src/asky/cli/AGENTS.md src/asky/research/AGENTS.md DEVLOG.md`
+  - `uv run pytest`
+
 ## 2026-03-02: Follow-up Fixes for Implicit Session-Delete Research Cleanup
 
 - **Summary**: Addressed remaining robustness and documentation issues after introducing implicit research cleanup on `session delete`.

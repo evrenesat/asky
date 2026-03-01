@@ -314,6 +314,9 @@ Local section workflows now use canonical section references:
 - retrieval tools also accept compatibility legacy section-suffixed sources
   (`corpus://cache/<id>/<section-id>`) while explicit `section_ref`/`section_id`
   is the preferred contract.
+- CLI positional `--summarize-section <value>` is interpreted as section query text
+  (`SECTION_QUERY`), not section ID; deterministic ID selection requires
+  `--section-id <section-id>`.
 
 Verbose tracing has two levels:
 
