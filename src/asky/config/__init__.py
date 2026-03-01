@@ -241,6 +241,22 @@ RESEARCH_CHROMA_FINDINGS_COLLECTION = _research_chromadb.get(
     "findings_collection", "asky_research_findings"
 )
 
+# Query Classification Settings
+_query_classification = _research.get("query_classification", {})
+QUERY_CLASSIFICATION_ENABLED = _query_classification.get("enabled", True)
+QUERY_CLASSIFICATION_DOCUMENT_THRESHOLD = _query_classification.get(
+    "one_shot_document_threshold", 10
+)
+QUERY_CLASSIFICATION_AGGRESSIVE_MODE = _query_classification.get(
+    "aggressive_mode", False
+)
+QUERY_CLASSIFICATION_AGGRESSIVE_THRESHOLD = _query_classification.get(
+    "aggressive_document_threshold", 20
+)
+QUERY_CLASSIFICATION_FORCE_RESEARCH_MODE = _query_classification.get(
+    "force_research_mode", False
+)
+
 # Source Shortlist Settings (shared by research and standard modes)
 _source_shortlist = _research.get("source_shortlist", {})
 SOURCE_SHORTLIST_ENABLED = _source_shortlist.get("enabled", True)

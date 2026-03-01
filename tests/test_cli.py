@@ -1,5 +1,6 @@
 import pytest
 import argparse
+from types import SimpleNamespace
 from unittest.mock import patch, MagicMock, ANY
 from asky.daemon.errors import DaemonUserError
 from asky.cli import (
@@ -760,14 +761,13 @@ def test_parse_args_session_query_shortcut_generates_sticky_session():
 @patch("asky.cli.main.chat.run_chat")
 @patch("asky.cli.main.history.print_answers_command")
 @patch("asky.cli.main.init_db")
-@patch("asky.cli.main.setup_logging")
-def test_main_history_show_invalid_selector_falls_back_to_query(
-    _mock_setup_logging,
+def test_main_history_show_invalid_selector_reports_grouped_error(
     _mock_init_db,
     mock_print_answers,
     mock_run_chat,
     mock_cleanup_thread,
     mock_get_runtime,
+    capsys,
 ):
     mock_cleanup_thread.return_value = MagicMock(join=MagicMock())
     mock_get_runtime.return_value = None
@@ -779,9 +779,61 @@ def test_main_history_show_invalid_selector_falls_back_to_query(
         main()
 
     mock_print_answers.assert_not_called()
-    mock_run_chat.assert_called_once()
-    called_args = mock_run_chat.call_args[0]
-    assert called_args[1] == "about second world war"
+    mock_run_chat.assert_not_called()
+    captured = capsys.readouterr()
+    assert "history <list|show|delete>" in captured.out
+    assert "selector must be IDs/ranges/tokens" in captured.out
+
+
+@patch("asky.cli.main.chat.run_chat")
+@patch("asky.cli.main.sessions.print_active_session_status")
+def test_main_session_without_subcommand_shows_help_and_status(
+    mock_print_status,
+    mock_run_chat,
+    capsys,
+):
+    with patch("sys.argv", ["asky", "session"]):
+        main()
+
+    mock_print_status.assert_called_once_with()
+    mock_run_chat.assert_not_called()
+    captured = capsys.readouterr()
+    assert "session <action>" in captured.out
+
+
+@patch("asky.cli.main.chat.run_chat")
+@patch("asky.cli.main.sessions.print_current_session_or_status")
+def test_main_session_show_without_selector_uses_current_session(
+    mock_print_current,
+    mock_run_chat,
+):
+    with patch("sys.argv", ["asky", "session", "show"]):
+        main()
+
+    mock_print_current.assert_called_once_with(open_browser=False)
+    mock_run_chat.assert_not_called()
+
+
+@patch("asky.cli.main.chat.run_chat")
+def test_main_memory_list_with_extra_arg_reports_grouped_error(mock_run_chat, capsys):
+    with patch("sys.argv", ["asky", "memory", "list", "extra"]):
+        main()
+
+    mock_run_chat.assert_not_called()
+    captured = capsys.readouterr()
+    assert "memory <list|delete|clear>" in captured.out
+    assert "does not accept arguments" in captured.out
+
+
+@patch("asky.cli.main.chat.run_chat")
+def test_main_invalid_grouped_subcommand_reports_error(mock_run_chat, capsys):
+    with patch("sys.argv", ["asky", "prompts", "show"]):
+        main()
+
+    mock_run_chat.assert_not_called()
+    captured = capsys.readouterr()
+    assert "usage: asky prompts list" in captured.out
+    assert "Unknown subcommand 'show'" in captured.out
 
 
 @patch("asky.cli.main.parse_args")
@@ -947,6 +999,7 @@ def test_main_xmpp_daemon_already_running_exits_nonzero(
         patch("asky.cli.main.platform.system", return_value="Darwin"),
         patch("asky.daemon.menubar.has_rumps", return_value=True),
         patch("asky.daemon.menubar.is_menubar_instance_running", return_value=True),
+        patch("asky.daemon.app_bundle_macos.ensure_bundle_exists"),
     ):
         with pytest.raises(SystemExit) as excinfo:
             main()
@@ -2559,3 +2612,96 @@ def test_run_chat_passes_system_prompt_override(
         # Verify AskyConfig was created with system_prompt_override
         config_arg = mock_client_cls.call_args[0][0]
         assert config_arg.system_prompt_override == "Custom Override"
+
+
+def test_print_active_session_status_no_session(capsys):
+    from asky.cli.sessions import print_active_session_status
+
+    with patch("asky.cli.sessions._resolve_active_shell_session", return_value=(None, False)):
+        print_active_session_status()
+
+    captured = capsys.readouterr()
+    assert "No active session." in captured.out
+
+
+def test_print_active_session_status_stale_lock(capsys):
+    from asky.cli.sessions import print_active_session_status
+
+    with patch("asky.cli.sessions._resolve_active_shell_session", return_value=(None, True)):
+        print_active_session_status()
+
+    captured = capsys.readouterr()
+    assert "cleared stale shell session lock" in captured.out
+
+
+def test_print_current_session_or_status_prints_current_session():
+    from asky.cli.sessions import print_current_session_or_status
+
+    session = SimpleNamespace(id=33, name="research", model="gf", research_mode=True)
+    with (
+        patch("asky.cli.sessions._resolve_active_shell_session", return_value=(session, False)),
+        patch("asky.cli.sessions.print_session_command") as mock_print_session,
+    ):
+        print_current_session_or_status(open_browser=True)
+
+    mock_print_session.assert_called_once_with("33", open_browser=True)
+
+
+@patch("asky.cli.chat.AskyClient")
+@patch("asky.cli.chat.get_shell_session_id", return_value=42)
+@patch("asky.cli.chat.InterfaceRenderer")
+@patch("asky.cli.chat.LIVE_BANNER", False)
+def test_run_chat_uses_shell_session_for_follow_up_query(
+    mock_renderer,
+    mock_get_shell,
+    mock_client_cls,
+):
+    from asky.cli.chat import run_chat
+
+    mock_args = argparse.Namespace(
+        model="gf",
+        research=False,
+        local_corpus=None,
+        summarize=False,
+        open=False,
+        continue_ids=None,
+        sticky_session=None,
+        resume_session=None,
+        lean=False,
+        tool_off=[],
+        terminal_lines=None,
+        save_history=True,
+        verbose=False,
+        system_prompt=None,
+        elephant_mode=False,
+        turns=None,
+        sendmail=None,
+        subject=None,
+        push_data=None,
+        shortlist=None,
+        research_flag_provided=False,
+        research_source_mode=None,
+        replace_research_corpus=False,
+        double_verbose=False,
+    )
+
+    mock_turn_result = MagicMock()
+    mock_turn_result.final_answer = None
+    mock_turn_result.halted = True
+    mock_turn_result.notices = []
+    mock_turn_result.session = MagicMock(research_mode=False)
+    mock_turn_result.preload = MagicMock(shortlist_stats={}, shortlist_payload=None)
+    mock_turn_result.session_id = None
+
+    with patch("asky.cli.chat.MODELS", {"gf": {"id": "g"}}):
+        mock_client = MagicMock()
+        mock_client.run_turn.return_value = mock_turn_result
+        mock_client_cls.return_value = mock_client
+
+        with patch("asky.cli.chat._check_idle_session_timeout", return_value="continue"):
+            run_chat(mock_args, "follow up")
+
+    request = mock_client.run_turn.call_args.args[0]
+    assert request.shell_session_id == 42
+    assert request.sticky_session_name is None
+    assert request.resume_session_term is None

@@ -158,19 +158,97 @@ def construct_research_system_prompt() -> str:
     return RESEARCH_SYSTEM_PROMPT.replace("{CURRENT_DATE}", current_date)
 
 
+def append_one_shot_summarization_guidance(
+    system_prompt: str,
+    corpus_document_count: int,
+) -> str:
+    """Append one-shot summarization guidance to system prompt.
+
+    This guidance instructs the LLM to provide a direct summary without
+    asking clarifying questions, suitable for small document sets where
+    the user's intent is clear.
+
+    Args:
+        system_prompt: The base system prompt to append to
+        corpus_document_count: Number of documents in the corpus
+
+    Returns:
+        Modified system prompt with one-shot guidance appended
+    """
+    import logging
+
+    logger = logging.getLogger(__name__)
+
+    guidance = f"""
+CRITICAL INSTRUCTION - One-Shot Summarization Mode:
+You MUST provide a direct, comprehensive summary immediately. DO NOT ask clarifying questions.
+
+Context:
+- The user has requested a summary of {corpus_document_count} document(s)
+- All documents are already preloaded and available via `get_relevant_content`
+- The corpus is small enough for direct summarization
+
+Required Actions:
+1. Call `get_relevant_content` to retrieve all document content
+2. Synthesize a comprehensive summary from the retrieved content
+3. If documents cover different topics, organize by document or theme
+4. Provide the summary directly in your response
+
+FORBIDDEN: Do NOT ask what the user wants to know, do NOT request clarification, do NOT ask follow-up questions before providing the summary.
+"""
+
+    logger.debug(
+        "Applied one-shot summarization guidance: corpus_docs=%d",
+        corpus_document_count,
+    )
+
+    return f"{system_prompt}\n{guidance}"
+
+
 def append_research_guidance(
     system_prompt: str,
     corpus_preloaded: bool = False,
     local_kb_hint_enabled: bool = False,
     section_tools_enabled: bool = False,
+    classification: Optional[Any] = None,
 ) -> str:
-    """Append context-aware research guidance to the system prompt."""
-    if corpus_preloaded:
-        from asky.config import RESEARCH_RETRIEVAL_ONLY_GUIDANCE_PROMPT
+    """Append context-aware research guidance to the system prompt.
 
-        system_prompt = (
-            f"{system_prompt}\n{RESEARCH_RETRIEVAL_ONLY_GUIDANCE_PROMPT}"
+    Args:
+        system_prompt: The base system prompt
+        corpus_preloaded: Whether corpus was preloaded
+        local_kb_hint_enabled: Whether to add local KB hints
+        section_tools_enabled: Whether section tools are available
+        classification: Optional QueryClassification result to determine guidance type
+
+    Returns:
+        Modified system prompt with appropriate guidance appended
+    """
+    import logging
+
+    logger = logging.getLogger(__name__)
+
+    # One-shot mode takes precedence over standard retrieval guidance
+    if (
+        classification
+        and hasattr(classification, "mode")
+        and classification.mode == "one_shot"
+    ):
+        logger.debug("Routing to one-shot summarization guidance")
+        system_prompt = append_one_shot_summarization_guidance(
+            system_prompt,
+            classification.corpus_document_count,
         )
+
+    # Standard research mode guidance (only if not in one-shot mode)
+    else:
+        logger.debug("Applying standard research guidance")
+        if corpus_preloaded:
+            from asky.config import RESEARCH_RETRIEVAL_ONLY_GUIDANCE_PROMPT
+
+            system_prompt = (
+                f"{system_prompt}\n{RESEARCH_RETRIEVAL_ONLY_GUIDANCE_PROMPT}"
+            )
 
     if local_kb_hint_enabled:
         system_prompt = (

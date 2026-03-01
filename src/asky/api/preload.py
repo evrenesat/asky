@@ -23,6 +23,11 @@ from asky.config import (
     USER_MEMORY_RECALL_TOP_K,
     USER_MEMORY_RECALL_MIN_SIMILARITY,
     SUMMARIZE_PAGE_PROMPT,
+    QUERY_CLASSIFICATION_ENABLED,
+    QUERY_CLASSIFICATION_DOCUMENT_THRESHOLD,
+    QUERY_CLASSIFICATION_AGGRESSIVE_MODE,
+    QUERY_CLASSIFICATION_AGGRESSIVE_THRESHOLD,
+    QUERY_CLASSIFICATION_FORCE_RESEARCH_MODE,
 )
 from asky.lazy_imports import call_attr
 
@@ -500,6 +505,38 @@ def run_preload_pipeline(
             )
     else:
         preload.local_payload = {"enabled": False, "ingested": []}
+
+    # Classify query after local ingestion completes
+    if research_mode and QUERY_CLASSIFICATION_ENABLED:
+        from asky.research.query_classifier import classify_query
+        
+        corpus_doc_count = len(preload.local_payload.get("ingested", []) or [])
+        
+        preload.query_classification = classify_query(
+            query_text=query_text,
+            corpus_document_count=corpus_doc_count,
+            document_threshold=QUERY_CLASSIFICATION_DOCUMENT_THRESHOLD,
+            aggressive_threshold=QUERY_CLASSIFICATION_AGGRESSIVE_THRESHOLD,
+            aggressive_mode=QUERY_CLASSIFICATION_AGGRESSIVE_MODE,
+            force_research_mode=QUERY_CLASSIFICATION_FORCE_RESEARCH_MODE,
+        )
+        
+        if status_callback:
+            status_callback(
+                f"Query classified as: {preload.query_classification.mode} "
+                f"(confidence: {preload.query_classification.confidence:.2f})"
+            )
+        
+        import logging as _logging
+        _logging.getLogger(__name__).info(
+            "Query classified: mode=%s confidence=%.2f reasoning=%s "
+            "corpus_docs=%d threshold=%d",
+            preload.query_classification.mode,
+            preload.query_classification.confidence,
+            preload.query_classification.reasoning,
+            preload.query_classification.corpus_document_count,
+            preload.query_classification.document_threshold,
+        )
 
     # Extract corpus context from ingested documents for shortlist enrichment
     corpus_context = None

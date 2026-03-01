@@ -106,6 +106,12 @@ Handled by `plugins/xmpp_daemon/router.py`. For each incoming message:
 8. **Remote policy gate** — blocked flags are rejected.
 9. **`AskyClient.run_turn()`** — final execution.
 
+Command executor parity notes:
+
+- Grouped domain commands (`history/session/memory/corpus/prompts`) are treated as commands, not query text.
+- Missing/invalid grouped subcommands return usage/error text instead of falling through to `Error: query is required.`
+- `session show` without selector resolves to the current conversation session transcript.
+
 Remote policy blocks config/bootstrap mutations (for example `--config ...`,
 daemon startup flags, delete flags, and output side-effect flags).
 

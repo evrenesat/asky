@@ -18,6 +18,7 @@ from asky import summarization
 from asky.api import AskyClient, AskyConfig, AskyTurnRequest
 from asky.cli import history, memory_commands, sessions, utils
 from asky.cli.main import (
+    _grouped_command_issue,
     _manual_corpus_query_arg,
     _manual_section_query_arg,
     _resolve_research_corpus,
@@ -292,6 +293,8 @@ class CommandExecutor:
         tokens = self._resolve_naked_command(tokens)
         if not tokens:
             return False
+        if _grouped_command_issue(tokens) is not None:
+            return False
         if tokens[0].lower() in HELP_COMMAND_TOKENS:
             return False
         if tokens[0] == TRANSCRIPT_COMMAND:
@@ -552,6 +555,14 @@ class CommandExecutor:
         room_jid: Optional[str],
         tokens: list[str],
     ) -> str:
+        grouped_issue = _grouped_command_issue(tokens)
+        if grouped_issue is not None:
+            return self._render_grouped_command_issue(
+                jid=jid,
+                room_jid=room_jid,
+                issue=grouped_issue,
+            )
+
         try:
             args = parse_args(tokens)
         except SystemExit:
@@ -1057,6 +1068,79 @@ class CommandExecutor:
         for item in listed:
             lines.append(f"  {item.id}: {item.name or '(unnamed)'}")
         return "\n".join(lines)
+
+    def _render_grouped_command_issue(
+        self,
+        *,
+        jid: str,
+        room_jid: Optional[str],
+        issue: tuple[str, str, str],
+    ) -> str:
+        noun, reason, detail = issue
+
+        if noun == "session" and reason == "missing_action":
+            session_id = self._resolve_session_id(jid=jid, room_jid=room_jid)
+            return f"{self._render_session_help()}\n\nCurrent session: {session_id}"
+
+        if noun == "session" and reason == "session_show_current":
+            session_id = self._resolve_session_id(jid=jid, room_jid=room_jid)
+            return _capture_output(
+                sessions.print_session_command,
+                str(session_id),
+                False,
+                None,
+                None,
+            )
+
+        usage = self._grouped_usage_text(noun)
+        error_text = self._grouped_issue_text(noun=noun, reason=reason, detail=detail)
+        return f"{usage}\n\n{error_text}".strip()
+
+    @staticmethod
+    def _grouped_usage_text(noun: str) -> str:
+        if noun == "history":
+            return (
+                "usage: history <list|show|delete> [args]\n"
+                "  history list [count]\n"
+                "  history show <id_selector>\n"
+                "  history delete <id_selector|--all>"
+            )
+        if noun == "session":
+            return (
+                "usage: session <action> [args]\n"
+                "  session list [count]\n"
+                "  session show [session_selector]\n"
+                "  session create <name>\n"
+                "  session use <session_selector>\n"
+                "  session end\n"
+                "  session delete <session_selector|--all>"
+            )
+        if noun == "memory":
+            return (
+                "usage: memory <list|delete|clear> [args]\n"
+                "  memory list\n"
+                "  memory delete <id>\n"
+                "  memory clear"
+            )
+        if noun == "corpus":
+            return (
+                "usage: corpus <query|summarize> ...\n"
+                "  corpus query <text>\n"
+                "  corpus summarize [query]"
+            )
+        if noun == "prompts":
+            return "usage: prompts list"
+        return "usage: <command>"
+
+    @staticmethod
+    def _grouped_issue_text(*, noun: str, reason: str, detail: str) -> str:
+        if reason == "missing_action":
+            return f"Error: Missing subcommand for '{noun}'."
+        if reason == "invalid_action":
+            return f"Error: Unknown subcommand '{detail}' for '{noun}'."
+        if detail:
+            return f"Error: {detail}"
+        return f"Error: Invalid '{noun}' command."
 
 
 def _split_command_tokens(command_text: str) -> list[str]:

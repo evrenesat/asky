@@ -125,3 +125,19 @@ normalize = true
 # If true, do not download models and use only local cache.
 # If false, models are downloaded from Hugging Face automatically when missing.
 local_files_only = false
+
+# Query classification for one-shot summarization
+[query_classification]
+# Enable intelligent query classification for one-shot summarization
+enabled = true
+
+# Document count threshold for one-shot mode (default: 10)
+# Queries with ≤ this many documents may trigger one-shot mode
+one_shot_document_threshold = 10
+
+# Aggressive mode: increase threshold to 20 documents
+aggressive_mode = false
+aggressive_document_threshold = 20
+
+# Force research mode: always ask clarifying questions (disables one-shot)
+force_research_mode = false

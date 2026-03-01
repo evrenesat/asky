@@ -15,6 +15,7 @@ RAG-powered research mode with caching, semantic search, and persistent memory.
 | `embeddings.py`                  | `EmbeddingClient` for local embeddings          |
 | `chunker.py`                     | Token-aware text chunking                       |
 | `source_shortlist.py`            | Pre-LLM source ranking pipeline                 |
+| `query_classifier.py`            | Query classification for one-shot summarization |
 | `query_expansion.py`             | Decomposing queries into sub-queries.           |
 | `evidence_extraction.py`         | Post-retrieval LLM fact extraction.             |
 | `shortlist_collect.py`           | Candidate/seed-link collection stage            |
@@ -180,6 +181,46 @@ Token-aware sentence chunking for optimal embedding boundaries.
 2. Build chunks within token budget
 3. Maintain overlap for context continuity
 4. Char-based fallback for non-sentence text
+
+## Query Classifier (`query_classifier.py`)
+
+Analyzes user queries to detect one-shot summarization requests and determine appropriate response mode.
+
+### Classification Modes
+
+- **one_shot**: Direct summarization without clarification questions (small corpus + clear intent)
+- **research**: Complex workflow requiring clarification (large corpus or vague query)
+
+### Decision Tree
+
+1. Force research mode override (config) → research
+2. Empty corpus → research
+3. Vague query → research
+4. Corpus > threshold → research
+5. Has summarization keywords AND corpus ≤ threshold → one_shot
+6. Otherwise → research (safe default)
+
+### Key Features
+
+- **Keyword detection**: Primary (summarize, summary, overview) and secondary (key points, main ideas, tldr)
+- **Vague query detection**: Short queries (<10 chars) and generic phrases
+- **Confidence scoring**: 0.0-1.0 based on detection factors
+- **Configurable thresholds**: Default 10 documents, aggressive mode 20 documents
+- **Deterministic**: Same inputs always produce same classification
+
+### Configuration
+
+```toml
+[query_classification]
+enabled = true
+one_shot_document_threshold = 10
+aggressive_mode = false
+force_research_mode = false
+```
+
+### Integration
+
+Called during preload pipeline (`api/preload.py`) after local ingestion completes. Classification result is stored in `PreloadResolution.query_classification` and used by prompt construction to adjust system guidance.
 
 ## Source Shortlist (`source_shortlist.py`)
 

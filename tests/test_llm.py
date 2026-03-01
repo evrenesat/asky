@@ -340,14 +340,12 @@ def test_conversation_engine_double_verbose_emits_main_model_messages(mock_get_m
     request_payloads = [
         payload
         for payload in verbose_payloads
-        if isinstance(payload, dict)
-        and payload.get("kind") == "llm_request_messages"
+        if isinstance(payload, dict) and payload.get("kind") == "llm_request_messages"
     ]
     response_payloads = [
         payload
         for payload in verbose_payloads
-        if isinstance(payload, dict)
-        and payload.get("kind") == "llm_response_message"
+        if isinstance(payload, dict) and payload.get("kind") == "llm_response_message"
     ]
     assert len(request_payloads) == 1
     request_payload = request_payloads[0]
@@ -643,3 +641,70 @@ def test_graceful_exit_replaces_system_prompt(mock_dispatch, mock_get_msg):
         assert "final answer" in system_msg["content"].lower()
         # Verify it includes the "no longer available" instruction from our new prompt
         assert "no longer available" in system_msg["content"].lower()
+
+
+@patch("asky.core.engine.get_llm_msg")
+@patch("asky.core.engine.ToolRegistry.dispatch")
+def test_empty_response_retry_success(mock_dispatch, mock_get_msg):
+    # Mock LLM sequence:
+    # 1. Empty response
+    # 2. Final answer
+    msg_empty = {"content": ""}
+    msg_final = {"content": "Finally some text"}
+
+    mock_get_msg.side_effect = [msg_empty, msg_final]
+    mock_dispatch.return_value = {"result": "ok"}
+
+    model_config = {"id": "test", "alias": "test"}
+    registry_mock = MagicMock()
+    registry_mock.get_schemas.return_value = []
+
+    engine = ConversationEngine(
+        model_config=model_config, tool_registry=registry_mock, max_turns=5
+    )
+
+    messages = [
+        {"role": "system", "content": "system"},
+        {"role": "user", "content": "hello"},
+    ]
+    final_answer = engine.run(messages)
+
+    assert final_answer == "Finally some text"
+    assert mock_get_msg.call_count == 2
+    # Verify the retry prompt was injected
+    # System, User, Asst(empty), User(correction), Asst(final) = 5
+    assert len(messages) == 5
+    assert "Your previous response was completely empty" in messages[3]["content"]
+
+
+@patch("asky.core.engine.get_llm_msg")
+@patch("asky.core.engine.ToolRegistry.dispatch")
+def test_empty_response_abort_after_retries(mock_dispatch, mock_get_msg):
+    # Mock LLM sequence:
+    # 1. Empty response
+    # 2. Empty response
+    msg_empty = {"content": ""}
+
+    mock_get_msg.side_effect = [msg_empty, msg_empty]
+    mock_dispatch.return_value = {"result": "ok"}
+
+    model_config = {"id": "test", "alias": "test"}
+    registry_mock = MagicMock()
+    registry_mock.get_schemas.return_value = []
+
+    engine = ConversationEngine(
+        model_config=model_config, tool_registry=registry_mock, max_turns=5
+    )
+
+    messages = [
+        {"role": "system", "content": "system"},
+        {"role": "user", "content": "hello"},
+    ]
+    final_answer = engine.run(messages)
+
+    assert "model repeatedly returned empty responses" in final_answer
+    assert mock_get_msg.call_count == 2
+    # System, User, Asst(empty), User(correction), Asst(error)
+    assert len(messages) == 5
+    assert messages[4]["role"] == "assistant"
+    assert "repeatedly returned empty responses" in messages[4]["content"]

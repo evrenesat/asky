@@ -8,6 +8,41 @@ from asky.storage.sqlite import SQLiteHistoryRepository
 from asky.rendering import render_to_browser
 
 
+def _resolve_active_shell_session() -> tuple[object | None, bool]:
+    """Resolve active shell-bound session and clear stale lock if needed."""
+    from asky.storage import init_db, get_session_by_id
+    from asky.core.session_manager import get_shell_session_id, clear_shell_session
+
+    session_id = get_shell_session_id()
+    if not session_id:
+        return None, False
+
+    init_db()
+    session = get_session_by_id(int(session_id))
+    if session is not None:
+        return session, False
+
+    clear_shell_session()
+    return None, True
+
+
+def print_active_session_status() -> None:
+    """Print the shell-bound session status."""
+    session, stale_lock_cleared = _resolve_active_shell_session()
+    if session is None:
+        if stale_lock_cleared:
+            print("No active session (cleared stale shell session lock).")
+        else:
+            print("No active session.")
+        return
+
+    session_name = session.name or "unnamed"
+    research_status = "on" if bool(getattr(session, "research_mode", False)) else "off"
+    print(
+        f"Active session: {session.id} ({session_name}) | model={session.model} | research={research_status}"
+    )
+
+
 def show_session_history_command(limit: int) -> None:
     """List recent sessions."""
     repo = SQLiteHistoryRepository()
@@ -42,6 +77,8 @@ def show_session_history_command(limit: int) -> None:
 def print_session_command(
     id_or_name: str,
     open_browser: bool = False,
+    *_args,
+    **_kwargs,
 ) -> None:
     """Print session messages."""
     repo = SQLiteHistoryRepository()
@@ -90,6 +127,20 @@ def print_session_command(
     else:
         console = Console()
         console.print(Markdown(full_text))
+
+
+def print_current_session_or_status(open_browser: bool = False) -> None:
+    """Print current shell-bound session transcript when available, else status."""
+    session, stale_lock_cleared = _resolve_active_shell_session()
+    if session is None:
+        if stale_lock_cleared:
+            print("No active session (cleared stale shell session lock).")
+        else:
+            print("No active session.")
+        return
+
+    print_session_command(str(session.id), open_browser=open_browser)
+
 
 def end_session_command() -> None:
     """Detach the current shell from its session.

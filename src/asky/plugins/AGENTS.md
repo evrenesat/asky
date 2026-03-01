@@ -126,6 +126,8 @@ Key modules:
 
 One-way dependency rule: `xmpp_daemon` may import from `asky.daemon.errors`; `daemon/` core must not import from `asky.plugins.xmpp_daemon`.
 
+`command_executor.py` keeps CLI grouped-command parity: recognized grouped domains (`history/session/memory/corpus/prompts`) do not degrade into query execution when subcommands are missing/invalid; they return usage/error responses instead.
+
 ## User Entry Points (Current State)
 
 - Runtime config entrypoint: `~/.config/asky/plugins.toml`

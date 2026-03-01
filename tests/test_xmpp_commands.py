@@ -526,6 +526,39 @@ def test_cleanup_commands_dispatch_through_remote_executor():
     assert "Deleted 17 memories." == clear_resp
 
 
+def test_grouped_command_missing_subcommand_returns_usage_error():
+    executor = CommandExecutor(_FakeTranscriptManager())
+    response = executor.execute_command_text(
+        jid="jid",
+        command_text="history",
+    )
+    assert "usage: history <list|show|delete> [args]" in response
+    assert "Missing subcommand" in response
+
+
+def test_grouped_command_invalid_subcommand_returns_usage_error():
+    executor = CommandExecutor(_FakeTranscriptManager())
+    response = executor.execute_command_text(
+        jid="jid",
+        command_text="prompts show",
+    )
+    assert "usage: prompts list" in response
+    assert "Unknown subcommand 'show'" in response
+
+
+def test_grouped_session_show_without_selector_uses_current_session():
+    executor = CommandExecutor(_FakeTranscriptManager())
+    with patch(
+        "asky.daemon.command_executor.sessions.print_session_command",
+        side_effect=lambda session_id, *_args, **_kwargs: print(f"session:{session_id}"),
+    ):
+        response = executor.execute_command_text(
+            jid="jid",
+            command_text="session show",
+        )
+    assert "session:1" in response
+
+
 def test_remote_policy_blocks_config_flag_via_execute_command_text():
     """Blocked flags are caught even when arriving through execute_command_text
     (the same path used after preset expansion)."""

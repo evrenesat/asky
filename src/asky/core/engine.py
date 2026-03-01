@@ -113,6 +113,7 @@ class ConversationEngine:
     def run(self, messages: List[Dict[str, Any]], display_callback=None) -> str:
         """Run the multi-turn conversation loop."""
         turn = 0
+        empty_response_count = 0
         self.start_time = time.perf_counter()
         original_system_prompt = (
             messages[0]["content"]
@@ -251,6 +252,7 @@ class ConversationEngine:
                         calls=calls,
                         messages=messages,
                     )
+                    # Note: We do NOT update messages in messages list here yet
                     self.hook_registry.invoke(POST_LLM_RESPONSE, post_llm_context)
                     if isinstance(post_llm_context.message, dict):
                         msg = post_llm_context.message
@@ -277,8 +279,37 @@ class ConversationEngine:
                 if not calls:
                     self.final_answer = strip_think_tags(msg.get("content", ""))
 
+                    if not self.final_answer.strip():
+                        empty_response_count += 1
+                        if empty_response_count < 2:
+                            logger.warning(
+                                "Model returned empty response. Retrying (attempt %s)...",
+                                empty_response_count,
+                            )
+                            if display_callback:
+                                display_callback(
+                                    turn,
+                                    status_message="Model returned empty response. Retrying...",
+                                )
+                            messages.append(msg)
+                            messages.append(
+                                {
+                                    "role": "user",
+                                    "content": "SYSTEM: Your previous response was completely empty. You MUST provide a valid text response or use a tool.",
+                                }
+                            )
+                            continue
+                        else:
+                            logger.error(
+                                "Model repeatedly returned empty responses. Aborting turn loop."
+                            )
+                            self.final_answer = "I apologize, but the model repeatedly returned empty responses. Please try rephrasing your query or using a different model."
+
                     # Add the final assistant message to conversations for display
                     messages.append({"role": "assistant", "content": self.final_answer})
+
+                    # Reset empty counter on any successful non-empty response
+                    empty_response_count = 0
 
                     # If display_callback is provided (live mode), notify that the final
                     # answer is ready. Pass is_final=True so the callback can render
@@ -555,7 +586,9 @@ class ConversationEngine:
                         try:
                             summary = self._summarize_and_cache(key, val_content)
                         except Exception:
-                            logger.warning("Research cache summarization failed for %s", key)
+                            logger.warning(
+                                "Research cache summarization failed for %s", key
+                            )
                             compacted_data[key] = value
                             continue
                         compacted_data[key] = value.copy()
@@ -585,7 +618,9 @@ class ConversationEngine:
                         try:
                             summary = self._summarize_and_cache(key, value)
                         except Exception:
-                            logger.warning("Research cache summarization failed for %s", key)
+                            logger.warning(
+                                "Research cache summarization failed for %s", key
+                            )
                             compacted_data[key] = value
                             continue
                         compacted_data[key] = f"[COMPACTED] {summary}"

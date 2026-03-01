@@ -129,6 +129,7 @@ class AskyClient:
                 corpus_preloaded=preload.is_corpus_preloaded if preload else False,
                 local_kb_hint_enabled=local_kb_hint_enabled,
                 section_tools_enabled=section_tools_enabled,
+                classification=preload.query_classification if preload else None,
             )
 
         messages: List[Dict[str, Any]] = [{"role": "system", "content": system_prompt}]

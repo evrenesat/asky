@@ -65,6 +65,12 @@ Preset invocation notes:
 - first-token `\\name ...` expands using `[command_presets]` from config before normal CLI parsing.
 - `\\presets` lists configured command presets and exits.
 
+Grouped command routing notes:
+
+- Recognized grouped domains (`history`, `session`, `memory`, `corpus`, `prompts`) are strict: missing/invalid subcommands do not fall back to query execution.
+- `session` (without action) prints grouped session help and current shell-session status.
+- `session show` without selector resolves to current shell session (or prints `No active session.` / stale-lock cleanup notice).
+
 History command behavior:
 
 - `history list/show/delete` operate across all messages in the unified store and do not filter by session binding.

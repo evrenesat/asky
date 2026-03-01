@@ -5,6 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Set
 
+from asky.research.query_classifier import QueryClassification
+
 
 @dataclass(frozen=True)
 class AskyConfig:
@@ -106,6 +108,7 @@ class PreloadResolution:
     memory_context: Optional[str] = None
     preloaded_source_urls: List[str] = field(default_factory=list)
     preloaded_source_handles: Dict[str, str] = field(default_factory=dict)
+    query_classification: Optional[QueryClassification] = None
 
     @property
     def is_corpus_preloaded(self) -> bool:

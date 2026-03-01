@@ -2,6 +2,79 @@
 
 For full detailed entries, see [DEVLOG_ARCHIVE.md](DEVLOG_ARCHIVE.md).
 
+## 2026-03-01 - Strict Grouped Command Routing + Session Visibility
+
+- **Issue**: Grouped domain commands like `session`, `history`, `memory`, `corpus`, and `prompts` could degrade into query execution when subcommands were missing/invalid, creating confusing behavior (including session-related ambiguity).
+- **CLI fix**:
+  - Added strict grouped-command validation in `src/asky/cli/main.py` before query fallback.
+  - `session` (no action) now prints session grouped help and active shell-session status.
+  - `session show` with no selector now resolves to current shell session (or prints no-active-session status).
+  - Added argument-shape validation for grouped actions (for example `history show` selector format and no-extra-arg guards like `memory list extra`).
+- **Session visibility fix**:
+  - Added active-session helpers in `src/asky/cli/sessions.py`:
+    - stale shell-lock cleanup detection,
+    - `print_active_session_status()`,
+    - `print_current_session_or_status()`.
+- **Daemon/XMPP parity**:
+  - Added grouped-command strict handling in:
+    - `src/asky/daemon/command_executor.py`
+    - `src/asky/plugins/xmpp_daemon/command_executor.py`
+  - Known grouped domains now return usage/error instead of falling through to query execution.
+  - `session show` without selector in remote command execution now prints current conversation session transcript.
+- **Tests**:
+  - Expanded `tests/test_cli.py` coverage for:
+    - strict grouped command errors,
+    - `session` no-action status/help,
+    - `session show` no-selector behavior,
+    - stale lock and no-active-session outputs,
+    - follow-up query shell-session attachment (`run_chat` request includes shell session id).
+  - Expanded `tests/test_xmpp_commands.py` for grouped command strict handling and `session show` no-selector behavior.
+- **Docs updated**:
+  - `ARCHITECTURE.md`
+  - `src/asky/cli/AGENTS.md`
+  - `src/asky/daemon/AGENTS.md`
+  - `src/asky/plugins/AGENTS.md`
+- **Status**: 1336 tests passed.
+
+## 2026-03-01 - Handle Empty Model Responses
+
+- **Issue**: Models intermittently returned empty strings (no content, no tool calls), causing the turn loop in `ConversationEngine` to exit abruptly without a final answer.
+- **Fix**: Implemented a retry mechanism in `src/asky/core/engine.py`.
+  - Added `empty_response_count` tracking.
+  - If a response is empty, the engine now appends a corrective system prompt and retries (consuming another turn).
+  - If the model fails twice consecutively, it aborts with a graceful apology message instead of an empty result.
+- **Tests**: Added `test_empty_response_retry_success` and `test_empty_response_abort_after_retries` to `tests/test_llm.py`.
+- **Status**: 1325 tests passed.
+
+## 2026-03-01 - One-Shot Mode: Logic & Integration Fixes
+
+- **Regex Improvement**: Relaxed `summarize` regex in `query_classifier.py` to match variations like "summarized", "summarization", and "summarizing". Updated unit tests to verify.
+- **Prompt Composition Fix**: Refactored `append_research_guidance` in `prompts.py` to prevent early returns. This ensures that `local_kb_hint_enabled` and `section_tools_enabled` instructions are correctly appended even when one-shot mode guidance is active.
+- **Integrated Verification**: Updated `test_one_shot_integration.py` to assert correct prompt composition with multiple guidance flags enabled.
+- **Suite**: 1322 → 1323 passed.
+
+- **Issue**: LLM (google/gemini-2.5-flash-lite) was ignoring the one-shot summarization guidance in the system prompt and asking clarifying questions despite being instructed not to.
+- **Root Cause**: The original guidance text was too polite/suggestive ("Provide a direct, comprehensive summary without asking clarifying questions"). The LLM treated it as optional guidance rather than a hard requirement.
+- **Fix**: Rewrote `append_one_shot_summarization_guidance()` in `src/asky/core/prompts.py` to use more forceful, directive language:
+  - Changed header to "CRITICAL INSTRUCTION - One-Shot Summarization Mode"
+  - Used imperative commands: "You MUST provide...", "DO NOT ask clarifying questions"
+  - Added explicit "FORBIDDEN" section listing prohibited behaviors
+  - Structured as numbered "Required Actions" for clarity
+- **Testing**: Updated test assertion in `tests/test_one_shot_integration.py` to match new wording. All 1322 tests pass.
+- **Impact**: The classification and prompt modification logic was already working correctly. This change only affects the wording of the guidance text sent to the LLM, making it more likely to follow instructions.
+- **Follow-up**: User should test with real query to verify LLM now provides direct summaries. If issue persists, may need to try different LLM model or implement pre-calling `get_relevant_content` before LLM sees the query.
+
+## 2026-03-01 - One-Shot Document Summarization
+
+- **Feature**: Added intelligent query classification to detect one-shot summarization requests and provide direct answers for small document sets without clarifying questions.
+- **Implementation**: Created `src/asky/research/query_classifier.py` with 6-step decision tree analyzing query keywords, corpus size, and vagueness. Classification runs during preload pipeline after local ingestion and adjusts system prompt guidance.
+- **Configuration**: Added `[query_classification]` section to `research.toml` with configurable thresholds (default: 10 documents), aggressive mode (20 documents), and force_research_mode override.
+- **Performance**: Classification adds <0.004ms overhead with ~383 bytes memory footprint. Deterministic results for same inputs.
+- **Documentation**: Updated `docs/research_mode.md`, `docs/configuration.md`, `ARCHITECTURE.md`, and `src/asky/research/AGENTS.md` with one-shot mode examples and configuration details.
+- **Spec location**: `.kiro/specs/one-shot-document-summarization-improvement/`
+- **Gotchas**: Feature is enabled by default. Users can disable via `query_classification.enabled = false` or force research mode via `force_research_mode = true`. Classification only runs in research mode when `QUERY_CLASSIFICATION_ENABLED=true`.
+- **Follow-up**: Manual testing requires user validation with real LLM calls (test guide in `temp/MANUAL_TESTING_GUIDE.md`).
+
 ## 2026-03-01 - Code Review Phase 6: Playwright Browser Plugin Fixes
 
 - **F1/F6 fix (P3)**: Removed dead code `_session_path` and `_save_session` in `PlaywrightBrowserManager`. Persistence is correctly handled by Playwright's `launch_persistent_context`. Updated `AGENTS.md` to reflect actual profile directory storage.

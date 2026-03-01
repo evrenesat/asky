@@ -82,6 +82,24 @@ QUERY_DEFAULT_TOOL_OFF_KEY = "tool_off"
 QUERY_DEFAULT_TERMINAL_LINES_KEY = "terminal_lines"
 logger = logging.getLogger(__name__)
 HELP_FLAG_TOKENS = {"-h", "--help"}
+GROUPED_DOMAIN_ACTIONS: dict[str, frozenset[str]] = {
+    "history": frozenset({"list", "show", "delete"}),
+    "session": frozenset(
+        {
+            "list",
+            "show",
+            "create",
+            "use",
+            "end",
+            "delete",
+            "clean-research",
+            "from-message",
+        }
+    ),
+    "memory": frozenset({"list", "delete", "clear"}),
+    "corpus": frozenset({"query", "summarize", "summarize-section"}),
+    "prompts": frozenset({"list"}),
+}
 
 
 def _format_contribution_lines(contribution: "CLIContribution") -> list[str]:
@@ -355,6 +373,125 @@ def _consume_grouped_help(tokens: list[str], plugin_manager=None) -> bool:
         _print_prompts_help()
         raise SystemExit(0)
     return False
+
+
+def _grouped_visible_tokens(raw_tokens: list[str]) -> list[str]:
+    """Return grouped-command candidate tokens, excluding help flags and `--` tails."""
+    tokens = list(raw_tokens)
+    if "--" in tokens:
+        tokens = tokens[: tokens.index("--")]
+    return [token for token in tokens if token not in HELP_FLAG_TOKENS]
+
+
+def _grouped_command_issue(raw_tokens: list[str]) -> tuple[str, str, str] | None:
+    """Return grouped-command strict-routing issue tuple: (noun, reason, detail)."""
+    tokens = _grouped_visible_tokens(raw_tokens)
+    if not tokens:
+        return None
+    if _is_flag_token(tokens[0]):
+        return None
+
+    noun = str(tokens[0]).strip().lower()
+    actions = GROUPED_DOMAIN_ACTIONS.get(noun)
+    if not actions:
+        return None
+    if len(tokens) < 2:
+        return noun, "missing_action", ""
+
+    action = str(tokens[1]).strip().lower()
+    if action not in actions:
+        return noun, "invalid_action", action
+
+    rest = list(tokens[2:])
+
+    if noun == "history":
+        if action == "list" and len(rest) > 1:
+            return noun, "invalid_args", "history list accepts at most one optional count."
+        if action == "show":
+            selector = " ".join(rest).strip()
+            if not selector:
+                return noun, "missing_args", "history show requires a history selector."
+            if not _is_valid_history_selector(selector):
+                return noun, "invalid_args", "history show selector must be IDs/ranges/tokens."
+        if action == "delete":
+            if not rest:
+                return noun, "missing_args", "history delete requires a selector or --all."
+            if rest[0] == "--all" and len(rest) > 1:
+                return noun, "invalid_args", "history delete --all does not accept extra arguments."
+
+    if noun == "session":
+        if action == "list" and len(rest) > 1:
+            return noun, "invalid_args", "session list accepts at most one optional count."
+        if action == "show" and not rest:
+            return noun, "session_show_current", ""
+        if action in {"create", "use", "clean-research", "from-message"} and not rest:
+            return noun, "missing_args", f"session {action} requires an argument."
+        if action == "end" and rest:
+            return noun, "invalid_args", "session end does not accept arguments."
+        if action == "delete":
+            if not rest:
+                return noun, "missing_args", "session delete requires a selector or --all."
+            if rest[0] == "--all" and len(rest) > 1:
+                return noun, "invalid_args", "session delete --all does not accept extra arguments."
+
+    if noun == "memory":
+        if action in {"list", "clear"} and rest:
+            return noun, "invalid_args", f"memory {action} does not accept arguments."
+        if action == "delete" and len(rest) != 1:
+            return noun, "invalid_args", "memory delete requires exactly one memory id."
+
+    if noun == "corpus":
+        if action == "query":
+            text, _options = _consume_text_until_flag(rest)
+            if not text:
+                return noun, "missing_args", "corpus query requires query text."
+
+    if noun == "prompts":
+        if action == "list" and rest:
+            return noun, "invalid_args", "prompts list does not accept arguments."
+
+    return None
+
+
+def _print_grouped_usage(noun: str) -> None:
+    """Print grouped help page by domain noun."""
+    if noun == "history":
+        _print_history_help()
+    elif noun == "session":
+        _print_session_help()
+    elif noun == "memory":
+        _print_memory_help()
+    elif noun == "corpus":
+        _print_corpus_help()
+    elif noun == "prompts":
+        _print_prompts_help()
+
+
+def _handle_grouped_command_issue(args: argparse.Namespace) -> bool:
+    """Handle strict grouped-command routing issues before query fallback."""
+    issue = _grouped_command_issue(list(getattr(args, "_raw_tokens", []) or []))
+    if issue is None:
+        return False
+
+    noun, reason, detail = issue
+    if noun == "session" and reason == "missing_action":
+        _print_session_help()
+        sessions.print_active_session_status()
+        return True
+    if noun == "session" and reason == "session_show_current":
+        sessions.print_current_session_or_status(open_browser=bool(getattr(args, "open", False)))
+        return True
+
+    _print_grouped_usage(noun)
+    if reason == "missing_action":
+        print(f"Error: Missing subcommand for '{noun}'.")
+    elif reason == "invalid_action":
+        print(f"Error: Unknown subcommand '{detail}' for '{noun}'.")
+    elif detail:
+        print(f"Error: {detail}")
+    else:
+        print(f"Error: Invalid '{noun}' command.")
+    return True
 
 
 def _is_flag_token(token: str) -> bool:
@@ -1707,6 +1844,9 @@ def main() -> None:
                 print("Error: Preset expansion produced an empty command.")
                 return
             args = parse_args(expanded_tokens, plugin_manager=_cli_plugin_manager)
+
+    if _handle_grouped_command_issue(args):
+        return
 
     _apply_shell_session_defaults(args)
 

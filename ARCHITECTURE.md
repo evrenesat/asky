@@ -6,7 +6,8 @@ This document provides a high-level overview of the **asky** codebase architectu
 
 asky is an AI-powered CLI tool that combines LLM capabilities with web search and tool-calling to provide intelligent, research-backed answers to queries. It also includes an optional XMPP foreground daemon mode for remote command/query handling.
 
-Current CLI routing supports a grouped command surface (`history/session/memory/corpus`) and a single config mutation entrypoint (`--config <domain> <action>`). `main.py` normalizes that surface into internal flags before dispatch.
+Current CLI routing supports a grouped command surface (`history/session/memory/corpus/prompts`) and a single config mutation entrypoint (`--config <domain> <action>`). `main.py` normalizes that surface into internal flags before dispatch.
+Grouped domains use strict routing: recognized domain commands with missing/invalid subcommands no longer fall back to free-text queries. `session` with no subcommand shows session help plus active-shell session status, and `session show` without a selector targets the currently active shell session.
 
 ```mermaid
 graph TB
@@ -244,6 +245,10 @@ session.py → resolve create/resume/auto/research session state
 emit `SESSION_RESOLVED` plugin hook
     ↓
 preload.py → optional local_ingestion + shortlist pipeline
+           → [NEW] query classification (research mode only)
+              - analyze query keywords and corpus size
+              - determine mode: one_shot | research
+              - adjust system prompt guidance accordingly
            → research-mode deterministic bootstrap retrieval over preloaded corpus handles
            → standard-mode seed URL content preload (budget-aware)
     ↓
