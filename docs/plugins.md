@@ -19,9 +19,15 @@ If no plugin is enabled in `plugins.toml`, runtime stays disabled.
 
 Current built-in plugins:
 
-- `manual_persona_creator`
-- `persona_manager`
-- `gui_server`
+- `email_sender`: Provides `--mail` CLI argument support and email dispatch tools.
+- `gui_server`: Provides local web interface settings and status pages.
+- `image_transcriber`: Processes incoming image attachments for daemon mode.
+- `manual_persona_creator`: Persona authoring via tool execution.
+- `persona_manager`: Session persona binding via tool execution.
+- `playwright_browser`: Headless browser capability for research fetching.
+- `push_data`: Provides `--push-data` HTTP webhook invocation tools.
+- `voice_transcriber`: Processes incoming audio messages via local MLX models.
+- `xmpp_daemon`: Headless messaging daemon supporting macOS tray interface.
 
 Important: only `gui_server` currently has a browser UI page. Persona plugins currently expose tool-based entry points (LLM tool calls), not a dedicated GUI panel.
 

@@ -88,14 +88,9 @@ allowed_jids = ["me@jabber.at"]
 command_prefix = "/asky"
 interface_planner_include_command_reference = true
 response_chunk_chars = 3000
-
-voice_enabled = true
-voice_workers = 1
-voice_max_size_mb = 500
-voice_model = "mlx-community/whisper-tiny"
-voice_hf_token_env = "HF_TOKEN"
-voice_auto_yes_without_interface_model = true
 ```
+
+*Note: Voice and image transcription configuration has been moved to separate plugins. See `~/.config/asky/voice_transcriber.toml` and `~/.config/asky/image_transcriber.toml`.*
 
 Set the password in your environment (do not put it directly in the file):
 
@@ -223,7 +218,7 @@ Rules:
 
 ## Voice Messages (Phase 1: macOS)
 
-When `voice_enabled=true` and `mlx-whisper` is installed:
+When the `voice_transcriber` plugin is enabled and `mlx-whisper` is installed:
 
 - audio URLs from XMPP OOB payloads are streamed to disk
 - transcription runs in background workers
@@ -233,14 +228,14 @@ When `voice_enabled=true` and `mlx-whisper` is installed:
   - `yes`: run the latest pending transcript as a query now
   - `no`: keep transcript stored without running it
 - when an audio OOB URL is present, URL-only message bodies are ignored to avoid accidental model calls on the attachment link
-- with `voice_auto_yes_without_interface_model=true` and no interface model configured, completed transcripts are auto-run as queries without waiting for `yes`
+- with `auto_yes_without_interface_model=true` (in `voice_transcriber.toml`) and no interface model configured, completed transcripts are auto-run as queries without waiting for `yes`
 
 Non-macOS transcription requests fail with an explicit error.
 
 Hugging Face token handling (recommended for faster/less rate-limited model downloads):
 
-- set `voice_hf_token_env` to the environment variable name that contains your token
-- optionally set `voice_hf_token` directly in `xmpp.toml` (less secure)
+- set `hf_token_env` in `voice_transcriber.toml` to the environment variable name that contains your token
+- optionally set `hf_token` directly in `voice_transcriber.toml` (less secure)
 - daemon exports token to both `HF_TOKEN` and `HUGGING_FACE_HUB_TOKEN` before transcription calls
 
 ## Transcript Commands
@@ -293,3 +288,23 @@ Allowed remotely:
 - normal query turns
 - retrieval/research commands
 - `--push-data`
+
+## Session Commands and XEP-0050 Ad-Hoc Commands
+
+You can manage your conversation state remotely. 
+
+### Slash Commands
+
+The following session management slash commands are natively routed and available even when `interface_model` is unconfigured:
+
+- `/session clear`: Clears all conversation messages from the current active session without touching transcripts or media attachments. It requires a `yes/no` confirmation from the sender (or from anyone in a group chat) before executing.
+- `/session child`: Create a child session inheriting current overrides.
+- `/session <id|name>`: Switch to an existing session by ID or exact name.
+
+### XEP-0050 Ad-Hoc Commands
+
+The daemon exposes standard XEP-0050 Ad-Hoc commands (e.g. reachable via `Execute Command` in Gajim or similar menus in other clients) giving a structured form-based UI for:
+
+- **Switch Session**: Allows switching the active profile to another existing session.
+- **Clear Session**: Prompts a boolean checkbox form to delete messages in the active session while retaining media/transcripts.
+- **Use Transcript**: Allows selecting a previously transcribed audio message to execute as a new text query.

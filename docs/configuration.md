@@ -178,18 +178,9 @@ Key options:
 - `response_chunk_chars`: max outbound chunk length.
 - `transcript_max_per_session`: transcript retention cap per sender session.
 
-Voice controls (phase 1 macOS):
-
-- `voice_enabled`
-- `voice_workers`
-- `voice_max_size_mb`
-- `voice_model`
-- `voice_language`
-- `voice_storage_dir`
-- `voice_hf_token_env`
-- `voice_hf_token`
-- `voice_auto_yes_without_interface_model` (default `true`)
-- `voice_allowed_mime_types`
+Voice and image transcription are now managed by dedicated plugins:
+- See `~/.config/asky/voice_transcriber.toml` for voice transcription settings (model, tokens, auto-yes behavior).
+- See `~/.config/asky/image_transcriber.toml` for image transcription capabilities.
 
 Install extras as needed:
 
@@ -240,7 +231,7 @@ Several configuration values can be set via environment variables. Environment v
 | `ASKY_SMTP_USER`        | `email.smtp_user`                | SMTP username for `--mail` output.                 |
 | `ASKY_SMTP_PASSWORD`    | `email.smtp_password`            | SMTP password (prefer env over config file).       |
 | `ASKY_XMPP_PASSWORD`    | `xmpp.password`                  | XMPP account password (prefer env over config).    |
-| `HF_TOKEN`              | `xmpp.voice_hf_token`            | Hugging Face token for voice model downloads.      |
+| `HF_TOKEN`              | `plugin.voice_transcriber.hf_token` | Hugging Face token for voice model downloads.      |
 | `GOOGLE_API_KEY`        | `api.gemini.api_key`             | Google / Gemini API key.                           |
 | `OPENAI_API_KEY`        | `api.<alias>.api_key`            | OpenAI-compatible API key.                         |
 | `SERPER_API_KEY`        | `api.serper.api_key`             | Serper web search API key.                         |
@@ -250,7 +241,7 @@ Notes:
 - The env var name for `ASKY_DB_PATH` is configurable: set `db_path_env_var` in `general.toml` to use a different variable name.
 - The env var names for `ASKY_SMTP_USER` and `ASKY_SMTP_PASSWORD` are configurable via `smtp_user_env` and `smtp_password_env` in `push_data.toml` / `email.toml`.
 - The env var name for `ASKY_XMPP_PASSWORD` is configurable via `xmpp.password_env` in `xmpp.toml`.
-- The env var name for the Hugging Face token is configurable via `xmpp.voice_hf_token_env` (default `HF_TOKEN`).
+- The env var name for the Hugging Face token is configurable via `hf_token_env` in `voice_transcriber.toml` (default `HF_TOKEN`).
 
 ## 12. Shell Auto-Completion
 
