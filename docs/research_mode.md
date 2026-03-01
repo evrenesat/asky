@@ -2,6 +2,36 @@
 
 Deep Research Mode (`-r`) is asky’s retrieval-focused workflow for multi-source questions, long documents, and local corpus analysis.
 
+## One-Shot Document Summarization
+
+When you request a summary of a small document set (≤10 documents by default), asky will provide a direct answer without asking clarifying questions.
+
+### Examples
+
+**One-Shot Mode** (direct answer):
+```bash
+asky -r ./my_docs "Summarize the key points across all documents"
+asky -r ./reports "Give me an overview of the main ideas"
+```
+
+**Research Mode** (clarification questions):
+```bash
+asky -r ./large_corpus "Summarize the documents"  # >10 documents
+asky -r ./my_docs "tell me about these"  # vague query
+```
+
+### Configuration
+
+Control this behavior in `~/.config/asky/research.toml`:
+
+```toml
+[query_classification]
+enabled = true
+one_shot_document_threshold = 10
+```
+
+See [Configuration](configuration.md#query-classification) for all available settings.
+
 ## Session-Owned Behavior
 
 Research mode is now a **session property**:

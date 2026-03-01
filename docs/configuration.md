@@ -96,6 +96,36 @@ search_provider = "searxng"
 searxng_url = "http://localhost:8888"
 ```
 
+## 5a. Query Classification (Research Mode)
+
+Asky can detect one-shot summarization requests and provide direct answers for small document sets without asking clarifying questions.
+
+### Settings (`research.toml`)
+
+```toml
+[query_classification]
+# Enable intelligent query classification for one-shot summarization
+enabled = true
+
+# Document count threshold for one-shot mode (default: 10)
+# Queries with ≤ this many documents may trigger one-shot mode
+one_shot_document_threshold = 10
+
+# Aggressive mode: increase threshold to 20 documents
+aggressive_mode = false
+aggressive_document_threshold = 20
+
+# Force research mode: always ask clarifying questions (disables one-shot)
+force_research_mode = false
+```
+
+### Behavior
+
+- **One-Shot Mode**: When you request a summary of ≤10 documents with clear summarization keywords (e.g., "summarize", "overview", "key points"), asky provides a direct answer.
+- **Research Mode**: For larger corpora (>10 documents) or vague queries, asky asks clarifying questions to focus the research.
+
+See [Research Mode Documentation](research_mode.md#one-shot-document-summarization) for examples.
+
 ## 6. Model Management (`models.toml`)
 
 Easily manage your model configurations directly from the CLI without having to manually edit `models.toml`:
