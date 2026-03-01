@@ -18,6 +18,7 @@ from asky import summarization
 from asky.api import AskyClient, AskyConfig, AskyTurnRequest
 from asky.cli import history, memory_commands, sessions, utils
 from asky.cli.main import (
+    GROUPED_DOMAIN_ACTIONS,
     _grouped_command_issue,
     _manual_corpus_query_arg,
     _manual_section_query_arg,
@@ -174,11 +175,20 @@ class CommandExecutor:
         }
 
     def _resolve_naked_command(self, tokens: List[str]) -> List[str]:
-        """Normalize short naked commands (e.g. 'session clear') to canonical forms."""
+        """Normalize short naked commands (e.g. 'history') to canonical forms."""
         if not tokens:
             return tokens
 
         head = tokens[0].lower()
+        if head in GROUPED_DOMAIN_ACTIONS:
+            # If it's a known grouped domain:
+            # 1. Has an action: let it pass through to parse_args grouped translation
+            if len(tokens) >= 2 and tokens[1].lower() in GROUPED_DOMAIN_ACTIONS[head]:
+                return tokens
+            # 2. No action: let it be returns as is so _grouped_command_issue can trigger usage
+            if len(tokens) == 1:
+                return tokens
+
         if head in self._naked_command_map:
             # Only normalize if it's "short": max 3 tokens for legacy safety
             if len(tokens) <= 3:
@@ -632,10 +642,10 @@ class CommandExecutor:
             deleted_count = memory_commands.clear_memories_non_interactive()
             return f"Deleted {deleted_count} memories."
         if getattr(args, "history", None) is not None:
-            return _capture_output(history.show_history, args.history)
+            return _capture_output(history.show_history_command, args.history)
         if getattr(args, "print_ids", None):
             return _capture_output(
-                history.print_answers,
+                history.print_answers_command,
                 args.print_ids,
                 args.summarize,
                 False,

@@ -3,7 +3,7 @@
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from asky.daemon.command_executor import CommandExecutor
+from asky.plugins.xmpp_daemon.command_executor import CommandExecutor
 
 
 class _FakeTranscriptManager:
@@ -171,10 +171,14 @@ def test_execute_query_text_expands_aliases_before_model_call():
     manager.session_profile_manager.profile.user_prompts = {"alias": "hello"}
     executor = CommandExecutor(manager)
     with (
-        patch("asky.daemon.command_executor.AskyClient") as mock_client_cls,
-        patch("asky.daemon.command_executor.utils.load_custom_prompts") as mock_load,
         patch(
-            "asky.daemon.command_executor.utils.expand_query_text",
+            "asky.plugins.xmpp_daemon.command_executor.AskyClient"
+        ) as mock_client_cls,
+        patch(
+            "asky.plugins.xmpp_daemon.command_executor.utils.load_custom_prompts"
+        ) as mock_load,
+        patch(
+            "asky.plugins.xmpp_daemon.command_executor.utils.expand_query_text",
             return_value="expanded query",
         ) as mock_expand,
     ):
@@ -199,11 +203,13 @@ def test_execute_query_text_slash_only_lists_prompts():
     executor = CommandExecutor(manager)
     with (
         patch(
-            "asky.daemon.command_executor.utils.expand_query_text",
+            "asky.plugins.xmpp_daemon.command_executor.utils.expand_query_text",
             return_value="/",
         ),
-        patch("asky.daemon.command_executor.utils.load_custom_prompts"),
-        patch("asky.daemon.command_executor.AskyClient") as mock_client_cls,
+        patch("asky.plugins.xmpp_daemon.command_executor.utils.load_custom_prompts"),
+        patch(
+            "asky.plugins.xmpp_daemon.command_executor.AskyClient"
+        ) as mock_client_cls,
     ):
         response = executor.execute_query_text(jid="jid", query_text="/")
 
@@ -218,11 +224,13 @@ def test_execute_query_text_unknown_slash_lists_filtered_prompts():
     executor = CommandExecutor(manager)
     with (
         patch(
-            "asky.daemon.command_executor.utils.expand_query_text",
+            "asky.plugins.xmpp_daemon.command_executor.utils.expand_query_text",
             return_value="/unknown rest",
         ),
-        patch("asky.daemon.command_executor.utils.load_custom_prompts"),
-        patch("asky.daemon.command_executor.AskyClient") as mock_client_cls,
+        patch("asky.plugins.xmpp_daemon.command_executor.utils.load_custom_prompts"),
+        patch(
+            "asky.plugins.xmpp_daemon.command_executor.AskyClient"
+        ) as mock_client_cls,
     ):
         response = executor.execute_query_text(jid="jid", query_text="/unknown rest")
 
@@ -236,11 +244,15 @@ def test_execute_command_text_query_uses_shared_preparation():
     manager.session_profile_manager.profile.user_prompts = {"alias": "Hello"}
     executor = CommandExecutor(manager)
     with (
-        patch("asky.daemon.command_executor.AskyClient") as mock_client_cls,
-        patch("asky.daemon.command_executor.init_db"),
-        patch("asky.daemon.command_executor.utils.load_custom_prompts") as mock_load,
         patch(
-            "asky.daemon.command_executor.utils.expand_query_text",
+            "asky.plugins.xmpp_daemon.command_executor.AskyClient"
+        ) as mock_client_cls,
+        patch("asky.plugins.xmpp_daemon.command_executor.init_db"),
+        patch(
+            "asky.plugins.xmpp_daemon.command_executor.utils.load_custom_prompts"
+        ) as mock_load,
+        patch(
+            "asky.plugins.xmpp_daemon.command_executor.utils.expand_query_text",
             return_value="normalized query",
         ) as mock_expand,
     ):
@@ -268,10 +280,14 @@ def test_transcript_use_path_inherits_query_alias_preparation():
     manager.records[("jid", 1)].transcript_text = "check /alias"
     executor = CommandExecutor(manager)
     with (
-        patch("asky.daemon.command_executor.AskyClient") as mock_client_cls,
-        patch("asky.daemon.command_executor.utils.load_custom_prompts") as mock_load,
         patch(
-            "asky.daemon.command_executor.utils.expand_query_text",
+            "asky.plugins.xmpp_daemon.command_executor.AskyClient"
+        ) as mock_client_cls,
+        patch(
+            "asky.plugins.xmpp_daemon.command_executor.utils.load_custom_prompts"
+        ) as mock_load,
+        patch(
+            "asky.plugins.xmpp_daemon.command_executor.utils.expand_query_text",
             return_value="expanded transcript query",
         ) as mock_expand,
     ):
@@ -296,7 +312,9 @@ def test_transcript_use_path_inherits_query_alias_preparation():
 def test_query_pointer_resolution_for_audio_and_image():
     manager = _FakeTranscriptManager()
     executor = CommandExecutor(manager)
-    with patch("asky.daemon.command_executor.AskyClient") as mock_client_cls:
+    with patch(
+        "asky.plugins.xmpp_daemon.command_executor.AskyClient"
+    ) as mock_client_cls:
         mock_client = mock_client_cls.return_value
         mock_client.run_turn.return_value = _turn_result("ok")
         response = executor.execute_query_text(
@@ -317,7 +335,9 @@ def test_query_pointer_resolution_for_audio_and_image():
 def test_transcript_use_accepts_prefixed_id():
     manager = _FakeTranscriptManager()
     executor = CommandExecutor(manager)
-    with patch("asky.daemon.command_executor.AskyClient") as mock_client_cls:
+    with patch(
+        "asky.plugins.xmpp_daemon.command_executor.AskyClient"
+    ) as mock_client_cls:
         mock_client = mock_client_cls.return_value
         mock_client.run_turn.return_value = _turn_result("answer")
         response = executor.execute_command_text(
@@ -396,7 +416,7 @@ def test_help_alias_returns_same_text():
 
 
 def test_help_command_token_recognized_by_router():
-    from asky.daemon.router import _looks_like_command
+    from asky.plugins.xmpp_daemon.router import _looks_like_command
 
     assert _looks_like_command("/h") is True
     assert _looks_like_command("/help") is True
@@ -481,7 +501,7 @@ def test_remote_policy_allows_cleanup_related_flags():
 def test_all_without_target_selector_returns_error():
     manager = _FakeTranscriptManager()
     executor = CommandExecutor(manager)
-    with patch("asky.daemon.command_executor.init_db"):
+    with patch("asky.plugins.xmpp_daemon.command_executor.init_db"):
         response = executor.execute_command_text(
             jid="jid",
             command_text="--all",
@@ -494,17 +514,17 @@ def test_cleanup_commands_dispatch_through_remote_executor():
     executor = CommandExecutor(manager)
 
     with (
-        patch("asky.daemon.command_executor.init_db"),
+        patch("asky.plugins.xmpp_daemon.command_executor.init_db"),
         patch(
-            "asky.daemon.command_executor.sessions.handle_clean_session_research_command",
+            "asky.plugins.xmpp_daemon.command_executor.sessions.handle_clean_session_research_command",
             side_effect=lambda args: print(f"clean:{args.clean_session_research}"),
         ),
         patch(
-            "asky.daemon.command_executor.memory_commands.handle_delete_memory",
+            "asky.plugins.xmpp_daemon.command_executor.memory_commands.handle_delete_memory",
             side_effect=lambda memory_id: print(f"delete-memory:{memory_id}"),
         ),
         patch(
-            "asky.daemon.command_executor.memory_commands.clear_memories_non_interactive",
+            "asky.plugins.xmpp_daemon.command_executor.memory_commands.clear_memories_non_interactive",
             side_effect=lambda: 17,
         ),
     ):
@@ -549,8 +569,10 @@ def test_grouped_command_invalid_subcommand_returns_usage_error():
 def test_grouped_session_show_without_selector_uses_current_session():
     executor = CommandExecutor(_FakeTranscriptManager())
     with patch(
-        "asky.daemon.command_executor.sessions.print_session_command",
-        side_effect=lambda session_id, *_args, **_kwargs: print(f"session:{session_id}"),
+        "asky.plugins.xmpp_daemon.command_executor.sessions.print_session_command",
+        side_effect=lambda session_id, *_args, **_kwargs: print(
+            f"session:{session_id}"
+        ),
     ):
         response = executor.execute_command_text(
             jid="jid",
@@ -563,7 +585,7 @@ def test_remote_policy_blocks_config_flag_via_execute_command_text():
     """Blocked flags are caught even when arriving through execute_command_text
     (the same path used after preset expansion)."""
     executor = CommandExecutor(_FakeTranscriptManager())
-    with patch("asky.daemon.command_executor.init_db"):
+    with patch("asky.plugins.xmpp_daemon.command_executor.init_db"):
         response = executor.execute_command_text(
             jid="jid",
             command_text="--config model add",

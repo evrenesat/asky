@@ -4,7 +4,7 @@ import os
 from pathlib import Path
 from typing import Iterable
 
-from asky.daemon.voice_transcriber import (
+from asky.plugins.xmpp_daemon.voice_transcriber import (
     GENERIC_BINARY_MIME_TYPE,
     TRANSCRIPTION_ERROR_MACOS_ONLY,
     TranscriptionJob,
@@ -48,7 +48,9 @@ def test_non_macos_fails_fast(monkeypatch, tmp_path):
         allowed_mime_types=[],
         completion_callback=events.append,
     )
-    monkeypatch.setattr("asky.daemon.voice_transcriber.platform.system", lambda: "Linux")
+    monkeypatch.setattr(
+        "asky.plugins.xmpp_daemon.voice_transcriber.platform.system", lambda: "Linux"
+    )
     transcriber._run_job(
         TranscriptionJob(
             jid="jid",
@@ -81,7 +83,9 @@ class _FakeResponse:
             yield chunk
 
 
-def test_download_audio_accepts_octet_stream_when_url_extension_is_audio(monkeypatch, tmp_path):
+def test_download_audio_accepts_octet_stream_when_url_extension_is_audio(
+    monkeypatch, tmp_path
+):
     transcriber = VoiceTranscriber(
         enabled=True,
         workers=1,
@@ -99,7 +103,9 @@ def test_download_audio_accepts_octet_stream_when_url_extension_is_audio(monkeyp
             chunks=[b"audio-bytes"],
         )
 
-    monkeypatch.setattr("asky.daemon.voice_transcriber.requests.get", _fake_get)
+    monkeypatch.setattr(
+        "asky.plugins.xmpp_daemon.voice_transcriber.requests.get", _fake_get
+    )
     target = tmp_path / "sample.audio"
     path = transcriber._download_audio(
         "https://share.conversations.im/file/example.m4a",
@@ -109,7 +115,9 @@ def test_download_audio_accepts_octet_stream_when_url_extension_is_audio(monkeyp
     assert path.read_bytes() == b"audio-bytes"
 
 
-def test_download_audio_rejects_octet_stream_without_audio_extension(monkeypatch, tmp_path):
+def test_download_audio_rejects_octet_stream_without_audio_extension(
+    monkeypatch, tmp_path
+):
     transcriber = VoiceTranscriber(
         enabled=True,
         workers=1,
@@ -127,7 +135,9 @@ def test_download_audio_rejects_octet_stream_without_audio_extension(monkeypatch
             chunks=[b"not-audio"],
         )
 
-    monkeypatch.setattr("asky.daemon.voice_transcriber.requests.get", _fake_get)
+    monkeypatch.setattr(
+        "asky.plugins.xmpp_daemon.voice_transcriber.requests.get", _fake_get
+    )
 
     try:
         transcriber._download_audio(
@@ -137,7 +147,9 @@ def test_download_audio_rejects_octet_stream_without_audio_extension(monkeypatch
     except RuntimeError as exc:
         assert GENERIC_BINARY_MIME_TYPE in str(exc)
     else:
-        raise AssertionError("Expected octet-stream without inferable audio extension to fail.")
+        raise AssertionError(
+            "Expected octet-stream without inferable audio extension to fail."
+        )
 
 
 def test_apply_hf_token_env_sets_standard_aliases(monkeypatch, tmp_path):

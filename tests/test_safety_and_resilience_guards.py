@@ -1,4 +1,5 @@
 """Safety and resilience guardrail tests for core runtime behavior."""
+
 import sqlite3
 import threading
 import time
@@ -8,7 +9,7 @@ import pytest
 
 
 def test_inline_toml_pattern_avoids_catastrophic_backtracking():
-    from asky.daemon.command_executor import INLINE_TOML_PATTERN
+    from asky.plugins.xmpp_daemon.command_executor import INLINE_TOML_PATTERN
 
     bad_input = "a" * 100 + "`" * 50
     start = time.monotonic()
@@ -18,7 +19,7 @@ def test_inline_toml_pattern_avoids_catastrophic_backtracking():
 
 
 def test_inline_toml_pattern_matches_valid_toml_block():
-    from asky.daemon.command_executor import INLINE_TOML_PATTERN
+    from asky.plugins.xmpp_daemon.command_executor import INLINE_TOML_PATTERN
 
     text = "config.toml\n```toml\nkey = 'value'\n```"
     m = INLINE_TOML_PATTERN.search(text)
@@ -89,7 +90,9 @@ def test_get_interaction_context_raises_when_summarization_fails(tmp_path):
         def _raise(*a, **kw):
             raise RuntimeError("summarization boom")
 
-        with patch("asky.storage.sqlite.SQLiteHistoryRepository.get_interaction_context") as mock_fn:
+        with patch(
+            "asky.storage.sqlite.SQLiteHistoryRepository.get_interaction_context"
+        ) as mock_fn:
             mock_fn.side_effect = _raise
             with pytest.raises(RuntimeError):
                 repo.get_interaction_context([msg_id])
@@ -171,10 +174,10 @@ def test_enqueue_for_jid_starts_single_worker_under_concurrency():
 
         assert not exceptions
 
-        alive_workers = [
-            w for w in service._jid_workers.values() if w.is_alive()
-        ]
-        assert len(alive_workers) <= 1, "Only one worker thread should be running per JID"
+        alive_workers = [w for w in service._jid_workers.values() if w.is_alive()]
+        assert len(alive_workers) <= 1, (
+            "Only one worker thread should be running per JID"
+        )
 
 
 def test_create_session_rejects_invalid_research_source_mode(tmp_path):

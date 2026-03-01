@@ -1,6 +1,6 @@
 """XMPP daemon plugin unit tests."""
 
-from asky.daemon.chunking import chunk_text
+from asky.plugins.xmpp_daemon.chunking import chunk_text
 from asky.plugins.xmpp_daemon.xmpp_service import (
     XMPPService,
     _extract_urls_from_text,

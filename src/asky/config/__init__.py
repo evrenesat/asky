@@ -137,9 +137,19 @@ INTERFACE_PLANNER_SYSTEM_PROMPT = _prompts.get(
     (
         "You are an interface planner for asky remote control.\n"
         "Return ONLY valid JSON with fields:\n"
-        '  "action_type": "command" | "query"\n'
+        '  "action_type": "command" | "query" | "chat"\n'
         '  "command_text": string\n'
         '  "query_text": string\n'
+    ),
+)
+INTERFACE_PRELOAD_POLICY_SYSTEM_PROMPT = _prompts.get(
+    "preload_policy_system",
+    (
+        "You are an interface planner for asky preload policy.\n"
+        "Return ONLY valid JSON with fields:\n"
+        '  "shortlist_enabled": boolean\n'
+        '  "intent": "web" | "local" | "ambiguous"\n'
+        '  "reason": string\n'
     ),
 )
 SUMMARIZE_QUERY_PROMPT_TEMPLATE = _prompts.get(

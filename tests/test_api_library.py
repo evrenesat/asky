@@ -69,9 +69,10 @@ def test_asky_client_build_messages_seed_direct_answer_instruction():
             ),
         ),
     )
-    assert "do NOT call get_url_content/get_url_details for the same URL" in messages[-1][
-        "content"
-    ]
+    assert (
+        "do NOT call get_url_content/get_url_details for the same URL"
+        in messages[-1]["content"]
+    )
 
 
 def test_asky_client_build_messages_keeps_verify_instruction_when_seed_not_ready():
@@ -229,9 +230,10 @@ def test_run_turn_research_adds_bootstrap_context_to_user_message(
 
     assert result.final_answer == "Final"
     sent_messages = mock_run_messages.call_args.args[0]
-    assert "Bootstrap retrieval evidence from preloaded corpus" in sent_messages[-1][
-        "content"
-    ]
+    assert (
+        "Bootstrap retrieval evidence from preloaded corpus"
+        in sent_messages[-1]["content"]
+    )
     mock_bootstrap.assert_called_once()
 
 
@@ -465,7 +467,13 @@ def test_run_turn_emits_preload_provenance_event(
         if isinstance(event, dict) and event.get("kind") == "preload_provenance"
     ]
     assert len(preload_events) == 1
-    assert preload_events[0]["combined_context_chars"] == len("combined context")
+    event = preload_events[0]
+    assert event["combined_context_chars"] == len("combined context")
+    # Verify policy engine diagnostics are emitted in provenance
+    assert "shortlist_policy_source" in event
+    assert "shortlist_reason" in event
+    assert "shortlist_policy_intent" in event
+    assert "shortlist_policy_diagnostics" in event
 
 
 @patch("asky.api.client.run_preload_pipeline")
@@ -571,7 +579,11 @@ def test_run_turn_disables_retrieval_tools_when_seed_direct_mode_ready(
     client.run_turn(AskyTurnRequest(query_text="Summarize https://example.com"))
 
     kwargs = mock_run_messages.call_args.kwargs
-    assert kwargs["disabled_tools"] == {"web_search", "get_url_content", "get_url_details"}
+    assert kwargs["disabled_tools"] == {
+        "web_search",
+        "get_url_content",
+        "get_url_details",
+    }
 
 
 @patch("asky.api.client.save_interaction")

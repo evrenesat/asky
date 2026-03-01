@@ -2,6 +2,74 @@
 
 For full detailed entries, see [DEVLOG_ARCHIVE.md](DEVLOG_ARCHIVE.md).
 
+## 2026-03-01 - Policy Constraint Compliance + Docs Alignment
+
+- Replaced broad `except Exception` in `src/asky/api/preload_policy.py` with narrow transport-error handling (`requests.exceptions.RequestException`) and explicit invalid-response/config fail-safe branches.
+- Updated `tests/test_preload_policy.py` to assert transport-error fallback reason.
+- Updated required docs for parity plan compliance:
+  - `ARCHITECTURE.md` now documents the shared adaptive shortlist policy stage.
+  - `docs/xmpp_daemon.md` planner contract now includes `action_type=chat` and updated fallback text.
+  - `src/asky/api/AGENTS.md` now documents adaptive shortlist precedence and provenance policy fields.
+  - `src/asky/plugins/AGENTS.md` now states CLI/XMPP shortlist parity via shared API preload path.
+- Status: 1344 tests passed.
+
+## 2026-03-01 - Interface Model Parity & XMPP Plugin Migration
+
+- **Feature**: Shared adaptive preload policy engine.
+  - Implemented `src/asky/api/preload_policy.py` to provide a deterministic-first pre-handover policy layer.
+  - Shortlist behavior is now consistent between CLI and XMPP: local-corpus turns are automatically prioritized, while ambiguous cases fall back to an interface model.
+  - Shortlist is now disabled by default for non-local-corpus turns without clear web intent, saving LLM tokens and reducing latency.
+  - Added `shortlist_policy_system` prompt in `src/asky/config/prompts.toml`.
+- **Infrastructure**: Legacy XMPP daemon module migration.
+  - Reconciled `src/asky/daemon/interface_planner.py` scope drift by moving it back to `src/asky/daemon/` to match architectural ownership.
+  - Migrated all other XMPP logic to `asky.plugins.xmpp_daemon.*`.
+  - Updated imports and tests to use the new plugin paths.
+- **Traceability**: Enhanced preload results.
+  - `PreloadResolution` now captures `shortlist_policy_source`, `shortlist_policy_intent`, and `shortlist_policy_diagnostics`.
+  - Preload provenance in CLI verbose mode now includes these policy fields for easier debugging of shortlist decisions.
+- **Docs**:
+  - Restored true status of doc updates.
+  - Created `src/asky/plugins/xmpp_daemon/AGENTS.md`.
+  - Cleaned up `src/asky/daemon/AGENTS.md`.
+- **Tests**:
+  - Added `tests/test_preload_policy.py` for the new engine.
+  - Updated 8 test files to reflect the XMPP plugin migration.
+- **Status**: 1343 tests passed.
+
+## 2026-03-01: Final XMPP Plugin Migration & Test Resolution
+
+Resolved regressions and test failures introduced during the XMPP daemon migration and interface model refinements.
+
+- **Test Fixes:**
+  - Updated `tests/test_api_preload.py` and `tests/test_cli.py` to handle the expanded 5-value return from `shortlist_enabled_for_request`.
+  - Fixed `test_xmpp_commands.py` failures by correctly mocking `print_session_command` and updating `CommandExecutor` to correctly route grouped commands.
+  - Resolved `RuntimeWarning` in `test_xmpp_file_upload.py` by properly closing mocked coroutines.
+- **XMPP Daemon Refinements:**
+  - Added `GROUPED_DOMAIN_ACTIONS` to `CommandExecutor` to allow strict routing of grouped commands (`session`, `history`, etc.) without requiring a slash prefix in XMPP.
+  - Fixed function name mismatches in `CommandExecutor` calling `history` module functions (added `_command` suffixes).
+  - Genericized naked command normalization to let grouped domain actions pass through to the standard CLI parser logic.
+- **Interface Model:**
+  - Fixed P1 issue by removing broad `except Exception:` block in `PreloadPolicyEngine` to let failures propagate naturally.
+  - Fixed P2 issue by evaluating the adaptive policy engine _before_ checking model override and global toggles in `src/asky/api/preload.py`, making local-corpus overrides work correctly.
+  - Verified and tested the retry mechanism for empty LLM responses in `ConversationEngine`.
+  - Ensured shortlist policy transparency by passing through all 5 enablement resolution variables in `AskyTurnResult`.
+
+All 1344 tests passed (added 1 test for local_only precedence).
+
+## 2026-03-01 - Policy Logic Refinement & Fail-Safe Implementation
+
+Refined the preload policy engine and shortlist enablement precedence to ensure absolute adherence to local-only modes and graceful degradation on interface model failures.
+
+- **Policy Engine Fail-Safe**: Re-introduced a targeted safety net in `PreloadPolicyEngine.decide`. If the interface model (LLM) call fails due to API issues or parsing errors, the turn now degrades gracefully to "shortlist disabled" instead of crashing the entire request.
+- **Shortlist Precedence Fix**: Correctly prioritized `research_source_mode == "local_only"` over the `--shortlist on` override in `src/asky/api/preload.py`. Local-only research turns now always skip the web shortlist, even if an explicit "on" override is present.
+- **Improved Traceability**: Updated CLI verbose output (`preload_provenance`) to consistently include all policy fields (`shortlist_policy_source`, `shortlist_policy_intent`, etc.) for easier debugging of automated shortlist decisions.
+- **Tests**:
+  - Updated `test_preload_policy_engine_interface_model_crash_fallback` to verify safe degradation.
+  - Added `test_shortlist_enabled_resolution_local_only_overrides_on` to enforce precedence rules.
+  - Extended `test_run_turn_emits_preload_provenance_event` to cover new policy fields.
+
+Total tests: 1344 passed.
+
 ## 2026-03-01 - Strict Grouped Command Routing + Session Visibility
 
 - **Issue**: Grouped domain commands like `session`, `history`, `memory`, `corpus`, and `prompts` could degrade into query execution when subcommands were missing/invalid, creating confusing behavior (including session-related ambiguity).

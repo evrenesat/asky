@@ -439,7 +439,9 @@ def test_run_chat_lean_mode_sets_answer_title_for_post_turn_render():
         mock_client.run_turn.return_value = turn_result
         mock_client_cls.return_value = mock_client
 
-        run_chat(plugin_runtime=plugin_runtime, args=mock_args, query_text="tell me a joke")
+        run_chat(
+            plugin_runtime=plugin_runtime, args=mock_args, query_text="tell me a joke"
+        )
 
     assert plugin_runtime.hooks.invoke.call_count == 1
     post_turn_context = plugin_runtime.hooks.invoke.call_args[0][1]
@@ -1125,7 +1127,9 @@ def test_main_xmpp_daemon_surfaces_user_error(mock_run_daemon, mock_parse, capsy
         edit_daemon=False,
         xmpp_menubar_child=False,
     )
-    mock_run_daemon.side_effect = DaemonUserError("dependency missing", hint="install xmpp")
+    mock_run_daemon.side_effect = DaemonUserError(
+        "dependency missing", hint="install xmpp"
+    )
 
     with patch("asky.daemon.menubar.has_rumps", return_value=False):
         main()
@@ -1444,7 +1448,7 @@ def test_shortlist_enabled_resolution_prefers_lean():
 
     args = argparse.Namespace(lean=True)
     model_cfg = {"id": "test-model", "source_shortlist_enabled": True}
-    enabled, reason = _shortlist_enabled_for_request(
+    enabled, reason, src, intent, diagnostics = _shortlist_enabled_for_request(
         args=args,
         model_config=model_cfg,
         research_mode=False,
@@ -1564,7 +1568,7 @@ def test_shortlist_enabled_resolution_prefers_model_override():
 
     args = argparse.Namespace(lean=False)
     model_cfg = {"id": "test-model", "source_shortlist_enabled": False}
-    enabled, reason = _shortlist_enabled_for_request(
+    enabled, reason, src, intent, diagnostics = _shortlist_enabled_for_request(
         args=args,
         model_config=model_cfg,
         research_mode=True,
@@ -1578,7 +1582,7 @@ def test_shortlist_enabled_resolution_prefers_request_override():
 
     args = argparse.Namespace(lean=False, shortlist="on")
     model_cfg = {"id": "test-model", "source_shortlist_enabled": False}
-    enabled, reason = _shortlist_enabled_for_request(
+    enabled, reason, src, intent, diagnostics = _shortlist_enabled_for_request(
         args=args,
         model_config=model_cfg,
         research_mode=False,
@@ -2617,7 +2621,9 @@ def test_run_chat_passes_system_prompt_override(
 def test_print_active_session_status_no_session(capsys):
     from asky.cli.sessions import print_active_session_status
 
-    with patch("asky.cli.sessions._resolve_active_shell_session", return_value=(None, False)):
+    with patch(
+        "asky.cli.sessions._resolve_active_shell_session", return_value=(None, False)
+    ):
         print_active_session_status()
 
     captured = capsys.readouterr()
@@ -2627,7 +2633,9 @@ def test_print_active_session_status_no_session(capsys):
 def test_print_active_session_status_stale_lock(capsys):
     from asky.cli.sessions import print_active_session_status
 
-    with patch("asky.cli.sessions._resolve_active_shell_session", return_value=(None, True)):
+    with patch(
+        "asky.cli.sessions._resolve_active_shell_session", return_value=(None, True)
+    ):
         print_active_session_status()
 
     captured = capsys.readouterr()
@@ -2639,7 +2647,10 @@ def test_print_current_session_or_status_prints_current_session():
 
     session = SimpleNamespace(id=33, name="research", model="gf", research_mode=True)
     with (
-        patch("asky.cli.sessions._resolve_active_shell_session", return_value=(session, False)),
+        patch(
+            "asky.cli.sessions._resolve_active_shell_session",
+            return_value=(session, False),
+        ),
         patch("asky.cli.sessions.print_session_command") as mock_print_session,
     ):
         print_current_session_or_status(open_browser=True)
@@ -2698,7 +2709,9 @@ def test_run_chat_uses_shell_session_for_follow_up_query(
         mock_client.run_turn.return_value = mock_turn_result
         mock_client_cls.return_value = mock_client
 
-        with patch("asky.cli.chat._check_idle_session_timeout", return_value="continue"):
+        with patch(
+            "asky.cli.chat._check_idle_session_timeout", return_value="continue"
+        ):
             run_chat(mock_args, "follow up")
 
     request = mock_client.run_turn.call_args.args[0]

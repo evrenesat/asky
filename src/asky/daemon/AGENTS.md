@@ -4,20 +4,20 @@ Core daemon lifecycle infrastructure. This package owns the foreground daemon en
 
 ## Module Overview
 
-| Module                      | Purpose                                                                     |
-| --------------------------- | --------------------------------------------------------------------------- |
-| `service.py`                | `DaemonService` — transport-agnostic lifecycle: fires hooks, runs transport |
-| `menubar.py`                | macOS singleton lock and thin `run_menubar_app()` launcher                  |
-| `launch_context.py`         | `LaunchContext` enum + get/set/is_interactive helpers                       |
-| `tray_protocol.py`          | `TrayApp` ABC, `TrayStatus`, `TrayPluginEntry` data contracts               |
-| `tray_controller.py`        | `TrayController` — generic daemon service lifecycle + startup toggle        |
-| `tray_macos.py`             | `MacosTrayApp(TrayApp)` — dynamic plugin-driven rumps menu                  |
-| `app_bundle_macos.py`       | macOS `.app` bundle creation/update for Spotlight integration               |
-| `startup.py`                | Cross-platform startup-at-login dispatcher                                  |
-| `startup_macos.py`          | LaunchAgent plist management                                                |
-| `startup_linux.py`          | systemd user service management                                             |
-| `startup_windows.py`        | Windows Startup folder launcher script                                      |
-| `errors.py`                 | Daemon-specific exception types                                             |
+| Module                | Purpose                                                                     |
+| --------------------- | --------------------------------------------------------------------------- |
+| `service.py`          | `DaemonService` — transport-agnostic lifecycle: fires hooks, runs transport |
+| `menubar.py`          | macOS singleton lock and thin `run_menubar_app()` launcher                  |
+| `launch_context.py`   | `LaunchContext` enum + get/set/is_interactive helpers                       |
+| `tray_protocol.py`    | `TrayApp` ABC, `TrayStatus`, `TrayPluginEntry` data contracts               |
+| `tray_controller.py`  | `TrayController` — generic daemon service lifecycle + startup toggle        |
+| `tray_macos.py`       | `MacosTrayApp(TrayApp)` — dynamic plugin-driven rumps menu                  |
+| `app_bundle_macos.py` | macOS `.app` bundle creation/update for Spotlight integration               |
+| `startup.py`          | Cross-platform startup-at-login dispatcher                                  |
+| `startup_macos.py`    | LaunchAgent plist management                                                |
+| `startup_linux.py`    | systemd user service management                                             |
+| `startup_windows.py`  | Windows Startup folder launcher script                                      |
+| `errors.py`           | Daemon-specific exception types                                             |
 
 ---
 
@@ -70,137 +70,3 @@ plugins/xmpp_daemon/plugin.py          — built-in plugin, registers XMPP trans
 - `DaemonService` fires `DAEMON_TRANSPORT_REGISTER` at construction to collect the transport. Exactly one transport must be registered.
 - `gui_server` plugin registers a sidecar server via `DAEMON_SERVER_REGISTER`.
 - `xmpp_daemon` plugin registers the XMPP transport via `DAEMON_TRANSPORT_REGISTER`.
-
----
-
-## Authorization Model
-
-Authorization is handled by `plugins/xmpp_daemon/router.py`.
-
-### Direct messages (`chat` stanzas)
-
-- Sender's full JID is checked against `allowlist` (configured in `xmpp.toml`).
-- Allowlist entries support:
-  - bare JID (`user@domain`) — allows any resource.
-  - full JID (`user@domain/resource`) — pins one exact resource.
-- Unauthorized senders are silently ignored (no response).
-
-### Group chat (`groupchat` stanzas)
-
-- The room's bare JID must be pre-bound in `room_session_bindings` (via a trusted-room invite or explicit bind command).
-- Individual sender identity is not checked for authorization — any occupant of a bound room can send commands.
-
----
-
-## Command Routing Order
-
-Handled by `plugins/xmpp_daemon/router.py`. For each incoming message:
-
-1. **Authorization / room guard** — drop if not authorized.
-2. **Inline TOML upload** — validate and persist as session override.
-3. **`/session` command surface** — `/session`, `/session new`, `/session child`, `/session <id|name>`, `/session clear`.
-4. **Transcript confirmation shortcuts** — `yes` / `no` if a transcript is pending.
-5. **Interface planner** — when configured and message is not command-prefixed.
-6. **Command prefix gate** — messages starting with `command_prefix` (default `/asky`).
-7. **Command vs. query heuristic** — remaining text.
-8. **Remote policy gate** — blocked flags are rejected.
-9. **`AskyClient.run_turn()`** — final execution.
-
-Command executor parity notes:
-
-- Grouped domain commands (`history/session/memory/corpus/prompts`) are treated as commands, not query text.
-- Missing/invalid grouped subcommands return usage/error text instead of falling through to `Error: query is required.`
-- `session show` without selector resolves to the current conversation session transcript.
-
-Remote policy blocks config/bootstrap mutations (for example `--config ...`,
-daemon startup flags, delete flags, and output side-effect flags).
-
----
-
-## Per-JID Queue and Worker Lifecycle
-
-`plugins/xmpp_daemon/xmpp_service.py` serializes all processing per conversation through a per-key queue:
-
-- **Queue key**: room JID for groupchat, sender bare JID for direct messages.
-- **Worker thread**: daemon thread per queue key, started on first message (or restarted if dead). Thread restart is guarded by `_jid_workers_lock`.
-- **Ordering guarantee**: messages from the same conversation are processed in arrival order.
-- **Shutdown**: worker threads are daemon threads; no graceful drain on abrupt termination.
-
----
-
-## Ad-Hoc Commands (XEP-0050)
-
-Implemented in `plugins/xmpp_daemon/adhoc_commands.py`. Registered at XMPP session start via
-`XMPPService._on_xmpp_session_start()`.
-
-`AdHocCommandHandler` requires `xep_0050` and `xep_0004` slixmpp plugins to be registered. If either
-is absent, ad-hoc commands are silently disabled (text command surface still works normally).
-
-### Registered Nodes
-
-| Node                      | Type         | Description                                      |
-|---------------------------|--------------|--------------------------------------------------|
-| `asky#status`             | single-step  | Connected JID, voice/image feature flags         |
-| `asky#list-sessions`      | single-step  | Recent sessions list                             |
-| `asky#list-history`       | single-step  | Recent history summaries                         |
-| `asky#list-transcripts`   | single-step  | Recent audio/image transcripts                   |
-| `asky#list-tools`         | single-step  | All available LLM tool names                     |
-| `asky#list-memories`      | single-step  | All saved user memories                          |
-| `asky#list-prompts`       | two-step     | Run prompt alias (form: alias + optional text)  |
-| `asky#list-presets`       | two-step     | Run preset (form: preset + optional args)        |
-| `asky#query`              | two-step     | Run query (form: text, model, research, turns…)  |
-| `asky#new-session`        | single-step  | Create and switch to a new session               |
-| `asky#switch-session`     | two-step     | Switch to existing session (form: ID/name)       |
-| `asky#clear-session`      | two-step     | Clear session messages (confirmation form)       |
-| `asky#use-transcript`     | two-step     | Run transcript as query (form: transcript list)  |
-
-### Authorization
-
-Every handler (including multi-step second steps) checks IQ sender identity against the daemon
-allowlist via `router.is_authorized()` using:
-- full JID first (`user@domain/resource`) for strict allowlist entries,
-- bare JID fallback (`user@domain`) for resource-agnostic allowlist entries.
-
-For multi-step form submissions, the first authorized sender is cached in the ad-hoc `session` dict
-and reused if the follow-up IQ stanza lacks a usable `from` field.
-
-### Blocking Calls
-
-All executor calls (`run_turn`, DB operations) run in `loop.run_in_executor(None, fn)` so the asyncio
-event loop is never blocked.
-
-### Ad-Hoc Query Delivery
-
-- Query-style ad-hoc nodes (`asky#query`, `asky#list-prompts`, `asky#use-transcript`, and query-resolving `asky#list-presets`) return a confirmation note in the IQ response.
-- The actual model result is delivered afterward as a regular chat/groupchat message through the existing per-conversation queue.
-- During execution, a compact progress status message is updated approximately every 2 seconds. Message correction (`xep_0308`) is used when supported; otherwise updates are appended as new messages.
-
----
-
-## Known Limitations
-
-- **Single pending transcript per conversation**: only the most recent audio/image upload awaits confirmation.
-- **No replay protection**: a replayed XMPP stanza would be processed again.
-- **Group chat authorization is room-level**: any occupant of a bound room can send commands.
-- **JID worker threads are daemon threads**: in-flight tasks may be lost on unclean shutdown.
-- **Ad-hoc commands target direct JID only**: form commands use the sender's bare JID for session resolution, not room JID.
-
----
-
-## Dependencies
-
-```
-daemon/
-├── service.py → plugins/hook_types.py (fires hooks), storage/sqlite.py (init_db)
-├── menubar.py → tray_macos.py (creates MacosTrayApp)
-├── tray_macos.py → tray_controller.py, tray_protocol.py
-├── tray_controller.py → cli/daemon_config.py, daemon/startup.py, daemon/service.py
-└── tray_protocol.py (no daemon deps)
-
-plugins/xmpp_daemon/
-├── xmpp_service.py → xmpp_client.py, router.py, chunking.py
-├── router.py → command_executor.py, session_profile_manager.py,
-│               voice_transcriber.py, image_transcriber.py, transcript_manager.py
-├── command_executor.py → api/client.py, session_profile_manager.py
-└── session_profile_manager.py → storage/sqlite.py
-```

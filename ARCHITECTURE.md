@@ -245,6 +245,9 @@ session.py → resolve create/resume/auto/research session state
 emit `SESSION_RESOLVED` plugin hook
     ↓
 preload.py → optional local_ingestion + shortlist pipeline
+           → shared adaptive shortlist policy for local-corpus turns:
+             deterministic intent first (`web` vs `local`), interface-model fallback only for ambiguous intent
+             with `research_source_mode=local_only` forcing shortlist off
            → [NEW] query classification (research mode only)
               - analyze query keywords and corpus size
               - determine mode: one_shot | research

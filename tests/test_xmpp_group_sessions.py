@@ -3,7 +3,7 @@
 from unittest.mock import patch
 
 from asky.config import DEFAULT_MODEL, MODELS, SUMMARIZATION_MODEL
-from asky.daemon.session_profile_manager import SessionProfileManager
+from asky.plugins.xmpp_daemon.session_profile_manager import SessionProfileManager
 from asky.storage import _repo, init_db
 
 
@@ -24,9 +24,13 @@ def test_room_binding_persists_across_manager_instances(tmp_path):
         manager_a = SessionProfileManager()
         manager_b = SessionProfileManager()
 
-        session_id = manager_a.get_or_create_room_session_id("Room@conference.example.com")
+        session_id = manager_a.get_or_create_room_session_id(
+            "Room@conference.example.com"
+        )
         assert session_id > 0
-        rebound_id = manager_b.get_or_create_room_session_id("room@conference.example.com")
+        rebound_id = manager_b.get_or_create_room_session_id(
+            "room@conference.example.com"
+        )
         assert rebound_id == session_id
         assert manager_b.list_bound_room_jids() == ["room@conference.example.com"]
 
@@ -103,7 +107,7 @@ def test_override_rejects_unknown_file_and_ignores_unsupported_keys(tmp_path):
         rejected = manager.apply_override_file(
             session_id=session_id,
             filename="prompts.toml",
-            content="[prompts]\nsystem_prefix = \"x\"\n",
+            content='[prompts]\nsystem_prefix = "x"\n',
         )
         assert rejected.saved is False
         assert rejected.error is not None

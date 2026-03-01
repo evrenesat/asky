@@ -20,7 +20,9 @@ def test_planner_injects_command_reference_when_enabled(monkeypatch):
             "content": '{"action_type":"query","command_text":"","query_text":"hello"}'
         }
 
-    monkeypatch.setattr("asky.daemon.interface_planner.get_llm_msg", _fake_get_llm)
+    monkeypatch.setattr(
+        "asky.daemon.interface_planner.get_llm_msg", _fake_get_llm
+    )
     planner = InterfacePlanner(
         _any_model_alias(),
         system_prompt="BASE PROMPT",
@@ -47,7 +49,9 @@ def test_planner_skips_command_reference_when_disabled(monkeypatch):
             "content": '{"action_type":"query","command_text":"","query_text":"hello"}'
         }
 
-    monkeypatch.setattr("asky.daemon.interface_planner.get_llm_msg", _fake_get_llm)
+    monkeypatch.setattr(
+        "asky.daemon.interface_planner.get_llm_msg", _fake_get_llm
+    )
     planner = InterfacePlanner(
         _any_model_alias(),
         system_prompt="BASE PROMPT",
@@ -64,7 +68,9 @@ def test_planner_invalid_json_falls_back_to_query(monkeypatch):
     def _fake_get_llm(model_id, messages, use_tools, model_alias, **kwargs):
         return {"content": "not-json"}
 
-    monkeypatch.setattr("asky.daemon.interface_planner.get_llm_msg", _fake_get_llm)
+    monkeypatch.setattr(
+        "asky.daemon.interface_planner.get_llm_msg", _fake_get_llm
+    )
     planner = InterfacePlanner(
         _any_model_alias(),
         system_prompt="BASE PROMPT",
@@ -86,7 +92,9 @@ def test_planner_parses_chat_action(monkeypatch):
             "content": '{"action_type":"chat","command_text":"","query_text":"hi there"}'
         }
 
-    monkeypatch.setattr("asky.daemon.interface_planner.get_llm_msg", _fake_get_llm)
+    monkeypatch.setattr(
+        "asky.daemon.interface_planner.get_llm_msg", _fake_get_llm
+    )
     planner = InterfacePlanner(
         _any_model_alias(),
         system_prompt="BASE PROMPT",

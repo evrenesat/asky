@@ -282,6 +282,11 @@ class AskyClient:
                 "seed_url_context_chars": len(preload.seed_url_context or ""),
                 "shortlist_context_chars": len(preload.shortlist_context or ""),
                 "combined_context_chars": len(preload.combined_context or ""),
+                "shortlist_enabled": preload.shortlist_enabled,
+                "shortlist_reason": preload.shortlist_reason,
+                "shortlist_policy_source": preload.shortlist_policy_source,
+                "shortlist_policy_intent": preload.shortlist_policy_intent,
+                "shortlist_policy_diagnostics": preload.shortlist_policy_diagnostics,
                 "shortlist_selected_count": len(shortlist_selected),
                 "shortlist_warnings": list(shortlist_payload.get("warnings", []) or []),
                 "seed_documents": seed_doc_summaries,
@@ -722,9 +727,8 @@ class AskyClient:
             effective_research_mode = bool(pre_preload_context.research_mode)
             effective_source_mode = pre_preload_context.research_source_mode
             effective_local_corpus_paths = pre_preload_context.local_corpus_paths
-            if (
-                effective_local_corpus_paths is not None
-                and not isinstance(effective_local_corpus_paths, list)
+            if effective_local_corpus_paths is not None and not isinstance(
+                effective_local_corpus_paths, list
             ):
                 logger.warning(
                     "PRE_PRELOAD hook returned invalid local_corpus_paths type: %s",
@@ -888,7 +892,11 @@ class AskyClient:
             section_tools_enabled=section_tools_enabled,
             research_mode=effective_research_mode,
         )
-        if hook_registry is not None and messages and messages[0].get("role") == "system":
+        if (
+            hook_registry is not None
+            and messages
+            and messages[0].get("role") == "system"
+        ):
             from asky.plugins.hook_types import SYSTEM_PROMPT_EXTEND
 
             current_system_prompt = str(messages[0].get("content", ""))
@@ -1159,11 +1167,15 @@ class AskyClient:
         session = get_session_by_id(resolved_session_id)
         cleared_corpus_paths = 0
         if session is not None:
-            existing_paths = list(getattr(session, "research_local_corpus_paths", []) or [])
+            existing_paths = list(
+                getattr(session, "research_local_corpus_paths", []) or []
+            )
             cleared_corpus_paths = len(existing_paths)
             should_reset_source_mode = bool(
                 existing_paths
-                or str(getattr(session, "research_source_mode", "") or "").strip().lower()
+                or str(getattr(session, "research_source_mode", "") or "")
+                .strip()
+                .lower()
                 in {"local_only", "mixed"}
             )
             if should_reset_source_mode:

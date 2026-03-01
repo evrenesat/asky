@@ -3,7 +3,7 @@
 from pathlib import Path
 from typing import Iterable
 
-from asky.daemon.image_transcriber import (
+from asky.plugins.xmpp_daemon.image_transcriber import (
     GENERIC_BINARY_MIME_TYPE,
     ImageTranscriber,
     ImageTranscriptionJob,
@@ -53,7 +53,9 @@ def test_enqueue_disabled_emits_failure(tmp_path):
     assert events[0]["status"] == "failed"
 
 
-def test_download_image_accepts_octet_stream_when_url_extension_is_image(monkeypatch, tmp_path):
+def test_download_image_accepts_octet_stream_when_url_extension_is_image(
+    monkeypatch, tmp_path
+):
     transcriber = ImageTranscriber(
         enabled=True,
         workers=1,
@@ -71,7 +73,9 @@ def test_download_image_accepts_octet_stream_when_url_extension_is_image(monkeyp
             chunks=[b"image-bytes"],
         )
 
-    monkeypatch.setattr("asky.daemon.image_transcriber.requests.get", _fake_get)
+    monkeypatch.setattr(
+        "asky.plugins.xmpp_daemon.image_transcriber.requests.get", _fake_get
+    )
     target = tmp_path / "sample.image"
     path, mime_type = transcriber._download_image(
         "https://share.example/file/example.jpg",
@@ -108,9 +112,16 @@ def test_run_job_calls_multimodal_payload(monkeypatch, tmp_path):
         captured["messages"] = messages
         return {"content": "a tiny test image"}
 
-    monkeypatch.setattr("asky.daemon.image_transcriber.requests.get", _fake_get)
-    monkeypatch.setattr("asky.daemon.image_transcriber.get_llm_msg", _fake_llm)
-    monkeypatch.setattr("asky.daemon.image_transcriber.MODELS", {"gf": {"id": "x", "image_support": True}})
+    monkeypatch.setattr(
+        "asky.plugins.xmpp_daemon.image_transcriber.requests.get", _fake_get
+    )
+    monkeypatch.setattr(
+        "asky.plugins.xmpp_daemon.image_transcriber.get_llm_msg", _fake_llm
+    )
+    monkeypatch.setattr(
+        "asky.plugins.xmpp_daemon.image_transcriber.MODELS",
+        {"gf": {"id": "x", "image_support": True}},
+    )
 
     transcriber._run_job(
         ImageTranscriptionJob(

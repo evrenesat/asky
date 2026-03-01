@@ -57,7 +57,9 @@ class AskyTurnRequest:
     research_source_mode: Optional[str] = None
     replace_research_corpus: bool = False
     shortlist_override: Optional[str] = None
-    persona_mention: Optional[str] = None  # Persona name extracted from @mention syntax during query preprocessing
+    persona_mention: Optional[str] = (
+        None  # Persona name extracted from @mention syntax during query preprocessing
+    )
 
 
 @dataclass
@@ -100,6 +102,9 @@ class PreloadResolution:
     shortlist_elapsed_ms: float = 0.0
     shortlist_enabled: bool = False
     shortlist_reason: str = ""
+    shortlist_policy_source: str = ""
+    shortlist_policy_intent: str = ""
+    shortlist_policy_diagnostics: Optional[Dict[str, Any]] = None
     sub_queries: List[str] = field(default_factory=list)
     evidence_context: Optional[str] = None
     evidence_payload: Dict[str, Any] = field(default_factory=dict)

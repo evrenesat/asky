@@ -28,8 +28,11 @@ from asky.config import (
     QUERY_CLASSIFICATION_AGGRESSIVE_MODE,
     QUERY_CLASSIFICATION_AGGRESSIVE_THRESHOLD,
     QUERY_CLASSIFICATION_FORCE_RESEARCH_MODE,
+    INTERFACE_MODEL,
+    INTERFACE_PRELOAD_POLICY_SYSTEM_PROMPT,
 )
 from asky.lazy_imports import call_attr
+from .preload_policy import PreloadPolicyEngine, SOURCE_DETERMINISTIC
 
 from .types import PreloadResolution
 
@@ -154,32 +157,86 @@ def shortlist_enabled_for_request(
     model_config: Dict[str, Any],
     research_mode: bool,
     shortlist_override: Optional[str] = None,
-) -> tuple[bool, str]:
-    """Resolve shortlist enablement with precedence: lean > request > model > global."""
+    query_text: Optional[str] = None,
+    research_source_mode: Optional[str] = None,
+    has_local_corpus: bool = False,
+    interface_model_alias: Optional[str] = INTERFACE_MODEL,
+    interface_model_prompt: Optional[str] = INTERFACE_PRELOAD_POLICY_SYSTEM_PROMPT,
+    double_verbose: bool = False,
+) -> tuple[bool, str, str, str, Optional[Dict[str, Any]]]:
+    """Resolve shortlist enablement with precedence: lean > request > mode_local_only > model > global > policy."""
+    # Source labels
+    SOURCE_GLOBAL = "global"
+
     if lean:
-        return False, "lean_flag"
+        return False, "lean_flag", SOURCE_GLOBAL, "", None
+
+    if research_source_mode == "local_only":
+        return (
+            False,
+            "research_source_mode_local_only",
+            SOURCE_DETERMINISTIC,
+            "local",
+            None,
+        )
 
     normalized_override = (
         str(shortlist_override).strip().lower() if shortlist_override else "auto"
     )
     if normalized_override == "on":
-        return True, "request_override_on"
+        return True, "request_override_on", SOURCE_GLOBAL, "", None
     if normalized_override == "off":
-        return False, "request_override_off"
+        return False, "request_override_off", SOURCE_GLOBAL, "", None
+
+    # For local-corpus turns, we use adaptive policy if not explicitly overridden
+    if research_mode and has_local_corpus and query_text:
+        policy = PreloadPolicyEngine(
+            model_alias=interface_model_alias,
+            system_prompt=interface_model_prompt,
+            double_verbose=double_verbose,
+        )
+        decision = policy.decide(
+            query_text=query_text, research_source_mode=research_source_mode
+        )
+        return (
+            decision.enabled,
+            decision.reason,
+            decision.source,
+            decision.intent,
+            decision.diagnostics,
+        )
 
     model_override = model_config.get("source_shortlist_enabled")
     if model_override in (True, False):
-        return model_override, "model_override"
+        return model_override, "model_override", SOURCE_GLOBAL, "", None
 
     if GENERAL_SHORTLIST_ENABLED is not None:
-        return bool(GENERAL_SHORTLIST_ENABLED), "global_general"
+        return (
+            bool(GENERAL_SHORTLIST_ENABLED),
+            "global_general",
+            SOURCE_GLOBAL,
+            "",
+            None,
+        )
 
     if not SOURCE_SHORTLIST_ENABLED:
-        return False, "global_disabled"
+        return False, "global_disabled", SOURCE_GLOBAL, "", None
 
     if research_mode:
-        return bool(SOURCE_SHORTLIST_ENABLE_RESEARCH_MODE), "global_research_mode"
-    return bool(SOURCE_SHORTLIST_ENABLE_STANDARD_MODE), "global_standard_mode"
+        return (
+            bool(SOURCE_SHORTLIST_ENABLE_RESEARCH_MODE),
+            "global_research_mode",
+            SOURCE_GLOBAL,
+            "",
+            None,
+        )
+    return (
+        bool(SOURCE_SHORTLIST_ENABLE_STANDARD_MODE),
+        "global_standard_mode",
+        SOURCE_GLOBAL,
+        "",
+        None,
+    )
 
 
 def build_shortlist_stats(
@@ -509,9 +566,9 @@ def run_preload_pipeline(
     # Classify query after local ingestion completes
     if research_mode and QUERY_CLASSIFICATION_ENABLED:
         from asky.research.query_classifier import classify_query
-        
+
         corpus_doc_count = len(preload.local_payload.get("ingested", []) or [])
-        
+
         preload.query_classification = classify_query(
             query_text=query_text,
             corpus_document_count=corpus_doc_count,
@@ -520,14 +577,15 @@ def run_preload_pipeline(
             aggressive_mode=QUERY_CLASSIFICATION_AGGRESSIVE_MODE,
             force_research_mode=QUERY_CLASSIFICATION_FORCE_RESEARCH_MODE,
         )
-        
+
         if status_callback:
             status_callback(
                 f"Query classified as: {preload.query_classification.mode} "
                 f"(confidence: {preload.query_classification.confidence:.2f})"
             )
-        
+
         import logging as _logging
+
         _logging.getLogger(__name__).info(
             "Query classified: mode=%s confidence=%.2f reasoning=%s "
             "corpus_docs=%d threshold=%d",
@@ -554,17 +612,29 @@ def run_preload_pipeline(
         if research_source_mode == "local_only":
             skip_web_search = True
 
-    shortlist_enabled, shortlist_reason = shortlist_enabled_for_request(
+    (
+        shortlist_enabled,
+        shortlist_reason,
+        policy_source,
+        policy_intent,
+        policy_diagnostics,
+    ) = shortlist_enabled_for_request(
         lean=lean,
         model_config=model_config,
         research_mode=research_mode,
         shortlist_override=shortlist_override,
+        query_text=query_text,
+        research_source_mode=research_source_mode,
+        has_local_corpus=bool(ingested_docs),
     )
     if not preload_shortlist:
         shortlist_enabled = False
         shortlist_reason = "request_disabled"
     preload.shortlist_enabled = shortlist_enabled
     preload.shortlist_reason = shortlist_reason
+    preload.shortlist_policy_source = policy_source
+    preload.shortlist_policy_intent = policy_intent
+    preload.shortlist_policy_diagnostics = policy_diagnostics
 
     shortlist_payload: Dict[str, Any] = {
         "enabled": False,

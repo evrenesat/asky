@@ -162,7 +162,7 @@ Planner output contract (strict JSON):
 
 ```json
 {
-  "action_type": "command|query",
+  "action_type": "command|query|chat",
   "command_text": "",
   "query_text": ""
 }
@@ -187,7 +187,7 @@ Planner guidance/invariants:
 
 - `command_text` must contain raw command tokens only (no `/asky` prefix)
 - for `action_type=command`, `query_text` must be empty
-- for `action_type=query`, `command_text` must be empty
+- for `action_type=query` and `action_type=chat`, `command_text` must be empty
 - if planner output is invalid JSON or invalid action, router falls back to query behavior
 
 ### Planner Fallback Behavior
@@ -195,8 +195,10 @@ Planner guidance/invariants:
 When the planner cannot resolve a valid action, the original message is routed as a plain query. This covers:
 
 - **Malformed JSON**: LLM output cannot be parsed.
-- **Unknown `action_type`**: value is neither `command` nor `query`.
+- **Unknown `action_type`**: value is neither `command`, `query`, nor `chat`.
 - **Empty `command_text`** for a `command` action.
+- `action_type=chat` is treated as a non-command user query path and executed via
+  the same turn pipeline with chat-oriented handling.
 
 The fallback means messages that confuse the planner are silently processed as queries rather than dropped. If you observe unexpected query behavior for commands, verify the planner's output against the JSON contract above.
 

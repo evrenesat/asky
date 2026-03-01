@@ -73,9 +73,12 @@ def test_asky_xmpp_client_upload_file_happy_path(mock_client, tmp_path, monkeypa
     # Mock asyncio.run_coroutine_threadsafe
     mock_future = MagicMock()
     mock_future.result.return_value = "https://example.com/d/test.txt"
-    monkeypatch.setattr(
-        "asyncio.run_coroutine_threadsafe", lambda coro, loop: mock_future
-    )
+
+    def _mock_run(coro, loop):
+        coro.close()  # Prevent RuntimeWarning: coroutine was never awaited
+        return mock_future
+
+    monkeypatch.setattr("asyncio.run_coroutine_threadsafe", _mock_run)
 
     url = mock_client.upload_file(str(test_file))
     assert url == "https://example.com/d/test.txt"

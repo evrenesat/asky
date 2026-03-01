@@ -128,6 +128,10 @@ One-way dependency rule: `xmpp_daemon` may import from `asky.daemon.errors`; `da
 
 `command_executor.py` keeps CLI grouped-command parity: recognized grouped domains (`history/session/memory/corpus/prompts`) do not degrade into query execution when subcommands are missing/invalid; they return usage/error responses instead.
 
+Query transport parity for shortlist policy is enforced in the shared API preload
+layer (`asky.api.preload`): both CLI and XMPP query paths use the same adaptive
+shortlist decision pipeline for local-corpus turns.
+
 ## User Entry Points (Current State)
 
 - Runtime config entrypoint: `~/.config/asky/plugins.toml`

@@ -3,7 +3,7 @@
 from types import SimpleNamespace
 
 from asky.daemon.interface_planner import InterfaceAction
-from asky.daemon.router import DaemonRouter
+from asky.plugins.xmpp_daemon.router import DaemonRouter
 
 
 class _FakeTranscriptManager:

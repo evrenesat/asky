@@ -3,7 +3,7 @@
 import xml.etree.ElementTree as ET
 from types import SimpleNamespace
 
-import asky.daemon.xmpp_client as xmpp_client
+import asky.plugins.xmpp_daemon.xmpp_client as xmpp_client
 
 
 class _Loop:
@@ -403,7 +403,9 @@ def test_extract_group_invite_from_muc_user_extension():
     invite = ET.SubElement(x, "{http://jabber.org/protocol/muc#user}invite")
     invite.set("from", "owner@example.com/resource")
     msg = SimpleNamespace(xml=root)
-    msg.get = lambda key, default=None: "room@conference.example.com/inviter" if key == "from" else default
+    msg.get = lambda key, default=None: (
+        "room@conference.example.com/inviter" if key == "from" else default
+    )
 
     room_jid, inviter = xmpp_client._extract_group_invite(msg)
     assert room_jid == "room@conference.example.com"

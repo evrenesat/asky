@@ -199,7 +199,7 @@ def _shortlist_enabled_for_request(
     args: argparse.Namespace,
     model_config: Dict[str, Any],
     research_mode: bool,
-) -> tuple[bool, str]:
+) -> tuple[bool, str, str, str, Optional[Dict[str, Any]]]:
     """Resolve shortlist enablement with precedence: lean > model > global flags."""
     return api_shortlist_enabled_for_request(
         lean=bool(getattr(args, "lean", False)),
@@ -253,7 +253,9 @@ def _collect_session_default_updates(args: argparse.Namespace) -> Dict[str, Any]
         getattr(args, "research", False)
     ):
         updates[QUERY_DEFAULT_RESEARCH_KEY] = True
-    if bool(getattr(args, "_provided_lean", False)) and bool(getattr(args, "lean", False)):
+    if bool(getattr(args, "_provided_lean", False)) and bool(
+        getattr(args, "lean", False)
+    ):
         updates[QUERY_DEFAULT_LEAN_KEY] = True
     if bool(getattr(args, "_provided_system_prompt", False)):
         updates[QUERY_DEFAULT_SYSTEM_PROMPT_KEY] = str(
@@ -295,7 +297,10 @@ def _persist_session_default_updates(session_id: int, args: argparse.Namespace) 
             merged_defaults[key] = value
         repo.update_session_query_defaults(int(session_id), merged_defaults)
 
-    if bool(getattr(args, "_provided_turns", False)) and getattr(args, "turns", None) is not None:
+    if (
+        bool(getattr(args, "_provided_turns", False))
+        and getattr(args, "turns", None) is not None
+    ):
         repo.update_session_max_turns(int(session_id), int(args.turns))
     if bool(getattr(args, "_provided_elephant_mode", False)) and bool(
         getattr(args, "elephant_mode", False)
@@ -564,7 +569,7 @@ def run_chat(
         research_mode = True
 
     disabled_tools = _parse_disabled_tools(getattr(args, "tool_off", []))
-    
+
     # Parse @persona mentions from query text
     persona_mention_result = None
     try:
@@ -811,14 +816,18 @@ def run_chat(
                 "(-ss or -rs). Flag ignored."
             )
             elephant_mode = False
-        
+
         # Define session resolved callback that handles persona binding
         def on_session_resolved(session_manager):
             setattr(renderer, "session_manager", session_manager)
-            
+
             # Handle persona mention binding after session is resolved
             persona_identifier = getattr(args, "persona_mention", None)
-            if persona_identifier and session_manager and session_manager.current_session:
+            if (
+                persona_identifier
+                and session_manager
+                and session_manager.current_session
+            ):
                 from asky.cli.persona_commands import _get_data_dir
                 from asky.plugins.kvstore import PluginKVStore
                 from asky.plugins.manual_persona_creator.storage import (
@@ -826,25 +835,37 @@ def run_chat(
                     list_persona_names,
                 )
                 from asky.plugins.persona_manager.resolver import resolve_persona_name
-                from asky.plugins.persona_manager.session_binding import set_session_binding
-                
+                from asky.plugins.persona_manager.session_binding import (
+                    set_session_binding,
+                )
+
                 data_dir = _get_data_dir()
                 kvstore = PluginKVStore("persona_manager")
-                
+
                 # Resolve persona name (handles aliases)
-                resolved_name = resolve_persona_name(persona_identifier, kvstore, data_dir)
-                
+                resolved_name = resolve_persona_name(
+                    persona_identifier, kvstore, data_dir
+                )
+
                 if resolved_name is None or not persona_exists(data_dir, resolved_name):
                     available = list_persona_names(data_dir)
-                    console.print(f"[bold red]Error:[/] Persona '{persona_identifier}' not found.")
+                    console.print(
+                        f"[bold red]Error:[/] Persona '{persona_identifier}' not found."
+                    )
                     if available:
                         console.print(f"Available personas: {', '.join(available)}")
                     else:
-                        console.print("No personas available. Create one with 'asky persona create'")
+                        console.print(
+                            "No personas available. Create one with 'asky persona create'"
+                        )
                 else:
                     session_id = session_manager.current_session.id
-                    set_session_binding(data_dir, session_id=session_id, persona_name=resolved_name)
-                    console.print(f"[green]✓[/] Loaded persona '[cyan]{resolved_name}[/cyan]' via @mention")
+                    set_session_binding(
+                        data_dir, session_id=session_id, persona_name=resolved_name
+                    )
+                    console.print(
+                        f"[green]✓[/] Loaded persona '[cyan]{resolved_name}[/cyan]' via @mention"
+                    )
 
             if session_manager and session_manager.current_session:
                 resolved_session_id = int(session_manager.current_session.id)

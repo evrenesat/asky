@@ -214,7 +214,7 @@ def test_run_preload_pipeline_forwards_trace_callback_to_shortlist_executor():
 
 
 def test_shortlist_enabled_for_request_honors_request_override_on():
-    enabled, reason = shortlist_enabled_for_request(
+    enabled, reason, src, intent, diagnostics = shortlist_enabled_for_request(
         lean=False,
         model_config={"source_shortlist_enabled": False},
         research_mode=False,
@@ -225,7 +225,7 @@ def test_shortlist_enabled_for_request_honors_request_override_on():
 
 
 def test_shortlist_enabled_for_request_honors_request_override_off():
-    enabled, reason = shortlist_enabled_for_request(
+    enabled, reason, src, intent, diagnostics = shortlist_enabled_for_request(
         lean=False,
         model_config={"source_shortlist_enabled": True},
         research_mode=True,
@@ -242,7 +242,7 @@ def test_shortlist_enabled_global_general_overrides_mode_specific(monkeypatch):
     monkeypatch.setattr(preload_mod, "SOURCE_SHORTLIST_ENABLED", True)
     monkeypatch.setattr(preload_mod, "SOURCE_SHORTLIST_ENABLE_STANDARD_MODE", False)
 
-    enabled, reason = shortlist_enabled_for_request(
+    enabled, reason, src, intent, diagnostics = shortlist_enabled_for_request(
         lean=False,
         model_config={},
         research_mode=False,
@@ -258,13 +258,28 @@ def test_shortlist_enabled_global_general_false_overrides_mode_specific(monkeypa
     monkeypatch.setattr(preload_mod, "SOURCE_SHORTLIST_ENABLED", True)
     monkeypatch.setattr(preload_mod, "SOURCE_SHORTLIST_ENABLE_RESEARCH_MODE", True)
 
-    enabled, reason = shortlist_enabled_for_request(
+    enabled, reason, src, intent, diagnostics = shortlist_enabled_for_request(
         lean=False,
         model_config={},
         research_mode=True,
     )
     assert enabled is False
     assert reason == "global_general"
+
+
+def test_shortlist_enabled_resolution_local_only_overrides_on():
+    """Verify local_only takes precedence over --shortlist on."""
+    enabled, reason, src, intent, diagnostics = shortlist_enabled_for_request(
+        lean=False,
+        model_config={},
+        research_mode=True,
+        shortlist_override="on",
+        research_source_mode="local_only",
+    )
+    assert enabled is False
+    assert reason == "research_source_mode_local_only"
+    assert src == "deterministic"
+    assert intent == "local"
 
 
 def test_collect_preloaded_source_urls_prefers_local_source_handles():

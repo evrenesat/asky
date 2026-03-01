@@ -45,6 +45,12 @@ Research mode is resolved per turn from effective session state:
 - In research mode with preloaded corpus, `run_turn()` performs one deterministic
   retrieval bootstrap (`execute_get_relevant_content`) before first model call,
   then appends those evidence snippets into preloaded user context.
+- For local-corpus research turns, shortlist enablement is resolved by a shared
+  adaptive policy stage in `preload.py`/`preload_policy.py`:
+  deterministic intent (`web` vs `local`) runs first, and interface-model
+  fallback is used only for ambiguous intent.
+- `research_source_mode=local_only` always disables shortlist, including when
+  `shortlist_override=on` is requested.
 - Seed URL preload uses a combined 80% main-model context budget and labels each
   seed block as `full_content`, `summarized_due_budget`,
   `summary_truncated_due_budget`, or `fetch_error`.
@@ -82,7 +88,10 @@ Research mode is resolved per turn from effective session state:
   tool/summarization HTTP paths (`transport_request`, `transport_response`, `transport_error`).
 - During full turn orchestration, verbose mode emits a structured
   `preload_provenance` event before the first model call, summarizing which seed
-  and shortlist sources were preloaded into model-visible context.
+  and shortlist sources were preloaded into model-visible context, including
+  shortlist policy decision metadata (`shortlist_reason`,
+  `shortlist_policy_source`, `shortlist_policy_intent`,
+  `shortlist_policy_diagnostics`).
 - `AskyConfig.model_parameters_override` can override/extend configured model
   generation parameters for a specific client instance (for evaluation sweeps).
 - `AskyClient.cleanup_session_research_data(session_id)` deletes session findings
