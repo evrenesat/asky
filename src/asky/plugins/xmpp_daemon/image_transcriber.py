@@ -69,8 +69,9 @@ class ImageTranscriber:
             str(item).strip().lower() for item in allowed_mime_types if str(item).strip()
         }
         self.completion_callback = completion_callback
-        self._queue: queue.Queue[ImageTranscriptionJob] = queue.Queue()
+        self._queue: queue.Queue[Optional[ImageTranscriptionJob]] = queue.Queue()
         self._started = False
+        self._shutdown = False
         self._workers: list[threading.Thread] = []
 
     def start(self) -> None:
@@ -111,9 +112,23 @@ class ImageTranscriber:
         self.start()
         self._queue.put(job)
 
+    def shutdown(self, timeout: float = 5.0) -> None:
+        """Signal worker threads to exit and wait for them to finish."""
+        if not self._started:
+            return
+        self._shutdown = True
+        for _ in self._workers:
+            self._queue.put(None)
+        for thread in self._workers:
+            thread.join(timeout=timeout)
+        self._workers.clear()
+
     def _worker_loop(self) -> None:
         while True:
             job = self._queue.get()
+            if job is None:
+                self._queue.task_done()
+                break
             try:
                 self._run_job(job)
             except Exception as exc:

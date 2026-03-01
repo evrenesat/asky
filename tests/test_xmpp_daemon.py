@@ -156,7 +156,18 @@ def test_service_stop_logs_and_delegates_to_client():
         def stop(self):
             self.stop_called = True
 
+    class _FakeTranscriber:
+        def __init__(self):
+            self.shutdown_called = False
+
+        def shutdown(self):
+            self.shutdown_called = True
+
     service = XMPPService.__new__(XMPPService)
     service._client = _Client()
+    service.voice_transcriber = _FakeTranscriber()
+    service.image_transcriber = _FakeTranscriber()
     service.stop()
     assert service._client.stop_called is True
+    assert service.voice_transcriber.shutdown_called is True
+    assert service.image_transcriber.shutdown_called is True

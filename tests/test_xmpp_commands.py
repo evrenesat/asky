@@ -524,3 +524,15 @@ def test_cleanup_commands_dispatch_through_remote_executor():
     assert "clean:1" in clean_resp
     assert "delete-memory:9" in delete_resp
     assert "Deleted 17 memories." == clear_resp
+
+
+def test_remote_policy_blocks_config_flag_via_execute_command_text():
+    """Blocked flags are caught even when arriving through execute_command_text
+    (the same path used after preset expansion)."""
+    executor = CommandExecutor(_FakeTranscriptManager())
+    with patch("asky.daemon.command_executor.init_db"):
+        response = executor.execute_command_text(
+            jid="jid",
+            command_text="--config model add",
+        )
+    assert "Remote policy blocked" in response

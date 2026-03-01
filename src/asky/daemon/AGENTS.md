@@ -40,7 +40,7 @@ plugins/xmpp_daemon/plugin.py          — built-in plugin, registers XMPP trans
 
 ## DaemonService Lifecycle
 
-1. `__init__`: calls `init_db()`, fires `DAEMON_SERVER_REGISTER` (collect sidecars), fires `DAEMON_TRANSPORT_REGISTER` (collect exactly one transport). Raises `DaemonUserError` if zero or multiple transports are registered.
+1. `__init__`: calls `init_db()`, fires `DAEMON_SERVER_REGISTER` (collect sidecars), fires `DAEMON_TRANSPORT_REGISTER` (collect at most one transport). Raises `DaemonUserError` if multiple transports are registered. Zero transports is allowed (sidecar-only mode).
 2. `run_foreground()`: starts sidecar servers, calls `transport.run()` (blocking), stops sidecar servers and shuts down plugin runtime in `finally`.
 3. `stop()`: delegates to `transport.stop()`.
 

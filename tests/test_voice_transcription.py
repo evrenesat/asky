@@ -182,3 +182,39 @@ def test_apply_hf_token_env_noop_without_token(monkeypatch, tmp_path):
 
     transcriber._apply_hf_token_env()
     assert "HF_TOKEN" not in os.environ
+
+
+def test_shutdown_stops_worker_threads(tmp_path):
+    transcriber = VoiceTranscriber(
+        enabled=True,
+        workers=2,
+        max_size_mb=10,
+        model="m",
+        language="",
+        storage_dir=tmp_path,
+        allowed_mime_types=[],
+        completion_callback=lambda _payload: None,
+    )
+    transcriber.start()
+    assert len(transcriber._workers) == 2
+    for w in transcriber._workers:
+        assert w.is_alive()
+
+    transcriber.shutdown(timeout=2.0)
+    assert transcriber._workers == []
+    assert transcriber._shutdown is True
+
+
+def test_shutdown_noop_when_not_started(tmp_path):
+    transcriber = VoiceTranscriber(
+        enabled=True,
+        workers=1,
+        max_size_mb=10,
+        model="m",
+        language="",
+        storage_dir=tmp_path,
+        allowed_mime_types=[],
+        completion_callback=lambda _payload: None,
+    )
+    transcriber.shutdown()
+    assert transcriber._shutdown is False

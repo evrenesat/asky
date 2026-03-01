@@ -6,8 +6,6 @@ This plan defines a structured, multi-phase **business logic code review** for t
 
 1. **Analyze** — trace the feature from entry points through all code paths; compare what the code does with what docs/AGENTS.md/CLI claims it does.
 2. **Report** — produce a findings list (gaps, inconsistencies, silent failures, undocumented behavior).
-3. **Address** — fix or acknowledge findings before moving on.
-4. **Proceed** — move to the next phase.
 
 The goal is not a style review. It is a **feature completeness and correctness audit**: are we delivering what we advertise?
 
@@ -21,28 +19,27 @@ Each phase is self-contained. When starting a phase:
 - Follow every code path to its terminus.
 - Compare observed behavior against the documented contract.
 - Produce a prioritized findings list.
-- Address findings, then check off the phase.
 
 ---
 
 ## Phase Overview
 
-| # | Feature Set | Primary Files | Advertised In |
-|---|------------|---------------|---------------|
-| 1 | Core Query Execution & Tool Loop | `cli/main.py`, `api/client.py`, `core/engine.py`, `core/registry.py` | `README`, `configuration.md`, ARCHITECTURE.md §Standard Query Flow |
-| 2 | Research Mode (web + local RAG) | `research/`, `api/preload.py`, `cli/shortlist_flow.py`, `cli/local_ingestion_flow.py` | `research_mode.md`, ARCHITECTURE.md §Research Retrieval Flow |
-| 3 | Sessions & Persistence | `storage/sqlite.py`, `api/session.py`, `cli/sessions.py`, `core/session_manager.py` | `configuration.md §Sessions`, ARCHITECTURE.md §Session Flow |
-| 4 | User Memory & Elephant Mode | `memory/`, `cli/main.py --elephant-mode` | `elephant_mode.md`, ARCHITECTURE.md §User Memory Flow |
-| 5 | XMPP Daemon & Routing | `plugins/xmpp_daemon/`, `daemon/service.py` | `xmpp_daemon.md`, ARCHITECTURE.md §XMPP Daemon Flow |
-| 6 | Persona System | `plugins/manual_persona_creator/`, `plugins/persona_manager/` | `plugins.md §Personas`, AGENTS.md files |
-| 7 | Plugin Runtime & Hook System | `plugins/runtime.py`, `plugins/manager.py`, `plugins/hooks.py`, `plugins/hook_types.py` | `plugins.md`, ARCHITECTURE.md §Plugin Runtime |
-| 8 | GUI Server Plugin | `plugins/gui_server/` | `plugins.md §GUI Server`, `gui_server/AGENTS.md` |
-| 9 | Playwright Browser Plugin | `plugins/playwright_browser/` | `playwright_browser.md`, ARCHITECTURE.md Decision 22 |
-| 10 | CLI Surface & Command Routing | `cli/main.py` (full argparse surface), `cli/history.py`, `cli/sessions.py`, `cli/prompts.py` | `configuration.md §Grouped CLI surface` |
-| 11 | Library API (AskyClient) | `api/client.py`, `api/types.py`, `api/context.py` | `library_usage.md` |
-| 12 | macOS Menubar / Tray | `daemon/menubar.py`, `daemon/tray_macos.py`, `daemon/tray_controller.py` | ARCHITECTURE.md §macOS Menubar, `daemon/AGENTS.md` |
-| 13 | Output Delivery (email, browser, push-data) | `email_sender.py`, `rendering.py`, `push_data.py`, `plugins/email_sender/`, `plugins/push_data/` | `configuration.md §Output actions` |
-| 14 | Interface Planner (XMPP + pending unification) | `daemon/interface_planner.py`, `plugins/xmpp_daemon/interface_planner.py` (if still exists), `router.py` | `xmpp_daemon.md §Interface planner`, `plans/interface_model_upgrade_v1.md` |
+| #   | Feature Set                                    | Primary Files                                                                                            | Advertised In                                                              |
+| --- | ---------------------------------------------- | -------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------- |
+| 1   | Core Query Execution & Tool Loop               | `cli/main.py`, `api/client.py`, `core/engine.py`, `core/registry.py`                                     | `README`, `configuration.md`, ARCHITECTURE.md §Standard Query Flow         |
+| 2   | Research Mode (web + local RAG)                | `research/`, `api/preload.py`, `cli/shortlist_flow.py`, `cli/local_ingestion_flow.py`                    | `research_mode.md`, ARCHITECTURE.md §Research Retrieval Flow               |
+| 3   | Sessions & Persistence                         | `storage/sqlite.py`, `api/session.py`, `cli/sessions.py`, `core/session_manager.py`                      | `configuration.md §Sessions`, ARCHITECTURE.md §Session Flow                |
+| 4   | User Memory & Elephant Mode                    | `memory/`, `cli/main.py --elephant-mode`                                                                 | `elephant_mode.md`, ARCHITECTURE.md §User Memory Flow                      |
+| 5   | XMPP Daemon & Routing                          | `plugins/xmpp_daemon/`, `daemon/service.py`                                                              | `xmpp_daemon.md`, ARCHITECTURE.md §XMPP Daemon Flow                        |
+| 6   | Persona System                                 | `plugins/manual_persona_creator/`, `plugins/persona_manager/`                                            | `plugins.md §Personas`, AGENTS.md files                                    |
+| 7   | Plugin Runtime & Hook System                   | `plugins/runtime.py`, `plugins/manager.py`, `plugins/hooks.py`, `plugins/hook_types.py`                  | `plugins.md`, ARCHITECTURE.md §Plugin Runtime                              |
+| 8   | GUI Server Plugin                              | `plugins/gui_server/`                                                                                    | `plugins.md §GUI Server`, `gui_server/AGENTS.md`                           |
+| 9   | Playwright Browser Plugin                      | `plugins/playwright_browser/`                                                                            | `playwright_browser.md`, ARCHITECTURE.md Decision 22                       |
+| 10  | CLI Surface & Command Routing                  | `cli/main.py` (full argparse surface), `cli/history.py`, `cli/sessions.py`, `cli/prompts.py`             | `configuration.md §Grouped CLI surface`                                    |
+| 11  | Library API (AskyClient)                       | `api/client.py`, `api/types.py`, `api/context.py`                                                        | `library_usage.md`                                                         |
+| 12  | macOS Menubar / Tray                           | `daemon/menubar.py`, `daemon/tray_macos.py`, `daemon/tray_controller.py`                                 | ARCHITECTURE.md §macOS Menubar, `daemon/AGENTS.md`                         |
+| 13  | Output Delivery (email, browser, push-data)    | `email_sender.py`, `rendering.py`, `push_data.py`, `plugins/email_sender/`, `plugins/push_data/`         | `configuration.md §Output actions`                                         |
+| 14  | Interface Planner (XMPP + pending unification) | `daemon/interface_planner.py`, `plugins/xmpp_daemon/interface_planner.py` (if still exists), `router.py` | `xmpp_daemon.md §Interface planner`, `plans/interface_model_upgrade_v1.md` |
 
 ---
 
@@ -521,27 +518,15 @@ This is a known issue documented in `plans/` — the review should confirm curre
 
 ## Cross-Phase Issues to Track
 
-These are issues visible across multiple phases. Flag them during the phase review and address collectively if needed:
+These are issues visible across multiple phases. Flag them during the phase review:
 
-| Issue | Relevant Phases |
-|-------|----------------|
-| `POST_TURN_RENDER` is listed as "deferred" in Decision 19 but may be implemented in email/push plugins | 1, 7, 13 |
-| `--browser` vs `--playwright-login` naming inconsistency | 9, 10 |
-| `trace_context` in `research/tools.py._fetch_and_parse` — plan says to add it, check if done | 2, 9 |
-| Interface planner fork may still exist | 5, 14 |
-| `session clean-research` — plan claims 3 things are cleared; verify all 3 | 3, 5 |
-| Lean mode guard — memory recall, shortlist, AND plugin hooks | 1, 4, 7 |
+| Issue                                                                                                  | Relevant Phases |
+| ------------------------------------------------------------------------------------------------------ | --------------- |
+| `POST_TURN_RENDER` is listed as "deferred" in Decision 19 but may be implemented in email/push plugins | 1, 7, 13        |
+| `--browser` vs `--playwright-login` naming inconsistency                                               | 9, 10           |
+| `trace_context` in `research/tools.py._fetch_and_parse` — plan says to add it, check if done           | 2, 9            |
+| Interface planner fork may still exist                                                                 | 5, 14           |
+| `session clean-research` — plan claims 3 things are cleared; verify all 3                              | 3, 5            |
+| Lean mode guard — memory recall, shortlist, AND plugin hooks                                           | 1, 4, 7         |
 
 ---
-
-## Starting Point
-
-**Start with Phase 1.**
-
-For each phase, produce:
-1. A **findings list** — numbered, prioritized (P1=correctness bug / P2=doc mismatch / P3=missing test / P4=minor inconsistency)
-2. A **verdict per finding** — Fix Now / Document / Accept as-is
-3. Changes made
-4. Confirmation: full test suite passes after changes
-
-Mark the phase complete and move to Phase 2.

@@ -186,9 +186,11 @@ class XMPPService:
         self._client.start_foreground()
 
     def stop(self) -> None:
-        """Request graceful shutdown of the XMPP client."""
+        """Request graceful shutdown of the XMPP client and worker threads."""
         logger.info("XMPPService stop requested")
         set_file_upload_service(None)
+        self.voice_transcriber.shutdown()
+        self.image_transcriber.shutdown()
         self._client.stop()
 
     def _on_xmpp_message(self, payload: dict) -> None:

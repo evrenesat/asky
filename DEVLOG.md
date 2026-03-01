@@ -2,6 +2,15 @@
 
 For full detailed entries, see [DEVLOG_ARCHIVE.md](DEVLOG_ARCHIVE.md).
 
+## 2026-03-01 - Code Review Phase 5: XMPP Daemon & Routing
+
+- **F5.1 fix (P1)**: Added `shutdown()` method to `VoiceTranscriber` and `ImageTranscriber` using None poison-pill sentinel + thread joining. Updated `XMPPService.stop()` to call both `shutdown()` methods before stopping the XMPP client. Previously, worker threads were daemon threads with blocking `queue.get()` and no shutdown mechanism — in-flight jobs would be abandoned on daemon stop.
+- **F5.2 fix (P2)**: Updated `daemon/AGENTS.md` — was incorrectly stating `DaemonUserError` is raised for 0 transports; actual behavior allows 0 (sidecar-only mode).
+- **F5.11 noted (P2)**: `voice_transcriber.py` and `image_transcriber.py` are duplicated in `daemon/` and `plugins/xmpp_daemon/`; tests import from old `daemon/` path. Flagged for cleanup.
+- **F5.3/F5.5 tests**: Added shutdown lifecycle tests (4 tests) and remote policy gate test via `execute_command_text` path (1 test). Updated existing stop test to verify transcriber shutdown calls.
+- **Verified**: Remote policy gate applied after preset expansion (correct), singleton lock cleanup on SIGKILL (POSIX-safe), room auto-rejoin handles non-existent rooms gracefully, TOML upload cannot inject blocked flags, XEP-0308 correction fallback works correctly, interface planner unification complete (no plugin fork).
+- Suite: 1270 → 1275 passed.
+
 ## 2026-03-01 - Code Review Phase 4: User Memory & Elephant Mode
 
 - **F4-1 fix**: Added `Optional` to `typing` imports in `memory/auto_extract.py` — was missing despite use in function signature (safe at runtime due to `from __future__ import annotations`, but would break `get_type_hints()`).

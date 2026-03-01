@@ -129,3 +129,39 @@ def test_run_job_calls_multimodal_payload(monkeypatch, tmp_path):
     assert events
     assert events[0]["status"] == "completed"
     assert events[0]["transcript_text"] == "a tiny test image"
+
+
+def test_shutdown_stops_worker_threads(tmp_path):
+    transcriber = ImageTranscriber(
+        enabled=True,
+        workers=2,
+        max_size_mb=5,
+        model_alias="gf",
+        prompt_text="describe",
+        storage_dir=tmp_path,
+        allowed_mime_types=[],
+        completion_callback=lambda _payload: None,
+    )
+    transcriber.start()
+    assert len(transcriber._workers) == 2
+    for w in transcriber._workers:
+        assert w.is_alive()
+
+    transcriber.shutdown(timeout=2.0)
+    assert transcriber._workers == []
+    assert transcriber._shutdown is True
+
+
+def test_shutdown_noop_when_not_started(tmp_path):
+    transcriber = ImageTranscriber(
+        enabled=True,
+        workers=1,
+        max_size_mb=5,
+        model_alias="gf",
+        prompt_text="describe",
+        storage_dir=tmp_path,
+        allowed_mime_types=[],
+        completion_callback=lambda _payload: None,
+    )
+    transcriber.shutdown()
+    assert transcriber._shutdown is False
