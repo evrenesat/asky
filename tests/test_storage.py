@@ -568,10 +568,14 @@ def test_clear_session_messages_preserves_transcripts(mock_db_path):
     init_db()
     session_id = repo.create_session("model", name="clear-test")
 
-    # Add messages
+    # Add messages and compact (compaction deletes pre-compaction messages)
+    repo.save_message(session_id, "user", "old1", "sum1", 10)
+    repo.save_message(session_id, "assistant", "old2", "sum2", 10)
+    repo.compact_session(session_id, "Compacted")
+
+    # Add post-compaction messages
     repo.save_message(session_id, "user", "msg1", "sum1", 10)
     repo.save_message(session_id, "assistant", "msg2", "sum2", 10)
-    repo.compact_session(session_id, "Compacted")
 
     # Add transcript
     repo.create_transcript(

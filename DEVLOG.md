@@ -1,5 +1,21 @@
 # DEVLOG
 
+## 2026-03-01 - Phase 3 Code Review: Session Compaction Bug Fix
+
+**Problem:**
+
+`compact_session()` in `storage/sqlite.py` saved the compacted summary but never deleted pre-compaction messages. `build_context_messages()` then included both the summary and all old messages, making compaction a no-op for context reduction (context grew instead of shrinking).
+
+**Changes:**
+
+- Modified `src/asky/storage/sqlite.py`: `compact_session()` now deletes session messages after storing the summary.
+- Updated `tests/test_sessions.py`: Fixed `test_session_manager_build_context` to reflect correct post-compaction behavior; added `test_compaction_summary_strategy`, `test_compaction_deletes_old_messages_preserves_new`, `test_deferred_auto_rename_triggers_on_first_query`, `test_deferred_auto_rename_skips_non_pending_sessions`.
+- Updated `tests/test_storage.py`: Fixed `test_clear_session_messages_preserves_transcripts` to add messages after compaction.
+
+**Verification:**
+
+- Full suite: 1258 passed in 9.61s (4 new tests).
+
 ## 2026-03-01 - Evidence Extraction Heuristic and Ingestion Logging Fixes
 
 **Problem:**

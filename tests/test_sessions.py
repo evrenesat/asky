@@ -122,6 +122,10 @@ def test_session_manager_build_context(temp_repo):
     temp_repo.save_message(sid, "assistant", "pong", "po_sum", 5)
     temp_repo.compact_session(sid, "Old Summary")
 
+    # After compaction, pre-existing messages are deleted
+    temp_repo.save_message(sid, "user", "hello again", "", 5)
+    temp_repo.save_message(sid, "assistant", "hi again", "", 5)
+
     with patch(
         "asky.core.session_manager.SQLiteHistoryRepository", return_value=temp_repo
     ):
@@ -129,10 +133,10 @@ def test_session_manager_build_context(temp_repo):
         mgr.current_session = temp_repo.get_session_by_id(sid)
 
         messages = mgr.build_context_messages()
-        # Should have: [summary-user, summary-assistant, ping, pong]
+        # [summary-user, summary-assistant, hello again, hi again]
         assert len(messages) == 4
         assert "Old Summary" in messages[0]["content"]
-        assert messages[2]["content"] == "ping"
+        assert messages[2]["content"] == "hello again"
 
 
 def test_compaction_logic_threshold(temp_repo):
@@ -372,3 +376,94 @@ def test_resolve_session_resets_shortlist_on_reset(temp_repo):
     reloaded = temp_repo.get_session_by_id(sid)
     assert reloaded is not None
     assert reloaded.shortlist_override is None
+
+
+def test_compaction_summary_strategy(temp_repo):
+    """Test the summary-concat compaction strategy deletes old messages."""
+    sid = temp_repo.create_session("model-a")
+    temp_repo.save_message(sid, "user", "hello world", "greeting", 5)
+    temp_repo.save_message(sid, "assistant", "hi there", "reply", 5)
+
+    with patch(
+        "asky.core.session_manager.SQLiteHistoryRepository", return_value=temp_repo
+    ):
+        mgr = SessionManager({"alias": "model-a"})
+        mgr.current_session = temp_repo.get_session_by_id(sid)
+
+        with patch(
+            "asky.core.session_manager.SESSION_COMPACTION_STRATEGY", "summary_concat"
+        ):
+            result = mgr._perform_compaction()
+            assert result is True
+
+            s = temp_repo.get_session_by_id(sid)
+            assert s.compacted_summary is not None
+            assert "greeting" in s.compacted_summary or "hello world" in s.compacted_summary
+
+            remaining_msgs = temp_repo.get_session_messages(sid)
+            assert len(remaining_msgs) == 0
+
+
+def test_compaction_deletes_old_messages_preserves_new(temp_repo):
+    """After compaction, only post-compaction messages remain in the session."""
+    sid = temp_repo.create_session("model-a")
+    temp_repo.save_message(sid, "user", "old message", "old_sum", 5)
+    temp_repo.save_message(sid, "assistant", "old reply", "old_reply_sum", 5)
+
+    with patch(
+        "asky.core.session_manager.SQLiteHistoryRepository", return_value=temp_repo
+    ):
+        mgr = SessionManager({"alias": "model-a"})
+        mgr.current_session = temp_repo.get_session_by_id(sid)
+        mgr._compact_with_summaries()
+
+    temp_repo.save_message(sid, "user", "new message", "", 5)
+
+    with patch(
+        "asky.core.session_manager.SQLiteHistoryRepository", return_value=temp_repo
+    ):
+        mgr = SessionManager({"alias": "model-a"})
+        mgr.current_session = temp_repo.get_session_by_id(sid)
+
+        messages = mgr.build_context_messages()
+        assert len(messages) == 3
+        assert "old" not in messages[2]["content"]
+        assert messages[2]["content"] == "new message"
+
+
+def test_deferred_auto_rename_triggers_on_first_query(temp_db_path):
+    """Deferred rename: sessions with pending_auto_name get renamed on first query."""
+    from asky.cli.chat import _rename_pending_auto_named_session
+
+    with patch("asky.storage.sqlite.DB_PATH", temp_db_path):
+        repo = SQLiteHistoryRepository()
+        repo.init_db()
+        sid = repo.create_session("model-a", name="unnamed_12345")
+        repo.update_session_query_defaults(
+            sid, {"pending_auto_name": True}
+        )
+
+        _rename_pending_auto_named_session(sid, "explain quantum computing")
+
+        renamed = repo.get_session_by_id(sid)
+        assert renamed is not None
+        assert "unnamed" not in renamed.name.lower()
+        assert "quantum" in renamed.name.lower() or "computing" in renamed.name.lower()
+
+        defaults = renamed.query_defaults or {}
+        assert "pending_auto_name" not in defaults
+
+
+def test_deferred_auto_rename_skips_non_pending_sessions(temp_db_path):
+    """Sessions without pending_auto_name flag are not renamed."""
+    from asky.cli.chat import _rename_pending_auto_named_session
+
+    with patch("asky.storage.sqlite.DB_PATH", temp_db_path):
+        repo = SQLiteHistoryRepository()
+        repo.init_db()
+        sid = repo.create_session("model-a", name="my_custom_name")
+
+        _rename_pending_auto_named_session(sid, "explain quantum computing")
+
+        session = repo.get_session_by_id(sid)
+        assert session.name == "my_custom_name"

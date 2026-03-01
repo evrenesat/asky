@@ -1250,13 +1250,21 @@ class SQLiteHistoryRepository(HistoryRepository):
         ]
 
     def compact_session(self, session_id: int, compacted_summary: str) -> None:
-        """Replace session message history with a compacted summary."""
+        """Replace session message history with a compacted summary.
+
+        Stores the summary on the session row and deletes the pre-compaction
+        messages so that subsequent context builds use only the summary plus
+        any new messages added after compaction.
+        """
         conn = self._get_conn()
         c = conn.cursor()
-        # Update session with summary
         c.execute(
             "UPDATE sessions SET compacted_summary = ? WHERE id = ?",
             (compacted_summary, session_id),
+        )
+        c.execute(
+            "DELETE FROM messages WHERE session_id = ?",
+            (session_id,),
         )
         conn.commit()
         conn.close()
