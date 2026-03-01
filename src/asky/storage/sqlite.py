@@ -1,6 +1,7 @@
 """SQLite implementation of unified message and session storage."""
 
 import json
+import logging
 import os
 import sqlite3
 from datetime import datetime
@@ -24,6 +25,8 @@ SESSION_NAME_PREVIEW_MAX_CHARS = 30
 TERMINAL_CONTEXT_PREFIX = "terminal context (last "
 TERMINAL_CONTEXT_QUERY_MARKER = "\n\nQuery:\n"
 RESEARCH_SOURCE_MODES = {"web_only", "local_only", "mixed"}
+
+logger = logging.getLogger(__name__)
 
 
 def _extract_session_name_source(user_content: str) -> str:
@@ -1002,6 +1005,54 @@ class SQLiteHistoryRepository(HistoryRepository):
         conn.close()
         return 0
 
+    def _cleanup_research_state(
+        self, cursor: sqlite3.Cursor, session_ids: List[int]
+    ) -> None:
+        """Helper to cleanup research metadata and findings for session IDs.
+
+        This handles both ChromaDB vector deletion and SQLite rows that are
+        not automatically cascaded by standard session deletion.
+        """
+        if not session_ids:
+            return
+
+        placeholders = ",".join(["?"] * len(session_ids))
+
+        # 1. Cleanup research findings and vectors via VectorStore
+        # We use a lazy import/call to avoid eager load of research/vector dependencies
+        # into the core storage layer.
+        # This MUST happen before we perform local writes (like cursor.execute)
+        # to avoid holding a SQLite write-lock when VectorStore opens its own connection.
+        try:
+            from asky.lazy_imports import call_attr
+
+            vector_store = call_attr("asky.research.vector_store", "get_vector_store")
+            # VectorStore handles both Chroma and its own SQLite rows in findings.
+            # Failures are isolated per session so batch deletes continue cleanup.
+            for sid in session_ids:
+                try:
+                    vector_store.delete_findings_by_session(str(sid))
+                except Exception:
+                    logger.warning(
+                        "Research state cleanup failed for session ID: %s",
+                        sid,
+                        exc_info=True,
+                    )
+        except Exception:
+            # We log but do not raise, so session deletion still proceeds even if
+            # vector-store import/initialization fails.
+            logger.warning(
+                "Research state cleanup initialization failed for session IDs: %s",
+                session_ids,
+                exc_info=True,
+            )
+
+        # 2. Delete session upload links (these are in the main DB)
+        cursor.execute(
+            f"DELETE FROM session_uploaded_documents WHERE session_id IN ({placeholders})",
+            tuple(session_ids),
+        )
+
     def delete_sessions(
         self,
         ids: Optional[str] = None,
@@ -1066,6 +1117,9 @@ class SQLiteHistoryRepository(HistoryRepository):
         if not session_ids_to_delete:
             conn.close()
             return 0
+
+        # Perform implicit research cleanup first
+        self._cleanup_research_state(c, session_ids_to_delete)
 
         # Cascade delete: first delete session messages, then sessions
         placeholders = ",".join(["?"] * len(session_ids_to_delete))

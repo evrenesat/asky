@@ -45,20 +45,20 @@ Command-line interface layer handling argument parsing, command routing, and use
 
 ### Key CLI Surface
 
-| Entry                          | Behavior |
-| ------------------------------ | -------- |
-| `--config model add` / `--config model edit [alias]` | Model configuration mutation entrypoint |
-| `--config daemon edit`         | Daemon configuration mutation entrypoint |
-| `history ...`                  | Grouped history operations (`list/show/delete`) |
-| `session ...`                  | Grouped session operations (`list/show/create/use/end/delete/clean-research/from-message`) |
-| `memory ...`                   | Grouped memory operations (`list/delete/clear`) |
-| `corpus query ...` / `corpus summarize ...` | Grouped deterministic corpus operations |
-| `--session <query...>`         | Create session named from query text and run query |
-| `--tools`                      | Tool controls (`list`, `off`, `reset`) |
-| `--shortlist on\|off\|reset`   | Session shortlist override (`on/off`) or clear (`reset`) |
-| `--daemon`                     | macOS menubar daemon (`daemon/menubar.py`) or foreground fallback (`daemon/service.py`) |
-| `--browser <url>`              | Browser session flow (Playwright plugin login/session capture path) |
-| `persona <subcommand>`         | Persona management (create, load, unload, import, export, alias) |
+| Entry                                                | Behavior                                                                                   |
+| ---------------------------------------------------- | ------------------------------------------------------------------------------------------ |
+| `--config model add` / `--config model edit [alias]` | Model configuration mutation entrypoint                                                    |
+| `--config daemon edit`                               | Daemon configuration mutation entrypoint                                                   |
+| `history ...`                                        | Grouped history operations (`list/show/delete`)                                            |
+| `session ...`                                        | Grouped session operations (`list/show/create/use/end/delete/clean-research/from-message`) |
+| `memory ...`                                         | Grouped memory operations (`list/delete/clear`)                                            |
+| `corpus query ...` / `corpus summarize ...`          | Grouped deterministic corpus operations                                                    |
+| `--session <query...>`                               | Create session named from query text and run query                                         |
+| `--tools`                                            | Tool controls (`list`, `off`, `reset`)                                                     |
+| `--shortlist on\|off\|reset`                         | Session shortlist override (`on/off`) or clear (`reset`)                                   |
+| `--daemon`                                           | macOS menubar daemon (`daemon/menubar.py`) or foreground fallback (`daemon/service.py`)    |
+| `--browser <url>`                                    | Browser session flow (Playwright plugin login/session capture path)                        |
+| `persona <subcommand>`                               | Persona management (create, load, unload, import, export, alias)                           |
 
 Preset invocation notes:
 
@@ -70,6 +70,8 @@ Grouped command routing notes:
 - Recognized grouped domains (`history`, `session`, `memory`, `corpus`, `prompts`) are strict: missing/invalid subcommands do not fall back to query execution.
 - `session` (without action) prints grouped session help and current shell-session status.
 - `session show` without selector resolves to current shell session (or prints `No active session.` / stale-lock cleanup notice).
+- `session clean-research` is session-scoped research cleanup (findings/vectors + session corpus metadata/link rows). It is not a direct purge of shared `research_cache`/chunk/link rows.
+- `session delete` removes sessions, their messages, and associated research data. It implicitly runs the same cleanup as `session clean-research` (findings/vectors and upload links) for all deleted sessions.
 
 History command behavior:
 
@@ -79,6 +81,7 @@ History command behavior:
 ### Chat Flow (`chat.py`)
 
 Main conversation entry point via `run_chat()`:
+
 1. **Session Identification**: Resolve session variables (`SS`, `RS`, shell-id) and run `_check_idle_session_timeout()` **before** starting the banner. Shell-session locks persist across process exits in the same shell until explicit end/detach.
 2. **Mention Parsing**: Parse `@persona_name` syntax from query and load persona before model invocation.
 3. **CLI Adaptation**: Parse args into `AskyTurnRequest` + UI callbacks.

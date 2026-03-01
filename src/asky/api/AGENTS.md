@@ -97,3 +97,5 @@ Research mode is resolved per turn from effective session state:
 - `AskyClient.cleanup_session_research_data(session_id)` deletes session findings
   from vector storage and also clears session-local uploaded-corpus state
   (session upload links + persisted local corpus paths when session ID is numeric).
+  It does not directly purge shared `research_cache` content/chunks/link rows or
+  global uploaded-document artifact rows/files.

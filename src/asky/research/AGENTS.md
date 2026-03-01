@@ -92,6 +92,13 @@ Diverse chunk selection
 
 Caches fetched URL content and extracted links with TTL.
 
+Scope note:
+
+- `research_cache` is global to the active `DB_PATH` (not session-bound).
+- Session cleanup (`session clean-research`) does not directly purge `research_cache`,
+  `content_chunks`, or `link_embeddings`; those are removed by TTL expiry cleanup
+  (or explicit future purge tooling).
+
 #### Key Features
 
 - **TTL-based expiry**: Configurable `cache_ttl_hours`
@@ -99,6 +106,7 @@ Caches fetched URL content and extracted links with TTL.
 - **Content + links**: Both cached together per URL
 - **Invalidation**: Clears related vectors when content changes
 - **On-demand summarization**: `get_link_summaries` performs synchronous summarization if the cache entry is missing or stale.
+- **Refresh on re-ingest**: Re-caching the same source key refreshes expiry/content by design.
 
 
 ### Schema (SQLite)

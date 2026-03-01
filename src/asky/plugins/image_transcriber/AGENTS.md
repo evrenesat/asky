@@ -12,7 +12,7 @@ Provides image captioning and transcription capabilities using multimodal LLMs.
 
 - `PLUGIN_CAPABILITY_REGISTER`: Exposes `image_transcriber` capability (the service instance).
 - `LOCAL_SOURCE_HANDLER_REGISTER`: Registers handlers for image file extensions.
-- `TOOL_REGISTRY_BUILD`: Registers `transcribe_image_url` tool.
+- `TOOL_REGISTRY_BUILD`: Registers `transcribe_image_url` via `ToolRegistry.register(name, schema, executor)`. The executor accepts a single args dict and maps it to `url`/`prompt`.
 
 ## Tools
 

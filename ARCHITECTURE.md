@@ -453,7 +453,9 @@ Session resolution now owns effective research profile state:
 
 Sessions also persist query-behavior defaults (`sessions.query_defaults` JSON) for CLI flags like model/tool disables/system prompt; shortlist override remains first-class in `sessions.shortlist_override`.
 Defaults-only invocations can auto-create unnamed sessions, which are marked for deferred auto-rename and renamed from the first real query.
-Session research cleanup (`session clean-research` / `--clean-session-research`) removes findings and now also clears session-linked uploaded document associations and persisted local corpus path pointers.
+Session research cleanup (`session clean-research` / `--clean-session-research`) removes session-scoped findings/embeddings, clears session-linked uploaded document associations, and resets persisted local corpus path pointers for that session. It does not directly purge shared `research_cache`/chunk/link rows or global uploaded-document artifacts.
+Session deletion (`session delete`) performs the same implicit research cleanup (findings/vectors and upload links) before removing matches from the session and messages tables.
+TODO: add a dedicated forceful research-cache purge command for explicit operator-triggered cache deletion.
 
 If no session is active and effective research mode is requested, a research
 session is auto-created so research-memory operations remain session-scoped.
@@ -480,6 +482,7 @@ Structured facts injected into context
 
 Document summaries are generated on-demand and synchronously via `get_link_summaries` when needed.
 The CLI no longer performs an end-of-turn background-summary drain for research turns.
+Research cache entries are global to the active DB path and expire by TTL (`research.cache_ttl_hours`, default 24h). Re-ingestion refreshes TTL/content for matching cache keys by design.
 
 Local-file targets are preloaded/indexed through a built-in local loader:
 
@@ -521,7 +524,7 @@ results.jsonl + results.md + summary.json + report.md
 
 ### Research Memory Flow (Session-Scoped)
 
-Findings and embeddings are isolated by `session_id`. Selective cleanup via `--clean-session-research` removes these records for a session while preserving conversation history.
+Findings and embeddings are isolated by `session_id`. Selective cleanup via `--clean-session-research` removes these records for a session while preserving conversation history. Session deletion (`session delete`) now implicitly runs this same research cleanup path before the session itself is removed.
 
 ```
 save_finding(...)
@@ -641,6 +644,8 @@ Imports deferred until needed, with two distinct patterns:
 
 - `summarization.py` uses a bounded map + single final reduce strategy for long content.
 - This keeps hierarchical quality improvements while capping LLM round-trips to `chunk_count + 1`.
+- `summarizer.hierarchical_chunk_target_chars` supports sentinel `0`, which auto-resolves
+  to the summarization input limit derived from summarization-model context settings.
 
 ### 12. Tool Metadata-Driven Prompt Guidance
 

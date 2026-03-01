@@ -1,6 +1,7 @@
 """Tests for deterministic local-corpus section parsing and matching."""
 
 from asky.research.sections import (
+    _looks_like_heading,
     build_section_index,
     get_listable_sections,
     match_section_strict,
@@ -145,3 +146,66 @@ def test_slice_section_content_auto_promotes_alias_to_canonical():
     assert sliced["auto_promoted"] is True
     assert sliced["resolved_section_id"] == "why-learning-038"
     assert len(sliced["content"]) > 200
+
+
+_BLANK_KW = {"prev_blank": True, "next_blank": True, "toc_normalized_titles": set()}
+
+
+def test_looks_like_heading_rejects_semicolon_lines():
+    assert _looks_like_heading("(SC): SEDAR; 2016.", **_BLANK_KW) == 0.0
+    assert _looks_like_heading("Author et al.; 2020", **_BLANK_KW) == 0.0
+
+
+def test_looks_like_heading_rejects_stat_notation():
+    assert _looks_like_heading("AR(1)", **_BLANK_KW) == 0.0
+    assert _looks_like_heading("AR(2)", **_BLANK_KW) == 0.0
+    assert _looks_like_heading("ARMA(1,1)", **_BLANK_KW) == 0.0
+    assert _looks_like_heading("F(2,30)", **_BLANK_KW) == 0.0
+
+
+def test_looks_like_heading_rejects_non_ascii_single_token_not_in_toc():
+    assert _looks_like_heading("ΔAICc", **_BLANK_KW) == 0.0
+    assert _looks_like_heading("R²", **_BLANK_KW) == 0.0
+
+
+def test_looks_like_heading_allows_non_ascii_token_in_toc():
+    kw = {"prev_blank": True, "next_blank": True, "toc_normalized_titles": {"δaicc"}}
+    score = _looks_like_heading("ΔAICc", **kw)
+    assert score > 0.0
+
+
+def test_looks_like_heading_allows_multi_word_non_ascii():
+    kw = {"prev_blank": True, "next_blank": True, "toc_normalized_titles": set()}
+    score = _looks_like_heading("CO₂ Emissions", **kw)
+    assert score > 0.0
+
+
+def test_build_section_index_rejects_statistical_notation_from_biology_paper():
+    content = (
+        "INTRODUCTION\n\n"
+        "This paper investigates population dynamics using autoregressive models.\n\n"
+        "METHODS\n\n"
+        "We applied AR(1) and AR(2) models to the data. The ΔAICc metric was used "
+        "for model selection. See (SC): SEDAR; 2016.\n\n"
+        "RESULTS\n\n"
+        "Table 1. Model comparison.\n\n"
+        "ΔAICc\n\n"
+        "AR(1)\n\n"
+        "AR(2)\n\n"
+        "(SC): SEDAR; 2016.\n\n"
+        "DISCUSSION\n\n"
+        "Our findings indicate significant population trends.\n"
+    )
+    index = build_section_index(content)
+    sections = get_listable_sections(index, include_toc=False)
+    titles = {s["title"] for s in sections}
+
+    assert "AR(1)" not in titles
+    assert "AR(2)" not in titles
+    assert "ΔAICc" not in titles
+    assert "(SC): SEDAR; 2016." not in titles
+
+    assert "INTRODUCTION" in titles
+    assert "METHODS" in titles
+    assert "RESULTS" in titles
+    assert "DISCUSSION" in titles

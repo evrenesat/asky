@@ -85,8 +85,8 @@ hierarchical_trigger_chars = 4800
 hierarchical_max_input_chars = 100000
 
 # The target size for individual semantic chunks when breaking down a long document.
-# Increase this if you are using a capable model with a large context window.
-hierarchical_chunk_target_chars = 1800
+# Set to 0 to auto-resolve from summarization input limit.
+hierarchical_chunk_target_chars = 0
 
 # The number of overlapping characters between chunks.
 # This overlap provides context continuity so the model doesn't lose meaning across boundaries.

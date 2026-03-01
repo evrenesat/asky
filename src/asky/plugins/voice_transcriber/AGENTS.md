@@ -12,7 +12,7 @@ Provides audio transcription capabilities using platform-specific strategies (e.
 
 - `PLUGIN_CAPABILITY_REGISTER`: Exposes `voice_transcriber` capability (the service instance).
 - `LOCAL_SOURCE_HANDLER_REGISTER`: Registers handlers for audio file extensions.
-- `TOOL_REGISTRY_BUILD`: Registers `transcribe_audio_url` tool.
+- `TOOL_REGISTRY_BUILD`: Registers `transcribe_audio_url` via `ToolRegistry.register(name, schema, executor)`. The executor accepts a single args dict and maps it to `url`/`prompt`/`language`.
 
 ## Tools
 

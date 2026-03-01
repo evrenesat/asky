@@ -116,26 +116,32 @@ class ImageTranscriberPlugin(AskyPlugin):
             return
 
         context.registry.register(
-            name="transcribe_image_url",
-            func=self.transcribe_image_url_tool,
-            description=(
-                "Describe or transcribe an image from a public HTTPS URL. "
-                "Supports formats like PNG, JPEG, WEBP, GIF."
-            ),
-            parameters={
-                "type": "object",
-                "properties": {
-                    "url": {
-                        "type": "string",
-                        "description": "The public HTTPS URL of the image file.",
+            "transcribe_image_url",
+            {
+                "name": "transcribe_image_url",
+                "description": (
+                    "Describe or transcribe an image from a public HTTPS URL. "
+                    "Supports formats like PNG, JPEG, WEBP, GIF."
+                ),
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "url": {
+                            "type": "string",
+                            "description": "The public HTTPS URL of the image file.",
+                        },
+                        "prompt": {
+                            "type": "string",
+                            "description": "Optional specific question or prompt about the image.",
+                        },
                     },
-                    "prompt": {
-                        "type": "string",
-                        "description": "Optional specific question or prompt about the image.",
-                    },
+                    "required": ["url"],
                 },
-                "required": ["url"],
             },
+            lambda args: self.transcribe_image_url_tool(
+                url=str(args.get("url", "")),
+                prompt=args.get("prompt"),
+            ),
         )
 
     def transcribe_image_url_tool(

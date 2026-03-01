@@ -1,9 +1,11 @@
 import pytest
+import json
 from unittest.mock import MagicMock, patch
 from pathlib import Path
 from asky.plugins.voice_transcriber.plugin import VoiceTranscriberPlugin
 from asky.plugins.image_transcriber.plugin import ImageTranscriberPlugin
 from asky.plugins import PluginContext
+from asky.core.registry import ToolRegistry
 
 def test_voice_transcribe_tool_rejects_non_https():
     ctx = MagicMock(spec=PluginContext)
@@ -75,6 +77,66 @@ def test_tool_registration_via_hook():
     i_plugin.on_tool_registry_build(hook_ctx)
     
     # Check if register was called with correct names
-    calls = [call[1]["name"] for call in registry.register.call_args_list]
+    calls = [call.args[0] for call in registry.register.call_args_list]
     assert "transcribe_audio_url" in calls
     assert "transcribe_image_url" in calls
+
+
+def test_transcriber_tools_dispatch_through_registry():
+    ctx = MagicMock(spec=PluginContext)
+    ctx.hook_registry = MagicMock()
+    ctx.plugin_name = "test_plugin"
+    ctx.config = {"model": "m", "model_alias": "m"}
+
+    v_plugin = VoiceTranscriberPlugin(ctx)
+    i_plugin = ImageTranscriberPlugin(ctx)
+    v_plugin.transcribe_audio_url_tool = MagicMock(
+        return_value={"status": "success", "transcript": "hello"}
+    )
+    i_plugin.transcribe_image_url_tool = MagicMock(
+        return_value={"status": "success", "description": "a cat"}
+    )
+
+    registry = ToolRegistry()
+    hook_ctx = MagicMock()
+    hook_ctx.registry = registry
+    hook_ctx.disabled_tools = set()
+    v_plugin.on_tool_registry_build(hook_ctx)
+    i_plugin.on_tool_registry_build(hook_ctx)
+
+    voice_result = registry.dispatch(
+        {
+            "function": {
+                "name": "transcribe_audio_url",
+                "arguments": json.dumps(
+                    {
+                        "url": "https://example.com/audio.mp3",
+                        "prompt": "spell names",
+                        "language": "en",
+                    }
+                ),
+            }
+        }
+    )
+    image_result = registry.dispatch(
+        {
+            "function": {
+                "name": "transcribe_image_url",
+                "arguments": json.dumps(
+                    {"url": "https://example.com/image.png", "prompt": "what is shown?"}
+                ),
+            }
+        }
+    )
+
+    assert voice_result["status"] == "success"
+    assert image_result["status"] == "success"
+    v_plugin.transcribe_audio_url_tool.assert_called_once_with(
+        url="https://example.com/audio.mp3",
+        prompt="spell names",
+        language="en",
+    )
+    i_plugin.transcribe_image_url_tool.assert_called_once_with(
+        url="https://example.com/image.png",
+        prompt="what is shown?",
+    )

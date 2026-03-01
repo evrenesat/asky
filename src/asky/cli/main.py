@@ -141,9 +141,9 @@ def _print_top_level_help(plugin_manager=None) -> None:
         "  session create <name>                   Create and activate a named session.",
         "  session use <session_selector>          Resume a session by id/name.",
         "  session end                             End active shell-bound session.",
-        "  session delete <session_selector|--all> Delete sessions and their messages.",
+        "  session delete <session_selector|--all> Delete sessions, messages, and associated research data.",
         "  session clean-research <session_selector>",
-        "                                          Remove research cache data for a session.",
+        "                                          Remove session research findings/vectors and session corpus links/paths.",
         "  session from-message <history_id|last>  Convert history message into a session.",
         "  memory list                             List user memories.",
         "  memory delete <id>                      Delete one memory.",
@@ -308,9 +308,11 @@ Commands:
   asky session create <name>
   asky session use <session_selector>
   asky session end
-  asky session delete <session_selector|--all>
   asky session clean-research <session_selector>
-  asky session from-message <history_id|last>"""
+  asky session from-message <history_id|last>
+
+Note: 'session delete' also performs implicit research cleanup for the deleted sessions.
+"""
     )
 
 
@@ -406,22 +408,42 @@ def _grouped_command_issue(raw_tokens: list[str]) -> tuple[str, str, str] | None
 
     if noun == "history":
         if action == "list" and len(rest) > 1:
-            return noun, "invalid_args", "history list accepts at most one optional count."
+            return (
+                noun,
+                "invalid_args",
+                "history list accepts at most one optional count.",
+            )
         if action == "show":
             selector = " ".join(rest).strip()
             if not selector:
                 return noun, "missing_args", "history show requires a history selector."
             if not _is_valid_history_selector(selector):
-                return noun, "invalid_args", "history show selector must be IDs/ranges/tokens."
+                return (
+                    noun,
+                    "invalid_args",
+                    "history show selector must be IDs/ranges/tokens.",
+                )
         if action == "delete":
             if not rest:
-                return noun, "missing_args", "history delete requires a selector or --all."
+                return (
+                    noun,
+                    "missing_args",
+                    "history delete requires a selector or --all.",
+                )
             if rest[0] == "--all" and len(rest) > 1:
-                return noun, "invalid_args", "history delete --all does not accept extra arguments."
+                return (
+                    noun,
+                    "invalid_args",
+                    "history delete --all does not accept extra arguments.",
+                )
 
     if noun == "session":
         if action == "list" and len(rest) > 1:
-            return noun, "invalid_args", "session list accepts at most one optional count."
+            return (
+                noun,
+                "invalid_args",
+                "session list accepts at most one optional count.",
+            )
         if action == "show" and not rest:
             return noun, "session_show_current", ""
         if action in {"create", "use", "clean-research", "from-message"} and not rest:
@@ -430,9 +452,17 @@ def _grouped_command_issue(raw_tokens: list[str]) -> tuple[str, str, str] | None
             return noun, "invalid_args", "session end does not accept arguments."
         if action == "delete":
             if not rest:
-                return noun, "missing_args", "session delete requires a selector or --all."
+                return (
+                    noun,
+                    "missing_args",
+                    "session delete requires a selector or --all.",
+                )
             if rest[0] == "--all" and len(rest) > 1:
-                return noun, "invalid_args", "session delete --all does not accept extra arguments."
+                return (
+                    noun,
+                    "invalid_args",
+                    "session delete --all does not accept extra arguments.",
+                )
 
     if noun == "memory":
         if action in {"list", "clear"} and rest:
@@ -479,7 +509,9 @@ def _handle_grouped_command_issue(args: argparse.Namespace) -> bool:
         sessions.print_active_session_status()
         return True
     if noun == "session" and reason == "session_show_current":
-        sessions.print_current_session_or_status(open_browser=bool(getattr(args, "open", False)))
+        sessions.print_current_session_or_status(
+            open_browser=bool(getattr(args, "open", False))
+        )
         return True
 
     _print_grouped_usage(noun)
@@ -895,7 +927,7 @@ def parse_args(
         nargs="?",
         const="interactive",
         metavar="SESSION_SELECTOR",
-        help="Delete session records and their messages. usage: --delete-sessions [ID|ID-ID|ID,ID] or --delete-sessions --all",
+        help="Delete session records, messages, and associated research data. usage: --delete-sessions [ID|ID-ID|ID,ID] or --delete-sessions --all",
     )
     parser.add_argument(
         "--clean-session-research",

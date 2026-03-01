@@ -65,6 +65,7 @@ LOG_FILE = _gen.get("log_file", "~/.config/asky/logs/asky.log")
 TRUNCATE_MESSAGES_IN_LOGS = _gen.get("truncate_messages_in_logs", False)
 LIVE_BANNER = True
 COMPACT_BANNER = _gen.get("compact_banner", False)
+LIVE_SCREEN_MODE = _gen.get("live_screen_mode", False)
 ARCHIVE_DIR = Path(_gen.get("archive_dir", "~/.config/asky/archive")).expanduser()
 GENERAL_SHORTLIST_ENABLED = _gen.get("shortlist_enabled")
 
@@ -92,9 +93,15 @@ SUMMARIZATION_HIERARCHICAL_TRIGGER_CHARS = _summarizer_section.get(
 SUMMARIZATION_HIERARCHICAL_MAX_INPUT_CHARS = _summarizer_section.get(
     "hierarchical_max_input_chars", 32000
 )
-SUMMARIZATION_HIERARCHICAL_CHUNK_TARGET_CHARS = _summarizer_section.get(
-    "hierarchical_chunk_target_chars", 2800
+_raw_hierarchical_chunk_target_chars = _summarizer_section.get(
+    "hierarchical_chunk_target_chars", 0
 )
+try:
+    SUMMARIZATION_HIERARCHICAL_CHUNK_TARGET_CHARS = int(
+        _raw_hierarchical_chunk_target_chars
+    )
+except (TypeError, ValueError):
+    SUMMARIZATION_HIERARCHICAL_CHUNK_TARGET_CHARS = 0
 SUMMARIZATION_HIERARCHICAL_CHUNK_OVERLAP_CHARS = _summarizer_section.get(
     "hierarchical_chunk_overlap_chars", 220
 )

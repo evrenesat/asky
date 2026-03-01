@@ -32,6 +32,8 @@ HIERARCHICAL_MAX_CHUNKS = (
 )
 HIERARCHICAL_MIN_MAP_OUTPUT_CHARS = 160  # Keep each map summary informative.
 REDUCE_SECTION_OVERHEAD_CHARS = 20  # "Section N:\n" + separators in reduce input.
+AUTO_CHUNK_TARGET_SENTINEL = 0
+MIN_EFFECTIVE_CHUNK_TARGET_CHARS = 1
 
 PARAGRAPH_SPLIT_PATTERN = re.compile(r"\n\s*\n+")
 SummarizationProgressCallback = Callable[[Dict[str, Any]], None]
@@ -143,9 +145,10 @@ def _summarize_content(
                 progress_callback=progress_callback,
             )
 
+        effective_target_chars = _resolve_hierarchical_chunk_target_chars()
         chunks = _semantic_chunk_text(
             content_for_summary,
-            target_chars=SUMMARIZATION_HIERARCHICAL_CHUNK_TARGET_CHARS,
+            target_chars=effective_target_chars,
             overlap_chars=SUMMARIZATION_HIERARCHICAL_CHUNK_OVERLAP_CHARS,
             max_chunks=HIERARCHICAL_MAX_CHUNKS,
         )
@@ -168,7 +171,7 @@ def _summarize_content(
             "summarization hierarchical start input_len=%d chunks=%d target_chunk=%d",
             len(content_for_summary),
             len(chunks),
-            SUMMARIZATION_HIERARCHICAL_CHUNK_TARGET_CHARS,
+            effective_target_chars,
         )
 
         map_summaries: List[str] = []
@@ -223,6 +226,21 @@ def _summarize_content(
     except Exception as e:
         logger.error("Error during summarization: %s", e)
         return _truncate_text(content, max_output_chars)
+
+
+def _resolve_hierarchical_chunk_target_chars() -> int:
+    """Resolve effective chunk target from config, including auto and invalid values."""
+    configured_target = int(SUMMARIZATION_HIERARCHICAL_CHUNK_TARGET_CHARS)
+    if configured_target > AUTO_CHUNK_TARGET_SENTINEL:
+        return configured_target
+
+    if configured_target < AUTO_CHUNK_TARGET_SENTINEL:
+        logger.warning(
+            "Invalid negative summarization chunk target %d; using input limit.",
+            configured_target,
+        )
+
+    return max(MIN_EFFECTIVE_CHUNK_TARGET_CHARS, int(SUMMARIZATION_INPUT_LIMIT))
 
 
 def _semantic_chunk_text(

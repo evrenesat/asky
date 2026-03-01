@@ -14,6 +14,7 @@ from asky.config import (
     MODELS,
     SUMMARIZATION_MODEL,
     COMPACT_BANNER,
+    LIVE_SCREEN_MODE,
 )
 from asky.storage import get_db_record_count, get_total_session_count
 
@@ -57,6 +58,7 @@ class InterfaceRenderer:
             console=self.console,
             refresh_per_second=4,
             transient=False,  # Keep the final banner visible after stopping
+            screen=LIVE_SCREEN_MODE,
         )
         self.live.start()
 

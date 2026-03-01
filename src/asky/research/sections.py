@@ -35,6 +35,7 @@ CHAPTER_PREFIX_PATTERN = re.compile(
 ROMAN_NUMERAL_PATTERN = re.compile(
     r"^[ivxlcdm]+$", re.IGNORECASE
 )
+STAT_NOTATION_PATTERN = re.compile(r"\b[A-Za-z]+\(\d")
 WORD_PATTERN = re.compile(r"[a-z0-9]+")
 TOC_TITLE_PATTERN = re.compile(
     r"^(contents?|table\s+of\s+contents?)$",
@@ -197,6 +198,15 @@ def _looks_like_heading(
         return 0.0
 
     if ROMAN_NUMERAL_PATTERN.match(text.replace(" ", "")):
+        return 0.0
+
+    if ";" in text:
+        return 0.0
+
+    if STAT_NOTATION_PATTERN.search(text) and word_count <= 3:
+        return 0.0
+
+    if not text.isascii() and len(text.split()) == 1 and _normalize_title(text) not in toc_normalized_titles:
         return 0.0
 
     score = 0.0

@@ -118,30 +118,37 @@ class VoiceTranscriberPlugin(AskyPlugin):
             return
 
         context.registry.register(
-            name="transcribe_audio_url",
-            func=self.transcribe_audio_url_tool,
-            description=(
-                "Transcribe an audio file from a public HTTPS URL to text. "
-                "Supports common formats like MP3, M4A, WAV, WebM, OGG."
-            ),
-            parameters={
-                "type": "object",
-                "properties": {
-                    "url": {
-                        "type": "string",
-                        "description": "The public HTTPS URL of the audio file.",
+            "transcribe_audio_url",
+            {
+                "name": "transcribe_audio_url",
+                "description": (
+                    "Transcribe an audio file from a public HTTPS URL to text. "
+                    "Supports common formats like MP3, M4A, WAV, WebM, OGG."
+                ),
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "url": {
+                            "type": "string",
+                            "description": "The public HTTPS URL of the audio file.",
+                        },
+                        "prompt": {
+                            "type": "string",
+                            "description": "Optional initial prompt to guide transcription (e.g. spelling of names).",
+                        },
+                        "language": {
+                            "type": "string",
+                            "description": "Optional ISO 639-1 language code (e.g. 'en', 'fr').",
+                        },
                     },
-                    "prompt": {
-                        "type": "string",
-                        "description": "Optional initial prompt to guide transcription (e.g. spelling of names).",
-                    },
-                    "language": {
-                        "type": "string",
-                        "description": "Optional ISO 639-1 language code (e.g. 'en', 'fr').",
-                    },
+                    "required": ["url"],
                 },
-                "required": ["url"],
             },
+            lambda args: self.transcribe_audio_url_tool(
+                url=str(args.get("url", "")),
+                prompt=args.get("prompt"),
+                language=args.get("language"),
+            ),
         )
 
     def transcribe_audio_url_tool(

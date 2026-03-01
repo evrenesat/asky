@@ -2,6 +2,93 @@
 
 For full detailed entries, see [DEVLOG_ARCHIVE.md](DEVLOG_ARCHIVE.md).
 
+## 2026-03-02: Follow-up Fixes for Implicit Session-Delete Research Cleanup
+
+- **Summary**: Addressed remaining robustness and documentation issues after introducing implicit research cleanup on `session delete`.
+- **Changes**:
+  - Updated `src/asky/storage/sqlite.py`:
+    - Changed `_cleanup_research_state()` to isolate failures per session ID during batch cleanup.
+    - If one session's vector-store cleanup fails, remaining session IDs still attempt cleanup.
+    - Added explicit initialization-failure logging for vector-store bootstrap path.
+  - Updated `tests/test_storage.py`:
+    - Stabilized `test_delete_sessions_real_research_cleanup` by creating the session first and inserting findings with `session_id=str(sid)`.
+    - Removed brittle assumption that the session ID is always `1`.
+  - Updated top-level help text in `src/asky/cli/main.py`:
+    - `session clean-research` description now matches real behavior (session findings/vectors and session corpus links/paths), avoiding misleading "research cache data" wording.
+- **Verification**:
+  - `uv run pytest tests/test_storage.py -q`
+  - `uv run pytest tests/test_cli.py -q`
+  - `uv run pytest`
+
+## 2026-03-01: Fixed False Positive Section Detection for Statistical Notation
+
+- **Summary**: `_looks_like_heading` was misidentifying statistical terms and citation strings as section headings in PDF documents. Strings like "ΔAICc", "AR(1)", "AR(2)", and "(SC): SEDAR; 2016." scored above the detection threshold because they have high uppercase/titlecase ratios and appear surrounded by blank lines in extracted PDF text.
+- **Changes**:
+  - Added `STAT_NOTATION_PATTERN` constant to `sections.py`.
+  - Added three early-return filters in `_looks_like_heading`:
+    - Lines containing ";" are rejected (citations, not headings).
+    - Lines matching `\b[A-Za-z]+\(\d` with ≤ 3 words are rejected (statistical model notation: AR(1), F(2,30), etc.).
+    - Single-token non-ASCII lines not in the document TOC are rejected (math symbols like ΔAICc, R²).
+  - Added 6 new tests in `test_research_sections.py`.
+- **Verification**: 1361 passed.
+- **Gotchas**: The "all of them" follow-up failure was a cascade — garbage sections have trivial content so `summarize_section` returned "too small" errors. Fixing detection resolves that flow.
+
+## 2026-03-01: Implicit Research Cleanup on Session Deletion
+
+- **Summary**: Implemented implicit research cleanup for all session deletion paths. Deleting a session now automatically removes its associated research findings, embeddings, and document upload links.
+- **Changes**:
+  - Modified `SQLiteHistoryRepository.delete_sessions` in `src/asky/storage/sqlite.py`:
+    - Added `_cleanup_research_state()` internal helper.
+    - Helper reordered to call `VectorStore.delete_findings_by_session()` **before** local SQLite writes (fixing SQLite lock conflicts/OperationalError).
+    - Helper uses `call_attr` (lazy loading) to invoke vector cleanup.
+    - Helper also clears matching rows from the `session_uploaded_documents` table in the main database.
+  - Added missing `import logging` and `logger` to `src/asky/storage/sqlite.py`.
+  - Updated CLI help text in `src/asky/cli/main.py` (both top-level and grouped sub-help) for `session delete` and the `--delete-sessions` flag to reflect research data cleanup.
+- **Documentation**:
+  - Updated `ARCHITECTURE.md` to reflect that session deletion includes research cleanup.
+  - Updated `src/asky/storage/AGENTS.md` and `src/asky/cli/AGENTS.md` with the new behavior details.
+- **Verification**:
+  - Added `test_delete_sessions_implicit_research_cleanup`, `test_delete_sessions_implicit_research_cleanup_failure_resilience`, and `test_delete_sessions_real_research_cleanup` to `tests/test_storage.py`.
+  - `test_delete_sessions_real_research_cleanup` specifically verifies that SQLite lock ordering is correct and findings are actually deleted from the common DB file.
+  - Verified with `uv run pytest tests/test_storage.py -q`.
+  - Verified full suite passes.
+
+## 2026-03-01: Auto Chunk Target for Hierarchical Summarization
+
+- **Summary**: Added sentinel-based auto sizing for hierarchical summarization chunk targets.
+- **Changes**:
+  - Updated `src/asky/data/config/general.toml` default:
+    - `summarizer.hierarchical_chunk_target_chars = 0`
+  - Updated `src/asky/config/__init__.py` to treat `hierarchical_chunk_target_chars`
+    as an int-safe value with `0` as the default sentinel.
+  - Updated `src/asky/summarization.py`:
+    - Added runtime resolution for effective chunk target.
+    - If configured value is `> 0`, uses it directly.
+    - If configured value is `0`, auto-resolves to `SUMMARIZATION_INPUT_LIMIT`.
+    - If configured value is negative, logs a warning and falls back to
+      `SUMMARIZATION_INPUT_LIMIT`.
+  - Added tests in `tests/test_summarization.py` to cover:
+    - `0` sentinel auto-resolution path
+    - explicit non-zero preservation path
+    - negative-value fallback path
+- **Documentation**:
+  - Updated `src/asky/config/AGENTS.md` with sentinel behavior.
+  - Updated `ARCHITECTURE.md` summarization section with auto-resolution note.
+- **Verification**:
+  - `uv run pytest tests/test_summarization.py -q`
+  - `uv run pytest tests/test_config.py -q`
+  - `uv run pytest`
+
+## 2026-03-01: Fixed Transcriber ToolRegistry Registration Contract
+
+- **Summary**: Fixed runtime transcriber tool registration failures caused by an outdated `ToolRegistry.register(...)` call shape.
+- **Changes**:
+  - Updated `voice_transcriber` and `image_transcriber` `TOOL_REGISTRY_BUILD` hooks to use `register(name, schema, executor)`.
+  - Added dict-argument adapter executors so `ToolRegistry.dispatch()` can invoke transcriber tools correctly from model tool calls.
+  - Added regression coverage in `tests/test_transcriber_tools.py` to validate real `ToolRegistry.dispatch()` behavior for both transcriber tools.
+- **Verification**:
+  - Targeted: `uv run pytest tests/test_transcriber_tools.py tests/test_voice_transcription.py tests/test_image_transcription.py -q`
+  - Full suite: `uv run pytest` (1350 passed).
 
 ## 2026-03-01: Removed Background Summarization, Added On-Demand Summaries, and Fixed Shell Lock Persistence
 

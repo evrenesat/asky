@@ -652,3 +652,172 @@ def test_uploaded_documents_dedupe_and_session_links(mock_db_path):
     assert cleared == 1
     assert repo.list_session_uploaded_documents(session_id=session_a) == []
     assert len(repo.list_session_uploaded_documents(session_id=session_b)) == 1
+
+
+def test_delete_sessions_implicit_research_cleanup(mock_db_path):
+    from asky.storage.sqlite import SQLiteHistoryRepository
+    from unittest.mock import patch, MagicMock
+
+    repo = SQLiteHistoryRepository()
+    init_db()
+
+    # Create a session with some messages and an upload link
+    sid = repo.create_session("model", name="cleanup-test")
+    repo.save_message(sid, "user", "hi", "hi", 10)
+
+    # Link an uploaded document
+    doc = repo.upsert_uploaded_document(
+        content_hash="h1",
+        file_path="p1",
+        original_filename="f1",
+        file_extension=".txt",
+        mime_type="text/plain",
+        file_size=10,
+    )
+    repo.link_session_uploaded_document(session_id=sid, document_id=doc.id)
+
+    assert len(repo.list_session_uploaded_documents(session_id=sid)) == 1
+
+    # Mock VectorStore to avoid real Chroma calls or heavy imports during standard storage test
+    with patch("asky.lazy_imports.call_attr") as mock_call_attr:
+        mock_vs = MagicMock()
+        mock_call_attr.return_value = mock_vs
+
+        # Act: Delete the session
+        delete_sessions(str(sid))
+
+        # 1. Verify messages and session are gone
+        assert repo.get_session_by_id(sid) is None
+        assert repo.get_session_messages(sid) == []
+
+        # 2. Verify research cleanup was called
+        mock_call_attr.assert_called_with(
+            "asky.research.vector_store", "get_vector_store"
+        )
+        mock_vs.delete_findings_by_session.assert_called_with(str(sid))
+
+        # 3. Verify session upload links are also gone (in the same DB)
+        assert repo.list_session_uploaded_documents(session_id=sid) == []
+
+
+def test_delete_sessions_implicit_research_cleanup_failure_resilience(mock_db_path):
+    from asky.storage.sqlite import SQLiteHistoryRepository
+    from unittest.mock import patch, MagicMock
+
+    repo = SQLiteHistoryRepository()
+    init_db()
+
+    sid = repo.create_session("model", name="resilience-test")
+
+    with patch("asky.lazy_imports.call_attr") as mock_call_attr:
+        mock_vs = MagicMock()
+        mock_vs.delete_findings_by_session.side_effect = Exception("Chroma boom")
+        mock_call_attr.return_value = mock_vs
+
+        # Act: Delete the session should NOT raise even if research cleanup fails
+        delete_sessions(str(sid))
+
+        # Verify session is still deleted despite the research cleanup failure
+        assert repo.get_session_by_id(sid) is None
+
+
+def test_delete_sessions_cleanup_continues_per_session_on_failure(mock_db_path):
+    from asky.storage.sqlite import SQLiteHistoryRepository
+    from unittest.mock import patch, MagicMock
+
+    repo = SQLiteHistoryRepository()
+    init_db()
+
+    sid1 = repo.create_session("model", name="batch-cleanup-1")
+    sid2 = repo.create_session("model", name="batch-cleanup-2")
+
+    with patch("asky.lazy_imports.call_attr") as mock_call_attr:
+        mock_vs = MagicMock()
+
+        def _delete_side_effect(session_id: str):
+            if session_id == str(sid1):
+                raise Exception("first cleanup failed")
+            return 1
+
+        mock_vs.delete_findings_by_session.side_effect = _delete_side_effect
+        mock_call_attr.return_value = mock_vs
+
+        delete_sessions(f"{sid1},{sid2}")
+
+        # Cleanup attempted for both sessions even though first one failed
+        attempted = [call.args[0] for call in mock_vs.delete_findings_by_session.call_args_list]
+        assert attempted == [str(sid1), str(sid2)]
+        assert repo.get_session_by_id(sid1) is None
+        assert repo.get_session_by_id(sid2) is None
+
+
+def test_delete_sessions_real_research_cleanup(mock_db_path):
+    """Semi-real test verifying that findings are actually deleted from the DB
+    and that we don't hit SQLite locking issues when both storage and vector_store
+    touch the same file.
+    """
+    from asky.storage.sqlite import SQLiteHistoryRepository
+    from asky.research.cache import ResearchCache
+    from asky.research.vector_store import VectorStore
+    from unittest.mock import patch, MagicMock
+
+    # Reset singletons to avoid pollution
+    ResearchCache._instance = None
+    VectorStore._instance = None
+
+    try:
+        repo = SQLiteHistoryRepository()
+        init_db()
+
+        # Initialize research findings table in the same mock DB
+        cache = ResearchCache(db_path=str(mock_db_path))
+        cache.init_db()
+
+        # Create the session in repo first to avoid ID-order assumptions
+        sid = repo.create_session("model", name="real-cleanup-test")
+
+        # Insert a finding via raw SQL for this session
+        conn = sqlite3.connect(mock_db_path)
+        c = conn.cursor()
+        c.execute(
+            "INSERT INTO research_findings (finding_text, session_id, created_at) VALUES (?, ?, ?)",
+            ("fact1", str(sid), "2026-03-01T23:59:00"),
+        )
+        conn.commit()
+        conn.close()
+
+        # Bind vector cleanup to the same mocked DB file used by storage.
+        vector_store = VectorStore(
+            db_path=str(mock_db_path),
+            chroma_persist_directory=str(mock_db_path.parent / "chroma"),
+        )
+
+        # Mock Chroma collection only to avoid env/network deps
+        with (
+            patch(
+                "asky.research.vector_store.VectorStore._get_chroma_collection"
+            ) as mock_chroma,
+            patch("asky.lazy_imports.call_attr", return_value=vector_store),
+        ):
+            mock_chroma.return_value = MagicMock()
+            # Act: Delete the session
+            # This triggers the code that previously had lock issues
+            delete_sessions(str(sid))
+
+        # Verify session is gone
+        assert repo.get_session_by_id(sid) is None
+
+        # Verify research findings are gone via REAL DB CHECK
+        conn = sqlite3.connect(mock_db_path)
+        c = conn.cursor()
+        c.execute(
+            "SELECT count(*) FROM research_findings WHERE session_id = ?", (str(sid),)
+        )
+        count = c.fetchone()[0]
+        conn.close()
+
+        assert count == 0, f"Expected 0 findings for session {sid}, found {count}"
+
+    finally:
+        ResearchCache._instance = None
+        VectorStore._instance = None

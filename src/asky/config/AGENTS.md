@@ -91,6 +91,11 @@ Current bundled shortlist defaults in `research.toml` set a wider pre-LLM budget
 (`search_result_count=40`, `max_candidates=40`, `max_fetch_urls=20`) for richer
 candidate pools while keeping fetch cost bounded.
 
+Summarization chunk target behavior:
+- `summarizer.hierarchical_chunk_target_chars = 0` enables auto resolution.
+- Auto mode resolves the runtime target to `SUMMARIZATION_INPUT_LIMIT`.
+- Non-zero values are used as explicit chunk targets.
+
 ### Custom Extensions
 
 | Constant              | Description                                                 |
