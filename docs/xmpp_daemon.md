@@ -1,7 +1,46 @@
 # XMPP Daemon Mode
 
-`asky` can run as an XMPP client so authorized users can use chat messages as a remote interface.
-On macOS with `rumps` installed, daemon mode is controlled from a menubar app.
+## What this does
+
+`asky --daemon` starts asky as a background process that logs into an XMPP account and waits for messages. You can then send it queries from any XMPP client app - on your phone, tablet, or another computer - and get answers back in the chat.
+
+XMPP (also called Jabber) is an open messaging protocol. It works like email: addresses look like `user@server.com`, and many different clients and servers can talk to each other. You need two XMPP accounts: one for the bot (that asky logs into), and one for yourself (to send messages from).
+
+**Free XMPP account options:**
+- [jabber.at](https://jabber.at) - free, no signup friction
+- [conversations.im](https://account.conversations.im/register/) - free, optimized for mobile clients
+
+**Recommended XMPP client apps:**
+- Android: [Conversations](https://conversations.im/) or [Cheogram](https://cheogram.com/)
+- iOS: [Monal](https://monal-im.org/) or [Siskin IM](https://siskin.im/)
+- Desktop: [Gajim](https://gajim.org/) (Windows, Linux, macOS), [Beagle IM](https://beagle.im/) (macOS)
+
+For file attachments (sending documents to asky for analysis), your client app needs to support XEP-0363 HTTP file upload. Conversations, Cheogram, Monal, and Gajim all support this.
+
+**macOS:** With `rumps` installed, daemon mode adds a menu bar icon for controlling start/stop and voice on/off. On other platforms, the daemon runs in the foreground.
+
+<!-- SCREENSHOT: macOS menu bar showing the asky icon and its dropdown menu with Start XMPP / Stop XMPP / Enable Voice / Enable Run at Login options -->
+
+## What it looks like in practice
+
+Once the daemon is running, you send messages to the bot account from your XMPP client:
+
+```
+You:   What is the capital of Japan?
+asky:  Tokyo.
+
+You:   \research Give me a summary of recent fusion energy news
+asky:  [researches web, sends back multi-paragraph summary]
+
+You:   [sends a voice message]
+asky:  Transcript ready: "what are the key points in the document I sent earlier"
+       Reply "yes" to run this as a query, or "no" to skip.
+
+You:   yes
+asky:  [runs the query against indexed document and responds]
+```
+
+Only contacts listed in `allowed_jids` get responses. All others are silently ignored.
 
 ## Install Optional Dependencies
 
@@ -20,15 +59,32 @@ uv pip install "asky-cli[mac]"
 
 ## Configure `xmpp.toml`
 
+Before configuring, have these ready:
+
+1. A bot XMPP account for asky to log into (e.g., `mybot@jabber.at`)
+2. Your own XMPP account to send messages from (e.g., `me@jabber.at`)
+3. The bot account's password stored in an environment variable
+
 Main settings live in `~/.config/asky/xmpp.toml`:
 
 ```toml
 [xmpp]
 enabled = true
-jid = "bot@example.com"
+
+# JID = Jabber ID, the XMPP address of the bot account asky logs into
+jid = "mybot@jabber.at"
+
+# Name of the environment variable that holds the bot account's password
 password_env = "ASKY_XMPP_PASSWORD"
+
+# An arbitrary label for this connection (visible in some XMPP clients)
 resource = "asky"
-allowed_jids = ["alice@example.com/phone"]
+
+# JIDs allowed to send queries. All others are silently ignored.
+# Bare JID (user@server) allows any device/client for that user.
+# Full JID (user@server/resource) pins one specific client session.
+allowed_jids = ["me@jabber.at"]
+
 command_prefix = "/asky"
 interface_planner_include_command_reference = true
 response_chunk_chars = 3000
@@ -41,14 +97,17 @@ voice_hf_token_env = "HF_TOKEN"
 voice_auto_yes_without_interface_model = true
 ```
 
-Important constraints:
+Set the password in your environment (do not put it directly in the file):
 
-- `allowed_jids` accepts both:
-  - bare JID (`alice@example.com`) to allow any resource.
-  - full JID (`alice@example.com/phone`) to pin one exact resource.
+```bash
+export ASKY_XMPP_PASSWORD="your-bot-account-password"
+```
+
+Other constraints:
+
 - Unauthorized senders are ignored with no response.
-- Only direct `chat` stanzas are processed.
-- Keep `password` out of files in production and use `password_env`.
+- Only direct `chat` messages are processed. Group chat is not supported.
+- Use `asky --config daemon edit` for an interactive editor instead of editing the file manually.
 
 ## Run Daemon
 

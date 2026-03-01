@@ -1,75 +1,99 @@
 # User Memory & Elephant Mode
 
-**asky** features a persistent memory system that evolves with your conversations. Instead of starting from scratch every time, asky can remember facts, preferences, and project details across different sessions and terminal invocations.
+asky can save facts across sessions and inject them into future queries automatically. This page explains how the memory system works, how to save things to it, and how to manage what's stored.
 
-## Two Types of Memory Concepts
+## Two scopes of memory
 
-Memory in asky operates on two levels:
+Memory in asky has two scopes:
 
-1. **Session-Scoped Fact Extraction:** Memories learned in a specific session (e.g., using `--sticky-session "ProjectX"`) are isolated to that session by default. This is perfect for project-specific contexts that you don't want leaking into your general queries.
-2. **Global Memory:** Facts that are universally true about you (e.g., "I prefer Python", "My name is Alice") are stored globally and injected into every single conversation you have with asky, regardless of the active session.
+1. **Session-scoped** - memories saved while inside a named session (e.g., `--sticky-session "ProjectX"`) stay in that session and don't appear in unrelated queries.
+2. **Global** - memories that apply everywhere, regardless of which session is active. Use these for things that are always true about you: your preferred language, your name, your timezone, etc.
 
-## How to Save Memories
+## How to save memories
 
-There are three main ways asky learns:
+Three ways to save a memory:
 
-### 1. Manual Explicit Prompts (Global)
+### 1. Direct command (global scope)
 
-You can explicitly command asky to remember something globally by using a trigger phrase (like "remember globally:" or "global memory:").
+Prefix your message with `remember globally:` or `global memory:`:
 
 ```bash
 asky "remember globally: I always prefer clean architecture"
 ```
 
-The CLI detects this trigger, strips it from the prompt, and extracts the fact directly into your global knowledge base. This guarantees the fact will be available in all future sessions.
-
-### 2. Manual Agent Action (Session or Global)
-
-During any standard conversation, the LLM has access to a `save_memory` tool. If it detects a strong user preference or an important fact during your chat, it can proactively decide to save it. If you are in a session, it saves it to the session scope. If you are not in a session, it saves it globally.
+The prefix is the trigger - it must appear at the start of the message. The prefix is stripped before saving.
 
 ```bash
-asky "For this project, we are using Python 3.12."
-# The agent might autonomously call `save_memory` with this fact.
+# Works - prefix at start:
+asky "remember globally: I deploy to Kubernetes"
+
+# Does not trigger memory save - prefix is not at the start:
+asky "Can you remember globally that I use dark mode?"
 ```
 
-### 3. Elephant Mode (Auto-Extraction)
+### 2. Model saves automatically during conversation
 
-Elephant mode (`-em` or `--elephant-mode`) is a background feature that automates memory building. When active, after your conversation turn finishes, asky spins up a background daemon thread. This thread reviews the conversation that just happened and extracts key facts specifically for the current session.
+The model has access to a `save_memory` tool and can call it when it spots a clear user preference or fact. Whether it does this depends on the model and what you said.
 
 ```bash
-# Elephant mode requires an active session to be useful
-asky -ss "API Rewrite" -em "Let's plan the new endpoint. It should use gRPC."
+asky "For this project, we use Python 3.12 with strict typing."
+# The model may call save_memory with this fact.
 ```
 
-_Note: Because extraction runs in the background, it never blocks you from getting your answer quickly._
+In verbose mode (`-v`), you will see the tool call if it happens.
 
-## How Memory is Recalled
+### 3. Elephant mode - background extraction after each turn
 
-Every time you send a query, asky searches your saved memories for highly relevant facts using a cosine similarity threshold.
+`-em` (`--elephant-mode`) activates background extraction. After each turn, a background thread reviews the conversation and pulls out facts to save to the current session's memory.
 
-If it finds relevant memories (either Global memories, or memories scoped to your current active session), it invisibly prepends them to the System Prompt under a `## User Memory` section. The LLM then uses this context to tailor its response to you.
+```bash
+asky -ss "API Rewrite" -em "We decided to use gRPC for the new endpoint."
+```
 
-_Exception: If you run asky in Lean Mode (`-L`), memory recall is skipped to provide a completely vanilla model response._
+Extraction runs after your answer arrives - it doesn't slow down the response.
 
-## Managing Memories
+## How recall works
 
-You can manage your saved memories directly from the CLI:
+Before each query, asky searches your saved memories using semantic similarity. Any memories scoring above the recall threshold are injected into the system prompt under a `## User Memory` section. The model sees them and uses them in the answer.
 
-- **List all memories:** Understand what asky currently knows about you.
-  ```bash
-  asky --list-memories
-  ```
-- **Delete a specific memory:** Use the ID provided by the list command.
-  ```bash
-  asky --delete-memory 5
-  ```
-- **Clear everything:** Wipe all saved memories entirely.
-  ```bash
-  asky --clear-memories
-  ```
+To see this in action, run with `-v` (verbose):
 
-## Technical Details
+```bash
+asky -v "what language should I use?"
+```
 
-- **Storage:** Memories are stored as raw text in a local SQLite table (`user_memories`).
-- **Indexing:** They are simultaneously indexed into a ChromaDB vector database collection (`asky_user_memories`) for fast semantic retrieval.
-- **Deduplication:** When a new memory is saved, asky checks for existing facts with a very high similarity score (>0.90). If a duplicate is found, it updates the existing memory rather than creating redundant entries.
+If relevant memories exist, you'll see the `## User Memory` block in the output.
+
+Memory recall is skipped in lean mode (`-L`).
+
+## Concrete example
+
+**Session 1 - save a fact:**
+
+```bash
+asky "remember globally: I use Python 3.12 with uv for package management"
+```
+
+<!-- CAPTURE: run this command and paste the full terminal output here, including any tool call or confirmation lines -->
+
+**Session 2 - different terminal, no flags:**
+
+```bash
+asky -v "how should I set up a new project?"
+```
+
+<!-- CAPTURE: run this command and paste the output here - the ## User Memory section in the verbose output should show the saved fact being injected -->
+
+## Managing memories
+
+```bash
+asky memory list          # see all saved memories with IDs and scopes
+asky --delete-memory 5    # delete by ID
+asky --clear-memories     # delete all memories (no undo)
+```
+
+## Technical details
+
+- Memories are stored in a local SQLite table (`user_memories`).
+- Semantic indexing uses ChromaDB (`asky_user_memories` collection) for retrieval.
+- Deduplication: before saving, asky checks for existing memories with similarity > 0.90. If a near-duplicate is found, the existing entry is updated instead of creating a new one.
