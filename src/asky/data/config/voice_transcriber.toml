@@ -1,0 +1,19 @@
+[voice_transcriber]
+enabled = false
+workers = 1
+max_size_mb = 500
+model = "mlx-community/whisper-turbo-mlx"
+language = ""
+hf_token_env = "HF_TOKEN"
+hf_token = ""
+tools_enabled = true
+ingestion_enabled = true
+allowed_mime_types = [
+    "audio/x-m4a",
+    "audio/mpeg",
+    "audio/mp4",
+    "audio/wav",
+    "audio/webm",
+    "audio/ogg",
+    "audio/flac",
+]

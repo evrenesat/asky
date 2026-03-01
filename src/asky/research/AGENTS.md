@@ -23,7 +23,7 @@ RAG-powered research mode with caching, semantic search, and persistent memory.
 | `shortlist_types.py`             | Shared shortlist datatypes and callback aliases |
 | `corpus_context.py`              | Corpus-aware context extraction for shortlist query enrichment |
 | `sections.py`                    | Deterministic section indexing + strict matching |
-| `adapters.py`                    | Built-in local-source loading helpers           |
+| `adapters.py`                    | Local-source loading with plugin extension support |
 
 ## Research Tools (`tools.py`)
 
@@ -265,7 +265,7 @@ context cutoff.
 
 ## Local Loader (`adapters.py`)
 
-`adapters.py` is now a built-in local-source loader only (no custom adapter routing).
+`adapters.py` provides local-source loading and can be extended by plugins via the `LOCAL_SOURCE_HANDLER_REGISTER` hook.
 
 - Accepted targets: `local://...`, `file://...`, absolute/relative local paths.
 - Local loading is enabled only when `research.local_document_roots` is configured.
@@ -276,6 +276,7 @@ context cutoff.
 - File targets (read/discover): normalize to plain text for cache/indexing.
   - Text-like: `.txt`, `.md`, `.markdown`, `.html`, `.htm`, `.json`, `.csv`
   - Document-like: `.pdf`, `.epub` via PyMuPDF
+  - **Plugin-provided**: any extension registered by plugins (e.g. audio/image via transcriber plugins).
 - Directory targets are discovery-only in v1; select returned file links for content reads.
 
 ### Local Target Guardrails in Research Tools

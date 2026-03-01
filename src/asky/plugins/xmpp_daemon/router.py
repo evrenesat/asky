@@ -5,28 +5,22 @@ from __future__ import annotations
 import hashlib
 import logging
 from pathlib import Path
-from typing import Iterable, Optional
+from typing import Any, Iterable, Optional, Protocol
 
 from asky.config import (
     XMPP_ALLOWED_JIDS,
     XMPP_COMMAND_PREFIX,
-    XMPP_IMAGE_STORAGE_DIR,
-    XMPP_VOICE_STORAGE_DIR,
 )
 from asky.plugins.xmpp_daemon.command_executor import CommandExecutor
-from asky.plugins.xmpp_daemon.image_transcriber import (
-    ImageTranscriber,
-    ImageTranscriptionJob,
-)
 from asky.daemon.interface_planner import (
     ACTION_COMMAND,
     ACTION_CHAT,
     InterfacePlanner,
 )
 from asky.plugins.xmpp_daemon.transcript_manager import TranscriptManager
-from asky.plugins.xmpp_daemon.voice_transcriber import (
-    TranscriptionJob,
-    VoiceTranscriber,
+from asky.plugins.xmpp_daemon.constants import (
+    XMPP_IMAGE_STORAGE_DIR,
+    XMPP_VOICE_STORAGE_DIR,
 )
 from asky.cli.presets import expand_preset_invocation, list_presets_text
 
@@ -34,6 +28,20 @@ logger = logging.getLogger(__name__)
 YES_TOKENS = {"yes", "y"}
 NO_TOKENS = {"no", "n"}
 SESSION_COMMAND_PREFIX = "/session"
+
+
+class VoiceWorker(Protocol):
+    enabled: bool
+
+    def enqueue(self, job: Any) -> None:
+        ...
+
+
+class ImageWorker(Protocol):
+    enabled: bool
+
+    def enqueue(self, job: Any) -> None:
+        ...
 
 
 class DaemonRouter:
@@ -45,8 +53,8 @@ class DaemonRouter:
         transcript_manager: TranscriptManager,
         command_executor: CommandExecutor,
         interface_planner: InterfacePlanner,
-        voice_transcriber: VoiceTranscriber,
-        image_transcriber: ImageTranscriber,
+        voice_transcriber: VoiceWorker,
+        image_transcriber: ImageWorker,
         command_prefix: str = XMPP_COMMAND_PREFIX,
         allowed_jids: Optional[list[str]] = None,
         voice_auto_yes_without_interface_model: bool = True,
@@ -280,13 +288,13 @@ class DaemonRouter:
             audio_path=str(file_path),
         )
         self.voice_transcriber.enqueue(
-            TranscriptionJob(
-                jid=conversation_id,
-                transcript_id=pending.session_transcript_id,
-                audio_url=audio_url,
-                audio_path=str(file_path),
-                sender_jid=effective_sender,
-            )
+            {
+                "jid": conversation_id,
+                "transcript_id": pending.session_transcript_id,
+                "audio_url": audio_url,
+                "audio_path": str(file_path),
+                "sender_jid": effective_sender,
+            }
         )
         return (
             f"Queued transcription job #at{pending.session_transcript_id} for audio #a{pending.session_transcript_id}. "
@@ -334,12 +342,12 @@ class DaemonRouter:
             image_path=str(file_path),
         )
         self.image_transcriber.enqueue(
-            ImageTranscriptionJob(
-                jid=conversation_id,
-                image_id=pending.session_image_id,
-                image_url=image_url,
-                image_path=str(file_path),
-            )
+            {
+                "jid": conversation_id,
+                "image_id": pending.session_image_id,
+                "image_url": image_url,
+                "image_path": str(file_path),
+            }
         )
         return (
             f"Queued image transcription #it{pending.session_image_id} for image #i{pending.session_image_id}. "

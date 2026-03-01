@@ -27,6 +27,21 @@ enabled = true
 module = "asky.plugins.xmpp_daemon.plugin"
 class = "XMPPDaemonPlugin"
 capabilities = ["daemon_transport"]
+dependencies = ["voice_transcriber", "image_transcriber"]
+
+[plugin.voice_transcriber]
+enabled = true
+module = "asky.plugins.voice_transcriber.plugin"
+class = "VoiceTranscriberPlugin"
+capabilities = ["capability", "local_source_handler", "tool_registry"]
+config_file = "voice_transcriber.toml"
+
+[plugin.image_transcriber]
+enabled = true
+module = "asky.plugins.image_transcriber.plugin"
+class = "ImageTranscriberPlugin"
+capabilities = ["capability", "local_source_handler", "tool_registry"]
+config_file = "image_transcriber.toml"
 
 [plugin.push_data]
 enabled = true

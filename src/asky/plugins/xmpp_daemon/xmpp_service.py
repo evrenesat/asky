@@ -15,12 +15,6 @@ from asky.config import (
     INTERFACE_PLANNER_SYSTEM_PROMPT,
     XMPP_ALLOWED_JIDS,
     XMPP_COMMAND_PREFIX,
-    XMPP_IMAGE_ALLOWED_MIME_TYPES,
-    XMPP_IMAGE_ENABLED,
-    XMPP_IMAGE_MAX_SIZE_MB,
-    XMPP_IMAGE_PROMPT,
-    XMPP_IMAGE_STORAGE_DIR,
-    XMPP_IMAGE_WORKERS,
     XMPP_INTERFACE_PLANNER_INCLUDE_COMMAND_REFERENCE,
     XMPP_JID,
     XMPP_PASSWORD,
@@ -30,16 +24,6 @@ from asky.config import (
     XMPP_RESPONSE_CHUNK_CHARS,
     XMPP_TRANSCRIPT_MAX_PER_SESSION,
     XMPP_CLIENT_CAPABILITIES,
-    XMPP_VOICE_ALLOWED_MIME_TYPES,
-    XMPP_VOICE_AUTO_YES_WITHOUT_INTERFACE_MODEL,
-    XMPP_VOICE_ENABLED,
-    XMPP_VOICE_HF_TOKEN,
-    XMPP_VOICE_HF_TOKEN_ENV,
-    XMPP_VOICE_LANGUAGE,
-    XMPP_VOICE_MAX_SIZE_MB,
-    XMPP_VOICE_MODEL,
-    XMPP_VOICE_STORAGE_DIR,
-    XMPP_VOICE_WORKERS,
 )
 from asky.daemon.errors import DaemonUserError
 from asky.plugins.xmpp_daemon.adhoc_commands import AdHocCommandHandler
@@ -54,7 +38,6 @@ from asky.plugins.xmpp_daemon.document_ingestion import (
     redact_document_urls,
     split_document_urls,
 )
-from asky.plugins.xmpp_daemon.image_transcriber import ImageTranscriber
 from asky.daemon.interface_planner import InterfacePlanner
 from asky.plugins.xmpp_daemon.query_progress import (
     QUERY_STATUS_UPDATE_SECONDS,
@@ -63,8 +46,12 @@ from asky.plugins.xmpp_daemon.query_progress import (
 )
 from asky.plugins.xmpp_daemon.router import DaemonRouter
 from asky.plugins.xmpp_daemon.transcript_manager import TranscriptManager
-from asky.plugins.xmpp_daemon.voice_transcriber import VoiceTranscriber
 from asky.plugins.xmpp_daemon.xmpp_client import AskyXMPPClient
+from asky.plugins.xmpp_daemon.constants import (
+    XMPP_IMAGE_STORAGE_DIR,
+    XMPP_VOICE_STORAGE_DIR,
+    XMPP_VOICE_AUTO_YES_WITHOUT_INTERFACE_MODEL,
+)
 
 logger = logging.getLogger(__name__)
 URL_PATTERN = re.compile(r"https?://[^\s<>\"]+")
@@ -110,27 +97,26 @@ class XMPPService:
             include_command_reference=XMPP_INTERFACE_PLANNER_INCLUDE_COMMAND_REFERENCE,
             double_verbose=self.double_verbose,
         )
-        self.voice_transcriber = VoiceTranscriber(
-            enabled=XMPP_VOICE_ENABLED,
-            workers=XMPP_VOICE_WORKERS,
-            max_size_mb=XMPP_VOICE_MAX_SIZE_MB,
-            model=XMPP_VOICE_MODEL,
-            language=XMPP_VOICE_LANGUAGE,
-            storage_dir=XMPP_VOICE_STORAGE_DIR,
-            hf_token_env=XMPP_VOICE_HF_TOKEN_ENV,
-            hf_token=XMPP_VOICE_HF_TOKEN,
-            allowed_mime_types=XMPP_VOICE_ALLOWED_MIME_TYPES,
+
+        from asky.plugins import PLUGIN_CAPABILITY_REGISTER, PluginCapabilityRegisterContext
+        cap_ctx = PluginCapabilityRegisterContext()
+        self.plugin_runtime.hooks.invoke(PLUGIN_CAPABILITY_REGISTER, cap_ctx)
+
+        voice_service = cap_ctx.capabilities.get("voice_transcriber")
+        if not voice_service:
+            # Note: We fail here if XMPP is enabled but transcribers are missing
+            raise RuntimeError("Required capability 'voice_transcriber' not found.")
+        self.voice_transcriber = voice_service.create_worker(
             completion_callback=self._on_transcription_complete,
+            enabled=True,
         )
-        self.image_transcriber = ImageTranscriber(
-            enabled=XMPP_IMAGE_ENABLED,
-            workers=XMPP_IMAGE_WORKERS,
-            max_size_mb=XMPP_IMAGE_MAX_SIZE_MB,
-            model_alias=DEFAULT_IMAGE_MODEL,
-            prompt_text=XMPP_IMAGE_PROMPT,
-            storage_dir=XMPP_IMAGE_STORAGE_DIR,
-            allowed_mime_types=XMPP_IMAGE_ALLOWED_MIME_TYPES,
+
+        image_service = cap_ctx.capabilities.get("image_transcriber")
+        if not image_service:
+            raise RuntimeError("Required capability 'image_transcriber' not found.")
+        self.image_transcriber = image_service.create_worker(
             completion_callback=self._on_image_transcription_complete,
+            enabled=True,
         )
 
         self._table_renderer = ASCIITableRenderer()
@@ -151,8 +137,8 @@ class XMPPService:
         self._adhoc_handler = AdHocCommandHandler(
             command_executor=self.command_executor,
             router=self.router,
-            voice_enabled=XMPP_VOICE_ENABLED,
-            image_enabled=XMPP_IMAGE_ENABLED,
+            voice_enabled=True,
+            image_enabled=True,
             query_dispatch_callback=self._schedule_adhoc_query,
         )
         self._jid_queues: dict[str, queue.Queue[Callable[[], None]]] = {}

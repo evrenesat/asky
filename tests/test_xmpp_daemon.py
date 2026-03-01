@@ -113,7 +113,8 @@ def test_split_document_urls_detects_supported_types():
     assert "https://example.com/a.pdf" in doc_urls
     assert "https://example.com/b.epub?download=1" in doc_urls
     assert "https://example.com/download?filename=paper.md" in doc_urls
-    assert "https://example.com/c.jpg" not in doc_urls
+    assert "https://example.com/c.jpg" in doc_urls
+
     assert "http://example.com/d.pdf" in doc_urls
 
 

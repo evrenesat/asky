@@ -29,12 +29,8 @@ def test_xmpp_and_interface_config_params():
         INTERFACE_MODEL,
         XMPP_COMMAND_PREFIX,
         XMPP_CLIENT_CAPABILITIES,
-        XMPP_IMAGE_ENABLED,
-        XMPP_IMAGE_PROMPT,
         XMPP_INTERFACE_PLANNER_INCLUDE_COMMAND_REFERENCE,
         XMPP_RESPONSE_CHUNK_CHARS,
-        XMPP_VOICE_AUTO_YES_WITHOUT_INTERFACE_MODEL,
-        XMPP_VOICE_HF_TOKEN_ENV,
     )
 
     assert isinstance(INTERFACE_MODEL, str)
@@ -45,14 +41,8 @@ def test_xmpp_and_interface_config_params():
     assert XMPP_COMMAND_PREFIX
     assert isinstance(XMPP_CLIENT_CAPABILITIES, dict)
     assert isinstance(XMPP_INTERFACE_PLANNER_INCLUDE_COMMAND_REFERENCE, bool)
-    assert isinstance(XMPP_IMAGE_ENABLED, bool)
-    assert isinstance(XMPP_IMAGE_PROMPT, str)
-    assert XMPP_IMAGE_PROMPT
     assert isinstance(XMPP_RESPONSE_CHUNK_CHARS, int)
     assert XMPP_RESPONSE_CHUNK_CHARS >= 64
-    assert isinstance(XMPP_VOICE_HF_TOKEN_ENV, str)
-    assert XMPP_VOICE_HF_TOKEN_ENV
-    assert isinstance(XMPP_VOICE_AUTO_YES_WITHOUT_INTERFACE_MODEL, bool)
 
 
 def test_invalid_config_exits(tmp_path):

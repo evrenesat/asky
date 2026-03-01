@@ -14,8 +14,6 @@ Built-in plugin providing the XMPP transport for asky. This package handles natu
 | `interface_planner.py`       | `InterfacePlanner` — interface-model planner for natural-language routing  |
 | `session_profile_manager.py` | `SessionProfileManager` — persists room/session bindings and overrides     |
 | `transcript_manager.py`      | `TranscriptManager` — lifecycle of audio/image transcriptions              |
-| `voice_transcriber.py`       | `VoiceTranscriber` — local (SFSpeech) or remote (HF) voice jobs            |
-| `image_transcriber.py`       | `ImageTranscriber` — multimodal LLM transcription jobs                     |
 | `document_ingestion.py`      | `DocumentIngestionService` — auto-ingestion of uploaded document URLs      |
 | `adhoc_commands.py`          | `AdHocCommandHandler` — XEP-0050 ad-hoc command registration and dispatch  |
 | `xmpp_formatting.py`         | Markdown-to-XHTML and ASCII table rendering for outgoing messages          |
@@ -23,6 +21,11 @@ Built-in plugin providing the XMPP transport for asky. This package handles natu
 | `query_progress.py`          | Background status updates (XEP-0308) for in-flight queries                 |
 
 ---
+
+## Transcription Capabilities
+
+Voice and image transcription are provided by the `voice_transcriber` and `image_transcriber` plugins respectively. `XMPPService` resolves these capabilities via the `PLUGIN_CAPABILITY_REGISTER` hook at runtime.
+`router.py` consumes these workers via a minimal queueing interface (`enabled` + `enqueue`) and does not import transcriber plugin job/worker types directly.
 
 ## Authorization Model
 

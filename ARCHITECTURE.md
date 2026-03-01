@@ -67,6 +67,16 @@ graph TB
         daemon_chunking["chunking.py<br/>Outbound Chunking"]
     end
 
+    subgraph VoicePlugin["Voice Transcriber (plugins/voice_transcriber/)"]
+        voice_plugin["plugin.py<br/>VoiceTranscriberPlugin"]
+        voice_service["service.py<br/>VoiceTranscriberService + Workers"]
+    end
+
+    subgraph ImagePlugin["Image Transcriber (plugins/image_transcriber/)"]
+        image_plugin["plugin.py<br/>ImageTranscriberPlugin"]
+        image_service["service.py<br/>ImageTranscriberService + Workers"]
+    end
+
     subgraph Storage["Storage Layer (storage/)"]
         interface["interface.py<br/>HistoryRepository ABC"]
         sqlite["sqlite.py<br/>SQLiteHistoryRepository"]
@@ -141,11 +151,11 @@ graph TB
     xmpp_service --> daemon_router
     xmpp_service --> daemon_chunking
     xmpp_service --> daemon_doc_ingest
+    xmpp_service -.-> voice_plugin
+    xmpp_service -.-> image_plugin
     daemon_router --> daemon_planner
     daemon_router --> daemon_exec
     daemon_router --> daemon_profiles
-    daemon_router --> daemon_voice
-    daemon_router --> daemon_image
     daemon_router --> daemon_transcripts
     daemon_doc_ingest --> sqlite
     daemon_exec --> api_client
@@ -158,6 +168,8 @@ graph TB
     plugin_manager --> persona_creator
     plugin_manager --> persona_manager
     plugin_manager --> gui_plugin
+    plugin_manager --> voice_plugin
+    plugin_manager --> image_plugin
     api_client --> plugin_hooks
     tool_factory --> plugin_hooks
     engine --> plugin_hooks
@@ -760,6 +772,22 @@ A simplified "retrieval-only" system prompt guidance is injected in these cases 
   - `enable_plugin()` TOML write is atomic (`os.replace()`).
   - No `input()` calls in `DAEMON_FOREGROUND` or `MACOS_APP` contexts.
   - If no plugin runtime or empty hook registry, `TRAY_MENU_REGISTER` fires with no subscribers → graceful empty menu (only core items).
+
+### Decision 23: Extraction of Media Transcribers into Capability Plugins
+
+- **Context**: Voice and image transcription were hard-coded into the `xmpp_daemon` plugin. This prevented other plugins (like future web/CLI tools) from reusing these capabilities and bloated the XMPP plugin.
+- **Decision**: Extract media transcribers into standalone plugins (`voice_transcriber`, `image_transcriber`). Expose their functionality via a new `PLUGIN_CAPABILITY_REGISTER` hook. Extend corpus ingestion to support plugin-provided file handlers via `LOCAL_SOURCE_HANDLER_REGISTER`.
+- **Implementation**:
+  - `plugins/voice_transcriber/*` — `VoiceTranscriberService` + background workers + `transcribe_audio_url` tool.
+  - `plugins/image_transcriber/*` — `ImageTranscriberService` + background workers + `transcribe_image_url` tool.
+  - `PLUGIN_CAPABILITY_REGISTER` — hook for plugins to expose shared service instances.
+  - `LOCAL_SOURCE_HANDLER_REGISTER` — hook for plugins to register custom file extension readers for research corpus ingestion.
+  - `research/adapters.py` — uses the new hook to aggregate supported extensions and dispatch file reads.
+  - `xmpp_daemon` — now depends on transcriber plugins and resolves them via capability hooks at runtime.
+- **Key invariants**:
+  - Media tools (`transcribe_*_url`) enforce HTTPS-only policy for security.
+  - XMPP remains transcription-only for media URLs in chat, while the ingestion pipeline now supports media files for research.
+  - Hard cutover for configuration: `xmpp.voice_*` and `xmpp.image_*` keys are moved to dedicated plugin config files.
 
 ### Decision 20: XMPP Daemon as Built-in Plugin
 

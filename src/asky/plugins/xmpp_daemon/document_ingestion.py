@@ -14,7 +14,7 @@ import tomlkit
 import asky.config as asky_config
 from asky.cli.local_ingestion_flow import preload_local_research_sources
 from asky.config.loader import _get_config_dir
-from asky.research.adapters import LOCAL_SUPPORTED_EXTENSIONS
+from asky.research.adapters import get_all_supported_extensions
 from asky.storage import (
     get_session_by_id,
     get_uploaded_document_by_hash,
@@ -32,9 +32,6 @@ DOCUMENT_MAX_FILE_SIZE_BYTES = 25 * 1024 * 1024
 DEFAULT_BOOTSTRAP_ROOT = Path("~/.config/asky/research-corpus").expanduser()
 UPLOADS_DIRNAME = "uploads"
 URL_FILENAME_QUERY_KEYS = ("filename", "file", "name")
-SUPPORTED_DOCUMENT_EXTENSIONS = frozenset(
-    extension.lower() for extension in LOCAL_SUPPORTED_EXTENSIONS
-)
 TEXT_LIKE_EXTENSIONS = frozenset(
     {
         ".txt",
@@ -84,6 +81,7 @@ def extract_document_extension(url: str) -> str:
 
 def split_document_urls(urls: list[str]) -> list[str]:
     """Return unique supported-document URLs from arbitrary URL list."""
+    supported = get_all_supported_extensions()
     selected: list[str] = []
     seen: set[str] = set()
     for raw in urls:
@@ -95,7 +93,7 @@ def split_document_urls(urls: list[str]) -> list[str]:
         if parsed.scheme not in {"http", "https"}:
             continue
         extension = extract_document_extension(url)
-        if extension in SUPPORTED_DOCUMENT_EXTENSIONS:
+        if extension in supported:
             selected.append(url)
     return selected
 
@@ -173,7 +171,8 @@ def _safe_content_type(response: requests.Response) -> str:
 
 
 def _validate_extension_and_mime(extension: str, mime_type: str) -> tuple[bool, Optional[str]]:
-    if extension not in SUPPORTED_DOCUMENT_EXTENSIONS:
+    supported = get_all_supported_extensions()
+    if extension not in supported:
         return False, f"Unsupported file type '{extension or '(none)'}'."
     if mime_type in GENERIC_MIME_TYPES:
         return True, "MIME type is missing/generic; accepted via extension check."
@@ -277,7 +276,8 @@ class DocumentIngestionService:
                     raise RuntimeError("Only HTTPS document URLs are supported.")
 
                 extension = extract_document_extension(url)
-                if extension not in SUPPORTED_DOCUMENT_EXTENSIONS:
+                supported = get_all_supported_extensions()
+                if extension not in supported:
                     raise RuntimeError(
                         f"Unsupported document extension '{extension or '(none)'}'."
                     )

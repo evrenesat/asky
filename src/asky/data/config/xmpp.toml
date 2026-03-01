@@ -30,43 +30,6 @@ response_chunk_chars = 10000
 # Transcript retention cap per session.
 transcript_max_per_session = 200
 
-# Voice/transcription controls (phase 1: macOS support only).
-voice_enabled = false
-voice_workers = 1
-voice_max_size_mb = 500
-voice_model = "mlx-community/whisper-tiny"
-voice_language = ""
-voice_storage_dir = "~/.config/asky/voice"
-# Hugging Face token source for mlx-whisper model downloads.
-# Recommended: set env var and keep token out of config files.
-voice_hf_token_env = "HF_TOKEN"
-voice_hf_token = ""
-# Auto-run transcript as query when interface model is not configured.
-voice_auto_yes_without_interface_model = true
-voice_allowed_mime_types = [
-    "audio/mpeg",
-    "audio/mp4",
-    "audio/x-m4a",
-    "audio/wav",
-    "audio/x-wav",
-    "audio/webm",
-    "audio/ogg",
-    "audio/flac",
-]
-
-# Image/transcription controls.
-image_enabled = false
-image_workers = 1
-image_max_size_mb = 20
-image_storage_dir = "~/.config/asky/images"
-image_prompt = "Explain this image briefly."
-image_allowed_mime_types = [
-    "image/jpeg",
-    "image/png",
-    "image/webp",
-    "image/gif",
-]
-
 [xmpp_client.capabilities]
 # Client-identity capability overrides for direct-chat behavior.
 # Keys are matched against disco identity tokens (for example identity "name").

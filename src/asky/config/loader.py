@@ -52,6 +52,8 @@ def load_config() -> Dict[str, Any]:
         "user.toml",
         "plugins.toml",
         "xmpp.toml",
+        "voice_transcriber.toml",
+        "image_transcriber.toml",
         "push_data.toml",
         "research.toml",
         "models.toml",
@@ -70,6 +72,8 @@ def load_config() -> Dict[str, Any]:
         "research": {},
         "memory": {},
         "xmpp": {},
+        "voice_transcriber": {},
+        "image_transcriber": {},
         "command_presets": {},
     }
 

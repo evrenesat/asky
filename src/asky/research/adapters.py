@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import shlex
+from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath
 from typing import Any, Dict, List, Optional, Tuple
 from urllib.parse import unquote, urlsplit
@@ -43,6 +44,52 @@ LOCAL_ROOTS_DISABLED_ERROR = (
 LOCAL_SOURCE_NOT_FOUND_ERROR = (
     "Local source not found in configured document roots: {relative_target}"
 )
+
+
+@dataclass
+class LocalSourcePayload:
+    """Normalized payload for a local source file."""
+
+    content: str
+    title: str
+    links: List[Dict[str, str]] = field(default_factory=list)
+    error: Optional[str] = None
+    resolved_target: Optional[str] = None
+    mime: Optional[str] = None
+
+
+_PLUGIN_HANDLERS: Optional[List[Any]] = None
+
+
+def _get_plugin_handlers() -> List[Any]:
+    global _PLUGIN_HANDLERS
+    if _PLUGIN_HANDLERS is not None:
+        return _PLUGIN_HANDLERS
+
+    try:
+        from asky.plugins import (
+            LOCAL_SOURCE_HANDLER_REGISTER,
+            LocalSourceHandlerRegisterContext,
+            get_or_create_plugin_runtime,
+        )
+
+        runtime = get_or_create_plugin_runtime()
+        ctx = LocalSourceHandlerRegisterContext()
+        runtime.hooks.invoke(LOCAL_SOURCE_HANDLER_REGISTER, ctx)
+        _PLUGIN_HANDLERS = ctx.handlers
+    except (ImportError, Exception):
+        _PLUGIN_HANDLERS = []
+
+    return _PLUGIN_HANDLERS
+
+
+def get_all_supported_extensions() -> frozenset[str]:
+    """Return all supported local extensions, including plugin-provided ones."""
+    extensions = set(LOCAL_SUPPORTED_EXTENSIONS)
+    for handler in _get_plugin_handlers():
+        for ext in handler.extensions:
+            extensions.add(ext.lower())
+    return frozenset(extensions)
 
 
 def _is_builtin_local_target(target: str) -> bool:
@@ -283,6 +330,21 @@ def _read_with_pymupdf(path: Path) -> tuple[str, Optional[str]]:
 def _read_local_file_content(path: Path) -> tuple[str, Optional[str]]:
     """Read supported local file types into normalized plain text."""
     extension = path.suffix.lower()
+
+    # Check plugin-provided handlers first
+    for handler in _get_plugin_handlers():
+        if extension in (ext.lower() for ext in handler.extensions):
+            try:
+                # The read() callable returns a LocalSourcePayload
+                payload = handler.read(str(path))
+                if not payload:
+                    return "", f"Plugin-provided reader returned empty for '{extension}'."
+                if payload.error:
+                    return "", payload.error
+                return payload.content, None
+            except Exception as exc:
+                return "", str(exc)
+
     if extension in {".html", ".htm"}:
         html_text, error = _read_text_file(path)
         if error:
@@ -299,10 +361,11 @@ def _discover_local_directory_links(path: Path, max_links: int) -> List[Dict[str
     """Discover supported local files under a directory."""
     iterator = path.rglob("*") if LOCAL_DIRECTORY_RECURSIVE else path.iterdir()
     links: List[Dict[str, str]] = []
+    supported_extensions = get_all_supported_extensions()
     for candidate in iterator:
         if not candidate.is_file():
             continue
-        if candidate.suffix.lower() not in LOCAL_SUPPORTED_EXTENSIONS:
+        if candidate.suffix.lower() not in supported_extensions:
             continue
         links.append(
             {

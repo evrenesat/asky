@@ -3,6 +3,11 @@
 from asky.plugins.base import AskyPlugin, PluginContext, PluginStatus
 from asky.plugins.hook_types import (
     DAEMON_SERVER_REGISTER,
+    LOCAL_SOURCE_HANDLER_REGISTER,
+    LocalSourceHandlerRegisterContext,
+    LocalSourceHandlerSpec,
+    PLUGIN_CAPABILITY_REGISTER,
+    PluginCapabilityRegisterContext,
     POST_LLM_RESPONSE,
     POST_PRELOAD,
     POST_TOOL_EXECUTE,
@@ -12,6 +17,9 @@ from asky.plugins.hook_types import (
     SESSION_RESOLVED,
     SYSTEM_PROMPT_EXTEND,
     TOOL_REGISTRY_BUILD,
+    ToolRegistryBuildContext,
+    TRAY_MENU_REGISTER,
+    TrayMenuRegisterContext,
     TURN_COMPLETED,
 )
 from asky.plugins.hooks import HookRegistry
@@ -34,6 +42,9 @@ __all__ = [
     "create_plugin_runtime",
     "get_or_create_plugin_runtime",
     "TOOL_REGISTRY_BUILD",
+    "ToolRegistryBuildContext",
+    "TRAY_MENU_REGISTER",
+    "TrayMenuRegisterContext",
     "SESSION_RESOLVED",
     "PRE_PRELOAD",
     "POST_PRELOAD",
@@ -44,4 +55,9 @@ __all__ = [
     "POST_TOOL_EXECUTE",
     "TURN_COMPLETED",
     "DAEMON_SERVER_REGISTER",
+    "PLUGIN_CAPABILITY_REGISTER",
+    "PluginCapabilityRegisterContext",
+    "LOCAL_SOURCE_HANDLER_REGISTER",
+    "LocalSourceHandlerRegisterContext",
+    "LocalSourceHandlerSpec",
 ]

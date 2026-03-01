@@ -75,7 +75,9 @@ Hook callback exceptions are logged and isolated; remaining callbacks still run.
 - `DAEMON_SERVER_REGISTER` — collect sidecar server specs (start/stop callables)
 - `DAEMON_TRANSPORT_REGISTER` — register exactly one daemon transport (run/stop callables)
 - `TRAY_MENU_REGISTER` — contribute tray menu items; payload is `TrayMenuRegisterContext` with `status_entries` (non-clickable) and `action_entries` (clickable) lists plus service lifecycle callbacks
-
+- `FETCH_URL_OVERRIDE` — intercept URL fetch requests; payload is `FetchUrlOverrideContext`
+- `PLUGIN_CAPABILITY_REGISTER` — expose internal services or factories to other plugins; payload is `PluginCapabilityRegisterContext`
+- `LOCAL_SOURCE_HANDLER_REGISTER` — register custom file extension readers for corpus ingestion; payload is `LocalSourceHandlerRegisterContext`
 Deferred in v1:
 
 - `CONFIG_LOADED`
@@ -86,7 +88,9 @@ Deferred in v1:
 - `manual_persona_creator/` — CLI-based persona creation/ingestion/export
 - `persona_manager/` — persona import/session binding/prompt+preload injection with @mention syntax
 - `gui_server/` — NiceGUI daemon sidecar and page extension registry
-- `xmpp_daemon/` — XMPP transport for daemon mode (router, executor, voice/image/document pipelines)
+- `voice_transcriber/` — background audio transcription and LLM-callable tools (`transcribe_audio_url`)
+- `image_transcriber/` — background image description and LLM-callable tools (`transcribe_image_url`)
+- `xmpp_daemon/` — XMPP transport for daemon mode (router, executor, document pipelines); depends on media transcriber plugins
 - `push_data/` — registers `push_data_*` LLM tools for configured endpoints (`TOOL_REGISTRY_BUILD`) and handles `--push-data "ENDPOINT[?KEY=VAL&...]"` CLI flag (`POST_TURN_RENDER`); params encoded as URL query-string in a single quoted argument
 - `email_sender/` — sends the final answer via SMTP when `--sendmail RECIPIENTS` is used (`POST_TURN_RENDER`); subject taken from `--subject SUBJECT` if provided, then from `answer_title`, then from the first 80 chars of the query
 
@@ -116,15 +120,13 @@ Key modules:
 | `command_executor.py`        | Command/query bridge — policy gate, `AskyClient.run_turn` |
 | `session_profile_manager.py` | Room/session bindings + session override file management  |
 | `interface_planner.py`       | LLM-based intent classification for non-prefixed messages |
-| `voice_transcriber.py`       | Background audio transcription via `mlx-whisper`          |
-| `image_transcriber.py`       | Background image description via image-capable LLM        |
 | `document_ingestion.py`      | HTTPS document URL ingestion into session local corpus    |
 | `transcript_manager.py`      | Transcript lifecycle, pending confirmation tracking       |
 | `query_progress.py`          | Reusable query progress events + status-message publisher |
 | `chunking.py`                | Outbound response chunking                                |
 | `file_upload.py`             | XEP-0363 HTTP file upload service                         |
 
-One-way dependency rule: `xmpp_daemon` may import from `asky.daemon.errors`; `daemon/` core must not import from `asky.plugins.xmpp_daemon`.
+One-way dependency rule: `xmpp_daemon` may import from `asky.daemon.errors`; `daemon/` core must not import from `asky.plugins.xmpp_daemon`. `xmpp_daemon` resolves `voice_transcriber` and `image_transcriber` capabilities via hooks at runtime and depends on these plugins being enabled.
 
 `command_executor.py` keeps CLI grouped-command parity: recognized grouped domains (`history/session/memory/corpus/prompts`) do not degrade into query execution when subcommands are missing/invalid; they return usage/error responses instead.
 

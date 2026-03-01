@@ -107,11 +107,6 @@ class XMPPDaemonPlugin(AskyPlugin):
                 get_label=lambda: f"JID: {get_daemon_settings().jid or '(unset)'}"
             )
         )
-        ctx.status_entries.append(
-            TrayPluginEntry(
-                get_label=lambda: f"Voice: {'on' if get_daemon_settings().voice_enabled else 'off'}"
-            )
-        )
         ctx.action_entries.append(
             TrayPluginEntry(
                 get_label=lambda: "Stop XMPP"
@@ -119,16 +114,6 @@ class XMPPDaemonPlugin(AskyPlugin):
                 else "Start XMPP",
                 on_action=lambda: self._toggle_xmpp(ctx, update_daemon_settings),
                 autostart_fn=lambda: self._autostart_if_ready(ctx, update_daemon_settings),
-            )
-        )
-        ctx.action_entries.append(
-            TrayPluginEntry(
-                get_label=lambda: "Disable Voice"
-                if get_daemon_settings().voice_enabled
-                else "Enable Voice",
-                on_action=lambda: update_daemon_settings(
-                    voice_enabled=not get_daemon_settings().voice_enabled
-                ),
             )
         )
 

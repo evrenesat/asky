@@ -1,0 +1,14 @@
+[image_transcriber]
+enabled = false
+workers = 1
+max_size_mb = 20
+model_alias = "vision-model"
+prompt_text = "Explain this image briefly."
+tools_enabled = true
+ingestion_enabled = true
+allowed_mime_types = [
+    "image/jpeg",
+    "image/png",
+    "image/webp",
+    "image/gif",
+]

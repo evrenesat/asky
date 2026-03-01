@@ -16,13 +16,11 @@ def test_update_daemon_settings_persists(tmp_path, monkeypatch):
         jid="bot@example.com",
         password="secret",
         allowed_jids=["a@example.com"],
-        voice_enabled=True,
     )
     assert updated.enabled is True
     assert updated.jid == "bot@example.com"
     assert updated.password == "secret"
     assert updated.allowed_jids == ["a@example.com"]
-    assert updated.voice_enabled is True
 
 
 def test_minimum_requirements_accept_password_env(tmp_path, monkeypatch):
@@ -32,7 +30,6 @@ def test_minimum_requirements_accept_password_env(tmp_path, monkeypatch):
         jid="bot@example.com",
         password="",
         allowed_jids=["a@example.com"],
-        voice_enabled=False,
     )
     path = tmp_path / "xmpp.toml"
     content = path.read_text()
@@ -85,7 +82,7 @@ def test_edit_daemon_command_interactive_flow(tmp_path, monkeypatch):
             "alice@example.com,bob@example.com",
         ]
     )
-    confirm_values = iter([True, True, True])
+    confirm_values = iter([True, True])
     monkeypatch.setattr(
         "asky.cli.daemon_config.Prompt.ask",
         lambda *args, **kwargs: next(prompt_values),
@@ -99,6 +96,5 @@ def test_edit_daemon_command_interactive_flow(tmp_path, monkeypatch):
     result = daemon_config.get_daemon_settings()
     assert result.enabled is True
     assert result.jid == "bot@example.com"
-    assert result.voice_enabled is True
     assert result.allowed_jids == ["alice@example.com", "bob@example.com"]
     assert startup_enabled["value"] is True

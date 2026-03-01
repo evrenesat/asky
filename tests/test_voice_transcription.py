@@ -1,232 +1,110 @@
-"""Voice transcription worker tests."""
+"""Voice transcription service and worker tests."""
 
 import os
+import platform
 from pathlib import Path
 from typing import Iterable
+from unittest.mock import MagicMock
 
-from asky.plugins.xmpp_daemon.voice_transcriber import (
+import pytest
+
+from asky.plugins.voice_transcriber.service import (
     GENERIC_BINARY_MIME_TYPE,
-    TRANSCRIPTION_ERROR_MACOS_ONLY,
-    TranscriptionJob,
-    VoiceTranscriber,
+    VoiceTranscriberService,
+    VoiceTranscriptionJob,
+    VoiceTranscriberWorker,
+    UnsupportedOSStrategy,
+    MacOSMLXWhisperStrategy,
 )
 
 
-def test_enqueue_disabled_emits_failure(tmp_path):
-    events = []
-    transcriber = VoiceTranscriber(
-        enabled=False,
-        workers=1,
-        max_size_mb=10,
+def test_unsupported_os_strategy_raises_runtime_error():
+    strategy = UnsupportedOSStrategy()
+    with pytest.raises(RuntimeError, match="Voice transcription is not yet supported"):
+        strategy.transcribe(Path("test.mp3"), "model", None)
+
+
+def test_service_download_audio_accepts_octet_stream_with_extension(monkeypatch, tmp_path):
+    service = VoiceTranscriberService(
         model="m",
-        language="",
-        storage_dir=tmp_path,
-        allowed_mime_types=[],
-        completion_callback=events.append,
-    )
-    transcriber.enqueue(
-        TranscriptionJob(
-            jid="jid",
-            transcript_id=1,
-            audio_url="https://example.com/a.m4a",
-            audio_path=str(tmp_path / "a.m4a"),
-        )
-    )
-    assert events
-    assert events[0]["status"] == "failed"
-
-
-def test_non_macos_fails_fast(monkeypatch, tmp_path):
-    events = []
-    transcriber = VoiceTranscriber(
-        enabled=True,
-        workers=1,
-        max_size_mb=10,
-        model="m",
-        language="",
-        storage_dir=tmp_path,
-        allowed_mime_types=[],
-        completion_callback=events.append,
-    )
-    monkeypatch.setattr(
-        "asky.plugins.xmpp_daemon.voice_transcriber.platform.system", lambda: "Linux"
-    )
-    transcriber._run_job(
-        TranscriptionJob(
-            jid="jid",
-            transcript_id=2,
-            audio_url="https://example.com/a.m4a",
-            audio_path=str(Path(tmp_path) / "a.m4a"),
-        )
-    )
-    assert events
-    assert events[0]["status"] == "failed"
-    assert TRANSCRIPTION_ERROR_MACOS_ONLY in events[0]["error"]
-
-
-class _FakeResponse:
-    def __init__(self, *, headers: dict[str, str], chunks: Iterable[bytes]):
-        self.headers = headers
-        self._chunks = list(chunks)
-
-    def __enter__(self):
-        return self
-
-    def __exit__(self, exc_type, exc, tb):
-        return None
-
-    def raise_for_status(self):
-        return None
-
-    def iter_content(self, chunk_size=None):
-        for chunk in self._chunks:
-            yield chunk
-
-
-def test_download_audio_accepts_octet_stream_when_url_extension_is_audio(
-    monkeypatch, tmp_path
-):
-    transcriber = VoiceTranscriber(
-        enabled=True,
-        workers=1,
-        max_size_mb=10,
-        model="m",
-        language="",
-        storage_dir=tmp_path,
-        allowed_mime_types=["audio/x-m4a", "audio/mp4"],
-        completion_callback=lambda _payload: None,
+        allowed_mime_types=["audio/x-m4a"],
     )
 
-    def _fake_get(url, stream, timeout):
+    class _FakeResponse:
+        def __init__(self, headers: dict, chunks: list):
+            self.headers = headers
+            self.chunks = chunks
+        def __enter__(self): return self
+        def __exit__(self, *args): pass
+        def raise_for_status(self): pass
+        def iter_content(self, **kwargs):
+            for c in self.chunks: yield c
+
+    def _fake_get(url, **kwargs):
         return _FakeResponse(
             headers={"Content-Type": GENERIC_BINARY_MIME_TYPE},
-            chunks=[b"audio-bytes"],
+            chunks=[b"audio-data"]
         )
 
-    monkeypatch.setattr(
-        "asky.plugins.xmpp_daemon.voice_transcriber.requests.get", _fake_get
-    )
-    target = tmp_path / "sample.audio"
-    path = transcriber._download_audio(
-        "https://share.conversations.im/file/example.m4a",
-        target,
-    )
+    monkeypatch.setattr("requests.get", _fake_get)
+    target = tmp_path / "test.m4a"
+    path = service.download_audio("https://example.com/test.m4a", target)
     assert path.exists()
-    assert path.read_bytes() == b"audio-bytes"
+    assert path.read_bytes() == b"audio-data"
 
 
-def test_download_audio_rejects_octet_stream_without_audio_extension(
-    monkeypatch, tmp_path
-):
-    transcriber = VoiceTranscriber(
-        enabled=True,
-        workers=1,
-        max_size_mb=10,
+def test_service_download_audio_rejects_unsupported_mime(monkeypatch, tmp_path):
+    service = VoiceTranscriberService(
         model="m",
-        language="",
-        storage_dir=tmp_path,
-        allowed_mime_types=["audio/x-m4a", "audio/mp4"],
-        completion_callback=lambda _payload: None,
+        allowed_mime_types=["audio/x-m4a"],
     )
 
-    def _fake_get(url, stream, timeout):
-        return _FakeResponse(
-            headers={"Content-Type": GENERIC_BINARY_MIME_TYPE},
-            chunks=[b"not-audio"],
-        )
+    def _fake_get(url, **kwargs):
+        class _Resp:
+            headers = {"Content-Type": "text/plain"}
+            def __enter__(self): return self
+            def __exit__(self, *args): pass
+            def raise_for_status(self): pass
+        return _Resp()
 
-    monkeypatch.setattr(
-        "asky.plugins.xmpp_daemon.voice_transcriber.requests.get", _fake_get
-    )
-
-    try:
-        transcriber._download_audio(
-            "https://share.conversations.im/file/no-extension",
-            tmp_path / "sample.audio",
-        )
-    except RuntimeError as exc:
-        assert GENERIC_BINARY_MIME_TYPE in str(exc)
-    else:
-        raise AssertionError(
-            "Expected octet-stream without inferable audio extension to fail."
-        )
+    monkeypatch.setattr("requests.get", _fake_get)
+    with pytest.raises(RuntimeError, match="Unsupported audio MIME type"):
+        service.download_audio("https://example.com/test.txt", tmp_path / "test.txt")
 
 
-def test_apply_hf_token_env_sets_standard_aliases(monkeypatch, tmp_path):
-    monkeypatch.delenv("HF_TOKEN", raising=False)
-    monkeypatch.delenv("HUGGING_FACE_HUB_TOKEN", raising=False)
-    monkeypatch.delenv("ASKY_HF_TOKEN", raising=False)
-    transcriber = VoiceTranscriber(
-        enabled=True,
-        workers=1,
-        max_size_mb=10,
-        model="m",
-        language="",
-        storage_dir=tmp_path,
-        hf_token_env="ASKY_HF_TOKEN",
-        hf_token="token-123",
-        allowed_mime_types=[],
-        completion_callback=lambda _payload: None,
-    )
-
-    transcriber._apply_hf_token_env()
-    assert transcriber.hf_token == "token-123"
-    assert transcriber.hf_token_env == "ASKY_HF_TOKEN"
-    assert os.environ["ASKY_HF_TOKEN"] == "token-123"
-    assert os.environ["HF_TOKEN"] == "token-123"
-    assert os.environ["HUGGING_FACE_HUB_TOKEN"] == "token-123"
-
-
-def test_apply_hf_token_env_noop_without_token(monkeypatch, tmp_path):
-    monkeypatch.delenv("HF_TOKEN", raising=False)
-    transcriber = VoiceTranscriber(
-        enabled=True,
-        workers=1,
-        max_size_mb=10,
-        model="m",
-        language="",
-        storage_dir=tmp_path,
-        hf_token_env="HF_TOKEN",
-        hf_token="",
-        allowed_mime_types=[],
-        completion_callback=lambda _payload: None,
-    )
-
-    transcriber._apply_hf_token_env()
-    assert "HF_TOKEN" not in os.environ
-
-
-def test_shutdown_stops_worker_threads(tmp_path):
-    transcriber = VoiceTranscriber(
-        enabled=True,
+def test_worker_pool_lifecycle(tmp_path):
+    service = MagicMock(spec=VoiceTranscriberService)
+    events = []
+    worker = VoiceTranscriberWorker(
+        service=service,
         workers=2,
-        max_size_mb=10,
-        model="m",
-        language="",
-        storage_dir=tmp_path,
-        allowed_mime_types=[],
-        completion_callback=lambda _payload: None,
+        completion_callback=events.append
     )
-    transcriber.start()
-    assert len(transcriber._workers) == 2
-    for w in transcriber._workers:
-        assert w.is_alive()
+    
+    worker.start()
+    assert len(worker._threads) == 2
+    for t in worker._threads:
+        assert t.is_alive()
+        
+    worker.shutdown()
+    assert len(worker._threads) == 0
 
-    transcriber.shutdown(timeout=2.0)
-    assert transcriber._workers == []
-    assert transcriber._shutdown is True
 
-
-def test_shutdown_noop_when_not_started(tmp_path):
-    transcriber = VoiceTranscriber(
-        enabled=True,
-        workers=1,
-        max_size_mb=10,
-        model="m",
-        language="",
-        storage_dir=tmp_path,
-        allowed_mime_types=[],
-        completion_callback=lambda _payload: None,
+def test_macos_strategy_applies_hf_token(monkeypatch):
+    strategy = MacOSMLXWhisperStrategy()
+    monkeypatch.delenv("HF_TOKEN", raising=False)
+    
+    # Mock mlx_whisper to avoid actual transcription
+    mock_mlx = MagicMock()
+    monkeypatch.setitem(platform.sys.modules, "mlx_whisper", mock_mlx)
+    
+    strategy.transcribe(
+        Path("test.mp3"), 
+        "model", 
+        None, 
+        hf_token="test-token",
+        hf_token_env="CUSTOM_HF_TOKEN"
     )
-    transcriber.shutdown()
-    assert transcriber._shutdown is False
+    
+    assert os.environ["CUSTOM_HF_TOKEN"] == "test-token"
+    assert os.environ["HF_TOKEN"] == "test-token"

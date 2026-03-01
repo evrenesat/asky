@@ -73,10 +73,12 @@ def test_roster_template_created_when_missing(tmp_path: Path):
     assert sorted(manifest.name for manifest in manifests) == [
         "email_sender",
         "gui_server",
+        "image_transcriber",
         "manual_persona_creator",
         "persona_manager",
         "playwright_browser",
         "push_data",
+        "voice_transcriber",
         "xmpp_daemon",
     ]
 

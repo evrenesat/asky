@@ -2,6 +2,34 @@
 
 For full detailed entries, see [DEVLOG_ARCHIVE.md](DEVLOG_ARCHIVE.md).
 
+
+## 2026-03-01: Router/Transcriber Boundary Decoupling Fix
+
+- **Summary**: Removed direct compile-time dependency from `xmpp_daemon.router` to transcriber plugin internals.
+- **Changes**:
+  - `router.py` now enqueues plain job payload dictionaries through a worker interface (`enabled` + `enqueue`) instead of importing transcriber job classes.
+  - `voice_transcriber` and `image_transcriber` worker `enqueue()` paths now accept either native job dataclasses or dict payloads and normalize internally.
+  - Updated `src/asky/plugins/xmpp_daemon/AGENTS.md` to document the boundary contract.
+- **Verification**:
+  - Targeted: `uv run pytest tests/test_xmpp_router.py tests/test_voice_transcription.py tests/test_image_transcription.py tests/test_xmpp_daemon.py -q`
+  - Full suite: `uv run pytest` (1351 passed).
+
+## 2026-03-01: Extraction of Media Transcribers into Capability Plugins
+
+- **Summary**: Extracted XMPP-owned voice and image transcribers into standalone plugins (`voice_transcriber`, `image_transcriber`). Introduced `PLUGIN_CAPABILITY_REGISTER` hook for service sharing and `LOCAL_SOURCE_HANDLER_REGISTER` for extensible corpus ingestion.
+- **Changes**:
+  - Created `voice_transcriber` and `image_transcriber` plugins with dedicated services and workers.
+  - Added `transcribe_audio_url` and `transcribe_image_url` tools (HTTPS-only) to standard and research registries.
+  - Updated `research/adapters.py` to support plugin-provided file handlers via hooks.
+  - XMPP daemon now resolves transcriber capabilities via hooks and depends on the new plugins.
+  - Migrated media configuration from `xmpp.toml` to `voice_transcriber.toml` and `image_transcriber.toml` (hard cutover).
+  - Removed legacy `XMPP_VOICE_*` and `XMPP_IMAGE_*` constants.
+- **Gotchas**:
+  - XMPP startup will now fail if `voice_transcriber` or `image_transcriber` plugins are disabled, as they are mandatory dependencies.
+  - Security policy enforced: Model-callable tools only accept `https://` URLs.
+  - Media URLs in XMPP chat remain transcription-only (no auto-ingest), but the same file types can now be ingested into research corpus via standard ingestion flows.
+- **Follow-up**: Implement additional voice strategies for Linux/Windows to replace the `UnsupportedOSStrategy`.
+
 ## 2026-03-01 - Policy Constraint Compliance + Docs Alignment
 
 - Replaced broad `except Exception` in `src/asky/api/preload_policy.py` with narrow transport-error handling (`requests.exceptions.RequestException`) and explicit invalid-response/config fail-safe branches.

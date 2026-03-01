@@ -21,7 +21,9 @@ Located in `data/config/`:
 | `prompts.toml`   | System prompts, summarization templates               |
 | `research.toml`  | Research mode settings, embeddings, shortlist         |
 | `user.toml`      | User-defined prompt shortcuts                         |
-| `xmpp.toml`      | Optional XMPP daemon and voice-transcription settings |
+| `xmpp.toml`      | Optional XMPP daemon transport settings               |
+| `voice_transcriber.toml` | Voice transcription plugin settings           |
+| `image_transcriber.toml` | Image transcription plugin settings           |
 | `push_data.toml` | HTTP endpoint definitions for data push               |
 
 ## Loading Flow (`loader.py`)
@@ -103,9 +105,9 @@ candidate pools while keeping fetch cost bounded.
 | Constant Group     | Description                                                                                                  |
 | ------------------ | ------------------------------------------------------------------------------------------------------------ |
 | `XMPP_*`           | Daemon transport/auth/allowlist/chunking/transcript caps                                                     |
-| `XMPP_VOICE_*`     | Voice transcription feature flags/limits/model/storage settings, including Hugging Face token env/key wiring |
-| `XMPP_IMAGE_*`     | Image transcription feature flags/limits/storage/prompt settings for daemon mode                             |
 | `XMPP_INTERFACE_*` | Interface planner prompt-reference injection toggles in daemon mode                                          |
+
+Note: Voice and image transcription settings have been moved to dedicated plugin configuration files (`voice_transcriber.toml`, `image_transcriber.toml`).
 
 Daemon settings can be edited interactively through CLI command `asky --config daemon edit`,
 which updates `xmpp.toml` and startup-at-login registration per platform.

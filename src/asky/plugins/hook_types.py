@@ -23,6 +23,8 @@ DAEMON_SERVER_REGISTER = "DAEMON_SERVER_REGISTER"
 DAEMON_TRANSPORT_REGISTER = "DAEMON_TRANSPORT_REGISTER"
 TRAY_MENU_REGISTER = "TRAY_MENU_REGISTER"
 FETCH_URL_OVERRIDE = "FETCH_URL_OVERRIDE"
+PLUGIN_CAPABILITY_REGISTER = "PLUGIN_CAPABILITY_REGISTER"
+LOCAL_SOURCE_HANDLER_REGISTER = "LOCAL_SOURCE_HANDLER_REGISTER"
 
 CONFIG_LOADED = "CONFIG_LOADED"
 SESSION_END = "SESSION_END"
@@ -43,6 +45,8 @@ SUPPORTED_HOOK_NAMES = {
     DAEMON_TRANSPORT_REGISTER,
     TRAY_MENU_REGISTER,
     FETCH_URL_OVERRIDE,
+    PLUGIN_CAPABILITY_REGISTER,
+    LOCAL_SOURCE_HANDLER_REGISTER,
 }
 
 DEFERRED_HOOK_NAMES = {
@@ -241,3 +245,35 @@ class FetchURLContext:
     trace_callback: Optional[Any]
     trace_context: Optional[Dict[str, Any]]
     result: Optional[Dict[str, Any]] = None
+
+
+@dataclass
+class PluginCapabilityRegisterContext:
+    """Mutable payload for plugin capability registration.
+
+    Plugins use this hook to expose their internal services or
+    factories to other plugins (e.g. transcribers for XMPP).
+    The ``capabilities`` dict maps string names to any object.
+    """
+
+    capabilities: Dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
+class LocalSourceHandlerSpec:
+    """Registration contract for local source (corpus ingestion) handlers.
+
+    Used by research adapters to support plugin-provided file extensions.
+    The ``read`` callable accepts a path string and returns a ``LocalSourcePayload``.
+    """
+
+    extensions: List[str]
+    read: Callable[[str], Any]  # Returns LocalSourcePayload
+    mime: str
+
+
+@dataclass
+class LocalSourceHandlerRegisterContext:
+    """Mutable payload for local source handler registration."""
+
+    handlers: List[LocalSourceHandlerSpec] = field(default_factory=list)

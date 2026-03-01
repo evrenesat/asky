@@ -32,7 +32,6 @@ class DaemonSettings:
     password: str
     password_env: str
     allowed_jids: list[str]
-    voice_enabled: bool
 
     def effective_password(self) -> str:
         """Return password from file or configured environment variable."""
@@ -87,7 +86,6 @@ def get_daemon_settings() -> DaemonSettings:
             password="",
             password_env=DEFAULT_XMPP_PASSWORD_ENV,
             allowed_jids=[],
-            voice_enabled=False,
         )
     with path.open("rb") as handle:
         parsed = tomllib.load(handle)
@@ -105,7 +103,6 @@ def get_daemon_settings() -> DaemonSettings:
             for value in xmpp.get("allowed_jids", [])
             if str(value).strip()
         ],
-        voice_enabled=bool(xmpp.get("voice_enabled", False)),
     )
 
 
@@ -115,7 +112,6 @@ def update_daemon_settings(
     jid: Optional[str] = None,
     password: Optional[str] = None,
     allowed_jids: Optional[list[str]] = None,
-    voice_enabled: Optional[bool] = None,
 ) -> DaemonSettings:
     """Persist daemon settings into xmpp.toml."""
     path = _xmpp_config_path()
@@ -125,11 +121,10 @@ def update_daemon_settings(
     xmpp = doc["xmpp"]
     current = get_daemon_settings()
     logger.debug(
-        "updating daemon settings enabled=%s jid=%s allowed_count=%s voice_enabled=%s",
+        "updating daemon settings enabled=%s jid=%s allowed_count=%s",
         enabled if enabled is not None else current.enabled,
         jid if jid is not None else current.jid,
         len(allowed_jids if allowed_jids is not None else current.allowed_jids),
-        voice_enabled if voice_enabled is not None else current.voice_enabled,
     )
 
     xmpp["enabled"] = bool(current.enabled if enabled is None else enabled)
@@ -137,9 +132,6 @@ def update_daemon_settings(
     xmpp["password"] = current.password if password is None else str(password)
     xmpp["allowed_jids"] = (
         list(current.allowed_jids) if allowed_jids is None else list(allowed_jids)
-    )
-    xmpp["voice_enabled"] = bool(
-        current.voice_enabled if voice_enabled is None else voice_enabled
     )
 
     path.write_text(doc.as_string())
@@ -152,11 +144,10 @@ def edit_daemon_command() -> None:
     current = get_daemon_settings()
     startup_status = startup.get_status()
     logger.debug(
-        "starting interactive daemon editor enabled=%s jid=%s allowed_count=%s voice=%s startup_supported=%s startup_enabled=%s",
+        "starting interactive daemon editor enabled=%s jid=%s allowed_count=%s startup_supported=%s startup_enabled=%s",
         current.enabled,
         current.jid,
         len(current.allowed_jids),
-        current.voice_enabled,
         startup_status.supported,
         startup_status.enabled,
     )
@@ -165,7 +156,6 @@ def edit_daemon_command() -> None:
     console.print(f"Current daemon enabled: {current.enabled}")
     console.print(f"Current JID: {current.jid or '(empty)'}")
     console.print(f"Allowed users count: {len(current.allowed_jids)}")
-    console.print(f"Voice enabled: {current.voice_enabled}")
     if startup_status.supported:
         console.print(f"Run at login: {startup_status.enabled}")
     else:
@@ -181,25 +171,22 @@ def edit_daemon_command() -> None:
         default=allowlist_default,
     )
     allowed = _normalized_allowed_jids(allowed_raw)
-    voice_enabled = Confirm.ask("Enable voice support", default=current.voice_enabled)
 
     updated = update_daemon_settings(
         enabled=enabled,
         jid=jid,
         password=password,
         allowed_jids=allowed,
-        voice_enabled=voice_enabled,
     )
     if not updated.has_minimum_requirements():
         console.print(
             "[yellow]Warning: daemon start requires jid, password (or password_env), and at least one allowed user.[/yellow]"
         )
     logger.debug(
-        "daemon editor saved enabled=%s jid=%s allowed_count=%s voice=%s minimum_ready=%s",
+        "daemon editor saved enabled=%s jid=%s allowed_count=%s minimum_ready=%s",
         updated.enabled,
         updated.jid,
         len(updated.allowed_jids),
-        updated.voice_enabled,
         updated.has_minimum_requirements(),
     )
 

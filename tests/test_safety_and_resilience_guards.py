@@ -147,8 +147,6 @@ def test_enqueue_for_jid_starts_single_worker_under_concurrency():
         _patch("asky.plugins.xmpp_daemon.xmpp_service.TranscriptManager"),
         _patch("asky.plugins.xmpp_daemon.xmpp_service.CommandExecutor"),
         _patch("asky.plugins.xmpp_daemon.xmpp_service.InterfacePlanner"),
-        _patch("asky.plugins.xmpp_daemon.xmpp_service.VoiceTranscriber"),
-        _patch("asky.plugins.xmpp_daemon.xmpp_service.ImageTranscriber"),
         _patch("asky.plugins.xmpp_daemon.xmpp_service.DaemonRouter"),
         _patch("asky.plugins.xmpp_daemon.xmpp_service.AskyXMPPClient"),
     ):
