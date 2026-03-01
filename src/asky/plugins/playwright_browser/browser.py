@@ -12,7 +12,13 @@ from typing import Any, Dict, Optional, Tuple
 from urllib.parse import urlparse
 
 try:
-    from playwright.sync_api import Browser, BrowserContext, Page, TimeoutError, sync_playwright
+    from playwright.sync_api import (
+        Browser,
+        BrowserContext,
+        Page,
+        TimeoutError,
+        sync_playwright,
+    )
 except ImportError:
     sync_playwright = None  # type: ignore
     TimeoutError = Exception  # type: ignore
@@ -29,6 +35,10 @@ CHALLENGE_SELECTORS = [
 CHALLENGE_WAIT_POLL_INTERVAL_MS = 2000
 CHALLENGE_WAIT_TIMEOUT_MS = 300_000
 CHALLENGE_HTTP_STATUSES = {403, 429}
+CHALLENGE_URL_PATTERNS = [
+    "/cdn-cgi/challenge-platform/",
+    "checkpoint/challenge",
+]
 
 
 class PlaywrightBrowserManager:
@@ -44,6 +54,7 @@ class PlaywrightBrowserManager:
         page_timeout_ms: int = 30000,
         network_idle_timeout_ms: int = 2000,
         keep_browser_open: bool = True,
+        post_load_delay_ms: int = 2000,
     ) -> None:
         self._data_dir = data_dir
         self._browser_type = browser_type
@@ -53,8 +64,8 @@ class PlaywrightBrowserManager:
         self._page_timeout_ms = page_timeout_ms
         self._network_idle_timeout_ms = network_idle_timeout_ms
         self._keep_browser_open = keep_browser_open
+        self._post_load_delay_ms = post_load_delay_ms
 
-        self._session_path = self._data_dir / "playwright_session.json"
         self._playwright = None
         self._browser: Optional[Browser] = None
         self._context: Optional[BrowserContext] = None
@@ -80,7 +91,9 @@ class PlaywrightBrowserManager:
 
         def _launch() -> None:
             if self._persist_session:
-                user_data_dir = self._data_dir / f"playwright_profile_{self._browser_type}"
+                user_data_dir = (
+                    self._data_dir / f"playwright_profile_{self._browser_type}"
+                )
                 user_data_dir.mkdir(parents=True, exist_ok=True)
                 self._context = browser_launcher.launch_persistent_context(
                     user_data_dir=str(user_data_dir), **launch_args
@@ -93,32 +106,57 @@ class PlaywrightBrowserManager:
             _launch()
         except Exception as e:
             error_msg = str(e)
-            if "Executable doesn't exist at" in error_msg or "playwright install" in error_msg:
+            if (
+                "Executable doesn't exist at" in error_msg
+                or "playwright install" in error_msg
+            ):
                 import sys
                 import subprocess
 
-                logger.info("Playwright browser %s missing. Attempting automatic installation...", self._browser_type)
+                logger.info(
+                    "Playwright browser %s missing. Attempting automatic installation...",
+                    self._browser_type,
+                )
                 try:
                     from rich.console import Console
+
                     console = Console()
-                    console.print(f"\n[bold yellow]Playwright Plugin:[/bold yellow] Installing [cyan]{self._browser_type}[/cyan] browser... this may take a minute.")
+                    console.print(
+                        f"\n[bold yellow]Playwright Plugin:[/bold yellow] Installing [cyan]{self._browser_type}[/cyan] browser... this may take a minute."
+                    )
                 except ImportError:
-                    print(f"\n[Playwright Plugin] Installing {self._browser_type} browser... this may take a minute.", file=sys.stderr)
-                
+                    print(
+                        f"\n[Playwright Plugin] Installing {self._browser_type} browser... this may take a minute.",
+                        file=sys.stderr,
+                    )
+
                 try:
                     subprocess.run(
-                        [sys.executable, "-m", "playwright", "install", self._browser_type],
-                        check=True
+                        [
+                            sys.executable,
+                            "-m",
+                            "playwright",
+                            "install",
+                            self._browser_type,
+                        ],
+                        check=True,
                     )
                     try:
-                        Console().print(f"[bold green]Playwright Plugin:[/bold green] Successfully installed [cyan]{self._browser_type}[/cyan].")
+                        Console().print(
+                            f"[bold green]Playwright Plugin:[/bold green] Successfully installed [cyan]{self._browser_type}[/cyan]."
+                        )
                     except ImportError:
-                        print(f"[Playwright Plugin] Successfully installed {self._browser_type}.", file=sys.stderr)
-                    
+                        print(
+                            f"[Playwright Plugin] Successfully installed {self._browser_type}.",
+                            file=sys.stderr,
+                        )
+
                     # Retry launch after installation
                     _launch()
                 except subprocess.CalledProcessError as install_err:
-                    raise RuntimeError(f"Failed to automatically install Playwright browser: {install_err}") from e
+                    raise RuntimeError(
+                        f"Failed to automatically install Playwright browser: {install_err}"
+                    ) from e
             else:
                 raise
 
@@ -126,10 +164,6 @@ class PlaywrightBrowserManager:
             self._context.add_init_script(
                 "Object.defineProperty(navigator, 'webdriver', {get: () => undefined})"
             )
-
-    def _save_session(self) -> None:
-        # State is now persisted automatically via launch_persistent_context's user_data_dir
-        pass
 
     def _apply_delay(self, url: str) -> None:
         netloc = urlparse(url).netloc
@@ -143,7 +177,9 @@ class PlaywrightBrowserManager:
         last_time = self._last_request_time.get(netloc, 0)
         elapsed = (time.perf_counter() - last_time) * 1000
 
-        delay = random.randint(self._same_site_min_delay_ms, self._same_site_max_delay_ms)
+        delay = random.randint(
+            self._same_site_min_delay_ms, self._same_site_max_delay_ms
+        )
         if elapsed < delay:
             sleep_time = (delay - elapsed) / 1000
             logger.debug("Applying same-site delay for %s: %.2fs", netloc, sleep_time)
@@ -151,9 +187,16 @@ class PlaywrightBrowserManager:
 
         self._last_request_time[netloc] = time.perf_counter()
 
-    def _detect_challenge(self, page: Page, response_status: Optional[int]) -> Optional[str]:
+    def _detect_challenge(
+        self, page: Page, response_status: Optional[int]
+    ) -> Optional[str]:
         if response_status in CHALLENGE_HTTP_STATUSES:
             return f"HTTP status {response_status}"
+
+        current_url = page.url
+        for pattern in CHALLENGE_URL_PATTERNS:
+            if pattern in current_url:
+                return f"Challenge URL pattern '{pattern}' detected"
 
         for selector in CHALLENGE_SELECTORS:
             try:
@@ -195,40 +238,41 @@ class PlaywrightBrowserManager:
 
             try:
                 logger.debug("Playwright navigating to: %s", url)
-                # Use 'domcontentloaded' instead of 'networkidle' to avoid hanging on 
+                # Use 'domcontentloaded' instead of 'networkidle' to avoid hanging on
                 # infinite background requests (ads, tracking, video players)
                 response = page.goto(
                     url, wait_until="domcontentloaded", timeout=self._page_timeout_ms
                 )
 
                 # Give SPAs and dynamic sites a moment to render their main content
-                page.wait_for_timeout(2000)
+                page.wait_for_timeout(self._post_load_delay_ms)
 
                 status = response.status if response else None
                 challenge_reason = self._detect_challenge(page, status)
-                
+
                 if challenge_reason:
                     self._wait_for_challenge_resolution(page, challenge_reason)
                     try:
                         page.wait_for_load_state(
                             "domcontentloaded", timeout=self._page_timeout_ms
                         )
-                        page.wait_for_timeout(2000)
+                        page.wait_for_timeout(self._post_load_delay_ms)
                     except (TimeoutError, Exception) as e:
-                        logger.debug("Post-challenge load state wait failed/timed out: %s", e)
+                        logger.debug(
+                            "Post-challenge load state wait failed/timed out: %s", e
+                        )
 
                 html = page.content()
                 final_url = page.url
-                
+
                 logger.debug(
-                    "Playwright fetched final_url=%s status=%s title='%s' content_length=%d", 
-                    final_url, 
-                    status, 
-                    page.title(), 
-                    len(html)
+                    "Playwright fetched final_url=%s status=%s title='%s' content_length=%d",
+                    final_url,
+                    status,
+                    page.title(),
+                    len(html),
                 )
-                
-                self._save_session()
+
                 return html, final_url
             except Exception as e:
                 logger.debug("Playwright fetch failed for %s. Error: %s", url, e)
@@ -239,11 +283,18 @@ class PlaywrightBrowserManager:
                     self._close_unlocked()
 
     def open_login_session(self, url: str) -> None:
+        from asky.daemon.launch_context import is_interactive
+
+        if not is_interactive():
+            raise RuntimeError(
+                "open_login_session (input()) called in non-interactive context"
+            )
+
         with self._lock:
             self._ensure_started()
             if not self._context:
                 return
-            
+
             url = url.strip()
             if url.startswith("https//"):
                 url = url.replace("https//", "https://", 1)
@@ -259,14 +310,19 @@ class PlaywrightBrowserManager:
 
             try:
                 logger.info("Opening %s for manual login.", url)
-                logger.info("Please log in and then press ENTER in this terminal to save the session.")
+                logger.info(
+                    "Please log in and then press ENTER in this terminal to save the session."
+                )
                 page.goto(url)
                 input()
-                self._save_session()
                 logger.info("Session saved.")
             except Exception as e:
                 import sys
-                print(f"\n[Playwright Plugin] Failed to open login session for '{url}': {e}", file=sys.stderr)
+
+                print(
+                    f"\n[Playwright Plugin] Failed to open login session for '{url}': {e}",
+                    file=sys.stderr,
+                )
             finally:
                 if not self._keep_browser_open:
                     page.close()
@@ -278,7 +334,6 @@ class PlaywrightBrowserManager:
 
     def _close_unlocked(self) -> None:
         if self._context:
-            self._save_session()
             self._context.close()
         if self._browser:
             self._browser.close()

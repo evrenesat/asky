@@ -19,7 +19,13 @@ class MockContext:
 @pytest.fixture
 def plugin_context(tmp_path):
     config = {
-        "intercept": ["get_url_content", "get_url_details", "research", "shortlist", "default"],
+        "intercept": [
+            "get_url_content",
+            "get_url_details",
+            "research",
+            "shortlist",
+            "default",
+        ],
         "browser": "chromium",
         "persist_session": True,
     }
@@ -29,18 +35,18 @@ def plugin_context(tmp_path):
 def test_plugin_activation(plugin_context):
     plugin = PlaywrightBrowserPlugin()
     plugin.activate(plugin_context)
-    
+
     plugin_context.hook_registry.register.assert_called_once_with(
-        FETCH_URL_OVERRIDE, 
+        FETCH_URL_OVERRIDE,
         plugin._on_fetch_url_override,
-        plugin_name=plugin_context.plugin_name
+        plugin_name=plugin_context.plugin_name,
     )
 
 
 def test_intercept_filtering_match(plugin_context):
     plugin = PlaywrightBrowserPlugin()
     plugin.activate(plugin_context)
-    
+
     ctx = FetchURLContext(
         url="https://example.com",
         output_format="markdown",
@@ -49,11 +55,14 @@ def test_intercept_filtering_match(plugin_context):
         trace_callback=None,
         trace_context={"tool_name": "get_url_content"},
     )
-    
+
     with patch.object(plugin._browser_manager, "fetch_page") as mock_fetch:
-        mock_fetch.return_value = ("<html><body>Test</body></html>", "https://example.com")
+        mock_fetch.return_value = (
+            "<html><body>Test</body></html>",
+            "https://example.com",
+        )
         plugin._on_fetch_url_override(ctx)
-        
+
         assert ctx.result is not None
         assert "playwright" in ctx.result["source"]
         assert ctx.result["content"] == "Test"
@@ -62,7 +71,7 @@ def test_intercept_filtering_match(plugin_context):
 def test_intercept_filtering_no_match(plugin_context):
     plugin = PlaywrightBrowserPlugin()
     plugin.activate(plugin_context)
-    
+
     ctx = FetchURLContext(
         url="https://example.com",
         output_format="markdown",
@@ -71,7 +80,7 @@ def test_intercept_filtering_no_match(plugin_context):
         trace_callback=None,
         trace_context={"tool_name": "research"},
     )
-    
+
     plugin._on_fetch_url_override(ctx)
     assert ctx.result is None
 
@@ -79,7 +88,7 @@ def test_intercept_filtering_no_match(plugin_context):
 def test_fallback_on_playwright_error(plugin_context):
     plugin = PlaywrightBrowserPlugin()
     plugin.activate(plugin_context)
-    
+
     ctx = FetchURLContext(
         url="https://example.com",
         output_format="markdown",
@@ -88,8 +97,10 @@ def test_fallback_on_playwright_error(plugin_context):
         trace_callback=None,
         trace_context={"tool_name": "get_url_content"},
     )
-    
-    with patch.object(plugin._browser_manager, "fetch_page", side_effect=Exception("Browser crash")):
+
+    with patch.object(
+        plugin._browser_manager, "fetch_page", side_effect=Exception("Browser crash")
+    ):
         plugin._on_fetch_url_override(ctx)
         assert ctx.result is None
 
@@ -97,7 +108,7 @@ def test_fallback_on_playwright_error(plugin_context):
 def test_result_dict_shape(plugin_context):
     plugin = PlaywrightBrowserPlugin()
     plugin.activate(plugin_context)
-    
+
     ctx = FetchURLContext(
         url="https://example.com",
         output_format="markdown",
@@ -106,12 +117,12 @@ def test_result_dict_shape(plugin_context):
         trace_callback=None,
         trace_context={"tool_name": "get_url_content"},
     )
-    
+
     html = '<html><head><title>Test Title</title></head><body><a href="/link">Link</a></body></html>'
     with patch.object(plugin._browser_manager, "fetch_page") as mock_fetch:
         mock_fetch.return_value = (html, "https://example.com/final")
         plugin._on_fetch_url_override(ctx)
-        
+
         res = ctx.result
         assert res["error"] is None
         assert res["requested_url"] == "https://example.com"
@@ -126,28 +137,28 @@ def test_result_dict_shape(plugin_context):
 @patch("asky.plugins.playwright_browser.browser.time.perf_counter")
 def test_same_site_delay_logic(mock_perf, mock_sleep, tmp_path):
     from asky.plugins.playwright_browser.browser import PlaywrightBrowserManager
-    
+
     manager = PlaywrightBrowserManager(
         data_dir=tmp_path,
         same_site_min_delay_ms=2000,
         same_site_max_delay_ms=2000,
     )
-    
+
     # Mock playwright start
     manager._playwright = MagicMock()
     manager._browser = MagicMock()
     manager._context = MagicMock()
-    
+
     # First call - no delay
     mock_perf.return_value = 100.0
     manager._apply_delay("https://example.com/1")
     mock_sleep.assert_not_called()
-    
+
     # Second call to same domain, 0.5s later -> should sleep 1.5s
     mock_perf.return_value = 100.5
     manager._apply_delay("https://example.com/2")
     mock_sleep.assert_called_once_with(1.5)
-    
+
     # Third call to different domain -> no sleep
     mock_sleep.reset_mock()
     manager._apply_delay("https://other.com")
@@ -157,20 +168,23 @@ def test_same_site_delay_logic(mock_perf, mock_sleep, tmp_path):
 def test_intercept_filtering_default_fallback(plugin_context):
     plugin = PlaywrightBrowserPlugin()
     plugin.activate(plugin_context)
-    
+
     ctx = FetchURLContext(
         url="https://example.com",
         output_format="markdown",
         include_links=False,
         max_links=None,
         trace_callback=None,
-        trace_context=None, # Missing tool_name and source
+        trace_context=None,  # Missing tool_name and source
     )
-    
+
     with patch.object(plugin._browser_manager, "fetch_page") as mock_fetch:
-        mock_fetch.return_value = ("<html><body>Default</body></html>", "https://example.com")
+        mock_fetch.return_value = (
+            "<html><body>Default</body></html>",
+            "https://example.com",
+        )
         plugin._on_fetch_url_override(ctx)
-        
+
         assert ctx.result is not None
         assert ctx.result["content"] == "Default"
 
@@ -178,7 +192,7 @@ def test_intercept_filtering_default_fallback(plugin_context):
 def test_try_fetch_url_plugin_override_no_runtime():
     """Verify _try_fetch_url_plugin_override returns None when runtime is missing."""
     from asky.retrieval import _try_fetch_url_plugin_override
-    
+
     with patch("asky.plugins.runtime.get_or_create_plugin_runtime", return_value=None):
         result = _try_fetch_url_plugin_override(
             url="https://example.com",
@@ -189,3 +203,50 @@ def test_try_fetch_url_plugin_override_no_runtime():
             trace_context=None,
         )
         assert result is None
+
+
+def test_detect_challenge_url(tmp_path):
+    from asky.plugins.playwright_browser.browser import PlaywrightBrowserManager
+
+    manager = PlaywrightBrowserManager(data_dir=tmp_path)
+
+    mock_page = MagicMock()
+    mock_page.url = "https://example.com/cdn-cgi/challenge-platform/h/g/abc"
+
+    reason = manager._detect_challenge(mock_page, 200)
+    assert reason is not None
+    assert "Challenge URL pattern" in reason
+    assert "/cdn-cgi/challenge-platform/" in reason
+
+
+def test_open_login_session_daemon_guard(tmp_path):
+    from asky.plugins.playwright_browser.browser import PlaywrightBrowserManager
+
+    manager = PlaywrightBrowserManager(data_dir=tmp_path)
+
+    with patch("asky.daemon.launch_context.is_interactive", return_value=False):
+        with pytest.raises(RuntimeError, match="non-interactive context"):
+            manager.open_login_session("https://example.com")
+
+
+def test_post_load_delay_usage(tmp_path):
+    from asky.plugins.playwright_browser.browser import PlaywrightBrowserManager
+
+    manager = PlaywrightBrowserManager(data_dir=tmp_path, post_load_delay_ms=5000)
+
+    # Mock playwright start
+    manager._playwright = MagicMock()
+    manager._browser = MagicMock()
+    manager._context = MagicMock()
+
+    mock_page = MagicMock()
+    manager._context.pages = []
+    manager._context.new_page.return_value = mock_page
+    mock_page.goto.return_value = MagicMock(status=200)
+    mock_page.content.return_value = "<html></html>"
+    mock_page.url = "https://example.com"
+
+    manager.fetch_page("https://example.com")
+
+    # Verify wait_for_timeout call used the configured value (not hardcoded 2000)
+    mock_page.wait_for_timeout.assert_called_with(5000)

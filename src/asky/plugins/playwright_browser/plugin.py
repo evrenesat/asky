@@ -23,7 +23,7 @@ class PlaywrightBrowserPlugin(AskyPlugin):
                 category=CapabilityCategory.BROWSER_SETUP,
                 flags=("--browser",),
                 kwargs=dict(
-                    dest="playwright_login",
+                    dest="browser_login",
                     metavar="URL",
                     default=None,
                     help="Open an interactive browser session at URL for login or extension setup.",
@@ -50,6 +50,7 @@ class PlaywrightBrowserPlugin(AskyPlugin):
             page_timeout_ms=config.get("page_timeout_ms", 30000),
             network_idle_timeout_ms=config.get("network_idle_timeout_ms", 2000),
             keep_browser_open=config.get("keep_browser_open", True),
+            post_load_delay_ms=config.get("post_load_delay_ms", 2000),
         )
 
         context.hook_registry.register(
@@ -57,7 +58,9 @@ class PlaywrightBrowserPlugin(AskyPlugin):
             self._on_fetch_url_override,
             plugin_name=context.plugin_name,
         )
-        logger.debug("PlaywrightBrowserPlugin activated with intercept=%s", self._intercept)
+        logger.debug(
+            "PlaywrightBrowserPlugin activated with intercept=%s", self._intercept
+        )
 
     def deactivate(self) -> None:
         self._browser_manager.close()
@@ -77,7 +80,9 @@ class PlaywrightBrowserPlugin(AskyPlugin):
         if site not in self._intercept:
             return
 
-        logger.info("Playwright intercepting fetch for URL: %s (site=%s)", ctx.url, site)
+        logger.info(
+            "Playwright intercepting fetch for URL: %s (site=%s)", ctx.url, site
+        )
 
         try:
             html, final_url = self._browser_manager.fetch_page(ctx.url)
@@ -85,21 +90,42 @@ class PlaywrightBrowserPlugin(AskyPlugin):
             if not getattr(self, "_has_warned_missing_dep", False):
                 try:
                     from rich.console import Console
+
                     console = Console()
                     console.print()
-                    console.print("[bold yellow]Playwright Plugin:[/bold yellow] [red]Playwright is not installed.[/red]")
-                    console.print("To use browser-based retrieval, please run: [cyan]uv pip install 'asky-cli[playwright]'[/cyan]")
+                    console.print(
+                        "[bold yellow]Playwright Plugin:[/bold yellow] [red]Playwright is not installed.[/red]"
+                    )
+                    console.print(
+                        "To use browser-based retrieval, please run: [cyan]uv pip install 'asky-cli[playwright]'[/cyan]"
+                    )
                     console.print("Falling back to default retrieval pipeline.\n")
                 except ImportError:
                     import sys
-                    print("\n[Playwright Plugin] Playwright is not installed.", file=sys.stderr)
-                    print("[Playwright Plugin] To use browser-based retrieval, please run: uv pip install 'asky-cli[playwright]'", file=sys.stderr)
-                    print("[Playwright Plugin] Falling back to default retrieval pipeline.\n", file=sys.stderr)
+
+                    print(
+                        "\n[Playwright Plugin] Playwright is not installed.",
+                        file=sys.stderr,
+                    )
+                    print(
+                        "[Playwright Plugin] To use browser-based retrieval, please run: uv pip install 'asky-cli[playwright]'",
+                        file=sys.stderr,
+                    )
+                    print(
+                        "[Playwright Plugin] Falling back to default retrieval pipeline.\n",
+                        file=sys.stderr,
+                    )
                 self._has_warned_missing_dep = True
-            logger.warning("Playwright fetch failed: %s. Falling back to default pipeline.", e)
+            logger.warning(
+                "Playwright fetch failed: %s. Falling back to default pipeline.", e
+            )
             return
         except Exception as e:
-            logger.warning("Playwright fetch failed for %s: %s. Falling back to default pipeline.", ctx.url, e)
+            logger.warning(
+                "Playwright fetch failed for %s: %s. Falling back to default pipeline.",
+                ctx.url,
+                e,
+            )
             return
 
         extracted = _extract_main_content(
@@ -112,7 +138,7 @@ class PlaywrightBrowserPlugin(AskyPlugin):
         title = extracted.get("title", "") or _derive_title(content, final_url)
         warning = extracted.get("warning")
         page_type = extracted.get("page_type", "article")
-        
+
         # We preserve Trafilatura metadata extraction for the date if possible
         date = None
         try:

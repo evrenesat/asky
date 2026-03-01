@@ -774,6 +774,6 @@ A simplified "retrieval-only" system prompt guidance is injected in these cases 
 - **Decision**: Add an optional Playwright-based plugin that can intercept fetch requests and provide browser-rendered content with session persistence.
 - **Implementation**:
   - `FETCH_URL_OVERRIDE` hook in `retrieval.py` allows plugins to provide a result before the default pipeline runs.
-  - `PlaywrightBrowserManager` (sync) handles browser lifecycle, anti-fingerprinting, and CAPTCHA detection.
-  - `--browser` CLI flag allows manual login and persisted browser session state.
-  - Same-site delay logic (random 1.5s - 4s) to avoid rate-limiting.
+  - `PlaywrightBrowserManager` (sync) handles browser lifecycle, anti-fingerprinting, and challenge detection (selectors + URL patterns).
+  - `--browser` CLI flag allows manual login and persistent browser profile directory (gated by `LaunchContext` for daemon safety).
+  - Same-site delay logic (random 1.5s - 4s) and configurable post-load delays to avoid rate-limiting and handle dynamic rendering.

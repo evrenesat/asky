@@ -2,6 +2,17 @@
 
 For full detailed entries, see [DEVLOG_ARCHIVE.md](DEVLOG_ARCHIVE.md).
 
+## 2026-03-01 - Code Review Phase 6: Playwright Browser Plugin Fixes
+
+- **F1/F6 fix (P3)**: Removed dead code `_session_path` and `_save_session` in `PlaywrightBrowserManager`. Persistence is correctly handled by Playwright's `launch_persistent_context`. Updated `AGENTS.md` to reflect actual profile directory storage.
+- **F2 fix (P3)**: Added URL-pattern challenge detection to `_detect_challenge` to catch redirects to Cloudflare/hCaptcha challenge pages.
+- **F3 fix (P2)**: Renamed internal `playwright_login` destination to `browser_login` for consistency with the `--browser` flag. Fixed stale `--playwright-login` references in documentation.
+- **F4 fix (P3)**: Unified `intercept` default list in `playwright_browser.md` with the shipped code defaults (adding `shortlist` and `default`).
+- **F5 fix (P4)**: Added `is_interactive()` guard to `open_login_session` to prevent blocking the event loop in daemon/non-interactive contexts.
+- **F7 fix (P3)**: Made the 2-second post-load sleep configurable via `post_load_delay_ms` in plugin config.
+- **Tests**: Added 3 new tests: `test_detect_challenge_url`, `test_open_login_session_daemon_guard`, and `test_post_load_delay_usage`.
+- Suite: 1275 → 1278 passed.
+
 ## 2026-03-01 - Code Review Phase 5: XMPP Daemon & Routing
 
 - **F5.1 fix (P1)**: Added `shutdown()` method to `VoiceTranscriber` and `ImageTranscriber` using None poison-pill sentinel + thread joining. Updated `XMPPService.stop()` to call both `shutdown()` methods before stopping the XMPP client. Previously, worker threads were daemon threads with blocking `queue.get()` and no shutdown mechanism — in-flight jobs would be abandoned on daemon stop.

@@ -94,7 +94,9 @@ def _format_contribution_lines(contribution: "CLIContribution") -> list[str]:
         metavar_str = str(metavar)
     else:
         metavar_str = ""
-    header = f"  {flags_str} {metavar_str}".rstrip() if metavar_str else f"  {flags_str}"
+    header = (
+        f"  {flags_str} {metavar_str}".rstrip() if metavar_str else f"  {flags_str}"
+    )
     help_text = contribution.kwargs.get("help", "")
     if help_text:
         return [header, f"      {help_text}"]
@@ -171,8 +173,15 @@ def _print_top_level_help(plugin_manager=None) -> None:
 
     # Output Delivery: core --open is always present; plugins may add more.
     output_title, _ = CATEGORY_LABELS[CapabilityCategory.OUTPUT_DELIVERY]
-    lines += ["", f"{output_title}:", "  -o, --open", "      Open final answer in browser."]
-    for contrib in contributions_by_category.get(CapabilityCategory.OUTPUT_DELIVERY, []):
+    lines += [
+        "",
+        f"{output_title}:",
+        "  -o, --open",
+        "      Open final answer in browser.",
+    ]
+    for contrib in contributions_by_category.get(
+        CapabilityCategory.OUTPUT_DELIVERY, []
+    ):
         lines += _format_contribution_lines(contrib)
 
     # Other categories appear only when a plugin contributes to them.
@@ -323,11 +332,7 @@ def _consume_grouped_help(tokens: list[str], plugin_manager=None) -> bool:
         raise SystemExit(0)
 
     group = str(visible_tokens[0]).strip().lower()
-    action = (
-        str(visible_tokens[1]).strip().lower()
-        if len(visible_tokens) >= 2
-        else ""
-    )
+    action = str(visible_tokens[1]).strip().lower() if len(visible_tokens) >= 2 else ""
     if group == "corpus":
         if action == "query":
             _print_corpus_query_help()
@@ -519,9 +524,7 @@ def _translate_tools_tokens(tokens: list[str]) -> list[str]:
 
         mode = next_token.strip().lower()
         if mode == "off":
-            value_token = (
-                str(tokens[index + 2]) if index + 2 < len(tokens) else ""
-            )
+            value_token = str(tokens[index + 2]) if index + 2 < len(tokens) else ""
             if not value_token or _is_flag_token(value_token):
                 translated.extend(["--tool-off", "all"])
                 index += 2
@@ -591,13 +594,21 @@ def _flag_present(tokens: list[str], *flag_names: str) -> bool:
     return any(str(token) in available for token in tokens)
 
 
-_INTERNAL_ONLY_FLAGS = frozenset({
-    # Commands that handle themselves before any plugin flags are needed.
-    "--config", "--add-model", "--edit-model", "-me",
-    "--help-all",
-    "--completion-script", "--prompts", "-p",
-    "--delete-messages", "--delete-sessions",
-})
+_INTERNAL_ONLY_FLAGS = frozenset(
+    {
+        # Commands that handle themselves before any plugin flags are needed.
+        "--config",
+        "--add-model",
+        "--edit-model",
+        "-me",
+        "--help-all",
+        "--completion-script",
+        "--prompts",
+        "-p",
+        "--delete-messages",
+        "--delete-sessions",
+    }
+)
 
 
 def _bootstrap_plugin_manager_for_cli(argv: Optional[list[str]] = None):
@@ -617,7 +628,10 @@ def _bootstrap_plugin_manager_for_cli(argv: Optional[list[str]] = None):
         manager.load_roster()
         return manager
     except Exception:
-        logger.debug("Plugin manager bootstrap failed; skipping plugin CLI contributions", exc_info=True)
+        logger.debug(
+            "Plugin manager bootstrap failed; skipping plugin CLI contributions",
+            exc_info=True,
+        )
         return None
 
 
@@ -644,7 +658,9 @@ def _add_plugin_contributions_to_parser(
             title, description = CATEGORY_LABELS.get(category, (category, ""))
             groups_by_category[category] = parser.add_argument_group(title, description)
         try:
-            groups_by_category[category].add_argument(*contribution.flags, **contribution.kwargs)
+            groups_by_category[category].add_argument(
+                *contribution.flags, **contribution.kwargs
+            )
         except argparse.ArgumentError:
             logger.debug(
                 "Plugin CLI contribution conflict for flags %s; skipping",
@@ -652,7 +668,9 @@ def _add_plugin_contributions_to_parser(
             )
 
 
-def parse_args(argv: Optional[list[str]] = None, plugin_manager=None) -> argparse.Namespace:
+def parse_args(
+    argv: Optional[list[str]] = None, plugin_manager=None
+) -> argparse.Namespace:
     """Parse command-line arguments."""
     raw_tokens = list(sys.argv[1:] if argv is None else argv)
     _consume_grouped_help(raw_tokens, plugin_manager=plugin_manager)
@@ -694,10 +712,10 @@ def parse_args(argv: Optional[list[str]] = None, plugin_manager=None) -> argpars
         action="help",
         help="Show full option reference including advanced/internal routing flags.",
     )
-    
+
     # Note: persona subcommand is handled separately in main() before parse_args()
     # to avoid conflicts with query positional argument
-    
+
     model_action = parser.add_argument(
         "-m",
         "--model",
@@ -1060,12 +1078,16 @@ def parse_args(argv: Optional[list[str]] = None, plugin_manager=None) -> argpars
     # Internal process-spawning flags: always registered regardless of plugin state.
     parser.add_argument("--xmpp-daemon", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--edit-daemon", action="store_true", help=argparse.SUPPRESS)
-    parser.add_argument("--xmpp-menubar-child", action="store_true", help=argparse.SUPPRESS)
+    parser.add_argument(
+        "--xmpp-menubar-child", action="store_true", help=argparse.SUPPRESS
+    )
     if plugin_manager is not None:
         _add_plugin_contributions_to_parser(
             parser,
             plugin_manager,
-            pre_created_groups={CapabilityCategory.OUTPUT_DELIVERY: output_delivery_group},
+            pre_created_groups={
+                CapabilityCategory.OUTPUT_DELIVERY: output_delivery_group
+            },
         )
     parser.add_argument("query", nargs="*", help="The query string")
 
@@ -1078,7 +1100,7 @@ def parse_args(argv: Optional[list[str]] = None, plugin_manager=None) -> argpars
     parser._option_string_actions["--tool-off"].completer = complete_tool_names
 
     enable_argcomplete(parser)
-    
+
     parsed_args = parser.parse_args(normalized_tokens)
     parsed_args._raw_tokens = raw_tokens
     parsed_args._normalized_tokens = normalized_tokens
@@ -1173,7 +1195,9 @@ def _is_valid_history_selector(value: str) -> bool:
     if not normalized:
         return False
     token_pattern = r"(?:[sS]?\d+|~\d+|__hid_\d+|\d+-\d+)"
-    return re.fullmatch(rf"{token_pattern}(?:,{token_pattern})*", normalized) is not None
+    return (
+        re.fullmatch(rf"{token_pattern}(?:,{token_pattern})*", normalized) is not None
+    )
 
 
 def _recover_history_show_as_query(args: argparse.Namespace) -> bool:
@@ -1354,7 +1378,6 @@ def _resolve_research_corpus(
     return True, resolved_paths, None, "local_only", True
 
 
-
 def _parse_tool_off_values(raw_values: list[str]) -> list[str]:
     """Normalize repeated/comma-separated tool names."""
     parsed: list[str] = []
@@ -1400,7 +1423,9 @@ def _apply_shell_session_defaults(args: argparse.Namespace) -> None:
             args.lean = True
 
     if not getattr(args, "_provided_system_prompt", False):
-        persisted_prompt = str(defaults.get(QUERY_DEFAULT_SYSTEM_PROMPT_KEY, "")).strip()
+        persisted_prompt = str(
+            defaults.get(QUERY_DEFAULT_SYSTEM_PROMPT_KEY, "")
+        ).strip()
         if persisted_prompt:
             args.system_prompt = persisted_prompt
 
@@ -1419,9 +1444,13 @@ def _build_session_default_updates(args: argparse.Namespace) -> dict[str, Any]:
     updates: dict[str, Any] = {}
     if getattr(args, "_provided_model", False):
         updates[QUERY_DEFAULT_MODEL_KEY] = str(getattr(args, "model", "")).strip()
-    if getattr(args, "_provided_summarize", False) and bool(getattr(args, "summarize", False)):
+    if getattr(args, "_provided_summarize", False) and bool(
+        getattr(args, "summarize", False)
+    ):
         updates[QUERY_DEFAULT_SUMMARIZE_KEY] = True
-    if getattr(args, "_provided_research", False) and bool(getattr(args, "research", False)):
+    if getattr(args, "_provided_research", False) and bool(
+        getattr(args, "research", False)
+    ):
         updates[QUERY_DEFAULT_RESEARCH_KEY] = True
     if getattr(args, "_provided_lean", False) and bool(getattr(args, "lean", False)):
         updates[QUERY_DEFAULT_LEAN_KEY] = True
@@ -1470,7 +1499,10 @@ def _persist_session_defaults(
 
     repo.update_session_query_defaults(int(session_id), merged_defaults)
 
-    if getattr(args, "_provided_turns", False) and getattr(args, "turns", None) is not None:
+    if (
+        getattr(args, "_provided_turns", False)
+        and getattr(args, "turns", None) is not None
+    ):
         repo.update_session_max_turns(int(session_id), int(args.turns))
     if getattr(args, "_provided_elephant_mode", False) and bool(
         getattr(args, "elephant_mode", False)
@@ -1488,7 +1520,7 @@ def _needs_defaults_only_session(args: argparse.Namespace) -> bool:
     """Return True when invocation should only persist defaults and exit."""
     if bool(getattr(args, "query", [])):
         return False
-    if bool(getattr(args, "playwright_login", None)):
+    if bool(getattr(args, "browser_login", None)):
         return False
     if bool(getattr(args, "xmpp_daemon", False)):
         return False
@@ -1570,75 +1602,91 @@ def main() -> None:
     # This maintains clean UX without breaking existing functionality
     if len(sys.argv) > 1 and sys.argv[1] == "persona":
         from asky.cli import persona_commands
-        
+
         # Parse persona subcommands separately
         parser = argparse.ArgumentParser(description="Persona management commands")
-        subparsers = parser.add_subparsers(dest='persona_command', required=True)
-        
-        create_parser = subparsers.add_parser('create', help='Create a new persona')
-        create_parser.add_argument('name', help='Persona name')
-        create_parser.add_argument('--prompt', required=True, help='Path to behavior prompt file')
-        create_parser.add_argument('--description', default='', help='Persona description')
-        
-        add_sources_parser = subparsers.add_parser('add-sources', help='Add knowledge sources to a persona')
-        add_sources_parser.add_argument('name', help='Persona name')
-        add_sources_parser.add_argument('sources', nargs='+', help='Source URLs or paths')
-        
-        import_parser = subparsers.add_parser('import', help='Import a persona package')
-        import_parser.add_argument('path', help='Path to persona ZIP file')
-        
-        export_parser = subparsers.add_parser('export', help='Export a persona package')
-        export_parser.add_argument('name', help='Persona name')
-        export_parser.add_argument('--output', help='Output path for exported ZIP file')
-        
-        load_parser = subparsers.add_parser('load', help='Load a persona into the current session')
-        load_parser.add_argument('name', help='Persona name or alias')
-        
-        unload_parser = subparsers.add_parser('unload', help='Unload the current persona')
-        
-        current_parser = subparsers.add_parser('current', help='Show the currently loaded persona')
-        
-        list_parser = subparsers.add_parser('list', help='List all available personas')
-        
-        alias_parser = subparsers.add_parser('alias', help='Create a persona alias')
-        alias_parser.add_argument('alias', help='Alias name')
-        alias_parser.add_argument('persona_name', help='Target persona name')
-        
-        unalias_parser = subparsers.add_parser('unalias', help='Remove a persona alias')
-        unalias_parser.add_argument('alias', help='Alias to remove')
-        
-        aliases_parser = subparsers.add_parser('aliases', help='List persona aliases')
-        aliases_parser.add_argument('persona_name', nargs='?', help='Show aliases for specific persona')
-        
+        subparsers = parser.add_subparsers(dest="persona_command", required=True)
+
+        create_parser = subparsers.add_parser("create", help="Create a new persona")
+        create_parser.add_argument("name", help="Persona name")
+        create_parser.add_argument(
+            "--prompt", required=True, help="Path to behavior prompt file"
+        )
+        create_parser.add_argument(
+            "--description", default="", help="Persona description"
+        )
+
+        add_sources_parser = subparsers.add_parser(
+            "add-sources", help="Add knowledge sources to a persona"
+        )
+        add_sources_parser.add_argument("name", help="Persona name")
+        add_sources_parser.add_argument(
+            "sources", nargs="+", help="Source URLs or paths"
+        )
+
+        import_parser = subparsers.add_parser("import", help="Import a persona package")
+        import_parser.add_argument("path", help="Path to persona ZIP file")
+
+        export_parser = subparsers.add_parser("export", help="Export a persona package")
+        export_parser.add_argument("name", help="Persona name")
+        export_parser.add_argument("--output", help="Output path for exported ZIP file")
+
+        load_parser = subparsers.add_parser(
+            "load", help="Load a persona into the current session"
+        )
+        load_parser.add_argument("name", help="Persona name or alias")
+
+        unload_parser = subparsers.add_parser(
+            "unload", help="Unload the current persona"
+        )
+
+        current_parser = subparsers.add_parser(
+            "current", help="Show the currently loaded persona"
+        )
+
+        list_parser = subparsers.add_parser("list", help="List all available personas")
+
+        alias_parser = subparsers.add_parser("alias", help="Create a persona alias")
+        alias_parser.add_argument("alias", help="Alias name")
+        alias_parser.add_argument("persona_name", help="Target persona name")
+
+        unalias_parser = subparsers.add_parser("unalias", help="Remove a persona alias")
+        unalias_parser.add_argument("alias", help="Alias to remove")
+
+        aliases_parser = subparsers.add_parser("aliases", help="List persona aliases")
+        aliases_parser.add_argument(
+            "persona_name", nargs="?", help="Show aliases for specific persona"
+        )
+
         # Parse persona args (skip "persona" token)
         persona_args = parser.parse_args(sys.argv[2:])
-        
+
         # Dispatch to appropriate handler
         persona_cmd = persona_args.persona_command
-        if persona_cmd == 'create':
+        if persona_cmd == "create":
             persona_commands.handle_persona_create(persona_args)
-        elif persona_cmd == 'add-sources':
+        elif persona_cmd == "add-sources":
             persona_commands.handle_persona_add_sources(persona_args)
-        elif persona_cmd == 'import':
+        elif persona_cmd == "import":
             persona_commands.handle_persona_import(persona_args)
-        elif persona_cmd == 'export':
+        elif persona_cmd == "export":
             persona_commands.handle_persona_export(persona_args)
-        elif persona_cmd == 'load':
+        elif persona_cmd == "load":
             persona_commands.handle_persona_load(persona_args)
-        elif persona_cmd == 'unload':
+        elif persona_cmd == "unload":
             persona_commands.handle_persona_unload(persona_args)
-        elif persona_cmd == 'current':
+        elif persona_cmd == "current":
             persona_commands.handle_persona_current(persona_args)
-        elif persona_cmd == 'list':
+        elif persona_cmd == "list":
             persona_commands.handle_persona_list(persona_args)
-        elif persona_cmd == 'alias':
+        elif persona_cmd == "alias":
             persona_commands.handle_persona_alias(persona_args)
-        elif persona_cmd == 'unalias':
+        elif persona_cmd == "unalias":
             persona_commands.handle_persona_unalias(persona_args)
-        elif persona_cmd == 'aliases':
+        elif persona_cmd == "aliases":
             persona_commands.handle_persona_aliases(persona_args)
         return
-    
+
     # Normal query parsing flow
     _cli_plugin_manager = _bootstrap_plugin_manager_for_cli()
     args = parse_args(plugin_manager=_cli_plugin_manager)
@@ -2116,7 +2164,7 @@ def main() -> None:
             args.session_end,
             getattr(args, "sticky_session", None),
             getattr(args, "resume_session", None),
-            getattr(args, "playwright_login", None),
+            getattr(args, "browser_login", None),
         ]
     ):
         print("Error: Query argument is required.")
@@ -2160,14 +2208,20 @@ def main() -> None:
 
     plugin_runtime = get_or_create_plugin_runtime()
 
-    if getattr(args, "playwright_login", None) and isinstance(args.playwright_login, str):
-        url = args.playwright_login
-        plugin = plugin_runtime.manager.get_plugin("playwright_browser") if plugin_runtime else None
+    if getattr(args, "browser_login", None) and isinstance(args.browser_login, str):
+        url = args.browser_login
+        plugin = (
+            plugin_runtime.manager.get_plugin("playwright_browser")
+            if plugin_runtime
+            else None
+        )
         if plugin and hasattr(plugin, "run_login_session"):
             plugin.run_login_session(url)
         else:
             status_list = plugin_runtime.manager.list_status() if plugin_runtime else []
-            pw_status = next((s for s in status_list if s.name == "playwright_browser"), None)
+            pw_status = next(
+                (s for s in status_list if s.name == "playwright_browser"), None
+            )
             if pw_status and not pw_status.active:
                 print(
                     f"playwright_browser plugin is not active (state: {pw_status.state}).",
