@@ -74,7 +74,8 @@ Memory recall is skipped in lean mode (`-L`).
 asky "remember globally: I use Python 3.12 with uv for package management"
 ```
 
-<!-- CAPTURE: run this command and paste the full terminal output here, including any tool call or confirmation lines -->
+![Saving a global memory](../assets/shots/elephant-remember.gif)
+<!-- vhs assets/shots/elephant-remember.tape -->
 
 **Session 2 - different terminal, no flags:**
 
@@ -82,7 +83,8 @@ asky "remember globally: I use Python 3.12 with uv for package management"
 asky -v "how should I set up a new project?"
 ```
 
-<!-- CAPTURE: run this command and paste the output here - the ## User Memory section in the verbose output should show the saved fact being injected -->
+![Memory recall — User Memory section injected into verbose output](../assets/shots/elephant-recall.gif)
+<!-- vhs assets/shots/elephant-recall.tape -->
 
 ## Managing memories
 

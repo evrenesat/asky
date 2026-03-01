@@ -56,11 +56,13 @@ asky "hello"
 
 On first run, asky creates its config directory and copies default config files into it:
 
-<!-- CAPTURE: run `asky "hello"` on a fresh install (no ~/.config/asky directory) and paste the terminal output here, including all "Created default configuration..." lines -->
+![First run — config bootstrap](../assets/shots/quickstart-first-run.gif)
+<!-- vhs assets/shots/quickstart-first-run.tape -->
 
 After that, you will see an error because no model is configured yet:
 
-<!-- CAPTURE: run `asky "hello"` when default_model is empty in general.toml and paste the error message here -->
+![No model configured error](../assets/shots/quickstart-no-model.gif)
+<!-- vhs assets/shots/quickstart-no-model.tape -->
 
 That's expected. Continue to Step 3.
 
@@ -104,7 +106,8 @@ Or add a new model interactively:
 asky --config model add
 ```
 
-<!-- CAPTURE: run `asky --config model add` and paste the interactive session output here (the prompts and what you typed) -->
+![Interactive model add](../assets/shots/quickstart-model-add.gif)
+<!-- vhs assets/shots/quickstart-model-add.tape -->
 
 ---
 
@@ -116,7 +119,8 @@ asky "What is the capital of France?"
 
 Expected output:
 
-<!-- CAPTURE: run `asky "What is the capital of France?"` after configuring a model and paste the full terminal output here -->
+![First successful query](../assets/shots/quickstart-first-query.gif)
+<!-- vhs assets/shots/quickstart-first-query.tape -->
 
 The timing line at the end (`Query completed in X.XX seconds`) is always shown. The tool-dispatch lines only appear when the model makes tool calls (web search, URL fetch, etc.).
 
@@ -145,7 +149,8 @@ asky "What is the weather in London right now?"
 
 You should see `Dispatching tool call: web_search` appear before the answer.
 
-<!-- CAPTURE: run `asky "What is the weather in London right now?"` with a working Serper key and paste the output here -->
+![Web search query with tool dispatch](../assets/shots/quickstart-web-search.gif)
+<!-- vhs assets/shots/quickstart-web-search.tape -->
 
 If you prefer SearXNG, see [Configuration - Web Search Providers](./configuration.md#5-web-search-providers).
 

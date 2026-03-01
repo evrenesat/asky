@@ -19,7 +19,9 @@ For file attachments (sending documents to asky for analysis), your client app n
 
 **macOS:** With `rumps` installed, daemon mode adds a menu bar icon for controlling start/stop and voice on/off. On other platforms, the daemon runs in the foreground.
 
-<!-- SCREENSHOT: macOS menu bar showing the asky icon and its dropdown menu with Start XMPP / Stop XMPP / Enable Voice / Enable Run at Login options -->
+![Daemon starting](../assets/shots/daemon-start.gif)
+<!-- vhs assets/shots/daemon-start.tape -->
+<!-- macOS menu bar screenshot (the icon + dropdown with Start XMPP / Stop XMPP / Enable Voice / Enable Run at Login) requires a manual screen capture. -->
 
 ## What it looks like in practice
 

@@ -7,7 +7,8 @@
       "Edit(*)",
       "WebFetch(domain:example.com)",
       "WebSearch",
-      "WebFetch(domain:slixmpp.readthedocs.io)"
+      "WebFetch(domain:slixmpp.readthedocs.io)",
+      "WebFetch(domain:github.com)"
     ]
   },
   "sandbox": {

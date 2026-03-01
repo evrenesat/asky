@@ -16,7 +16,8 @@ asky -r path/to/document.pdf "What are the main conclusions?"
 
 The `-r` flag enables research mode. When you pass a file path, asky reads and indexes the file before querying the model. On first use with a large file (a long PDF or EPUB), indexing can take 30-60 seconds.
 
-<!-- CAPTURE: run `asky -r some-document.pdf "What is this document about?"` and paste the terminal output including any indexing progress lines -->
+![Reading and querying a document](../assets/shots/document-qa-read.gif)
+<!-- vhs assets/shots/document-qa-read.tape -->
 
 ---
 
@@ -76,7 +77,8 @@ List all sections:
 asky -r mybook.epub --summarize-section
 ```
 
-<!-- CAPTURE: run `asky -r <some epub or long pdf> --summarize-section` and paste the section listing output here -->
+![Listing document sections](../assets/shots/document-qa-sections.gif)
+<!-- vhs assets/shots/document-qa-sections.tape -->
 
 Summarize a specific section by title:
 
