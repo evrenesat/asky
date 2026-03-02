@@ -271,6 +271,24 @@ context cutoff.
 - `--lean` flag disables for single run
 - Default shortlist budgets are bounded (`max_candidates=40`, `max_fetch_urls=20`)
   and remain configurable in `research.toml`.
+- In API preload policy resolution for local-corpus turns:
+  - `research_source_mode=local_only` is a hard disable path for shortlist.
+  - `research_source_mode=mixed` uses intent routing:
+    - deterministic `web` intent -> shortlist enabled
+    - deterministic `local` intent -> shortlist disabled
+    - ambiguous intent -> optional interface-model decision, fail-safe disabled fallback.
+
+Shortlist behavior matrix (effective runtime):
+
+- Standard mode: policy-driven (lean/request/model/global).
+- Research `web_only`: policy-driven (lean/request/model/global).
+- Research `local_only`: always disabled to keep corpus-only contract.
+- Research `mixed`: adaptive intent policy over local+web candidates.
+
+Operational note:
+
+- Shortlist enablement governs only pre-LLM candidate preparation; it does not
+  guarantee subsequent deep page fetch tool calls by the main model.
 
 ## Local Loader (`adapters.py`)
 

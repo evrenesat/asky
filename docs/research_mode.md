@@ -94,6 +94,51 @@ Precedence is:
 Lean note: `--lean` is broader than shortlist control. It also disables tool calls,
 skips memory recall preload, and skips memory-extraction/context-compaction side effects.
 
+## Shortlist Behavior by Pipeline
+
+Shortlist behavior depends on both mode and source profile:
+
+| Pipeline / Source Profile | Pre-LLM Shortlist | Why |
+| --- | --- | --- |
+| Standard (no `-r`) | Usually enabled (config/override dependent) | Uses global/model/request shortlist policy. |
+| Research `web_only` | Usually enabled (config/override dependent) | Web-focused research profile. |
+| Research `local_only` | Always disabled | Local-corpus-first contract; avoid paying web shortlisting cost when corpus-only was requested. |
+| Research `mixed` (local + web) | Adaptive (query intent policy) | Deterministic intent checks first, interface-model fallback only for ambiguous intent. |
+| `--query-corpus` / `corpus query` / section summarize commands | Disabled (not used) | Deterministic no-main-model flows; shortlist stage is not part of this pipeline. |
+
+Important details:
+
+- `asky -r <local-path> ...` resolves to `research_source_mode=local_only` by design.
+- In `local_only`, shortlist is forced off before request overrides (`--shortlist on`) are considered.
+- Research source profile is session-owned; follow-up turns reuse the stored `local_only`/`mixed`/`web_only` mode unless you replace it.
+
+## Query Phrasing and Intent
+
+Phrasing only affects shortlist policy in profiles where shortlist is eligible (`mixed`, `web_only`, standard mode). It does not override `local_only`.
+
+If you want local corpus plus web shortlist:
+
+```bash
+asky -r "myfile.pdf,web" "Compare my file with the latest public guidance"
+```
+
+If you want web-only research:
+
+```bash
+asky -r web "Investigate the latest release notes and breaking changes"
+```
+
+In `mixed` mode, phrasing cues used by deterministic intent policy include:
+
+- Web-leaning: `latest`, `current`, `news`, `search`, `web`, `browse`, `recent`.
+- Local-leaning: `local`, `corpus`, `documents`, `files`, `pdf`, `this document`, `these documents`.
+
+Practical phrasing guidance:
+
+- If you need web shortlist, explicitly request fresh/current external evidence.
+- If you say only “these documents/files”, policy may keep shortlist off in `mixed`.
+- If you need deep reading (not just search snippets), ask for page-level verification explicitly (for example: “open the top result pages and verify before answering”).
+
 ## Local Corpus Reliability and Fail-Fast
 
 For research profiles that expect local corpus input (`local_only` or `mixed`):

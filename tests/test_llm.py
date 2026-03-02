@@ -708,3 +708,72 @@ def test_empty_response_abort_after_retries(mock_dispatch, mock_get_msg):
     assert len(messages) == 5
     assert messages[4]["role"] == "assistant"
     assert "repeatedly returned empty responses" in messages[4]["content"]
+
+
+@patch("asky.core.engine.get_llm_msg")
+@patch("asky.core.engine.ToolRegistry.dispatch")
+def test_graceful_exit_empty_response_retries_once(mock_dispatch, mock_get_msg):
+    from asky.core.engine import ConversationEngine
+    import asky.core.engine as engine_mod
+
+    msg_tool_call = {
+        "content": None,
+        "tool_calls": [
+            {"id": "call_1", "function": {"name": "test", "arguments": "{}"}}
+        ],
+    }
+    msg_empty = {"content": ""}
+    msg_final = {"content": "Recovered final answer"}
+
+    # Turn 1 tool call + graceful-exit empty + graceful-exit retry success
+    mock_get_msg.side_effect = [msg_tool_call, msg_empty, msg_final]
+    mock_dispatch.return_value = {"result": "ok"}
+
+    with patch.object(engine_mod, "MAX_TURNS", new=1):
+        model_config = {"id": "test", "alias": "test"}
+        registry_mock = MagicMock()
+        registry_mock.dispatch.return_value = {"result": "ok"}
+        registry_mock.get_schemas.return_value = []
+
+        engine = ConversationEngine(
+            model_config=model_config, tool_registry=registry_mock
+        )
+        messages = [{"role": "user", "content": "start"}]
+        final_answer = engine.run(messages)
+
+    assert final_answer == "Recovered final answer"
+    assert mock_get_msg.call_count == 3
+
+
+@patch("asky.core.engine.get_llm_msg")
+@patch("asky.core.engine.ToolRegistry.dispatch")
+def test_graceful_exit_empty_response_falls_back(mock_dispatch, mock_get_msg):
+    from asky.core.engine import ConversationEngine, GRACEFUL_EXIT_EMPTY_RESPONSE_FALLBACK
+    import asky.core.engine as engine_mod
+
+    msg_tool_call = {
+        "content": None,
+        "tool_calls": [
+            {"id": "call_1", "function": {"name": "test", "arguments": "{}"}}
+        ],
+    }
+    msg_empty = {"content": ""}
+
+    # Turn 1 tool call + graceful-exit empty + graceful-exit retry empty
+    mock_get_msg.side_effect = [msg_tool_call, msg_empty, msg_empty]
+    mock_dispatch.return_value = {"result": "ok"}
+
+    with patch.object(engine_mod, "MAX_TURNS", new=1):
+        model_config = {"id": "test", "alias": "test"}
+        registry_mock = MagicMock()
+        registry_mock.dispatch.return_value = {"result": "ok"}
+        registry_mock.get_schemas.return_value = []
+
+        engine = ConversationEngine(
+            model_config=model_config, tool_registry=registry_mock
+        )
+        messages = [{"role": "user", "content": "start"}]
+        final_answer = engine.run(messages)
+
+    assert final_answer == GRACEFUL_EXIT_EMPTY_RESPONSE_FALLBACK
+    assert mock_get_msg.call_count == 3

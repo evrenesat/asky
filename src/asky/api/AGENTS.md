@@ -52,6 +52,15 @@ Research mode is resolved per turn from effective session state:
   fallback is used only for ambiguous intent.
 - `research_source_mode=local_only` always disables shortlist, including when
   `shortlist_override=on` is requested.
+- Shortlist behavior by effective pipeline/profile:
+  - standard (non-research): resolved by lean/request/model/global policy
+  - research `web_only`: resolved by lean/request/model/global policy
+  - research `local_only`: always disabled (hard gate)
+  - research `mixed`: adaptive policy (deterministic intent first, model fallback on ambiguity)
+  - deterministic corpus commands (`--query-corpus`, section summarize path): shortlist stage is bypassed
+- Rationale for the `local_only` hard gate: if the caller requested corpus-only
+  research, preload avoids speculative web expansion and forces the turn to use
+  already ingested corpus handles + retrieval tools.
 - Seed URL preload uses a combined 80% main-model context budget and labels each
   seed block as `full_content`, `summarized_due_budget`,
   `summary_truncated_due_budget`, or `fetch_error`.
@@ -93,6 +102,9 @@ Research mode is resolved per turn from effective session state:
   shortlist policy decision metadata (`shortlist_reason`,
   `shortlist_policy_source`, `shortlist_policy_intent`,
   `shortlist_policy_diagnostics`).
+- `shortlist_enabled=True` only means pre-LLM ranked sources were prepared. It
+  does not force later tool-call depth (for example, the model may still answer
+  from search snippets unless it calls deeper fetch tools).
 - `AskyConfig.model_parameters_override` can override/extend configured model
   generation parameters for a specific client instance (for evaluation sweeps).
 - `AskyClient.cleanup_session_research_data(session_id)` deletes session findings

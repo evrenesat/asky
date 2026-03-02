@@ -35,6 +35,9 @@ class ConversationEngine:
 - **Tool Dispatch**: Via `ToolRegistry.dispatch()`
 - **Context Compaction**: Via `check_and_compact()` when threshold exceeded
 - **Graceful Exit**: `_execute_graceful_exit()` handles max-turns without answer
+  and now retries once if the forced final-answer call returns empty content;
+  if still empty, it returns a deterministic fallback error message so callers
+  never observe a silent no-answer completion.
 - **Double-Verbose Payload Trace**: emits full main-model request/response payloads through the verbose callback (`llm_request_messages` + `llm_response_message`) when enabled
 - **Main Request Payload Metadata**: request traces include structured enabled-tool schemas and enabled-tool guideline lines used for that call.
 - **Transport Trace Hooks**: forwards optional transport metadata events from LLM/tool/summarizer HTTP paths (`transport_request`, `transport_response`, `transport_error`)

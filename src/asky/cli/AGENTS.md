@@ -99,6 +99,8 @@ Research mode is session-owned:
 - Passing `-r` on a non-research session promotes and persists that session as research.
 - Corpus pointers passed with `-r` replace the session's stored corpus pointer list.
 - Follow-up turns in that session reuse persisted corpus/source-mode settings automatically.
+- `-r <local-path>` resolves to `local_only` source mode; pre-LLM shortlist is intentionally disabled in that mode.
+- To run local corpus + web shortlist in one profile, pointer lists must include `web` (for example `-r "file.pdf,web"`), which resolves to `mixed`.
 
 Section CLI behavior:
 

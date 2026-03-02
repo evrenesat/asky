@@ -67,6 +67,27 @@ The document corpus is stored with the session - you don't need to pass `-r repo
 
 ---
 
+## Why you may see "Shortlist disabled"
+
+When you start with `-r <local file/folder>`, asky uses a `local_only` research profile.
+In that profile, pre-LLM web shortlisting is intentionally disabled so the run stays
+corpus-only.
+
+If you want both local corpus and web shortlist in research mode, include `web` in the
+pointer list:
+
+```bash
+asky -r "report.pdf,web" "Compare this report with the latest public guidance"
+```
+
+If you want web-only research:
+
+```bash
+asky -r web "Investigate the latest updates on this topic"
+```
+
+---
+
 ## Browse a document by section
 
 For books and structured documents, you can list and summarize sections without running a full research query.

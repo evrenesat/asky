@@ -2,6 +2,41 @@
 
 For full detailed entries, see [DEVLOG_ARCHIVE.md](DEVLOG_ARCHIVE.md).
 
+## 2026-03-02: Documented Shortlist Behavior Across Research Pipelines
+
+- **Summary**: Clarified shortlist behavior and rationale across standard, research `web_only`, research `local_only`, research `mixed`, and deterministic corpus-command pipelines.
+- **Changes**:
+  - Updated user docs:
+    - `docs/research_mode.md`
+    - `docs/document_qa.md`
+  - Updated internal docs:
+    - `ARCHITECTURE.md`
+    - `src/asky/api/AGENTS.md`
+    - `src/asky/research/AGENTS.md`
+    - `src/asky/cli/AGENTS.md`
+  - Added explicit notes that `local_only` is a hard shortlist-disable path by design, including rationale and how users can switch to `mixed` (`-r "...,web"`) or `web_only` profiles.
+  - Added user phrasing guidance for triggering shortlist in eligible modes and for requesting deeper page-level verification beyond search snippets.
+- **Verification**:
+  - `uv run pytest` (1366 passed)
+
+## 2026-03-02: Prevent Silent Completion on Empty Graceful-Exit Final Answer
+
+- **Root Cause**: In the max-turn graceful-exit path, if the forced final model call returned empty content, `ConversationEngine` could return an empty `final_answer` without raising, which allowed CLI flows to end without any visible assistant output.
+- **Summary**: Added deterministic recovery in graceful-exit so users always receive a terminal response.
+- **Changes**:
+  - Updated `src/asky/core/engine.py`:
+    - Added one retry for empty graceful-exit final-answer responses.
+    - Added a deterministic fallback message when graceful-exit responses remain empty after retry.
+  - Updated docs:
+    - `ARCHITECTURE.md`
+    - `src/asky/core/AGENTS.md`
+- **Tests Added**:
+  - `tests/test_llm.py::test_graceful_exit_empty_response_retries_once`
+  - `tests/test_llm.py::test_graceful_exit_empty_response_falls_back`
+- **Verification**:
+  - `uv run pytest tests/test_llm.py -q` (25 passed)
+  - `uv run pytest` (1366 passed)
+
 ## 2026-03-02: Split Architecture Diagram into Focused Views
 
 - **Summary**: Replaced the single dense Mermaid graph in `ARCHITECTURE.md` with smaller, task-oriented diagrams that are easier to read on normal and wide screens.

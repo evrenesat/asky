@@ -286,6 +286,8 @@ ConversationEngine.run()
 │   4. Dispatch via ToolRegistry (`PRE_TOOL_EXECUTE` / `POST_TOOL_EXECUTE`) │
 │   5. Append results to messages     │
 │   6. Repeat until no more calls     │
+│   7. If max turns reached, force tool-free graceful-exit final call;         │
+│      retry once on empty final content, then emit deterministic fallback text │
 └─────────────────────────────────────┘
     ↓
 emit `TURN_COMPLETED` plugin hook
@@ -310,6 +312,20 @@ Local section workflows now use canonical section references:
 - CLI positional `--summarize-section <value>` is interpreted as section query text
   (`SECTION_QUERY`), not section ID; deterministic ID selection requires
   `--section-id <section-id>`.
+
+Shortlist policy matrix (effective runtime):
+
+- Standard mode (no `-r`): shortlist follows lean/request/model/global policy.
+- Research `web_only`: shortlist follows lean/request/model/global policy.
+- Research `local_only`: shortlist is always disabled (hard gate), even with request override.
+- Research `mixed`: shortlist uses adaptive intent policy
+  (deterministic intent first, interface-model fallback only for ambiguous intent).
+- Deterministic corpus command paths (`--query-corpus`, `corpus query`, section summarize)
+  do not execute shortlist stage.
+
+Rationale for `local_only` hard gate: this profile is an explicit corpus-only contract;
+preload avoids speculative web candidate expansion and keeps retrieval grounded in the
+already-ingested local corpus handles.
 
 Verbose tracing has two levels:
 
