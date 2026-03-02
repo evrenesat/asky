@@ -2,6 +2,16 @@
 
 For full detailed entries, see [DEVLOG_ARCHIVE.md](DEVLOG_ARCHIVE.md).
 
+## 2026-03-02: Graceful Exit on Unconfigured Model
+
+- **Summary**: Addressed an edge case where running `asky` for the first time without any configuration would crash with `KeyError: ''`. The CLI now gracefully exits and instructs the user to configure a model.
+- **Changes**:
+  - Added a check in `src/asky/cli/chat.py` to intercept empty or missing models before accessing the `MODELS` dictionary.
+  - Provided a clear error message suggesting the user run `asky config`.
+- **Verification**:
+  - Tested locally with empty model strings (`--model ""`).
+  - `uv run pytest` (1363 tests passed).
+
 ## 2026-03-02: Clarified Section Query vs Section ID Documentation
 
 - **Summary**: Updated docs to explain why positional `section-001` fails under `--summarize-section` / `corpus summarize` and how to use deterministic ID selection correctly.

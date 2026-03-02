@@ -5,4 +5,4 @@ Output assets/shots/quickstart-web-search.gif
 Type 'asky "What is the weather in London right now?"'
 Sleep 300ms
 Enter
-Sleep 30s
+Sleep 10s

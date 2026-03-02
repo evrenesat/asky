@@ -551,6 +551,21 @@ def run_chat(
 
     usage_tracker = UsageTracker()
     summarization_tracker = UsageTracker()
+
+    if not args.model or args.model not in MODELS:
+        import sys
+
+        if not args.model:
+            console.print("[bold red]Error:[/] No setup found or no model configured.")
+        else:
+            console.print(
+                f"[bold red]Error:[/] Model '{args.model}' is not configured."
+            )
+        console.print(
+            "Please configure a model first. You can run: [bold cyan]asky --config[/]"
+        )
+        sys.exit(1)
+
     model_config = MODELS[args.model]
     research_mode = bool(getattr(args, "research", False))
     local_corpus = getattr(args, "local_corpus", None)

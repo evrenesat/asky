@@ -1,5 +1,6 @@
 # Global Styles
 Set FontSize 22
+Set TypingSpeed 50ms
 Set FontFamily "Menlo"
 Set Theme "Catppuccin Mocha"
 Set WindowBar Colorful
