@@ -2,6 +2,28 @@
 
 For full detailed entries, see [DEVLOG_ARCHIVE.md](DEVLOG_ARCHIVE.md).
 
+## 2026-03-02: Split Architecture Diagram into Focused Views
+
+- **Summary**: Replaced the single dense Mermaid graph in `ARCHITECTURE.md` with smaller, task-oriented diagrams that are easier to read on normal and wide screens.
+- **Changes**:
+  - Added a high-level **System Context** diagram showing entrypoints, runtime core, plugin surface, data/config, and external systems.
+  - Added a **Package Dependency Shape** diagram showing the dominant top-down dependency flow.
+  - Added two **Runtime Sequence** diagrams (CLI turn and XMPP daemon turn) to document execution behavior without forcing all relationships into one graph.
+  - Removed the previous all-in-one Mermaid graph from the overview section.
+- **Verification**:
+  - `uv run pytest` (1364 passed).
+
+## 2026-03-02: Sync Mermaid Diagram with Current XMPP Plugin Structure
+
+- **Summary**: Updated the architecture Mermaid graph to reflect the current daemon/XMPP module ownership and active XMPP service wiring.
+- **Changes**:
+  - Moved `interface_planner.py` representation from the `plugins/xmpp_daemon` subgraph to the `daemon` subgraph.
+  - Removed obsolete in-plugin transcriber nodes (`voice_transcriber.py`, `image_transcriber.py`) from the XMPP subgraph.
+  - Added active XMPP modules to the graph: `adhoc_commands.py`, `file_upload.py`, and `xmpp_formatting.py`.
+  - Added corresponding wiring edges from `XMPPService` to the newly represented modules.
+- **Verification**:
+  - `uv run pytest` (1364 passed).
+
 ## 2026-03-02: Make Follow-Up Questions Reuse Ingested Corpus Reliably
 
 - **Root Cause**: `PreloadResolution.is_corpus_preloaded` previously evaluated to false on cached local corpus follow-ups because it strictly checked for `indexed_chunks > 0`. This prevented deterministic bootstrap retrieval and caused the model to lose grounded context on subsequent turns.

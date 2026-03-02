@@ -9,179 +9,171 @@ asky is an AI-powered CLI tool that combines LLM capabilities with web search an
 Current CLI routing supports a grouped command surface (`history/session/memory/corpus/prompts`) and a single config mutation entrypoint (`--config <domain> <action>`). `main.py` normalizes that surface into internal flags before dispatch.
 Grouped domains use strict routing: recognized domain commands with missing/invalid subcommands no longer fall back to free-text queries. `session` with no subcommand shows session help plus active-shell session status, and `session show` without a selector targets the currently active shell session.
 
+### View 1: System Context
+
 ```mermaid
-graph TB
-    subgraph API["Library API Layer (api/)"]
-        api_types["types.py<br/>AskyConfig/TurnRequest/TurnResult"]
-        api_client["client.py<br/>AskyClient Orchestration"]
-        api_ctx["context.py<br/>History Context Resolution"]
-        api_session["session.py<br/>Session Lifecycle Resolution"]
-        api_preload["preload.py<br/>Local + Shortlist Preload Pipeline"]
-        api_ex["exceptions.py<br/>Public Errors"]
+graph TD
+    user["Local User"]
+    remote_user["Remote XMPP User"]
+
+    subgraph EntryPoints["Entry Points"]
+        cli["CLI (`asky`)"]
+        api["Library API (`AskyClient`)"]
+        daemon["DaemonService (transport-agnostic)"]
     end
 
-    subgraph CLI["CLI Layer (cli/)"]
-        main["main.py<br/>Entry Point"]
-        chat["chat.py<br/>Chat Flow"]
-        presets_cli["presets.py<br/>Backslash Preset Expansion"]
-        local_ingest["local_ingestion_flow.py<br/>Pre-LLM Local Corpus Ingestion"]
-        research_cmd["research_commands.py<br/>Manual No-LLM Corpus Query"]
-        section_cmd["section_commands.py<br/>Manual No-LLM Section Summary"]
-        shortlist_flow["shortlist_flow.py<br/>Pre-LLM Shortlist Orchestration"]
-        history["history.py<br/>History Commands"]
-        sessions_cli["sessions.py<br/>Session Commands"]
-        prompts_cli["prompts.py<br/>Prompt Commands"]
-        utils["utils.py<br/>Utilities"]
+    subgraph Runtime["Runtime Core"]
+        preload["API preload pipeline"]
+        engine["ConversationEngine"]
+        registry["ToolRegistry"]
+        hooks["Plugin hook registry"]
     end
 
-    subgraph Core["Core Layer (core/)"]
-        engine["engine.py<br/>ConversationEngine"]
-        tool_factory["tool_registry_factory.py<br/>Registry Construction"]
-        registry["registry.py<br/>ToolRegistry"]
-        llm_client["api_client.py<br/>LLM API Client"]
-        session_mgr["session_manager.py<br/>SessionManager"]
-        prompts_core["prompts.py<br/>Prompt Construction"]
+    subgraph BuiltInPlugins["Built-in Plugins"]
+        xmpp["xmpp_daemon"]
+        voice["voice_transcriber"]
+        image["image_transcriber"]
+        gui["gui_server"]
+        persona["persona_manager + manual_persona_creator"]
+        delivery["push_data + email_sender"]
+        browser["playwright_browser"]
     end
 
-    subgraph Daemon["Daemon Layer (daemon/)"]
-        daemon_service["service.py<br/>DaemonService (transport-agnostic)"]
-        daemon_menubar["menubar.py<br/>Singleton Lock + Launcher"]
-        daemon_tray_proto["tray_protocol.py<br/>TrayApp ABC + TrayStatus"]
-        daemon_tray_ctrl["tray_controller.py<br/>TrayController (shared logic)"]
-        daemon_tray_macos["tray_macos.py<br/>MacosTrayApp (rumps)"]
-        daemon_app_bundle["app_bundle_macos.py<br/>macOS .app Bundle Creation"]
+    subgraph DataAndConfig["Data + Config"]
+        sqlite["SQLite storage"]
+        research["Research cache/vector store"]
+        config["TOML config loaders"]
     end
 
-    subgraph XMPPPlugin["XMPP Daemon Plugin (plugins/xmpp_daemon/)"]
-        xmpp_plugin["plugin.py<br/>XMPPDaemonPlugin"]
-        xmpp_service["xmpp_service.py<br/>XMPPService + per-JID queues"]
-        daemon_xmpp["xmpp_client.py<br/>Slixmpp Transport Wrapper"]
-        daemon_router["router.py<br/>Ingress Routing + Policy"]
-        daemon_exec["command_executor.py<br/>Command/Query Bridge"]
-        daemon_profiles["session_profile_manager.py<br/>Room/Session Bindings + Session Overrides"]
-        daemon_planner["interface_planner.py<br/>Interface Model Planner"]
-        daemon_voice["voice_transcriber.py<br/>Async Voice Jobs"]
-        daemon_image["image_transcriber.py<br/>Async Image Jobs"]
-        daemon_doc_ingest["document_ingestion.py<br/>Upload URL -> Local Corpus Ingestion"]
-        daemon_transcripts["transcript_manager.py<br/>Transcript Lifecycle"]
-        daemon_chunking["chunking.py<br/>Outbound Chunking"]
+    subgraph External["External Systems"]
+        llm["LLM APIs"]
+        web["Web/URL sources"]
+        xmpp_net["XMPP server/network"]
     end
 
-    subgraph VoicePlugin["Voice Transcriber (plugins/voice_transcriber/)"]
-        voice_plugin["plugin.py<br/>VoiceTranscriberPlugin"]
-        voice_service["service.py<br/>VoiceTranscriberService + Workers"]
-    end
+    user --> cli
+    cli --> api
+    remote_user --> xmpp_net --> xmpp --> daemon
+    daemon --> api
 
-    subgraph ImagePlugin["Image Transcriber (plugins/image_transcriber/)"]
-        image_plugin["plugin.py<br/>ImageTranscriberPlugin"]
-        image_service["service.py<br/>ImageTranscriberService + Workers"]
-    end
-
-    subgraph Storage["Storage Layer (storage/)"]
-        interface["interface.py<br/>HistoryRepository ABC"]
-        sqlite["sqlite.py<br/>SQLiteHistoryRepository"]
-    end
-
-    subgraph Config["Configuration Layer (config/)"]
-        config_init["__init__.py<br/>Constants Export"]
-        loader["loader.py<br/>TOML Loader"]
-    end
-
-    subgraph Research["Research Mode (research/)"]
-        cache["cache.py<br/>ResearchCache"]
-        vector["vector_store.py<br/>VectorStore"]
-        vector_ops["vector_store_*_ops.py<br/>Chunk/Link/Finding Ops"]
-        vector_common["vector_store_common.py<br/>Shared Math/Constants"]
-        sections["sections.py<br/>Section Index + Strict Match"]
-        shortlist["source_shortlist.py<br/>Pre-LLM Ranking"]
-        shortlist_ops["shortlist_collect.py<br/>shortlist_score.py"]
-    end
-
-    subgraph Plugins["Plugin Runtime (plugins/)"]
-        plugin_runtime["runtime.py<br/>Process Runtime Bootstrap"]
-        plugin_manager["manager.py<br/>Manifest + Lifecycle"]
-        plugin_hooks["hooks.py<br/>Deterministic Hook Registry"]
-        persona_creator["manual_persona_creator/*<br/>Persona Build/Export Tools"]
-        persona_manager["persona_manager/*<br/>Import/Bind/Inject Persona Context"]
-        gui_plugin["gui_server/*<br/>NiceGUI Daemon Sidecar"]
-        xmpp_daemon_plugin["xmpp_daemon/*<br/>XMPP Transport Plugin"]
-        playwright_plugin["playwright_browser/*<br/>Browser Retrieval Plugin"]
-    end
-
-    subgraph Tools["Tool Execution"]
-        tools["tools.py<br/>Web Search, URL Fetch"]
-    end
-
-    api_client --> api_ctx
-    api_client --> api_session
-    api_client --> api_preload
-    api_client --> engine
-    api_client --> session_mgr
-    api_ctx --> sqlite
-    api_session --> sqlite
-    api_preload -.-> local_ingest
-    api_preload -.-> shortlist
-    main --> chat
-    main --> daemon_service
-    main --> daemon_menubar
-    main --> research_cmd
-    main --> section_cmd
-    main --> presets_cli
-    main --> plugin_runtime
-    chat --> api_client
-    main --> history
-    main --> sessions_cli
-    main --> prompts_cli
-    chat --> engine
-    chat --> tool_factory
-    tool_factory --> registry
+    api --> preload --> engine
     engine --> registry
-    engine --> llm_client
-    chat --> session_mgr
-    session_mgr --> sqlite
-    history --> sqlite
-    sessions_cli --> sqlite
-    daemon_service --> plugin_hooks
-    daemon_menubar --> daemon_tray_macos
-    daemon_tray_macos --> daemon_tray_ctrl
-    daemon_tray_macos --> daemon_tray_proto
-    daemon_tray_ctrl --> daemon_tray_proto
-    xmpp_plugin --> xmpp_service
-    xmpp_service --> daemon_xmpp
-    xmpp_service --> daemon_router
-    xmpp_service --> daemon_chunking
-    xmpp_service --> daemon_doc_ingest
-    xmpp_service -.-> voice_plugin
-    xmpp_service -.-> image_plugin
-    daemon_router --> daemon_planner
-    daemon_router --> daemon_exec
-    daemon_router --> daemon_profiles
-    daemon_router --> daemon_transcripts
-    daemon_doc_ingest --> sqlite
-    daemon_exec --> api_client
-    daemon_exec --> daemon_profiles
-    daemon_transcripts --> sqlite
-    xmpp_daemon_plugin --> xmpp_plugin
-    registry --> tools
-    plugin_runtime --> plugin_manager
-    plugin_manager --> plugin_hooks
-    plugin_manager --> persona_creator
-    plugin_manager --> persona_manager
-    plugin_manager --> gui_plugin
-    plugin_manager --> voice_plugin
-    plugin_manager --> image_plugin
-    api_client --> plugin_hooks
-    tool_factory --> plugin_hooks
-    engine --> plugin_hooks
-    registry --> plugin_hooks
-    daemon_service --> plugin_hooks
-    config_init --> loader
-    shortlist_flow -.-> shortlist
-    shortlist -.-> shortlist_ops
-    vector -.-> vector_ops
-    section_cmd -.-> sections
-    vector_ops -.-> vector_common
-    chat -.-> cache
+    api --> hooks
+    engine --> hooks
+    registry --> hooks
+
+    hooks --> xmpp
+    hooks --> voice
+    hooks --> image
+    hooks --> gui
+    hooks --> persona
+    hooks --> delivery
+    hooks --> browser
+
+    api --> sqlite
+    engine --> llm
+    registry --> web
+    api -. research mode .-> research
+    api --> config
+```
+
+### View 2: Package Dependency Shape
+
+```mermaid
+graph TD
+    main["cli/main.py"]
+    chat["cli/chat.py"]
+    daemon["daemon/service.py"]
+    api["api/client.py"]
+    preload["api/preload.py"]
+    core["core/engine.py + core/registry.py + core/tool_registry_factory.py"]
+    tools["tools.py + retrieval.py"]
+    storage["storage/sqlite.py"]
+    research["research/*"]
+    plugin_rt["plugins/runtime.py + plugins/manager.py + plugins/hooks.py"]
+    xmpp["plugins/xmpp_daemon/*"]
+    transcribers["plugins/voice_transcriber/* + plugins/image_transcriber/*"]
+    other_plugins["Other built-in plugins"]
+    config["config/loader.py + constants"]
+
+    main --> chat --> api
+    main --> daemon
+    main --> plugin_rt
+
+    daemon --> plugin_rt
+    plugin_rt --> xmpp
+    plugin_rt --> transcribers
+    plugin_rt --> other_plugins
+    xmpp --> api
+
+    api --> preload
+    api --> core
+    api --> storage
+    api --> config
+
+    core --> tools
+    core --> storage
+    core --> plugin_rt
+    preload -. research/local preload .-> research
+```
+
+### View 3: Runtime Sequences
+
+CLI turn:
+
+```mermaid
+sequenceDiagram
+    participant U as User
+    participant CLI as cli/chat.py
+    participant API as api/client.py (AskyClient)
+    participant PRE as api/preload.py
+    participant ENG as core/engine.py
+    participant REG as core/registry.py
+    participant LLM as LLM API
+    participant DB as storage/sqlite.py
+
+    U->>CLI: ask query
+    CLI->>API: run_turn(request)
+    API->>PRE: resolve preload (history/local/shortlist)
+    PRE-->>API: PreloadResolution
+    API->>ENG: run(messages, settings)
+    ENG->>LLM: completion request
+    LLM-->>ENG: response/tool calls
+    ENG->>REG: dispatch tools (if any)
+    REG-->>ENG: tool results
+    ENG-->>API: final answer
+    API->>DB: persist history/session updates
+    API-->>CLI: TurnResult
+    CLI-->>U: render answer
+```
+
+XMPP daemon turn:
+
+```mermaid
+sequenceDiagram
+    participant XU as Remote XMPP user
+    participant XS as plugins/xmpp_daemon/xmpp_service.py
+    participant RT as plugins/xmpp_daemon/router.py
+    participant CE as plugins/xmpp_daemon/command_executor.py
+    participant API as api/client.py (AskyClient)
+    participant ENG as core/engine.py
+    participant DB as storage/sqlite.py
+
+    XU->>XS: message stanza
+    XS->>RT: route + authorize + classify
+    alt command
+        RT->>CE: execute command text
+        CE-->>XS: command output
+    else query
+        RT->>CE: execute_query(query text)
+        CE->>API: run_turn(request, plugin_runtime)
+        API->>ENG: conversation loop
+        ENG-->>API: final answer
+        API->>DB: persist session/history/transcripts metadata
+        API-->>CE: TurnResult
+        CE-->>XS: formatted reply text
+    end
+    XS-->>XU: chunked XMPP reply
 ```
 
 ---
