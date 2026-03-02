@@ -119,8 +119,14 @@ class PreloadResolution:
     def is_corpus_preloaded(self) -> bool:
         """Check if any corpus material has been preloaded (local or web)."""
         local_indexed = self.local_payload.get("stats", {}).get("indexed_chunks", 0) > 0
+        local_ingested = len(self.local_payload.get("ingested", [])) > 0
+        has_corpus_handles = len(self.preloaded_source_handles) > 0 or any(
+            url.startswith(("corpus://", "local://"))
+            for url in self.preloaded_source_urls
+        )
+        local_ready = local_indexed or local_ingested or has_corpus_handles
         shortlist_fetched = self.shortlist_payload.get("fetched_count", 0) > 0
-        return local_indexed or shortlist_fetched
+        return local_ready or shortlist_fetched
 
 
 @dataclass

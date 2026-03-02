@@ -237,6 +237,61 @@ def test_run_turn_research_adds_bootstrap_context_to_user_message(
     mock_bootstrap.assert_called_once()
 
 
+@patch.object(AskyClient, "run_messages", return_value="Final")
+@patch.object(
+    AskyClient,
+    "_build_bootstrap_retrieval_context",
+    return_value="Bootstrap retrieval evidence from preloaded corpus:\n- Source: corpus://cache/10",
+)
+@patch(
+    "asky.api.client.run_preload_pipeline",
+    return_value=PreloadResolution(
+        combined_context="Local knowledge base preloaded before tool calls",
+        local_payload={
+            "targets": [],
+            "ingested": [{"source_handle": "corpus://cache/10"}],
+            "stats": {"indexed_chunks": 0},
+            "warnings": [],
+        },
+        preloaded_source_urls=["corpus://cache/10"],
+        preloaded_source_handles={"corpus://cache/10": "corpus://cache/10"},
+        shortlist_stats={"enabled": False},
+    ),
+)
+@patch(
+    "asky.api.client.resolve_session_for_turn",
+    return_value=(
+        None,
+        SessionResolution(
+            research_mode=True,
+            research_source_mode="local_only",
+            research_local_corpus_paths=["/tmp/corpus/book2.epub"],
+        ),
+    ),
+)
+def test_run_turn_research_adds_bootstrap_context_when_indexed_chunks_zero(
+    mock_resolve_session,
+    mock_preload,
+    mock_bootstrap,
+    mock_run_messages,
+):
+    client = AskyClient(AskyConfig(model_alias="gf", research_mode=False))
+    result = client.run_turn(
+        AskyTurnRequest(
+            query_text="summarize section on moore's law",
+            save_history=False,
+        )
+    )
+
+    assert result.final_answer == "Final"
+    sent_messages = mock_run_messages.call_args.args[0]
+    assert (
+        "Bootstrap retrieval evidence from preloaded corpus"
+        in sent_messages[-1]["content"]
+    )
+    mock_bootstrap.assert_called_once()
+
+
 @patch.object(AskyClient, "run_messages", return_value="Answer")
 def test_asky_client_chat_returns_structured_result(mock_run_messages):
     client = AskyClient(AskyConfig(model_alias="gf"))
@@ -699,7 +754,36 @@ def test_asky_client_run_turn_passes_corpus_preloaded_to_run_messages(
     _, kwargs = mock_run_messages.call_args
     assert kwargs["preload"].is_corpus_preloaded is True
 
-    # Case 3: Neither
+    # Case 3: Local ingested exists
+    mock_preload.return_value = PreloadResolution(
+        local_payload={"stats": {"indexed_chunks": 0}, "ingested": [{"target": "foo"}]},
+        shortlist_payload={"fetched_count": 0},
+    )
+    client.run_turn(AskyTurnRequest(query_text="foo"))
+    _, kwargs = mock_run_messages.call_args
+    assert kwargs["preload"].is_corpus_preloaded is True
+
+    # Case 4: Preloaded source URLs exist
+    mock_preload.return_value = PreloadResolution(
+        local_payload={"stats": {"indexed_chunks": 0}},
+        shortlist_payload={"fetched_count": 0},
+        preloaded_source_urls=["corpus://cache/123"],
+    )
+    client.run_turn(AskyTurnRequest(query_text="foo"))
+    _, kwargs = mock_run_messages.call_args
+    assert kwargs["preload"].is_corpus_preloaded is True
+
+    # Case 5: Failed web URLs (no valid handles and no fetched shortlist)
+    mock_preload.return_value = PreloadResolution(
+        local_payload={"stats": {"indexed_chunks": 0}},
+        shortlist_payload={"fetched_count": 0},
+        preloaded_source_urls=["https://example.com/failed"],
+    )
+    client.run_turn(AskyTurnRequest(query_text="foo"))
+    _, kwargs = mock_run_messages.call_args
+    assert kwargs["preload"].is_corpus_preloaded is False
+
+    # Case 6: None of the above
     mock_preload.return_value = PreloadResolution(
         local_payload={"stats": {"indexed_chunks": 0}},
         shortlist_payload={"fetched_count": 0},

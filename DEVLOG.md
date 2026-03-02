@@ -2,6 +2,17 @@
 
 For full detailed entries, see [DEVLOG_ARCHIVE.md](DEVLOG_ARCHIVE.md).
 
+## 2026-03-02: Make Follow-Up Questions Reuse Ingested Corpus Reliably
+
+- **Root Cause**: `PreloadResolution.is_corpus_preloaded` previously evaluated to false on cached local corpus follow-ups because it strictly checked for `indexed_chunks > 0`. This prevented deterministic bootstrap retrieval and caused the model to lose grounded context on subsequent turns.
+- **Summary**: Modified `is_corpus_preloaded` to signify "usable corpus is available", checking both `ingested` handles and `preloaded_source_urls`. This ensures corpus context and appropriate tool configurations remain active for the duration of the research session.
+- **Changes**:
+  - `src/asky/api/types.py`: Updated `PreloadResolution.is_corpus_preloaded` logic to check `ingested` length and `preloaded_source_urls`.
+  - `ARCHITECTURE.md` / `src/asky/api/AGENTS.md`: Documented the new trigger contract for bootstrap retrieval on follow-ups.
+- **Tests Added/Updated**:
+  - `tests/test_api_library.py`: Assert `is_corpus_preloaded=True` handles `indexed_chunks=0` properly.
+  - `tests/test_api_library.py`: Added explicit test for `_build_bootstrap_retrieval_context` injection on cached follow-ups.
+
 ## 2026-03-02: Graceful Exit on Unconfigured Model
 
 - **Summary**: Addressed an edge case where running `asky` for the first time without any configuration would crash with `KeyError: ''`. The CLI now gracefully exits and instructs the user to configure a model.

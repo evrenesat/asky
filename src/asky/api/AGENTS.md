@@ -44,7 +44,8 @@ Research mode is resolved per turn from effective session state:
   the first model request context.
 - In research mode with preloaded corpus, `run_turn()` performs one deterministic
   retrieval bootstrap (`execute_get_relevant_content`) before first model call,
-  then appends those evidence snippets into preloaded user context.
+  then appends those evidence snippets into preloaded user context. This triggers
+  reliably on both initial ingestion requests and follow-up turns where corpus is cached.
 - For local-corpus research turns, shortlist enablement is resolved by a shared
   adaptive policy stage in `preload.py`/`preload_policy.py`:
   deterministic intent (`web` vs `local`) runs first, and interface-model

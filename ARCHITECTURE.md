@@ -265,6 +265,7 @@ preload.py → optional local_ingestion + shortlist pipeline
               - determine mode: one_shot | research
               - adjust system prompt guidance accordingly
            → research-mode deterministic bootstrap retrieval over preloaded corpus handles
+             (triggered when usable corpus is available, including cached follow-up turns)
            → standard-mode seed URL content preload (budget-aware)
     ↓
 retrieval.py (fetch_url_document) → emit `FETCH_URL_OVERRIDE` plugin hook
