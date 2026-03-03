@@ -2,6 +2,38 @@
 
 For full detailed entries, see [DEVLOG_ARCHIVE.md](DEVLOG_ARCHIVE.md).
 
+## 2026-03-03: Configurable Local-Ingestion Security Gates
+
+- **Summary**: Implemented configurable security gates for local-source ingestion to mitigate data exfiltration risks from prompt injections.
+- **Changes**:
+  - Added `allow_absolute_paths_outside_roots` to `research.toml` (default `false`). When `true`, absolute paths can be ingested even if outside `local_document_roots`.
+  - Added `allowed_ingestion_extensions` to `research.toml` (default `[]`). When non-empty, restricts ingestion surface to the configured global allowlist.
+  - Enforced extension allowlist globally across built-in readers, plugin handlers, and XMPP URL ingestion.
+  - CLI `-r` and local adapters now enforce absolute-path configuration checks.
+  - Updated `ARCHITECTURE.md`, `research_mode.md`, `troubleshooting.md`, and relevant `AGENTS.md` files to reflect new policies.
+- **Verification**:
+  - Wrote new tests in `test_research_corpus_resolution.py`, `test_research_adapters.py`, `test_local_source_handler_plugins.py`, and `test_xmpp_document_ingestion.py`.
+  - `uv run pytest tests/test_local_ingestion_flow.py -q` passes.
+  - `time uv run pytest -q` runtime baseline holds with pre-existing unrelated failures preserved.
+
+## 2026-03-03: Weekly DEVLOG Archiver Script with Lean-Mode Intro Generation
+
+- **Summary**: Added a dedicated script to archive old DEVLOG entries by ISO week with flexible batching and generate a managed weekly intro using installed `asky` in lean mode.
+- **Changes**:
+  - Added `scripts/devlog_weekly_archiver.py`:
+    - Parses dated entries from markdown headings (`## YYYY-MM-DD ...`) and preserves preamble.
+    - Applies a split gate only when source size exceeds `75 * 1024` bytes.
+    - Separates current ISO-week entries from older entries.
+    - Buckets older entries by contiguous ISO week and merges buckets until each archive batch reaches at least `750` lines when possible.
+    - Writes archives to `devlog/archive/` with creation-date naming (`YYYY.MM.DD.md`) and collision-safe suffixes.
+    - Runs `asky -L -r <archive>` to generate a summary intro and injects/replaces a managed intro block in the source file.
+    - Supports optional positional source-file argument; defaults to `devlog/DEVLOG.md`.
+  - Added `tests/test_devlog_weekly_archiver.py`:
+    - Covers heading parsing variants, batch merging threshold, collision-safe filenames, size-gate no-op behavior, full archive+rewrite flow, and non-zero exit on summary failure.
+- **Verification**:
+  - `uv run pytest tests/test_devlog_weekly_archiver.py -q` (6 passed)
+  - `uv run pytest -q` (1378 passed in 9.60s; `real 9.78s`, baseline `real 11.64s`)
+
 ## 2026-03-03: Fix Per-Session Inline Hint Persistence for Newly Created Sessions
 
 - **Summary**: Fixed inline-help cadence so `per_session` hints shown before session creation are persisted once the session ID becomes available after the first turn.
