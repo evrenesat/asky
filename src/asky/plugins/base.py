@@ -54,6 +54,25 @@ class CLIContribution:
 
 
 @dataclass(frozen=True)
+class CLIHintContext:
+    """Context passed to plugins when collecting static inline hints."""
+
+    parsed_args: Any  # argparse.Namespace
+    phase: str  # "pre_dispatch"
+
+
+@dataclass(frozen=True)
+class CLIHint:
+    """Describes an inline operational hint to be shown to the user."""
+
+    id: str
+    message: str
+    priority: int = 100
+    frequency: str = "per_invocation"  # "per_invocation" or "per_session"
+    channel: str = "cli_stdout"
+
+
+@dataclass(frozen=True)
 class PluginContext:
     """Activation context passed to plugin instances."""
 
@@ -96,6 +115,14 @@ class AskyPlugin(ABC):
 
         Called before activation to collect argparse arguments. Plugins override
         this to contribute flags to named argparse groups in the CLI.
+        """
+        return []
+
+    @classmethod
+    def get_cli_hint_contributions(cls, context: CLIHintContext) -> list[CLIHint]:
+        """Return static inline hints this plugin wants to expose.
+        
+        Called before dispatch to provide situational guidance based on parsed flags.
         """
         return []
 

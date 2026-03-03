@@ -47,6 +47,8 @@ def get_cli_contributions(cls) -> list[CLIContribution]:
 
 `PluginManager.collect_cli_contributions()` light-imports each enabled plugin class and collects contributions without calling `activate()`. Import errors per plugin are logged and skipped.
 
+Plugins can also declare static CLI guidance hints via `get_cli_hint_contributions(cls, context: CLIHintContext) -> list[CLIHint]`. These hints run pre-dispatch based on parsed CLI flags and are emitted by the CLI's inline-help framework.
+
 Internal process-spawning flags (`--xmpp-daemon`, `--edit-daemon`, `--xmpp-menubar-child`) are always registered in core as suppressed args because they are used by the CLI translation pipeline regardless of plugin state.
 
 ## Hook Ordering
@@ -71,6 +73,7 @@ Hook callback exceptions are logged and isolated; remaining callbacks still run.
 - `PRE_TOOL_EXECUTE`
 - `POST_TOOL_EXECUTE`
 - `TURN_COMPLETED`
+- `CLI_INLINE_HINTS_BUILD` — collect post-turn runtime inline hints; payload is `CLIInlineHintsContext` with `request`, `result`, `cli_args`, and a mutable `hints` list
 - `POST_TURN_RENDER` — fired after final answer is rendered to CLI; payload is `PostTurnRenderContext` with `final_answer`, `request`, `result`, `cli_args` (argparse Namespace for CLI-only flags like `push_data`, `sendmail`, `subject`), and `answer_title` (markdown heading extracted from the answer, or query text fallback)
 - `DAEMON_SERVER_REGISTER` — collect sidecar server specs (start/stop callables)
 - `DAEMON_TRANSPORT_REGISTER` — register exactly one daemon transport (run/stop callables)

@@ -439,8 +439,14 @@ def test_run_chat_lean_mode_sets_answer_title_for_post_turn_render():
             plugin_runtime=plugin_runtime, args=mock_args, query_text="tell me a joke"
         )
 
-    assert plugin_runtime.hooks.invoke.call_count == 1
-    post_turn_context = plugin_runtime.hooks.invoke.call_args[0][1]
+    assert plugin_runtime.hooks.invoke.call_count >= 1
+    
+    post_turn_calls = [
+        call for call in plugin_runtime.hooks.invoke.call_args_list 
+        if call[0][0] == "POST_TURN_RENDER"
+    ]
+    assert len(post_turn_calls) == 1
+    post_turn_context = post_turn_calls[0][0][1]
     assert post_turn_context.answer_title == "tell me a joke"
 
 

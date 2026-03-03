@@ -41,6 +41,8 @@ Research mode is now a **session property**:
 - Session corpus/source settings persist and are reused automatically on follow-up turns.
 - Running `-r` with new corpus pointers replaces the session’s stored corpus pointer list.
 
+The CLI also uses the built-in inline-help engine to provide contextual hints about your active `research_source_mode` (`local_only`, `mixed`, or `web_only`) and how to transition between them.
+
 To leave research mode for a shell, detach/end the session and use a non-research session.
 
 ## Enabling Research Mode

@@ -26,6 +26,8 @@ FETCH_URL_OVERRIDE = "FETCH_URL_OVERRIDE"
 PLUGIN_CAPABILITY_REGISTER = "PLUGIN_CAPABILITY_REGISTER"
 LOCAL_SOURCE_HANDLER_REGISTER = "LOCAL_SOURCE_HANDLER_REGISTER"
 
+CLI_INLINE_HINTS_BUILD = "CLI_INLINE_HINTS_BUILD"
+
 CONFIG_LOADED = "CONFIG_LOADED"
 SESSION_END = "SESSION_END"
 
@@ -47,6 +49,7 @@ SUPPORTED_HOOK_NAMES = {
     FETCH_URL_OVERRIDE,
     PLUGIN_CAPABILITY_REGISTER,
     LOCAL_SOURCE_HANDLER_REGISTER,
+    CLI_INLINE_HINTS_BUILD,
 }
 
 DEFERRED_HOOK_NAMES = {
@@ -277,3 +280,13 @@ class LocalSourceHandlerRegisterContext:
     """Mutable payload for local source handler registration."""
 
     handlers: List[LocalSourceHandlerSpec] = field(default_factory=list)
+
+
+@dataclass
+class CLIInlineHintsContext:
+    """Mutable payload for collecting runtime inline hints after a turn."""
+
+    request: Any
+    result: Any
+    cli_args: Any
+    hints: List[Any] = field(default_factory=list)

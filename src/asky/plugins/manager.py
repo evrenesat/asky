@@ -335,6 +335,30 @@ class PluginManager:
                 )
         return results
 
+    def collect_cli_hint_contributions(self, context: Any) -> list[tuple[str, Any]]:
+        """Light-import each enabled plugin class and collect its CLI inline hints.
+        
+        context should be an instance of CLIHintContext.
+        Returns a list of tuples: (plugin_name, CLIHint).
+        """
+        results: list[tuple[str, Any]] = []
+        for name, manifest in sorted(self._manifests.items()):
+            if not manifest.enabled:
+                continue
+            try:
+                plugin_module = importlib.import_module(manifest.module)
+                plugin_class = getattr(plugin_module, manifest.plugin_class)
+                if hasattr(plugin_class, "get_cli_hint_contributions"):
+                    for hint in plugin_class.get_cli_hint_contributions(context):
+                        results.append((name, hint))
+            except Exception:
+                logger.warning(
+                    "Plugin '%s' CLI hint collection failed; skipping",
+                    name,
+                    exc_info=True,
+                )
+        return results
+
     def has_enabled_plugins(self) -> bool:
         """Return whether manifest contains any enabled plugins."""
         return any(manifest.enabled for manifest in self._manifests.values())

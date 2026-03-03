@@ -95,10 +95,14 @@ class XMPPService:
             system_prompt=INTERFACE_PLANNER_SYSTEM_PROMPT,
             command_reference=self.command_executor.get_interface_command_reference(),
             include_command_reference=XMPP_INTERFACE_PLANNER_INCLUDE_COMMAND_REFERENCE,
-            double_verbose=self.double_verbose,
+            double_verbose=double_verbose,
         )
 
-        from asky.plugins import PLUGIN_CAPABILITY_REGISTER, PluginCapabilityRegisterContext
+        from asky.plugins import (
+            PLUGIN_CAPABILITY_REGISTER,
+            PluginCapabilityRegisterContext,
+        )
+
         cap_ctx = PluginCapabilityRegisterContext()
         self.plugin_runtime.hooks.invoke(PLUGIN_CAPABILITY_REGISTER, cap_ctx)
 
@@ -131,7 +135,7 @@ class XMPPService:
             command_prefix=XMPP_COMMAND_PREFIX,
             allowed_jids=list(XMPP_ALLOWED_JIDS),
             voice_auto_yes_without_interface_model=XMPP_VOICE_AUTO_YES_WITHOUT_INTERFACE_MODEL,
-            double_verbose=self.double_verbose,
+            double_verbose=double_verbose,
         )
         self.document_ingestion = DocumentIngestionService()
         self._adhoc_handler = AdHocCommandHandler(

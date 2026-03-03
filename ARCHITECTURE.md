@@ -27,6 +27,7 @@ graph TD
         engine["ConversationEngine"]
         registry["ToolRegistry"]
         hooks["Plugin hook registry"]
+        help["Inline Help Engine"]
     end
 
     subgraph BuiltInPlugins["Built-in Plugins"]

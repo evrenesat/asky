@@ -34,6 +34,11 @@ from asky.plugins.hooks import HookRegistry
 from asky import summarization
 
 logger = logging.getLogger(__name__)
+GRACEFUL_EXIT_EMPTY_RESPONSE_RETRIES = 1
+GRACEFUL_EXIT_EMPTY_RESPONSE_FALLBACK = (
+    "I couldn't produce a final answer because the model returned an empty response. "
+    "Please try again or use a different model."
+)
 
 
 def ResearchCache(*args, **kwargs):
@@ -781,41 +786,65 @@ class ConversationEngine:
             }
         )
 
-        # Make final call without tools AND without tool-mentioning system prompt
-        self._print_verbose_llm_request(
-            messages=exit_messages,
-            turn=self.max_turns + 1,
-            use_tools=False,
-            phase="graceful_exit",
-            tool_schemas=[],
-            tool_guidelines=[],
-        )
-        final_msg = get_llm_msg(
-            self.model_config["id"],
-            exit_messages,
-            use_tools=False,  # No tool schemas sent to API
-            verbose=self.verbose,
-            model_alias=self.model_config.get("alias"),
-            usage_tracker=self.usage_tracker,
-            status_callback=status_reporter,
-            trace_callback=(
-                self.verbose_output_callback
-                if self.verbose_output_callback and self.verbose
-                else None
-            ),
-            trace_context={
-                "turn": self.max_turns + 1,
-                "phase": "graceful_exit",
-                "source": "main_model",
-            },
-        )
-        self._print_verbose_llm_response(
-            message=final_msg,
-            turn=self.max_turns + 1,
-            phase="graceful_exit",
-        )
+        final_answer = ""
+        for retry_index in range(GRACEFUL_EXIT_EMPTY_RESPONSE_RETRIES + 1):
+            # Make final call without tools AND without tool-mentioning system prompt
+            self._print_verbose_llm_request(
+                messages=exit_messages,
+                turn=self.max_turns + 1,
+                use_tools=False,
+                phase="graceful_exit",
+                tool_schemas=[],
+                tool_guidelines=[],
+            )
+            final_msg = get_llm_msg(
+                self.model_config["id"],
+                exit_messages,
+                use_tools=False,  # No tool schemas sent to API
+                verbose=self.verbose,
+                model_alias=self.model_config.get("alias"),
+                usage_tracker=self.usage_tracker,
+                status_callback=status_reporter,
+                trace_callback=(
+                    self.verbose_output_callback
+                    if self.verbose_output_callback and self.verbose
+                    else None
+                ),
+                trace_context={
+                    "turn": self.max_turns + 1,
+                    "phase": "graceful_exit",
+                    "source": "main_model",
+                },
+            )
+            self._print_verbose_llm_response(
+                message=final_msg,
+                turn=self.max_turns + 1,
+                phase="graceful_exit",
+            )
 
-        final_answer = final_msg.get("content", "")
+            final_answer = strip_think_tags(final_msg.get("content", ""))
+            if final_answer.strip():
+                break
+
+            if retry_index < GRACEFUL_EXIT_EMPTY_RESPONSE_RETRIES:
+                logger.warning(
+                    "Graceful exit returned empty response. Retrying final answer request."
+                )
+                exit_messages.append(
+                    {
+                        "role": "user",
+                        "content": (
+                            "SYSTEM: Your previous final-answer response was empty. "
+                            "Provide a direct final answer now without using tools."
+                        ),
+                    }
+                )
+            else:
+                logger.error(
+                    "Graceful exit repeatedly returned empty responses. Using fallback."
+                )
+                final_answer = GRACEFUL_EXIT_EMPTY_RESPONSE_FALLBACK
+
         # Append the final answer to the original messages for history tracking
         messages.append({"role": "assistant", "content": final_answer})
 
