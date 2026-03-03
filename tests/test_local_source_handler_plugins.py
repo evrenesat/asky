@@ -43,3 +43,25 @@ def test_discover_custom_extension_via_plugin(tmp_path):
             
             assert result is not None
             assert any(link["text"] == "test.custom" for link in result["links"])
+
+
+def test_plugin_handler_restricted_by_allowlist(tmp_path):
+    """Confirm plugin handlers are bypassed if their extension is not in the allowlist."""
+    custom_file = tmp_path / "test.custom"
+    custom_file.write_text("content")
+    
+    # Mock plugin handler
+    mock_handler = MagicMock()
+    mock_handler.extensions = [".custom"]
+    
+    with patch("asky.research.adapters.RESEARCH_LOCAL_DOCUMENT_ROOTS", [str(tmp_path)]):
+        with patch("asky.research.adapters._get_plugin_handlers", return_value=[mock_handler]):
+            with patch("asky.research.adapters.RESEARCH_ALLOWED_INGESTION_EXTENSIONS", [".pdf", ".txt"]):
+                result = fetch_source_via_adapter(str(tmp_path), operation="discover")
+                
+                assert result is not None
+                assert not any(link["text"] == "test.custom" for link in result["links"])
+                
+                read_result = fetch_source_via_adapter(str(custom_file), operation="read")
+                assert read_result["error"] is not None
+                assert "Unsupported or restricted local file type" in read_result["error"]

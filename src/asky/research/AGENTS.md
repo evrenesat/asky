@@ -296,7 +296,8 @@ Operational note:
 
 - Accepted targets: `local://...`, `file://...`, absolute/relative local paths.
 - Local loading is enabled only when `research.local_document_roots` is configured.
-- Absolute paths are accepted only when they are inside configured roots.
+- Absolute paths are accepted only when they are inside configured roots (unless `research.allow_absolute_paths_outside_roots` is true).
+- Ingested files can optionally be restricted to a configured global allowlist (`research.allowed_ingestion_extensions`).
 - Root-relative targets (for example `/nested/doc.txt`) resolve under configured roots.
 - `extract_local_source_targets(...)` provides deterministic token extraction from prompts for pre-LLM local preload.
 - Directory targets (discover): produce file links as `local://...` (non-recursive in v1). Directory itself is not ingested as a pseudo-document and does not count towards document totals.

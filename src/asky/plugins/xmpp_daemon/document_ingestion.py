@@ -173,7 +173,7 @@ def _safe_content_type(response: requests.Response) -> str:
 def _validate_extension_and_mime(extension: str, mime_type: str) -> tuple[bool, Optional[str]]:
     supported = get_all_supported_extensions()
     if extension not in supported:
-        return False, f"Unsupported file type '{extension or '(none)'}'."
+        return False, f"Unsupported or restricted file type '{extension or '(none)'}'."
     if mime_type in GENERIC_MIME_TYPES:
         return True, "MIME type is missing/generic; accepted via extension check."
 
@@ -279,7 +279,7 @@ class DocumentIngestionService:
                 supported = get_all_supported_extensions()
                 if extension not in supported:
                     raise RuntimeError(
-                        f"Unsupported document extension '{extension or '(none)'}'."
+                        f"Unsupported or restricted document extension '{extension or '(none)'}'."
                     )
 
                 cached_doc = get_uploaded_document_by_url(url=url)

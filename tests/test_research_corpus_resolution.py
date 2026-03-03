@@ -57,6 +57,19 @@ def test_resolve_research_corpus_absolute_outside_roots_rejected(tmp_path):
             _resolve_research_corpus(str(outside))
 
 
+def test_resolve_research_corpus_absolute_outside_roots_allowed_when_flag_true(tmp_path):
+    root = tmp_path / "root"
+    root.mkdir()
+    outside = tmp_path / "outside.pdf"
+    outside.touch()
+
+    with patch("asky.cli.main.RESEARCH_LOCAL_DOCUMENT_ROOTS", [str(root)]):
+        with patch("asky.cli.main.RESEARCH_ALLOW_ABSOLUTE_PATHS_OUTSIDE_ROOTS", True):
+            enabled, paths, leftover, mode, replace = _resolve_research_corpus(str(outside))
+            assert enabled is True
+            assert paths == [str(outside)]
+
+
 def test_resolve_research_corpus_root_lookup(tmp_path):
     root1 = tmp_path / "root1"
     root1.mkdir()

@@ -119,6 +119,52 @@ def test_builtin_local_adapter_rejects_absolute_targets_outside_roots(tmp_path):
     assert "outside configured document roots" in result["error"]
 
 
+def test_builtin_local_adapter_allows_absolute_targets_outside_roots_when_configured(tmp_path):
+    """Absolute paths outside configured roots should be allowed if flag is True."""
+    from asky.research.adapters import fetch_source_via_adapter
+
+    roots_dir = tmp_path / "roots"
+    roots_dir.mkdir()
+    outside_file = tmp_path / "outside.txt"
+    outside_file.write_text("outside", encoding="utf-8")
+
+    with patch("asky.research.adapters.RESEARCH_LOCAL_DOCUMENT_ROOTS", [str(roots_dir)]), \
+         patch("asky.research.adapters.RESEARCH_ALLOW_ABSOLUTE_PATHS_OUTSIDE_ROOTS", True):
+        result = fetch_source_via_adapter(str(outside_file), operation="read")
+
+    assert result is not None
+    assert result["error"] is None
+    assert result["content"] == "outside"
+
+
+def test_builtin_local_adapter_restricts_extensions(tmp_path):
+    """Should only allow extensions configured in RESEARCH_ALLOWED_INGESTION_EXTENSIONS."""
+    from asky.research.adapters import fetch_source_via_adapter
+
+    test_dir = tmp_path / "docs"
+    test_dir.mkdir()
+    txt_file = test_dir / "test.txt"
+    txt_file.write_text("text content", encoding="utf-8")
+    md_file = test_dir / "test.md"
+    md_file.write_text("md content", encoding="utf-8")
+
+    with patch("asky.research.adapters.RESEARCH_LOCAL_DOCUMENT_ROOTS", [str(test_dir)]):
+        # Default behavior: allows both
+        result_txt = fetch_source_via_adapter(str(txt_file), operation="read")
+        assert result_txt["error"] is None
+        result_md = fetch_source_via_adapter(str(md_file), operation="read")
+        assert result_md["error"] is None
+
+        # Restricted behavior
+        with patch("asky.research.adapters.RESEARCH_ALLOWED_INGESTION_EXTENSIONS", [".txt"]):
+            result_txt_restricted = fetch_source_via_adapter(str(txt_file), operation="read")
+            assert result_txt_restricted["error"] is None
+            
+            result_md_restricted = fetch_source_via_adapter(str(md_file), operation="read")
+            assert result_md_restricted["error"] is not None
+            assert "Unsupported or restricted local file type" in result_md_restricted["error"]
+
+
 def test_builtin_local_adapter_supports_root_relative_leading_slash(tmp_path):
     """Root-relative corpus paths (with leading slash) should resolve under roots."""
     from asky.research.adapters import fetch_source_via_adapter

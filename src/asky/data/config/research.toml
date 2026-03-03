@@ -9,6 +9,10 @@ enabled = true
 # Leave empty to disable builtin local filesystem ingestion.
 local_document_roots = []
 
+# Security controls for local-source ingestion
+allow_absolute_paths_outside_roots = false
+allowed_ingestion_extensions = []
+
 # Cache TTL in hours (cached pages expire after this time)
 cache_ttl_hours = 24
 

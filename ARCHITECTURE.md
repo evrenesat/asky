@@ -500,7 +500,8 @@ Research cache entries are global to the active DB path and expire by TTL (`rese
 Local-file targets are preloaded/indexed through a built-in local loader:
 
 - local loading is gated by `research.local_document_roots`,
-- absolute paths ingest only when inside configured roots,
+- absolute paths ingest only when inside configured roots (unless `research.allow_absolute_paths_outside_roots` is true),
+- ingested extensions are restricted to an explicitly configured global allowlist (`research.allowed_ingestion_extensions`), if not empty,
 - root-relative corpus paths resolve under configured roots,
 - directory discovery returns local file links, and file reads
   (txt/html/md/json/csv and PDF/EPUB via PyMuPDF) are cached/indexed.

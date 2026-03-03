@@ -72,7 +72,8 @@ asky -r web "Investigate latest OpenTelemetry collector changes"
 Notes:
 
 - Local pointers are resolved against `research.local_document_roots`.
-- Absolute local paths are allowed only when they are inside configured roots.
+- Absolute local paths are allowed only when they are inside configured roots, unless `research.allow_absolute_paths_outside_roots` is set to `true`.
+- Ingested files can optionally be restricted to an explicitly configured set of extensions by using `research.allowed_ingestion_extensions`.
 - Root-relative corpus paths (for example `/nested/doc.txt`) resolve under configured roots.
 - In explicit pointer lists, `web` is the token used to request mixed/web-only source mode.
 - Ambiguous single-token `-r` values still fall back to query text when they are not clearly pointers.

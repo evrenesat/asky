@@ -88,8 +88,8 @@ One of your config files has a syntax error. The error message includes which fi
 asky couldn't find or read your files. Check:
 
 1. The file path exists and is spelled correctly
-2. The file type is supported: `.txt`, `.md`, `.markdown`, `.html`, `.htm`, `.json`, `.csv`, `.pdf`, `.epub`
-3. If using a relative path, it resolves under one of the roots configured in `research.local_document_roots` in `general.toml`
+2. The file type is supported: `.txt`, `.md`, `.markdown`, `.html`, `.htm`, `.json`, `.csv`, `.pdf`, `.epub` (and verify it isn't restricted by `research.allowed_ingestion_extensions`)
+3. If using a relative path, it resolves under one of the roots configured in `research.local_document_roots` in `research.toml`
 
 To use an absolute path directly:
 
@@ -97,7 +97,7 @@ To use an absolute path directly:
 asky -r /full/path/to/document.pdf "What does this say?"
 ```
 
-Absolute paths are accepted when they fall inside a configured root.
+Absolute paths are accepted when they fall inside a configured root, unless `research.allow_absolute_paths_outside_roots` is set to `true`.
 
 ---
 

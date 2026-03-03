@@ -244,6 +244,24 @@ RESEARCH_LOCAL_DOCUMENT_ROOTS = [
     for raw_path in _research.get("local_document_roots", [])
     if str(raw_path).strip()
 ]
+RESEARCH_ALLOW_ABSOLUTE_PATHS_OUTSIDE_ROOTS = _research.get(
+    "allow_absolute_paths_outside_roots", False
+)
+
+def _normalize_extensions(exts: list[str]) -> list[str]:
+    normalized = []
+    for ext in exts:
+        if not ext or not isinstance(ext, str) or not ext.strip():
+            continue
+        ext = ext.strip().lower()
+        if not ext.startswith("."):
+            ext = "." + ext
+        normalized.append(ext)
+    return normalized
+
+RESEARCH_ALLOWED_INGESTION_EXTENSIONS = _normalize_extensions(
+    _research.get("allowed_ingestion_extensions", [])
+)
 _research_chromadb = _research.get("chromadb", {})
 RESEARCH_CHROMA_PERSIST_DIRECTORY = Path(
     _research_chromadb.get("persist_directory", "~/.config/asky/chromadb")

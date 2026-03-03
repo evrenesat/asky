@@ -126,6 +126,26 @@ force_research_mode = false
 
 See [Research Mode Documentation](research_mode.md#one-shot-document-summarization) for examples.
 
+## 5b. Local Ingestion Security (Research Mode)
+
+Use these settings in `research.toml` to constrain local corpus ingestion behavior:
+
+```toml
+[research]
+# Keep absolute-path ingestion constrained to local_document_roots unless explicitly enabled
+allow_absolute_paths_outside_roots = false
+
+# Optional global extension allowlist for local ingestion; empty means default supported set
+allowed_ingestion_extensions = []
+```
+
+Behavior:
+
+- `allow_absolute_paths_outside_roots = false` keeps strict root containment for absolute paths.
+- `allow_absolute_paths_outside_roots = true` allows absolute paths outside configured roots.
+- `allowed_ingestion_extensions = []` keeps current behavior (built-in + plugin-supported extensions).
+- `allowed_ingestion_extensions = [".pdf", ".txt"]` restricts ingestion globally to that set.
+
 ## 6. Model Management (`models.toml`)
 
 Easily manage your model configurations directly from the CLI without having to manually edit `models.toml`:

@@ -9,7 +9,11 @@ from pathlib import Path, PurePosixPath
 from typing import Any, Dict, List, Optional, Tuple
 from urllib.parse import unquote, urlsplit
 
-from asky.config import RESEARCH_LOCAL_DOCUMENT_ROOTS
+from asky.config import (
+    RESEARCH_LOCAL_DOCUMENT_ROOTS,
+    RESEARCH_ALLOW_ABSOLUTE_PATHS_OUTSIDE_ROOTS,
+    RESEARCH_ALLOWED_INGESTION_EXTENSIONS,
+)
 from asky.html import strip_tags
 
 logger = logging.getLogger(__name__)
@@ -89,6 +93,11 @@ def get_all_supported_extensions() -> frozenset[str]:
     for handler in _get_plugin_handlers():
         for ext in handler.extensions:
             extensions.add(ext.lower())
+            
+    if RESEARCH_ALLOWED_INGESTION_EXTENSIONS:
+        allowed = set(RESEARCH_ALLOWED_INGESTION_EXTENSIONS)
+        extensions = extensions.intersection(allowed)
+        
     return frozenset(extensions)
 
 
@@ -220,8 +229,6 @@ def _resolve_local_target_paths(
 ) -> Tuple[List[Path], Optional[Path], Optional[str]]:
     """Resolve a local target to existing files/directories under configured roots."""
     roots = _configured_local_document_roots()
-    if not roots:
-        return [], None, LOCAL_ROOTS_DISABLED_ERROR
 
     path_candidate = _extract_local_target_path_candidate(target)
     if not path_candidate:
@@ -230,16 +237,22 @@ def _resolve_local_target_paths(
     expanded = Path(path_candidate).expanduser()
     resolved_matches: List[Path] = []
 
+    if not roots and not (expanded.is_absolute() and RESEARCH_ALLOW_ABSOLUTE_PATHS_OUTSIDE_ROOTS):
+        return [], None, LOCAL_ROOTS_DISABLED_ERROR
+
     if expanded.is_absolute():
         try:
             absolute_candidate = expanded.resolve()
-            for root in roots:
-                if (
-                    _path_is_within_root(absolute_candidate, root)
-                    and absolute_candidate.exists()
-                ):
-                    resolved_matches.append(absolute_candidate)
-                    break
+            if RESEARCH_ALLOW_ABSOLUTE_PATHS_OUTSIDE_ROOTS and absolute_candidate.exists():
+                resolved_matches.append(absolute_candidate)
+            else:
+                for root in roots:
+                    if (
+                        _path_is_within_root(absolute_candidate, root)
+                        and absolute_candidate.exists()
+                    ):
+                        resolved_matches.append(absolute_candidate)
+                        break
         except Exception:
             absolute_candidate = None
     else:
@@ -330,6 +343,9 @@ def _read_with_pymupdf(path: Path) -> tuple[str, Optional[str]]:
 def _read_local_file_content(path: Path) -> tuple[str, Optional[str]]:
     """Read supported local file types into normalized plain text."""
     extension = path.suffix.lower()
+
+    if extension not in get_all_supported_extensions():
+        return "", f"Unsupported or restricted local file type: '{extension or '(none)'}'."
 
     # Check plugin-provided handlers first
     for handler in _get_plugin_handlers():

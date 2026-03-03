@@ -11,7 +11,7 @@ import subprocess
 import sys
 import time
 from pathlib import Path
-from asky.config import RESEARCH_LOCAL_DOCUMENT_ROOTS
+from asky.config import RESEARCH_LOCAL_DOCUMENT_ROOTS, RESEARCH_ALLOW_ABSOLUTE_PATHS_OUTSIDE_ROOTS
 from types import ModuleType
 from typing import Any, Optional
 
@@ -1062,7 +1062,7 @@ def parse_args(
         default=False,
         metavar="CORPUS_POINTER",
         help="Enable deep research mode with optional local corpus pointer (file, directory, or comma-separated names).\n"
-        "If pointer provided, it is resolved against local_document_roots. The rest of arguments are the query.\n"
+        "Relative pointers resolve against local_document_roots. Absolute pointers may be allowed outside roots via research.allow_absolute_paths_outside_roots.\n"
         "Special tools available in this mode:\n"
         "  - extract_links: Discover links (content cached, only links returned)\n"
         "  - get_link_summaries: Get AI summaries of cached pages\n"
@@ -1507,11 +1507,11 @@ def _resolve_research_corpus(
         if absolute_candidate is not None and (
             absolute_candidate.is_file() or absolute_candidate.is_dir()
         ):
-            if not roots:
+            if not roots and not RESEARCH_ALLOW_ABSOLUTE_PATHS_OUTSIDE_ROOTS:
                 raise ValueError(
                     "local_document_roots is empty; configure research.local_document_roots to allow local corpus paths."
                 )
-            if not _path_within_roots(absolute_candidate, roots):
+            if not RESEARCH_ALLOW_ABSOLUTE_PATHS_OUTSIDE_ROOTS and not _path_within_roots(absolute_candidate, roots):
                 raise ValueError(
                     f"Corpus pointer '{token}' is outside configured local_document_roots."
                 )

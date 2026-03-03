@@ -83,6 +83,8 @@ daemon multimodal routing eligibility checks.
 | `RESEARCH_CHUNK_SIZE`                        | Token chunk size                                      |
 | `RESEARCH_EMBEDDING_MODEL`                   | Embedding model name                                  |
 | `RESEARCH_LOCAL_DOCUMENT_ROOTS`              | Allowed corpus roots for builtin local-source loading |
+| `RESEARCH_ALLOW_ABSOLUTE_PATHS_OUTSIDE_ROOTS` | Toggle to bypass absolute-path root containment checks|
+| `RESEARCH_ALLOWED_INGESTION_EXTENSIONS`      | Global allowlist of file extensions for local loading |
 | `RESEARCH_EVIDENCE_EXTRACTION_MAX_CHUNKS`    | Max chunks for bootstrap extraction                   |
 | `RESEARCH_EVIDENCE_SKIP_SHORTLIST_THRESHOLD` | Shortlist size threshold to skip extraction           |
 | `SOURCE_SHORTLIST_*`                         | Shortlist pipeline settings                           |

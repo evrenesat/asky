@@ -33,6 +33,17 @@ def test_validate_extension_and_mime_enforces_pdf_mime():
     assert "invalid" in str(reason).lower()
 
 
+def test_validate_extension_enforces_allowlist(monkeypatch):
+    monkeypatch.setattr("asky.research.adapters.RESEARCH_ALLOWED_INGESTION_EXTENSIONS", [".txt"])
+    
+    valid, reason = di._validate_extension_and_mime(".pdf", "application/pdf")
+    assert valid is False
+    assert "restricted" in str(reason).lower()
+    
+    valid, reason = di._validate_extension_and_mime(".txt", "text/plain")
+    assert valid is True
+
+
 def test_ingest_rejects_non_https_urls(monkeypatch):
     service = di.DocumentIngestionService()
     monkeypatch.setattr(di, "list_session_uploaded_documents", lambda session_id: [])
