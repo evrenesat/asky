@@ -116,6 +116,15 @@ Section CLI behavior:
 - Context overflow errors are surfaced as `ContextOverflowError` from core engine.
 - CLI is responsible for user-facing retry guidance and terminal messaging.
 
+### Inline Help Engine
+
+The CLI features an extensible inline-help engine (`inline_help.py`) that emits actionable, single-line hints to standard output.
+- **Pre-dispatch phase:** Evaluates parsed command arguments (e.g. `research_source_mode` hints for local vs mixed vs web source boundaries) before command execution.
+- **Post-turn phase:** Evaluates the resolved turn request and result via the `CLI_INLINE_HINTS_BUILD` hook.
+- Deduplication: Hints are frequency-controlled (`per_invocation` or `per_session` via `__inline_help_seen` inside `query_defaults`) and priority-sorted (max 2 emissions).
+- Late session resolution handling: when pre-dispatch hints render before a new session exists, rendered `per_session` hints are captured and persisted after turn completion once `turn_result.session_id` is known.
+- Fail-open: Error handling ensures hint rendering failures never block command dispatch or final answer routing.
+
 ### Live Banner Integration
 
 - `InterfaceRenderer` manages Rich Live console

@@ -1065,6 +1065,34 @@ def run_chat(
                     answer_title=filename_hint or "",
                 ),
             )
+            
+        # Post-turn runtime inline hints
+        try:
+            from asky.cli.inline_help import (
+                collect_post_turn_hints,
+                mark_hints_seen_for_session,
+                render_inline_hints,
+            )
+
+            # If pre-dispatch hints were shown before a session existed, persist
+            # their per-session ids now that we have a concrete session id.
+            pre_dispatch_hints = list(
+                getattr(args, "_pre_dispatch_rendered_hints", []) or []
+            )
+            sid = int(turn_result.session_id) if turn_result.session_id else None
+            if sid and pre_dispatch_hints:
+                mark_hints_seen_for_session(sid, pre_dispatch_hints)
+
+            hints = collect_post_turn_hints(
+                turn_request,
+                turn_result,
+                args,
+                plugin_runtime=plugin_runtime
+            )
+            if hints:
+                render_inline_hints(console, hints, session_id=sid)
+        except Exception as e:
+            logger.debug("Failed to emit post-turn hints: %s", e)
 
     except KeyboardInterrupt:
         console.print("\nAborted by user.")

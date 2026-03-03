@@ -1830,6 +1830,26 @@ def main() -> None:
         # Parse persona args (skip "persona" token)
         persona_args = parser.parse_args(sys.argv[2:])
 
+        # Emit pre-dispatch hints for persona path
+        try:
+            from asky.cli.inline_help import collect_pre_dispatch_hints, render_inline_hints
+            from rich.console import Console
+            
+            # Since this is early, get active shell session if any
+            sid_val = get_shell_session_id()
+            sid = int(sid_val) if sid_val else None
+            
+            # Plugins might want to contribute hints here too, so we load them
+            pm = _bootstrap_plugin_manager_for_cli()
+            hints = collect_pre_dispatch_hints(persona_args, plugin_manager=pm)
+            if hints:
+                rendered_hints = render_inline_hints(
+                    Console(), hints, session_id=sid
+                )
+                setattr(persona_args, "_pre_dispatch_rendered_hints", rendered_hints)
+        except Exception as e:
+            logger.debug("Failed to emit pre-dispatch hints in persona path: %s", e)
+
         # Dispatch to appropriate handler
         persona_cmd = persona_args.persona_command
         if persona_cmd == "create":
@@ -1912,6 +1932,33 @@ def main() -> None:
     except ValueError as e:
         print(f"Error: {e}")
         return
+
+    # Check if this is an internal spawn or silent command where hints should be suppressed
+    _is_internal_spawn = any([
+        getattr(args, "xmpp_daemon", False),
+        getattr(args, "xmpp_menubar_child", False),
+        getattr(args, "completion_script", False),
+        getattr(args, "edit_daemon", False),
+        getattr(args, "list_tools", False),
+        getattr(args, "prompts", False),
+    ])
+
+    if not _is_internal_spawn:
+        try:
+            from asky.cli.inline_help import collect_pre_dispatch_hints, render_inline_hints
+            from rich.console import Console
+            
+            sid_val = get_shell_session_id()
+            sid = int(sid_val) if sid_val else None
+            
+            hints = collect_pre_dispatch_hints(args, plugin_manager=_cli_plugin_manager)
+            if hints:
+                rendered_hints = render_inline_hints(
+                    Console(), hints, session_id=sid
+                )
+                setattr(args, "_pre_dispatch_rendered_hints", rendered_hints)
+        except Exception as e:
+            logger.debug("Failed to emit pre-dispatch hints in main path: %s", e)
 
     legacy_from_message = getattr(args, "from_message", None)
     if getattr(args, "session_from_message", None) is None and isinstance(

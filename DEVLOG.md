@@ -2,6 +2,39 @@
 
 For full detailed entries, see [DEVLOG_ARCHIVE.md](DEVLOG_ARCHIVE.md).
 
+## 2026-03-03: Fix Per-Session Inline Hint Persistence for Newly Created Sessions
+
+- **Summary**: Fixed inline-help cadence so `per_session` hints shown before session creation are persisted once the session ID becomes available after the first turn.
+- **Root Cause**: Pre-dispatch hint rendering can run before a new session exists, so `session_id` was `None` and `__inline_help_seen` could not be updated. This caused the same `per_session` hint to reappear on the next invocation in that same session.
+- **Changes**:
+  - Updated `src/asky/cli/inline_help.py`:
+    - `render_inline_hints(...)` now returns rendered `CLIHint` items.
+    - Added `mark_hints_seen_for_session(session_id, hints)` to persist only `frequency="per_session"` hints once a session ID is known.
+  - Updated `src/asky/cli/main.py`:
+    - Captures pre-dispatch rendered hints on parsed args (`_pre_dispatch_rendered_hints`) for later persistence.
+  - Updated `src/asky/cli/chat.py`:
+    - After turn completion, persists pre-dispatch `per_session` hints when `turn_result.session_id` exists.
+  - Updated tests:
+    - Added regression test in `tests/test_inline_help.py` for:
+      - pre-dispatch render with `session_id=None`,
+      - late persistence after session resolution,
+      - suppression on next invocation in same session.
+- **Verification**:
+  - `uv run pytest tests/test_inline_help.py tests/test_cli.py -q` (107 passed)
+  - `uv run pytest -q` (1372 passed)
+
+## 2026-03-02: Added Generic CLI Inline Help Framework
+
+- **Summary**: Implemented an extensible CLI-wide inline help framework to print concise one-line operational guidance.
+- **Changes**:
+  - Added `asky.cli.inline_help` to handle deduplication, frequency capping (`per_session` vs `per_invocation`), and CLI rendering.
+  - Implemented the first built-in provider: research source-mode reminders (`local_only`, `mixed`, `web_only`) alerting users how to switch modes based on their pointer.
+  - Added `CLIHintContext` and `CLIHint` contracts to `asky.plugins.base.AskyPlugin`.
+  - Added `get_cli_hint_contributions` classmethod hook for static (pre-dispatch) plugin hint contributions based on parsed args.
+  - Added `CLI_INLINE_HINTS_BUILD` hook for runtime (post-turn) contextual hints during active chat sessions.
+  - Wired hint emissions to the main parser path, persona parser path, and post-turn chat path while skipping internal daemon/spawn paths.
+- **Verification**: Tests passing.
+
 ## 2026-03-02: Documented Shortlist Behavior Across Research Pipelines
 
 - **Summary**: Clarified shortlist behavior and rationale across standard, research `web_only`, research `local_only`, research `mixed`, and deterministic corpus-command pipelines.
