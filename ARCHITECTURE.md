@@ -207,6 +207,9 @@ src/asky/
 ```
 
 For test organization, see `tests/AGENTS.md`.
+The test suite now mirrors this package layout under `tests/asky/` and keeps
+cross-cutting suites in `tests/integration/`, `tests/performance/`, and
+`tests/scripts/`.
 
 ---
 

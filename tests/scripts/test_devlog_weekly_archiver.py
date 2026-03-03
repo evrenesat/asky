@@ -10,8 +10,15 @@ from pathlib import Path
 from types import ModuleType
 
 
+def _repo_root() -> Path:
+    for candidate in Path(__file__).resolve().parents:
+        if (candidate / "pyproject.toml").exists():
+            return candidate
+    raise RuntimeError("Unable to locate repository root")
+
+
 def _load_module() -> ModuleType:
-    script_path = Path(__file__).resolve().parents[1] / "scripts" / "devlog_weekly_archiver.py"
+    script_path = _repo_root() / "scripts" / "devlog_weekly_archiver.py"
     spec = importlib.util.spec_from_file_location("devlog_weekly_archiver", script_path)
     if spec is None or spec.loader is None:
         raise RuntimeError("Unable to load devlog_weekly_archiver module")

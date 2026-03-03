@@ -2,6 +2,24 @@
 
 For full detailed entries, see [DEVLOG_ARCHIVE.md](DEVLOG_ARCHIVE.md).
 
+## 2026-03-03: Reorganized Test Suite into Mirrored Component Structure
+
+- **Summary**: Refactored `tests/` to mirror `src/asky/` for faster navigation, with explicit buckets for integration, performance, and script tests.
+- **Changes**:
+  - Moved component tests into `tests/asky/<package>/...` (api, cli, core, daemon, config, storage, memory, research, evals, plugins).
+  - Split plugin tests into `tests/asky/plugins/<plugin_name>/...` (including `xmpp_daemon`, `persona_manager`, transcribers, GUI, and delivery plugins).
+  - Moved cross-cutting suites into:
+    - `tests/integration/`
+    - `tests/performance/`
+    - `tests/scripts/`
+  - Updated path-sensitive tests to locate repository root by searching for `pyproject.toml`:
+    - `tests/performance/test_startup_performance.py`
+    - `tests/scripts/test_devlog_weekly_archiver.py`
+  - Updated `tests/AGENTS.md` and `ARCHITECTURE.md` to document the new structure.
+- **Verification**:
+  - Pre-refactor baseline: `uv run pytest -q` (`1383 passed in 9.48s`, `real 9.67s`).
+  - Post-refactor: `uv run pytest -q` and targeted directory runs to confirm path updates and collection behavior.
+
 ## 2026-03-03: Configurable Local-Ingestion Security Gates
 
 - **Summary**: Implemented configurable security gates for local-source ingestion to mitigate data exfiltration risks from prompt injections.

@@ -20,7 +20,15 @@ EDIT_MODEL_IDLE_SAMPLE_INTERVAL_SECONDS = 0.20
 # catching meaningful regressions from eager heavy imports.
 EDIT_MODEL_IDLE_MAX_RSS_KB = 80_000
 
-REPO_ROOT = Path(__file__).resolve().parents[1]
+
+def _repo_root() -> Path:
+    for candidate in Path(__file__).resolve().parents:
+        if (candidate / "pyproject.toml").exists():
+            return candidate
+    raise RuntimeError("Unable to locate repository root")
+
+
+REPO_ROOT = _repo_root()
 
 
 def _run_help_once() -> float:
