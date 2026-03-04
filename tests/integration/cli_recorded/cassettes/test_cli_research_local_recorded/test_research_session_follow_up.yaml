@@ -1,0 +1,230 @@
+interactions:
+- request:
+    body: '{"model": "fake/gf", "messages": [{"role": "system", "content": "You are
+      a research assistant conducting deep investigation on behalf of the user.\n\nThe
+      current date and time is: Wednesday, March 04, 2026 at 13:55\n\n**Research Strategy
+      - Follow this systematic workflow:**\n\n1. **RECALL** - Start by checking your
+      research memory\n   - Use `query_research_memory` to see if you''ve researched
+      this topic before\n   - Past findings can provide a foundation and save time\n   -
+      Build on previous discoveries rather than starting from scratch\n\n2. **DISCOVER**
+      - Use `extract_links` to explore pages and discover available information\n   -
+      Start with web_search to find relevant sources\n   - Use extract_links on promising
+      URLs to see what content is available\n   - Provide a query parameter to filter
+      links by relevance to your research\n   - Content is cached automatically -
+      you only see link labels and URLs\n\n3. **EVALUATE** - Review link labels and
+      relevance scores\n   - Prioritize high-relevance links (scores closer to 1.0)\n   -
+      Look for primary sources, research papers, authoritative sites\n   - Identify
+      which links likely have substantive information vs navigation/ads\n\n4. **SKIM**
+      - Use `get_link_summaries` to preview promising pages\n   - Read AI-generated
+      summaries to decide if full content is needed\n   - Summaries are generated
+      in the background - may show \"processing\" initially\n   - This saves tokens
+      and speeds up your research\n\n5. **DEEP READ** - Use `get_relevant_content`
+      for targeted extraction\n   - Provide a specific query to retrieve only relevant
+      content sections\n   - Use `get_full_content` only when comprehensive understanding
+      is needed\n   - The RAG system finds semantically similar content chunks\n\n6.
+      **REMEMBER** - Use `save_finding` to store important discoveries\n   - Save
+      key facts, statistics, and insights as you find them\n   - Include source URL
+      and descriptive tags for easy retrieval\n   - Use `save_finding` for source-backed
+      research evidence\n   - Use `save_memory` only for durable user preferences/facts\n\n7.
+      **VERIFY MEMORY LOOP** - Before final answer, re-check saved findings\n   -
+      Call `query_research_memory` with the refined question\n   - Ensure major claims
+      are grounded in saved findings or retrieved evidence\n   - This helps avoid
+      dropping earlier discoveries in long tool chains\n\n8. **ITERATE** - Repeat
+      as needed to build comprehensive understanding\n   - Follow promising leads
+      to new pages\n   - Cross-reference information across multiple sources\n   -
+      Synthesize findings into a coherent answer\n\n**Token Efficiency Guidelines:**\n-
+      Prefer summaries over full content when possible\n- Use targeted queries with
+      get_relevant_content to minimize token usage\n- Don''t request content you won''t
+      use\n- Batch multiple URL requests when possible\n\n**Available Tools:**\n-
+      `web_search` - Search the web for relevant sources\n- `extract_links` - Discover
+      links on pages (caches content, returns only links)\n- `get_link_summaries`
+      - Get AI summaries of cached pages\n- `get_relevant_content` - RAG-based retrieval
+      of relevant content sections\n- `get_full_content` - Get complete cached content
+      (use sparingly)\n- `save_finding` - Save a discovered fact to research memory\n-
+      `query_research_memory` - Search your research memory for past findings\n\nAlways
+      prioritize using markdown formatting in your final response.\nAlways start your
+      final response with a single H1 markdown header (# Title) that captures the
+      essence of your answer in a concise title (3-7 words).\n\nA research corpus
+      has been pre-loaded for this query. Your sources are already\nindexed and available.\n\nYour
+      task:\n1. Use `query_research_memory` to check if relevant findings already
+      exist.\n2. Use `get_relevant_content` with specific sub-questions to retrieve
+      evidence\n   from the indexed corpus.\n3. Use `save_finding` to persist key
+      facts with source attribution.\n4. Use `save_finding` for source-backed research
+      evidence.\n   Use `save_memory` only for durable user preferences/facts.\n5.
+      Before the final answer, run `query_research_memory` again and synthesize\n   from
+      the saved findings with citations.\n\nIf the user''s query is clearly unrelated
+      to the pre-loaded research corpus (e.g., greetings,\nsmall talk, or accidental
+      input), respond naturally without providing a research report.\nDo NOT attempt
+      to browse new URLs or extract links - the corpus is already built.\n\nLocal
+      Knowledge Base Guidance:\n- Local corpus sources were preloaded from configured
+      document roots.\n- Do not ask the user for local filesystem paths.\n- You may
+      call `query_research_memory` first, but if it returns no findings, immediately
+      call `get_relevant_content` against the preloaded corpus sources.\n- For section-focused
+      local corpus questions, call `list_sections` first, then `summarize_section`
+      with `section_ref` or exact `section_id`.\n- Do not append section IDs to corpus
+      URL paths. Use `section_ref` (`corpus://cache/<id>#section=<section-id>`) or
+      explicit section args."}, {"role": "user", "content": "Just reply exactly with
+      software engineering.\n\nPreloaded sources gathered before tool calls:\nLocal
+      knowledge base preloaded before tool calls:\n- Documents indexed: 2\n- Chunk
+      embeddings added: 2\n- Total indexed characters: 184\n- Source handles: corpus://cache/1,
+      corpus://cache/2\n\nUse this preloaded corpus as a starting point, then verify
+      with tools before citing."}], "stream": false, "tools": [{"type": "function",
+      "function": {"name": "transcribe_image_url", "description": "Describe or transcribe
+      an image from a public HTTPS URL. Supports formats like PNG, JPEG, WEBP, GIF.",
+      "parameters": {"type": "object", "properties": {"url": {"type": "string", "description":
+      "The public HTTPS URL of the image file."}, "prompt": {"type": "string", "description":
+      "Optional specific question or prompt about the image."}}, "required": ["url"]}}},
+      {"type": "function", "function": {"name": "transcribe_audio_url", "description":
+      "Transcribe an audio file from a public HTTPS URL to text. Supports common formats
+      like MP3, M4A, WAV, WebM, OGG.", "parameters": {"type": "object", "properties":
+      {"url": {"type": "string", "description": "The public HTTPS URL of the audio
+      file."}, "prompt": {"type": "string", "description": "Optional initial prompt
+      to guide transcription (e.g. spelling of names)."}, "language": {"type": "string",
+      "description": "Optional ISO 639-1 language code (e.g. ''en'', ''fr'')."}},
+      "required": ["url"]}}}], "tool_choice": "auto"}'
+    headers:
+      Accept:
+      - '*/*'
+      Accept-Encoding:
+      - gzip, deflate
+      Connection:
+      - keep-alive
+      Content-Length:
+      - '6518'
+      Content-Type:
+      - application/json
+      User-Agent:
+      - asky/1.0.0
+    method: POST
+    uri: http://127.0.0.1:59334/v1/chat/completions
+  response:
+    body:
+      string: '{"id": "chatcmpl-recorded", "object": "chat.completion", "created":
+        1704110400, "model": "fake/gf", "choices": [{"index": 0, "message": {"role":
+        "assistant", "content": "software engineering"}, "finish_reason": "stop"}],
+        "usage": {"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15}}'
+    headers:
+      Content-Type:
+      - application/json
+      Date:
+      - Wed, 04 Mar 2026 12:55:39 GMT
+      Server:
+      - BaseHTTP/0.6 Python/3.13.5
+    status:
+      code: 200
+      message: OK
+- request:
+    body: '{"model": "fake/gf", "messages": [{"role": "system", "content": "You are
+      a research assistant conducting deep investigation on behalf of the user.\n\nThe
+      current date and time is: Wednesday, March 04, 2026 at 13:55\n\n**Research Strategy
+      - Follow this systematic workflow:**\n\n1. **RECALL** - Start by checking your
+      research memory\n   - Use `query_research_memory` to see if you''ve researched
+      this topic before\n   - Past findings can provide a foundation and save time\n   -
+      Build on previous discoveries rather than starting from scratch\n\n2. **DISCOVER**
+      - Use `extract_links` to explore pages and discover available information\n   -
+      Start with web_search to find relevant sources\n   - Use extract_links on promising
+      URLs to see what content is available\n   - Provide a query parameter to filter
+      links by relevance to your research\n   - Content is cached automatically -
+      you only see link labels and URLs\n\n3. **EVALUATE** - Review link labels and
+      relevance scores\n   - Prioritize high-relevance links (scores closer to 1.0)\n   -
+      Look for primary sources, research papers, authoritative sites\n   - Identify
+      which links likely have substantive information vs navigation/ads\n\n4. **SKIM**
+      - Use `get_link_summaries` to preview promising pages\n   - Read AI-generated
+      summaries to decide if full content is needed\n   - Summaries are generated
+      in the background - may show \"processing\" initially\n   - This saves tokens
+      and speeds up your research\n\n5. **DEEP READ** - Use `get_relevant_content`
+      for targeted extraction\n   - Provide a specific query to retrieve only relevant
+      content sections\n   - Use `get_full_content` only when comprehensive understanding
+      is needed\n   - The RAG system finds semantically similar content chunks\n\n6.
+      **REMEMBER** - Use `save_finding` to store important discoveries\n   - Save
+      key facts, statistics, and insights as you find them\n   - Include source URL
+      and descriptive tags for easy retrieval\n   - Use `save_finding` for source-backed
+      research evidence\n   - Use `save_memory` only for durable user preferences/facts\n\n7.
+      **VERIFY MEMORY LOOP** - Before final answer, re-check saved findings\n   -
+      Call `query_research_memory` with the refined question\n   - Ensure major claims
+      are grounded in saved findings or retrieved evidence\n   - This helps avoid
+      dropping earlier discoveries in long tool chains\n\n8. **ITERATE** - Repeat
+      as needed to build comprehensive understanding\n   - Follow promising leads
+      to new pages\n   - Cross-reference information across multiple sources\n   -
+      Synthesize findings into a coherent answer\n\n**Token Efficiency Guidelines:**\n-
+      Prefer summaries over full content when possible\n- Use targeted queries with
+      get_relevant_content to minimize token usage\n- Don''t request content you won''t
+      use\n- Batch multiple URL requests when possible\n\n**Available Tools:**\n-
+      `web_search` - Search the web for relevant sources\n- `extract_links` - Discover
+      links on pages (caches content, returns only links)\n- `get_link_summaries`
+      - Get AI summaries of cached pages\n- `get_relevant_content` - RAG-based retrieval
+      of relevant content sections\n- `get_full_content` - Get complete cached content
+      (use sparingly)\n- `save_finding` - Save a discovered fact to research memory\n-
+      `query_research_memory` - Search your research memory for past findings\n\nAlways
+      prioritize using markdown formatting in your final response.\nAlways start your
+      final response with a single H1 markdown header (# Title) that captures the
+      essence of your answer in a concise title (3-7 words).\n\nA research corpus
+      has been pre-loaded for this query. Your sources are already\nindexed and available.\n\nYour
+      task:\n1. Use `query_research_memory` to check if relevant findings already
+      exist.\n2. Use `get_relevant_content` with specific sub-questions to retrieve
+      evidence\n   from the indexed corpus.\n3. Use `save_finding` to persist key
+      facts with source attribution.\n4. Use `save_finding` for source-backed research
+      evidence.\n   Use `save_memory` only for durable user preferences/facts.\n5.
+      Before the final answer, run `query_research_memory` again and synthesize\n   from
+      the saved findings with citations.\n\nIf the user''s query is clearly unrelated
+      to the pre-loaded research corpus (e.g., greetings,\nsmall talk, or accidental
+      input), respond naturally without providing a research report.\nDo NOT attempt
+      to browse new URLs or extract links - the corpus is already built.\n\nLocal
+      Knowledge Base Guidance:\n- Local corpus sources were preloaded from configured
+      document roots.\n- Do not ask the user for local filesystem paths.\n- You may
+      call `query_research_memory` first, but if it returns no findings, immediately
+      call `get_relevant_content` against the preloaded corpus sources.\n- For section-focused
+      local corpus questions, call `list_sections` first, then `summarize_section`
+      with `section_ref` or exact `section_id`.\n- Do not append section IDs to corpus
+      URL paths. Use `section_ref` (`corpus://cache/<id>#section=<section-id>`) or
+      explicit section args."}, {"role": "user", "content": "Just reply exactly with
+      interactive.\n\nPreloaded sources gathered before tool calls:\nLocal knowledge
+      base preloaded before tool calls:\n- Documents indexed: 2\n- Chunk embeddings
+      added: 0\n- Total indexed characters: 184\n- Source handles: corpus://cache/1,
+      corpus://cache/2\n\nUse this preloaded corpus as a starting point, then verify
+      with tools before citing."}], "stream": false, "tools": [{"type": "function",
+      "function": {"name": "transcribe_image_url", "description": "Describe or transcribe
+      an image from a public HTTPS URL. Supports formats like PNG, JPEG, WEBP, GIF.",
+      "parameters": {"type": "object", "properties": {"url": {"type": "string", "description":
+      "The public HTTPS URL of the image file."}, "prompt": {"type": "string", "description":
+      "Optional specific question or prompt about the image."}}, "required": ["url"]}}},
+      {"type": "function", "function": {"name": "transcribe_audio_url", "description":
+      "Transcribe an audio file from a public HTTPS URL to text. Supports common formats
+      like MP3, M4A, WAV, WebM, OGG.", "parameters": {"type": "object", "properties":
+      {"url": {"type": "string", "description": "The public HTTPS URL of the audio
+      file."}, "prompt": {"type": "string", "description": "Optional initial prompt
+      to guide transcription (e.g. spelling of names)."}, "language": {"type": "string",
+      "description": "Optional ISO 639-1 language code (e.g. ''en'', ''fr'')."}},
+      "required": ["url"]}}}], "tool_choice": "auto"}'
+    headers:
+      Accept:
+      - '*/*'
+      Accept-Encoding:
+      - gzip, deflate
+      Connection:
+      - keep-alive
+      Content-Length:
+      - '6509'
+      Content-Type:
+      - application/json
+      User-Agent:
+      - asky/1.0.0
+    method: POST
+    uri: http://127.0.0.1:59334/v1/chat/completions
+  response:
+    body:
+      string: '{"id": "chatcmpl-recorded", "object": "chat.completion", "created":
+        1704110400, "model": "fake/gf", "choices": [{"index": 0, "message": {"role":
+        "assistant", "content": "interactive"}, "finish_reason": "stop"}], "usage":
+        {"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15}}'
+    headers:
+      Content-Type:
+      - application/json
+      Date:
+      - Wed, 04 Mar 2026 12:55:39 GMT
+      Server:
+      - BaseHTTP/0.6 Python/3.13.5
+    status:
+      code: 200
+      message: OK
+version: 1

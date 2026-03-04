@@ -2,6 +2,27 @@
 
 For full detailed entries, see [DEVLOG_ARCHIVE.md](DEVLOG_ARCHIVE.md).
 
+## 2026-03-04: Recorded CLI Integration Framework
+
+- **Summary**: Stabilized the recorded CLI integration framework, scoped network guards, fixed in-process/subprocess harnesses, and aligned default/full-suite behavior with explicit recorded-lane execution.
+- **Changes**:
+  - Added `pytest-recording` dev dependency.
+  - Added/kept explicit markers: `recorded_cli`, `subprocess_cli`, `live_record`.
+  - Scoped root network blocking and root HOME/DB isolation to avoid global side effects on non-recorded tests.
+  - Recorded lane now uses isolated per-test config/home and canonical alias injection with deterministic fake endpoint behavior.
+  - In-process helper now isolates shell lock path per test HOME and reloads core CLI/config/storage modules per invocation.
+  - Subprocess harness now uses the real `asky` entrypoint and stable PTY read loop.
+  - Refresh workflow script now bypasses default addopts marker deselection and records only `recorded_cli` tests.
+  - Default full-suite addopts now exclude `recorded_cli`/`subprocess_cli`; recorded lane is run via explicit commands.
+  - Updated docs (`docs/testing_recorded_cli.md`, `ARCHITECTURE.md`, `tests/AGENTS.md`) to match verified commands.
+  - Unified test-home isolation across the entire suite: all tests now run with `HOME`/`ASKY_HOME`/`ASKY_DB_PATH` rooted under `tests/.test_home/` with per-test/per-worker subdirectories.
+  - Updated recorded/subprocess fixtures to also use `tests/.test_home` roots.
+  - Added repository ignore rule for `tests/.test_home/` temporary artifacts.
+- **Verification**:
+  - `ASKY_CLI_RECORD=1 uv run pytest tests/integration/cli_recorded -q -o addopts='-n0 --record-mode=once' -m recorded_cli` (12 passed).
+  - `uv run pytest tests/integration/cli_recorded -q -o addopts='-n0 --record-mode=none'` (14 passed).
+  - `uv run pytest -q` (1383 passed in 10.64s; real 10.85s).
+
 ## 2026-03-03: Reorganized Test Suite into Mirrored Component Structure
 
 - **Summary**: Refactored `tests/` to mirror `src/asky/` for faster navigation, with explicit buckets for integration, performance, and script tests.

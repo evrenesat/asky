@@ -824,12 +824,15 @@ A simplified "retrieval-only" system prompt guidance is injected in these cases 
   - `DaemonService` raises `DaemonUserError` if zero or more than one transport is registered.
   - The XMPP daemon plugin is enabled by default in `plugins.toml` and can be disabled to suppress XMPP transport entirely.
 
-### Decision 22: Browser-Based Retrieval Plugin (Playwright)
+### Decision 24: Recorded CLI Integration Framework
 
-- **Context**: Aggressive bot-protection blocks standard `requests`-based retrieval.
-- **Decision**: Add an optional Playwright-based plugin that can intercept fetch requests and provide browser-rendered content with session persistence.
+- **Context**: Relying solely on manual CLI testing or heavily mocked unit tests limits confidence in LLM integration and process boundaries.
+- **Decision**: Introduce a dual-lane `pytest-recording` framework for CLI integration.
 - **Implementation**:
-  - `FETCH_URL_OVERRIDE` hook in `retrieval.py` allows plugins to provide a result before the default pipeline runs.
-  - `PlaywrightBrowserManager` (sync) handles browser lifecycle, anti-fingerprinting, and challenge detection (selectors + URL patterns).
-  - `--browser` CLI flag allows manual login and persistent browser profile directory (gated by `LaunchContext` for daemon safety).
-  - Same-site delay logic (random 1.5s - 4s) and configurable post-load delays to avoid rate-limiting and handle dynamic rendering.
+  - **Recorded Lane (In-Process)**: Uses `pytest-recording` (VCR.py) to snapshot LLM network interactions. Default `uv run pytest -q` excludes this lane by marker; run explicitly with `uv run pytest tests/integration/cli_recorded -q -o addopts='-n0 --record-mode=none'`. Cassette refresh requires explicit opt-in (`ASKY_CLI_RECORD=1`).
+  - **Subprocess Lane**: Uses `subprocess` and `pty` for tests requiring true process isolation or TTY realism (e.g., interactive prompts). Backed by a local fake HTTP server instead of VCR for determinism without real network dependencies.
+  - Isolated temporary home directories (`fake_home`) and fixed datetime fixtures ensure replay stability.
+- **Key invariants**:
+  - Unrecorded network calls fail tests in default mode.
+  - Subprocess tests do not use `pytest-recording`.
+  - Assertions favor invariant/subset checks over brittle exact-string matching for LLM outputs.
