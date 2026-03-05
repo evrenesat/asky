@@ -1,0 +1,9 @@
+Beta Risk Register
+
+Top risk for the Beta workstream is vendor lock-in at the storage and messaging layer.
+If lock-in is not controlled, migration cost and incident recovery complexity can increase.
+
+Mitigation plan:
+1) Keep protocol boundaries behind an internal adapter.
+2) Maintain an integration test matrix for at least two providers.
+3) Rehearse quarterly failover cutovers.

@@ -2,6 +2,76 @@
 
 For full detailed entries, see [DEVLOG_ARCHIVE.md](DEVLOG_ARCHIVE.md).
 
+## 2026-03-05: Corrected Research Lane Coverage and Gate Scope
+
+- **Summary**: Corrected the new research testing strategy so real-provider replay and live research checks now use actual model-backed `-r` turns, and widened the quality gate scope to include pytest policy changes in `pyproject.toml`.
+- **Changes**:
+  - Reworked `tests/integration/cli_recorded/test_cli_real_model_recorded.py`:
+    - kept the two non-research real-provider invariants,
+    - replaced manual `--query-corpus` research checks with model-backed local-corpus prompts for UDHR, OAuth, and subject-awareness follow-up,
+    - strengthened subject-awareness assertions to verify both Beta facts and absence of Alpha-topic bleed.
+  - Reworked `tests/integration/cli_live/test_cli_research_live.py` to mirror the same model-backed research coverage instead of deterministic manual retrieval checks.
+  - Extended `tests/integration/cli_recorded/helpers.py` with whitespace-insensitive fragment assertions used by the new invariant-style checks.
+  - Added `tests/scripts/test_run_research_quality_gate.py` to prove `scripts/run_research_quality_gate.sh` triggers for `pyproject.toml` changes and skips unrelated diffs.
+  - Updated `scripts/run_research_quality_gate.sh` so `pyproject.toml` is treated as research-scoped because marker registration and default lane exclusions live there.
+  - Refreshed real-provider cassettes for `tests/integration/cli_recorded/test_cli_real_model_recorded.py`.
+  - Updated `docs/testing_recorded_cli.md`, `docs/research_testing_strategy.md`, `tests/AGENTS.md`, and `ARCHITECTURE.md` to state that:
+    - real/live research lanes must use model-backed `-r` turns,
+    - deterministic `--query-corpus` coverage belongs in the fake recorded lane,
+    - `pyproject.toml` is part of research-gate scope.
+- **Verification**:
+  - Session baseline before fix: `uv run pytest -q` -> `1383 passed in 17.96s`.
+  - Gate regression test: `uv run pytest tests/scripts/test_run_research_quality_gate.py -q` -> `2 passed in 1.04s`.
+  - Real recorded replay: `ASKY_CLI_REAL_PROVIDER=1 uv run pytest tests/integration/cli_recorded/test_cli_real_model_recorded.py -q -o addopts='-n0 --record-mode=none'` -> `5 passed in 3.19s`.
+  - Live lane: `uv run pytest tests/integration/cli_live/test_cli_research_live.py -q -o addopts='-n0 -m live_research'` -> `4 passed in 20.95s`.
+  - Final default full suite: `uv run pytest -q` -> `1385 passed in 19.78s`.
+
+## 2026-03-05: Research Capability Test Strategy Upgrade (Fake + Real Recorded + Live Gate)
+
+- **Summary**: Upgraded research integration testing from lightweight smoke checks to a three-lane capability strategy with realistic corpus fixtures, real-provider replay coverage, and a mandatory path-scoped quality gate.
+- **Changes**:
+  - Added committed realistic corpus fixtures under `tests/fixtures/research_corpus/` and a focused local subject-awareness corpus at `tests/fixtures/research_corpus/subject_awareness_v1/` (multi-file + PDF).
+  - Reworked `tests/integration/cli_recorded/test_cli_research_local_recorded.py` to assert meaningful deterministic behavior:
+    - persisted research session profile contracts,
+    - follow-up profile continuity,
+    - deterministic `corpus query` output semantics,
+    - deterministic section listing and explicit-source error paths.
+  - Extended recorded harness/config:
+    - `tests/integration/cli_recorded/conftest.py` now supports fake and real-provider setup paths and exposes realistic source/fact fixtures aligned with `queries_answers.md`.
+    - `tests/integration/cli_recorded/helpers.py` gained transient provider retry helper for live/real model instability handling.
+  - Added real-provider recorded lane file:
+    - `tests/integration/cli_recorded/test_cli_real_model_recorded.py`
+    - Includes non-research real-model invariants plus deterministic research retrieval/subject-pivot checks based on realistic fixtures.
+  - Added live slow lane:
+    - `tests/integration/cli_live/conftest.py`
+    - `tests/integration/cli_live/test_cli_research_live.py`
+    - Includes live model healthcheck plus research retrieval/subject-pivot checks over realistic corpus data.
+  - Added marker policy updates in `pyproject.toml`:
+    - new markers: `real_recorded_cli`, `live_research`
+    - default full suite now excludes `live_research` in addition to existing recorded/subprocess exclusions.
+  - Upgraded cassette workflows:
+    - `scripts/refresh_cli_cassettes.sh` now supports `fake|real|all` modes with clear key checks.
+  - Added mandatory path-scoped gate:
+    - `scripts/run_research_quality_gate.sh`
+    - Runs fake replay, real replay, and live research checks when research-scoped paths changed.
+  - Updated docs:
+    - `docs/testing_recorded_cli.md`
+    - `docs/research_testing_strategy.md`
+    - `tests/AGENTS.md`
+    - `ARCHITECTURE.md`
+    - Clarified enforcement semantics: gate is explicit-run only, with concrete `pre-push` and CI required-check integration examples.
+- **Verification**:
+  - Baseline before change: `uv run pytest -q` -> `1383 passed in 13.69s`.
+  - Local recorded file: `uv run pytest tests/integration/cli_recorded/test_cli_research_local_recorded.py -q -o addopts='-n0 --record-mode=none'` -> `5 passed`.
+  - Real recorded replay: `ASKY_CLI_REAL_PROVIDER=1 uv run pytest tests/integration/cli_recorded/test_cli_real_model_recorded.py -q -o addopts='-n0 --record-mode=none'` -> `5 passed`.
+  - Live lane: `uv run pytest tests/integration/cli_live -q -o addopts='-n0 -m live_research'` -> `4 passed in 39.07s`.
+  - Quality gate: `./scripts/run_research_quality_gate.sh --base HEAD~1 --head HEAD` -> passed all three stages (fake replay, real replay, live checks).
+  - Refresh scripts:
+    - `./scripts/refresh_cli_cassettes.sh fake` -> passed.
+    - `ASKY_CLI_REAL_PROVIDER=1 ./scripts/refresh_cli_cassettes.sh real` -> passed.
+  - Default recorded replay lane: `uv run pytest tests/integration/cli_recorded -q -o addopts='-n0 --record-mode=none'` -> `15 passed, 5 skipped`.
+  - Final full suite: `uv run pytest -q` -> `1383 passed in 16.95s` (post-change rerun; earlier post-change run was `20.21s`).
+
 ## 2026-03-04: Recorded CLI Integration Framework
 
 - **Summary**: Stabilized the recorded CLI integration framework, scoped network guards, fixed in-process/subprocess harnesses, and aligned default/full-suite behavior with explicit recorded-lane execution.

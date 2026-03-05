@@ -1,0 +1,1260 @@
+interactions:
+- request:
+    body: '{"model": "google/gemini-2.0-flash-lite-001", "messages": [{"role": "system",
+      "content": "You are a research assistant conducting deep investigation on behalf
+      of the user.\n\nThe current date and time is: Monday, January 01, 2024 at 12:00\n\n**Research
+      Strategy - Follow this systematic workflow:**\n\n1. **RECALL** - Start by checking
+      your research memory\n   - Use `query_research_memory` to see if you''ve researched
+      this topic before\n   - Past findings can provide a foundation and save time\n   -
+      Build on previous discoveries rather than starting from scratch\n\n2. **DISCOVER**
+      - Use `extract_links` to explore pages and discover available information\n   -
+      Start with web_search to find relevant sources\n   - Use extract_links on promising
+      URLs to see what content is available\n   - Provide a query parameter to filter
+      links by relevance to your research\n   - Content is cached automatically -
+      you only see link labels and URLs\n\n3. **EVALUATE** - Review link labels and
+      relevance scores\n   - Prioritize high-relevance links (scores closer to 1.0)\n   -
+      Look for primary sources, research papers, authoritative sites\n   - Identify
+      which links likely have substantive information vs navigation/ads\n\n4. **SKIM**
+      - Use `get_link_summaries` to preview promising pages\n   - Read AI-generated
+      summaries to decide if full content is needed\n   - Summaries are generated
+      in the background - may show \"processing\" initially\n   - This saves tokens
+      and speeds up your research\n\n5. **DEEP READ** - Use `get_relevant_content`
+      for targeted extraction\n   - Provide a specific query to retrieve only relevant
+      content sections\n   - Use `get_full_content` only when comprehensive understanding
+      is needed\n   - The RAG system finds semantically similar content chunks\n\n6.
+      **REMEMBER** - Use `save_finding` to store important discoveries\n   - Save
+      key facts, statistics, and insights as you find them\n   - Include source URL
+      and descriptive tags for easy retrieval\n   - Use `save_finding` for source-backed
+      research evidence\n   - Use `save_memory` only for durable user preferences/facts\n\n7.
+      **VERIFY MEMORY LOOP** - Before final answer, re-check saved findings\n   -
+      Call `query_research_memory` with the refined question\n   - Ensure major claims
+      are grounded in saved findings or retrieved evidence\n   - This helps avoid
+      dropping earlier discoveries in long tool chains\n\n8. **ITERATE** - Repeat
+      as needed to build comprehensive understanding\n   - Follow promising leads
+      to new pages\n   - Cross-reference information across multiple sources\n   -
+      Synthesize findings into a coherent answer\n\n**Token Efficiency Guidelines:**\n-
+      Prefer summaries over full content when possible\n- Use targeted queries with
+      get_relevant_content to minimize token usage\n- Don''t request content you won''t
+      use\n- Batch multiple URL requests when possible\n\n**Available Tools:**\n-
+      `web_search` - Search the web for relevant sources\n- `extract_links` - Discover
+      links on pages (caches content, returns only links)\n- `get_link_summaries`
+      - Get AI summaries of cached pages\n- `get_relevant_content` - RAG-based retrieval
+      of relevant content sections\n- `get_full_content` - Get complete cached content
+      (use sparingly)\n- `save_finding` - Save a discovered fact to research memory\n-
+      `query_research_memory` - Search your research memory for past findings\n\nAlways
+      prioritize using markdown formatting in your final response.\nAlways start your
+      final response with a single H1 markdown header (# Title) that captures the
+      essence of your answer in a concise title (3-7 words).\n\nA research corpus
+      has been pre-loaded for this query. Your sources are already\nindexed and available.\n\nYour
+      task:\n1. Use `query_research_memory` to check if relevant findings already
+      exist.\n2. Use `get_relevant_content` with specific sub-questions to retrieve
+      evidence\n   from the indexed corpus.\n3. Use `save_finding` to persist key
+      facts with source attribution.\n4. Use `save_finding` for source-backed research
+      evidence.\n   Use `save_memory` only for durable user preferences/facts.\n5.
+      Before the final answer, run `query_research_memory` again and synthesize\n   from
+      the saved findings with citations.\n\nIf the user''s query is clearly unrelated
+      to the pre-loaded research corpus (e.g., greetings,\nsmall talk, or accidental
+      input), respond naturally without providing a research report.\nDo NOT attempt
+      to browse new URLs or extract links - the corpus is already built.\n\nLocal
+      Knowledge Base Guidance:\n- Local corpus sources were preloaded from configured
+      document roots.\n- Do not ask the user for local filesystem paths.\n- You may
+      call `query_research_memory` first, but if it returns no findings, immediately
+      call `get_relevant_content` against the preloaded corpus sources.\n- For section-focused
+      local corpus questions, call `list_sections` first, then `summarize_section`
+      with `section_ref` or exact `section_id`.\n- Do not append section IDs to corpus
+      URL paths. Use `section_ref` (`corpus://cache/<id>#section=<section-id>`) or
+      explicit section args.\n\nEnabled Tool Guidelines:\n- `web_search`: Use for
+      broad discovery and to refresh candidate sources as research evolves.\n- `get_relevant_content`:
+      Prefer this over full-page reads when you need targeted facts for a specific
+      question.\n- `save_finding`: Persist high-value findings with source metadata
+      as you validate them.\n- `query_research_memory`: Use at the start of research
+      to reuse prior findings before collecting new sources.\n- `list_sections`: For
+      local corpus research, call this first to discover exact section titles.\n-
+      `summarize_section`: Use after list_sections to produce deep section-bounded
+      summaries from local corpus sources.\n- `save_memory`: When the user says ''remember
+      this'', ''keep in mind'', ''don''t forget'', or shares a persistent preference
+      or personal fact, call save_memory. Do not save ephemeral request-specific information.\n\n[SYSTEM
+      UPDATE]:\n- Context Used: 4.83%- Turns Remaining: 20 (out of 20)\nPlease manage
+      your context usage efficiently."}, {"role": "user", "content": "Using only the
+      local research corpus, list the four authorization grant types defined by this
+      OAuth document. Reply as a comma-separated list.\n\nPreloaded sources gathered
+      before tool calls:\nLocal knowledge base preloaded before tool calls:\n- Documents
+      indexed: 1\n- Chunk embeddings added: 673\n- Total indexed characters: 162121\n-
+      Source handles: corpus://cache/2\n\nUse this preloaded corpus as a starting
+      point, then verify with tools before citing."}], "stream": false, "tools": [{"type":
+      "function", "function": {"name": "web_search", "description": "Search the web
+      and return top results. Use this to find relevant sources for your research.",
+      "parameters": {"type": "object", "properties": {"q": {"type": "string", "description":
+      "Search query"}, "count": {"type": "integer", "default": 5, "description": "Number
+      of results"}}, "required": ["q"]}}}, {"type": "function", "function": {"name":
+      "get_relevant_content", "description": "Retrieve only the most relevant content
+      sections from cached pages using RAG.\nUses semantic search to find sections
+      matching your specific query - much more efficient than full content.\nBest
+      for extracting specific information without loading entire pages.\nRequires
+      embedding model to be available.", "parameters": {"type": "object", "properties":
+      {"urls": {"type": "array", "items": {"type": "string"}, "description": "URLs
+      to retrieve content from (must be cached)"}, "query": {"type": "string", "description":
+      "What specific information are you looking for?"}, "max_chunks": {"type": "integer",
+      "default": 5, "description": "Maximum content sections to return per URL"},
+      "dense_weight": {"type": "number", "default": 0.75, "description": "Weight of
+      semantic similarity in hybrid ranking (0 to 1)"}, "min_relevance": {"type":
+      "number", "default": 0.15, "description": "Minimum hybrid relevance threshold
+      to include a section"}, "section_id": {"type": "string", "description": "Optional
+      section scope from list_sections output."}, "section_ref": {"type": "string",
+      "description": "Optional section reference (corpus://cache/<id>#section=<section-id>)."}},
+      "required": ["urls", "query"]}}}, {"type": "function", "function": {"name":
+      "save_finding", "description": "Save a discovered fact or insight to research
+      memory for future reference.\nUse this to persist important findings that may
+      be useful in future research sessions.\nFindings are stored with embeddings
+      for semantic retrieval.\nInclude source URL and tags for better organization
+      and retrieval.", "parameters": {"type": "object", "properties": {"finding":
+      {"type": "string", "description": "The fact, insight, or piece of information
+      to save"}, "source_url": {"type": "string", "description": "URL where this information
+      was found"}, "source_title": {"type": "string", "description": "Title of the
+      source page"}, "tags": {"type": "array", "items": {"type": "string"}, "description":
+      "Tags for categorization (e.g., [''climate'', ''statistics'', ''2024''])"}},
+      "required": ["finding"]}}}, {"type": "function", "function": {"name": "query_research_memory",
+      "description": "Search your research memory for previously saved findings.\nUses
+      semantic search to find relevant information from past research sessions.\nUseful
+      for recalling facts, statistics, or insights you''ve discovered before.", "parameters":
+      {"type": "object", "properties": {"query": {"type": "string", "description":
+      "What to search for in research memory"}, "limit": {"type": "integer", "default":
+      10, "description": "Maximum number of findings to return"}}, "required": ["query"]}}},
+      {"type": "function", "function": {"name": "list_sections", "description": "List
+      detected section headings for local corpus sources.\nUse this to inspect available
+      section titles before requesting a deep section summary.\nThis tool only supports
+      local corpus handles/sources, not web URLs.", "parameters": {"type": "object",
+      "properties": {"source": {"type": "string", "description": "Optional source
+      selector (prefer corpus://cache/<id>)."}, "sources": {"type": "array", "items":
+      {"type": "string"}, "description": "Optional source selectors for batch listing."},
+      "include_toc": {"type": "boolean", "description": "When true, include TOC/micro
+      heading rows in addition to canonical body sections.", "default": false}}, "required":
+      []}}}, {"type": "function", "function": {"name": "summarize_section", "description":
+      "Summarize one specific section from a local corpus source.\nUse exact section
+      titles from list_sections for reliable matching.\nThis tool only supports local
+      corpus handles/sources, not web URLs.", "parameters": {"type": "object", "properties":
+      {"source": {"type": "string", "description": "Source selector (prefer corpus://cache/<id>).
+      Legacy /<section-id> suffix is accepted."}, "section_query": {"type": "string",
+      "description": "Section title query to match strictly (fallback when section_id/section_ref
+      is omitted)."}, "section_id": {"type": "string", "description": "Exact section
+      ID from list_sections output."}, "section_ref": {"type": "string", "description":
+      "Section reference from list_sections output (corpus://cache/<id>#section=<section-id>)."},
+      "detail": {"type": "string", "description": "Summary detail profile: balanced|max|compact.",
+      "default": "balanced"}, "max_chunks": {"type": "integer", "description": "Optional
+      chunk limit for section slicing before summarization."}}, "required": []}}},
+      {"type": "function", "function": {"name": "list_dir", "description": "List the
+      contents of a directory.", "parameters": {"type": "object", "required": ["path"],
+      "properties": {"path": {"type": "string", "default": "."}, "flags": {"type":
+      "string", "default": "-la"}}}}}, {"type": "function", "function": {"name": "grep_search",
+      "description": "Search for a pattern in files recursively.", "parameters": {"type":
+      "object", "required": ["pattern"], "properties": {"pattern": {"type": "string",
+      "description": "The regex pattern to search for."}, "path": {"type": "string",
+      "description": "The directory path to search in.", "default": "."}}}}}, {"type":
+      "function", "function": {"name": "save_memory", "description": "Save an important
+      fact about the user or their preferences to long-term memory. Use when the user
+      explicitly asks to remember something or shares a persistent preference.", "parameters":
+      {"type": "object", "properties": {"memory": {"type": "string", "description":
+      "The fact, preference, or context to remember"}, "tags": {"type": "array", "items":
+      {"type": "string"}, "description": "Optional tags for categorization (e.g. [''preference'',
+      ''personal''])"}}, "required": ["memory"]}}}, {"type": "function", "function":
+      {"name": "transcribe_image_url", "description": "Describe or transcribe an image
+      from a public HTTPS URL. Supports formats like PNG, JPEG, WEBP, GIF.", "parameters":
+      {"type": "object", "properties": {"url": {"type": "string", "description": "The
+      public HTTPS URL of the image file."}, "prompt": {"type": "string", "description":
+      "Optional specific question or prompt about the image."}}, "required": ["url"]}}},
+      {"type": "function", "function": {"name": "transcribe_audio_url", "description":
+      "Transcribe an audio file from a public HTTPS URL to text. Supports common formats
+      like MP3, M4A, WAV, WebM, OGG.", "parameters": {"type": "object", "properties":
+      {"url": {"type": "string", "description": "The public HTTPS URL of the audio
+      file."}, "prompt": {"type": "string", "description": "Optional initial prompt
+      to guide transcription (e.g. spelling of names)."}, "language": {"type": "string",
+      "description": "Optional ISO 639-1 language code (e.g. ''en'', ''fr'')."}},
+      "required": ["url"]}}}], "tool_choice": "auto"}'
+    headers:
+      Accept:
+      - '*/*'
+      Accept-Encoding:
+      - gzip, deflate
+      Connection:
+      - keep-alive
+      Content-Length:
+      - '13706'
+      Content-Type:
+      - application/json
+      User-Agent:
+      - asky/1.0.0
+    method: POST
+    uri: https://openrouter.ai/api/v1/chat/completions
+  response:
+    body:
+      string: "\n         \n{\"id\":\"gen-1772750597-fWohkAZ6xjWNvD50U9Qj\",\"object\":\"chat.completion\",\"created\":1772750597,\"model\":\"google/gemini-2.0-flash-lite-001\",\"provider\":\"Google
+        AI Studio\",\"choices\":[{\"index\":0,\"logprobs\":null,\"finish_reason\":\"tool_calls\",\"native_finish_reason\":\"STOP\",\"message\":{\"role\":\"assistant\",\"content\":null,\"refusal\":null,\"reasoning\":null,\"tool_calls\":[{\"type\":\"function\",\"index\":0,\"id\":\"tool_query_research_memory_kMClAq9SVouG7sMRXPpI\",\"function\":{\"name\":\"query_research_memory\",\"arguments\":\"{\\\"query\\\":\\\"authorization
+        grant types\\\"}\"}}]}}],\"usage\":{\"prompt_tokens\":2335,\"completion_tokens\":9,\"total_tokens\":2344,\"cost\":0.00017604675,\"is_byok\":false,\"prompt_tokens_details\":{\"cached_tokens\":0,\"cache_write_tokens\":0,\"audio_tokens\":0,\"video_tokens\":0},\"cost_details\":{\"upstream_inference_cost\":0.000177825,\"upstream_inference_prompt_cost\":0.000175125,\"upstream_inference_completions_cost\":0.0000027},\"completion_tokens_details\":{\"reasoning_tokens\":0,\"image_tokens\":0,\"audio_tokens\":0}}}"
+    headers:
+      Access-Control-Allow-Origin:
+      - '*'
+      CF-RAY:
+      - 9d7ca37f8a5dbd33-AMS
+      Connection:
+      - keep-alive
+      Content-Encoding:
+      - gzip
+      Content-Type:
+      - application/json
+      Date:
+      - Thu, 05 Mar 2026 22:43:17 GMT
+      Permissions-Policy:
+      - payment=(self "https://checkout.stripe.com" "https://connect-js.stripe.com"
+        "https://js.stripe.com" "https://*.js.stripe.com" "https://hooks.stripe.com")
+      Referrer-Policy:
+      - no-referrer, strict-origin-when-cross-origin
+      Server:
+      - cloudflare
+      Transfer-Encoding:
+      - chunked
+      X-Content-Type-Options:
+      - nosniff
+    status:
+      code: 200
+      message: OK
+- request:
+    body: '{"model": "google/gemini-2.0-flash-lite-001", "messages": [{"role": "system",
+      "content": "You are a research assistant conducting deep investigation on behalf
+      of the user.\n\nThe current date and time is: Monday, January 01, 2024 at 12:00\n\n**Research
+      Strategy - Follow this systematic workflow:**\n\n1. **RECALL** - Start by checking
+      your research memory\n   - Use `query_research_memory` to see if you''ve researched
+      this topic before\n   - Past findings can provide a foundation and save time\n   -
+      Build on previous discoveries rather than starting from scratch\n\n2. **DISCOVER**
+      - Use `extract_links` to explore pages and discover available information\n   -
+      Start with web_search to find relevant sources\n   - Use extract_links on promising
+      URLs to see what content is available\n   - Provide a query parameter to filter
+      links by relevance to your research\n   - Content is cached automatically -
+      you only see link labels and URLs\n\n3. **EVALUATE** - Review link labels and
+      relevance scores\n   - Prioritize high-relevance links (scores closer to 1.0)\n   -
+      Look for primary sources, research papers, authoritative sites\n   - Identify
+      which links likely have substantive information vs navigation/ads\n\n4. **SKIM**
+      - Use `get_link_summaries` to preview promising pages\n   - Read AI-generated
+      summaries to decide if full content is needed\n   - Summaries are generated
+      in the background - may show \"processing\" initially\n   - This saves tokens
+      and speeds up your research\n\n5. **DEEP READ** - Use `get_relevant_content`
+      for targeted extraction\n   - Provide a specific query to retrieve only relevant
+      content sections\n   - Use `get_full_content` only when comprehensive understanding
+      is needed\n   - The RAG system finds semantically similar content chunks\n\n6.
+      **REMEMBER** - Use `save_finding` to store important discoveries\n   - Save
+      key facts, statistics, and insights as you find them\n   - Include source URL
+      and descriptive tags for easy retrieval\n   - Use `save_finding` for source-backed
+      research evidence\n   - Use `save_memory` only for durable user preferences/facts\n\n7.
+      **VERIFY MEMORY LOOP** - Before final answer, re-check saved findings\n   -
+      Call `query_research_memory` with the refined question\n   - Ensure major claims
+      are grounded in saved findings or retrieved evidence\n   - This helps avoid
+      dropping earlier discoveries in long tool chains\n\n8. **ITERATE** - Repeat
+      as needed to build comprehensive understanding\n   - Follow promising leads
+      to new pages\n   - Cross-reference information across multiple sources\n   -
+      Synthesize findings into a coherent answer\n\n**Token Efficiency Guidelines:**\n-
+      Prefer summaries over full content when possible\n- Use targeted queries with
+      get_relevant_content to minimize token usage\n- Don''t request content you won''t
+      use\n- Batch multiple URL requests when possible\n\n**Available Tools:**\n-
+      `web_search` - Search the web for relevant sources\n- `extract_links` - Discover
+      links on pages (caches content, returns only links)\n- `get_link_summaries`
+      - Get AI summaries of cached pages\n- `get_relevant_content` - RAG-based retrieval
+      of relevant content sections\n- `get_full_content` - Get complete cached content
+      (use sparingly)\n- `save_finding` - Save a discovered fact to research memory\n-
+      `query_research_memory` - Search your research memory for past findings\n\nAlways
+      prioritize using markdown formatting in your final response.\nAlways start your
+      final response with a single H1 markdown header (# Title) that captures the
+      essence of your answer in a concise title (3-7 words).\n\nA research corpus
+      has been pre-loaded for this query. Your sources are already\nindexed and available.\n\nYour
+      task:\n1. Use `query_research_memory` to check if relevant findings already
+      exist.\n2. Use `get_relevant_content` with specific sub-questions to retrieve
+      evidence\n   from the indexed corpus.\n3. Use `save_finding` to persist key
+      facts with source attribution.\n4. Use `save_finding` for source-backed research
+      evidence.\n   Use `save_memory` only for durable user preferences/facts.\n5.
+      Before the final answer, run `query_research_memory` again and synthesize\n   from
+      the saved findings with citations.\n\nIf the user''s query is clearly unrelated
+      to the pre-loaded research corpus (e.g., greetings,\nsmall talk, or accidental
+      input), respond naturally without providing a research report.\nDo NOT attempt
+      to browse new URLs or extract links - the corpus is already built.\n\nLocal
+      Knowledge Base Guidance:\n- Local corpus sources were preloaded from configured
+      document roots.\n- Do not ask the user for local filesystem paths.\n- You may
+      call `query_research_memory` first, but if it returns no findings, immediately
+      call `get_relevant_content` against the preloaded corpus sources.\n- For section-focused
+      local corpus questions, call `list_sections` first, then `summarize_section`
+      with `section_ref` or exact `section_id`.\n- Do not append section IDs to corpus
+      URL paths. Use `section_ref` (`corpus://cache/<id>#section=<section-id>`) or
+      explicit section args.\n\nEnabled Tool Guidelines:\n- `web_search`: Use for
+      broad discovery and to refresh candidate sources as research evolves.\n- `get_relevant_content`:
+      Prefer this over full-page reads when you need targeted facts for a specific
+      question.\n- `save_finding`: Persist high-value findings with source metadata
+      as you validate them.\n- `query_research_memory`: Use at the start of research
+      to reuse prior findings before collecting new sources.\n- `list_sections`: For
+      local corpus research, call this first to discover exact section titles.\n-
+      `summarize_section`: Use after list_sections to produce deep section-bounded
+      summaries from local corpus sources.\n- `save_memory`: When the user says ''remember
+      this'', ''keep in mind'', ''don''t forget'', or shares a persistent preference
+      or personal fact, call save_memory. Do not save ephemeral request-specific information.\n\n[SYSTEM
+      UPDATE]:\n- Context Used: 5.36%- Turns Remaining: 19 (out of 20)\nPlease manage
+      your context usage efficiently."}, {"role": "user", "content": "Using only the
+      local research corpus, list the four authorization grant types defined by this
+      OAuth document. Reply as a comma-separated list.\n\nPreloaded sources gathered
+      before tool calls:\nLocal knowledge base preloaded before tool calls:\n- Documents
+      indexed: 1\n- Chunk embeddings added: 673\n- Total indexed characters: 162121\n-
+      Source handles: corpus://cache/2\n\nUse this preloaded corpus as a starting
+      point, then verify with tools before citing."}, {"role": "assistant", "content":
+      null, "refusal": null, "reasoning": null, "tool_calls": [{"type": "function",
+      "index": 0, "id": "tool_query_research_memory_kMClAq9SVouG7sMRXPpI", "function":
+      {"name": "query_research_memory", "arguments": "{\"query\":\"authorization grant
+      types\"}"}}]}, {"role": "tool", "tool_call_id": "tool_query_research_memory_kMClAq9SVouG7sMRXPpI",
+      "content": "{\"findings\": [{\"finding\": \"Prosecutions genuinely arising from
+      non-political crimes; acts contrary to the purposes and principles of the United
+      Nations\", \"source_url\": \"corpus://cache/1\", \"source_title\": \"UDHR.pdf\",
+      \"tags\": [\"asylum\", \"exceptions\", \"Article 14\"], \"relevance\": 0.0,
+      \"saved_at\": \"2026-03-05T23:43:15.295573\"}], \"count\": 1, \"search_type\":
+      \"semantic\"}"}], "stream": false, "tools": [{"type": "function", "function":
+      {"name": "web_search", "description": "Search the web and return top results.
+      Use this to find relevant sources for your research.", "parameters": {"type":
+      "object", "properties": {"q": {"type": "string", "description": "Search query"},
+      "count": {"type": "integer", "default": 5, "description": "Number of results"}},
+      "required": ["q"]}}}, {"type": "function", "function": {"name": "get_relevant_content",
+      "description": "Retrieve only the most relevant content sections from cached
+      pages using RAG.\nUses semantic search to find sections matching your specific
+      query - much more efficient than full content.\nBest for extracting specific
+      information without loading entire pages.\nRequires embedding model to be available.",
+      "parameters": {"type": "object", "properties": {"urls": {"type": "array", "items":
+      {"type": "string"}, "description": "URLs to retrieve content from (must be cached)"},
+      "query": {"type": "string", "description": "What specific information are you
+      looking for?"}, "max_chunks": {"type": "integer", "default": 5, "description":
+      "Maximum content sections to return per URL"}, "dense_weight": {"type": "number",
+      "default": 0.75, "description": "Weight of semantic similarity in hybrid ranking
+      (0 to 1)"}, "min_relevance": {"type": "number", "default": 0.15, "description":
+      "Minimum hybrid relevance threshold to include a section"}, "section_id": {"type":
+      "string", "description": "Optional section scope from list_sections output."},
+      "section_ref": {"type": "string", "description": "Optional section reference
+      (corpus://cache/<id>#section=<section-id>)."}}, "required": ["urls", "query"]}}},
+      {"type": "function", "function": {"name": "save_finding", "description": "Save
+      a discovered fact or insight to research memory for future reference.\nUse this
+      to persist important findings that may be useful in future research sessions.\nFindings
+      are stored with embeddings for semantic retrieval.\nInclude source URL and tags
+      for better organization and retrieval.", "parameters": {"type": "object", "properties":
+      {"finding": {"type": "string", "description": "The fact, insight, or piece of
+      information to save"}, "source_url": {"type": "string", "description": "URL
+      where this information was found"}, "source_title": {"type": "string", "description":
+      "Title of the source page"}, "tags": {"type": "array", "items": {"type": "string"},
+      "description": "Tags for categorization (e.g., [''climate'', ''statistics'',
+      ''2024''])"}}, "required": ["finding"]}}}, {"type": "function", "function":
+      {"name": "query_research_memory", "description": "Search your research memory
+      for previously saved findings.\nUses semantic search to find relevant information
+      from past research sessions.\nUseful for recalling facts, statistics, or insights
+      you''ve discovered before.", "parameters": {"type": "object", "properties":
+      {"query": {"type": "string", "description": "What to search for in research
+      memory"}, "limit": {"type": "integer", "default": 10, "description": "Maximum
+      number of findings to return"}}, "required": ["query"]}}}, {"type": "function",
+      "function": {"name": "list_sections", "description": "List detected section
+      headings for local corpus sources.\nUse this to inspect available section titles
+      before requesting a deep section summary.\nThis tool only supports local corpus
+      handles/sources, not web URLs.", "parameters": {"type": "object", "properties":
+      {"source": {"type": "string", "description": "Optional source selector (prefer
+      corpus://cache/<id>)."}, "sources": {"type": "array", "items": {"type": "string"},
+      "description": "Optional source selectors for batch listing."}, "include_toc":
+      {"type": "boolean", "description": "When true, include TOC/micro heading rows
+      in addition to canonical body sections.", "default": false}}, "required": []}}},
+      {"type": "function", "function": {"name": "summarize_section", "description":
+      "Summarize one specific section from a local corpus source.\nUse exact section
+      titles from list_sections for reliable matching.\nThis tool only supports local
+      corpus handles/sources, not web URLs.", "parameters": {"type": "object", "properties":
+      {"source": {"type": "string", "description": "Source selector (prefer corpus://cache/<id>).
+      Legacy /<section-id> suffix is accepted."}, "section_query": {"type": "string",
+      "description": "Section title query to match strictly (fallback when section_id/section_ref
+      is omitted)."}, "section_id": {"type": "string", "description": "Exact section
+      ID from list_sections output."}, "section_ref": {"type": "string", "description":
+      "Section reference from list_sections output (corpus://cache/<id>#section=<section-id>)."},
+      "detail": {"type": "string", "description": "Summary detail profile: balanced|max|compact.",
+      "default": "balanced"}, "max_chunks": {"type": "integer", "description": "Optional
+      chunk limit for section slicing before summarization."}}, "required": []}}},
+      {"type": "function", "function": {"name": "list_dir", "description": "List the
+      contents of a directory.", "parameters": {"type": "object", "required": ["path"],
+      "properties": {"path": {"type": "string", "default": "."}, "flags": {"type":
+      "string", "default": "-la"}}}}}, {"type": "function", "function": {"name": "grep_search",
+      "description": "Search for a pattern in files recursively.", "parameters": {"type":
+      "object", "required": ["pattern"], "properties": {"pattern": {"type": "string",
+      "description": "The regex pattern to search for."}, "path": {"type": "string",
+      "description": "The directory path to search in.", "default": "."}}}}}, {"type":
+      "function", "function": {"name": "save_memory", "description": "Save an important
+      fact about the user or their preferences to long-term memory. Use when the user
+      explicitly asks to remember something or shares a persistent preference.", "parameters":
+      {"type": "object", "properties": {"memory": {"type": "string", "description":
+      "The fact, preference, or context to remember"}, "tags": {"type": "array", "items":
+      {"type": "string"}, "description": "Optional tags for categorization (e.g. [''preference'',
+      ''personal''])"}}, "required": ["memory"]}}}, {"type": "function", "function":
+      {"name": "transcribe_image_url", "description": "Describe or transcribe an image
+      from a public HTTPS URL. Supports formats like PNG, JPEG, WEBP, GIF.", "parameters":
+      {"type": "object", "properties": {"url": {"type": "string", "description": "The
+      public HTTPS URL of the image file."}, "prompt": {"type": "string", "description":
+      "Optional specific question or prompt about the image."}}, "required": ["url"]}}},
+      {"type": "function", "function": {"name": "transcribe_audio_url", "description":
+      "Transcribe an audio file from a public HTTPS URL to text. Supports common formats
+      like MP3, M4A, WAV, WebM, OGG.", "parameters": {"type": "object", "properties":
+      {"url": {"type": "string", "description": "The public HTTPS URL of the audio
+      file."}, "prompt": {"type": "string", "description": "Optional initial prompt
+      to guide transcription (e.g. spelling of names)."}, "language": {"type": "string",
+      "description": "Optional ISO 639-1 language code (e.g. ''en'', ''fr'')."}},
+      "required": ["url"]}}}], "tool_choice": "auto"}'
+    headers:
+      Accept:
+      - '*/*'
+      Accept-Encoding:
+      - gzip, deflate
+      Connection:
+      - keep-alive
+      Content-Length:
+      - '14492'
+      Content-Type:
+      - application/json
+      User-Agent:
+      - asky/1.0.0
+    method: POST
+    uri: https://openrouter.ai/api/v1/chat/completions
+  response:
+    body:
+      string: "\n         \n\n         \n{\"id\":\"gen-1772750597-oSIIRYbL2gqnjgvTqIJ5\",\"object\":\"chat.completion\",\"created\":1772750597,\"model\":\"google/gemini-2.0-flash-lite-001\",\"provider\":\"Google
+        AI Studio\",\"choices\":[{\"index\":0,\"logprobs\":null,\"finish_reason\":\"tool_calls\",\"native_finish_reason\":\"STOP\",\"message\":{\"role\":\"assistant\",\"content\":\"Since
+        the research memory did not have an entry for the specific question, I will
+        proceed to use the `get_relevant_content` tool.\\n\",\"refusal\":null,\"reasoning\":null,\"tool_calls\":[{\"type\":\"function\",\"index\":0,\"id\":\"tool_get_relevant_content_cTQSYCLUa7TNqyppefvS\",\"function\":{\"name\":\"get_relevant_content\",\"arguments\":\"{\\\"urls\\\":[\\\"corpus://cache/2\\\"],\\\"query\\\":\\\"authorization
+        grant types defined by this OAuth document\\\"}\"}}]}}],\"usage\":{\"prompt_tokens\":2450,\"completion_tokens\":50,\"total_tokens\":2500,\"cost\":0.0001967625,\"is_byok\":false,\"prompt_tokens_details\":{\"cached_tokens\":0,\"cache_write_tokens\":0,\"audio_tokens\":0,\"video_tokens\":0},\"cost_details\":{\"upstream_inference_cost\":0.00019875,\"upstream_inference_prompt_cost\":0.00018375,\"upstream_inference_completions_cost\":0.000015},\"completion_tokens_details\":{\"reasoning_tokens\":0,\"image_tokens\":0,\"audio_tokens\":0}}}"
+    headers:
+      Access-Control-Allow-Origin:
+      - '*'
+      CF-RAY:
+      - 9d7ca3838b4a8069-AMS
+      Connection:
+      - keep-alive
+      Content-Encoding:
+      - gzip
+      Content-Type:
+      - application/json
+      Date:
+      - Thu, 05 Mar 2026 22:43:18 GMT
+      Permissions-Policy:
+      - payment=(self "https://checkout.stripe.com" "https://connect-js.stripe.com"
+        "https://js.stripe.com" "https://*.js.stripe.com" "https://hooks.stripe.com")
+      Referrer-Policy:
+      - no-referrer, strict-origin-when-cross-origin
+      Server:
+      - cloudflare
+      Transfer-Encoding:
+      - chunked
+      X-Content-Type-Options:
+      - nosniff
+    status:
+      code: 200
+      message: OK
+- request:
+    body: '{"model": "google/gemini-2.0-flash-lite-001", "messages": [{"role": "system",
+      "content": "You are a research assistant conducting deep investigation on behalf
+      of the user.\n\nThe current date and time is: Monday, January 01, 2024 at 12:00\n\n**Research
+      Strategy - Follow this systematic workflow:**\n\n1. **RECALL** - Start by checking
+      your research memory\n   - Use `query_research_memory` to see if you''ve researched
+      this topic before\n   - Past findings can provide a foundation and save time\n   -
+      Build on previous discoveries rather than starting from scratch\n\n2. **DISCOVER**
+      - Use `extract_links` to explore pages and discover available information\n   -
+      Start with web_search to find relevant sources\n   - Use extract_links on promising
+      URLs to see what content is available\n   - Provide a query parameter to filter
+      links by relevance to your research\n   - Content is cached automatically -
+      you only see link labels and URLs\n\n3. **EVALUATE** - Review link labels and
+      relevance scores\n   - Prioritize high-relevance links (scores closer to 1.0)\n   -
+      Look for primary sources, research papers, authoritative sites\n   - Identify
+      which links likely have substantive information vs navigation/ads\n\n4. **SKIM**
+      - Use `get_link_summaries` to preview promising pages\n   - Read AI-generated
+      summaries to decide if full content is needed\n   - Summaries are generated
+      in the background - may show \"processing\" initially\n   - This saves tokens
+      and speeds up your research\n\n5. **DEEP READ** - Use `get_relevant_content`
+      for targeted extraction\n   - Provide a specific query to retrieve only relevant
+      content sections\n   - Use `get_full_content` only when comprehensive understanding
+      is needed\n   - The RAG system finds semantically similar content chunks\n\n6.
+      **REMEMBER** - Use `save_finding` to store important discoveries\n   - Save
+      key facts, statistics, and insights as you find them\n   - Include source URL
+      and descriptive tags for easy retrieval\n   - Use `save_finding` for source-backed
+      research evidence\n   - Use `save_memory` only for durable user preferences/facts\n\n7.
+      **VERIFY MEMORY LOOP** - Before final answer, re-check saved findings\n   -
+      Call `query_research_memory` with the refined question\n   - Ensure major claims
+      are grounded in saved findings or retrieved evidence\n   - This helps avoid
+      dropping earlier discoveries in long tool chains\n\n8. **ITERATE** - Repeat
+      as needed to build comprehensive understanding\n   - Follow promising leads
+      to new pages\n   - Cross-reference information across multiple sources\n   -
+      Synthesize findings into a coherent answer\n\n**Token Efficiency Guidelines:**\n-
+      Prefer summaries over full content when possible\n- Use targeted queries with
+      get_relevant_content to minimize token usage\n- Don''t request content you won''t
+      use\n- Batch multiple URL requests when possible\n\n**Available Tools:**\n-
+      `web_search` - Search the web for relevant sources\n- `extract_links` - Discover
+      links on pages (caches content, returns only links)\n- `get_link_summaries`
+      - Get AI summaries of cached pages\n- `get_relevant_content` - RAG-based retrieval
+      of relevant content sections\n- `get_full_content` - Get complete cached content
+      (use sparingly)\n- `save_finding` - Save a discovered fact to research memory\n-
+      `query_research_memory` - Search your research memory for past findings\n\nAlways
+      prioritize using markdown formatting in your final response.\nAlways start your
+      final response with a single H1 markdown header (# Title) that captures the
+      essence of your answer in a concise title (3-7 words).\n\nA research corpus
+      has been pre-loaded for this query. Your sources are already\nindexed and available.\n\nYour
+      task:\n1. Use `query_research_memory` to check if relevant findings already
+      exist.\n2. Use `get_relevant_content` with specific sub-questions to retrieve
+      evidence\n   from the indexed corpus.\n3. Use `save_finding` to persist key
+      facts with source attribution.\n4. Use `save_finding` for source-backed research
+      evidence.\n   Use `save_memory` only for durable user preferences/facts.\n5.
+      Before the final answer, run `query_research_memory` again and synthesize\n   from
+      the saved findings with citations.\n\nIf the user''s query is clearly unrelated
+      to the pre-loaded research corpus (e.g., greetings,\nsmall talk, or accidental
+      input), respond naturally without providing a research report.\nDo NOT attempt
+      to browse new URLs or extract links - the corpus is already built.\n\nLocal
+      Knowledge Base Guidance:\n- Local corpus sources were preloaded from configured
+      document roots.\n- Do not ask the user for local filesystem paths.\n- You may
+      call `query_research_memory` first, but if it returns no findings, immediately
+      call `get_relevant_content` against the preloaded corpus sources.\n- For section-focused
+      local corpus questions, call `list_sections` first, then `summarize_section`
+      with `section_ref` or exact `section_id`.\n- Do not append section IDs to corpus
+      URL paths. Use `section_ref` (`corpus://cache/<id>#section=<section-id>`) or
+      explicit section args.\n\nEnabled Tool Guidelines:\n- `web_search`: Use for
+      broad discovery and to refresh candidate sources as research evolves.\n- `get_relevant_content`:
+      Prefer this over full-page reads when you need targeted facts for a specific
+      question.\n- `save_finding`: Persist high-value findings with source metadata
+      as you validate them.\n- `query_research_memory`: Use at the start of research
+      to reuse prior findings before collecting new sources.\n- `list_sections`: For
+      local corpus research, call this first to discover exact section titles.\n-
+      `summarize_section`: Use after list_sections to produce deep section-bounded
+      summaries from local corpus sources.\n- `save_memory`: When the user says ''remember
+      this'', ''keep in mind'', ''don''t forget'', or shares a persistent preference
+      or personal fact, call save_memory. Do not save ephemeral request-specific information.\n\n[SYSTEM
+      UPDATE]:\n- Context Used: 7.09%- Turns Remaining: 18 (out of 20)\nPlease manage
+      your context usage efficiently."}, {"role": "user", "content": "Using only the
+      local research corpus, list the four authorization grant types defined by this
+      OAuth document. Reply as a comma-separated list.\n\nPreloaded sources gathered
+      before tool calls:\nLocal knowledge base preloaded before tool calls:\n- Documents
+      indexed: 1\n- Chunk embeddings added: 673\n- Total indexed characters: 162121\n-
+      Source handles: corpus://cache/2\n\nUse this preloaded corpus as a starting
+      point, then verify with tools before citing."}, {"role": "assistant", "content":
+      null, "refusal": null, "reasoning": null, "tool_calls": [{"type": "function",
+      "index": 0, "id": "tool_query_research_memory_kMClAq9SVouG7sMRXPpI", "function":
+      {"name": "query_research_memory", "arguments": "{\"query\":\"authorization grant
+      types\"}"}}]}, {"role": "tool", "tool_call_id": "tool_query_research_memory_kMClAq9SVouG7sMRXPpI",
+      "content": "{\"findings\": [{\"finding\": \"Prosecutions genuinely arising from
+      non-political crimes; acts contrary to the purposes and principles of the United
+      Nations\", \"source_url\": \"corpus://cache/1\", \"source_title\": \"UDHR.pdf\",
+      \"tags\": [\"asylum\", \"exceptions\", \"Article 14\"], \"relevance\": 0.0,
+      \"saved_at\": \"2026-03-05T23:43:15.295573\"}], \"count\": 1, \"search_type\":
+      \"semantic\"}"}, {"role": "assistant", "content": "Since the research memory
+      did not have an entry for the specific question, I will proceed to use the `get_relevant_content`
+      tool.\n", "refusal": null, "reasoning": null, "tool_calls": [{"type": "function",
+      "index": 0, "id": "tool_get_relevant_content_cTQSYCLUa7TNqyppefvS", "function":
+      {"name": "get_relevant_content", "arguments": "{\"urls\":[\"corpus://cache/2\"],\"query\":\"authorization
+      grant types defined by this OAuth document\"}"}}]}, {"role": "tool", "tool_call_id":
+      "tool_get_relevant_content_cTQSYCLUa7TNqyppefvS", "content": "{\"corpus://cache/2\":
+      {\"title\": \"rfc6749.pdf\", \"chunks\": [{\"text\": \"credential representing
+      the resource owner\\u2019s authorization, expressed using one of four grant
+      types defined in this specification or using an extension grant type. The authorization
+      grant type depends on the method used by the client to request authorizat\",
+      \"relevance\": 0.188, \"semantic_relevance\": 0.0, \"lexical_relevance\": 0.75},
+      {\"text\": \"s) used by the client to obtain an access token. This specification
+      defines four grant types -- authorization code, implicit, resource owner password
+      credentials, and client credentials -- as well as an extensibility mechanism
+      for defining additional types. 1.3.1.\", \"relevance\": 0.156, \"semantic_relevance\":
+      0.0, \"lexical_relevance\": 0.625}, {\"text\": \"they are used SHOULD utilize
+      a vendor-specific prefix that is not likely to conflict with other registered
+      values (e.g., begin with \\u2019companyname_\\u2019). 8.3. Defining New Authorization
+      Grant Types New authorization grant types can be defined by assigning them\",
+      \"relevance\": 0.156, \"semantic_relevance\": 0.0, \"lexical_relevance\": 0.625},
+      {\"text\": \"on grant types can be defined by assigning them a unique absolute
+      URI for use with the \\\"grant_type\\\" parameter. If the extension grant type
+      requires additional token endpoint parameters, they MUST be registered in the
+      OAuth Parameters registry as described by Section 11.2. 8.4.\", \"relevance\":
+      0.156, \"semantic_relevance\": 0.0, \"lexical_relevance\": 0.625}, {\"text\":
+      \"ime of access tokens issued via this grant type. The authorization server
+      and client SHOULD minimize use of this grant type and utilize other grant types
+      whenever possible. Hardt Standards Track [Page 57] RFC 6749 OAuth 2.0 October
+      2012 10.8.\", \"relevance\": 0.156, \"semantic_relevance\": 0.0, \"lexical_relevance\":
+      0.625}], \"chunk_count\": 5}}"}], "stream": false, "tools": [{"type": "function",
+      "function": {"name": "web_search", "description": "Search the web and return
+      top results. Use this to find relevant sources for your research.", "parameters":
+      {"type": "object", "properties": {"q": {"type": "string", "description": "Search
+      query"}, "count": {"type": "integer", "default": 5, "description": "Number of
+      results"}}, "required": ["q"]}}}, {"type": "function", "function": {"name":
+      "get_relevant_content", "description": "Retrieve only the most relevant content
+      sections from cached pages using RAG.\nUses semantic search to find sections
+      matching your specific query - much more efficient than full content.\nBest
+      for extracting specific information without loading entire pages.\nRequires
+      embedding model to be available.", "parameters": {"type": "object", "properties":
+      {"urls": {"type": "array", "items": {"type": "string"}, "description": "URLs
+      to retrieve content from (must be cached)"}, "query": {"type": "string", "description":
+      "What specific information are you looking for?"}, "max_chunks": {"type": "integer",
+      "default": 5, "description": "Maximum content sections to return per URL"},
+      "dense_weight": {"type": "number", "default": 0.75, "description": "Weight of
+      semantic similarity in hybrid ranking (0 to 1)"}, "min_relevance": {"type":
+      "number", "default": 0.15, "description": "Minimum hybrid relevance threshold
+      to include a section"}, "section_id": {"type": "string", "description": "Optional
+      section scope from list_sections output."}, "section_ref": {"type": "string",
+      "description": "Optional section reference (corpus://cache/<id>#section=<section-id>)."}},
+      "required": ["urls", "query"]}}}, {"type": "function", "function": {"name":
+      "save_finding", "description": "Save a discovered fact or insight to research
+      memory for future reference.\nUse this to persist important findings that may
+      be useful in future research sessions.\nFindings are stored with embeddings
+      for semantic retrieval.\nInclude source URL and tags for better organization
+      and retrieval.", "parameters": {"type": "object", "properties": {"finding":
+      {"type": "string", "description": "The fact, insight, or piece of information
+      to save"}, "source_url": {"type": "string", "description": "URL where this information
+      was found"}, "source_title": {"type": "string", "description": "Title of the
+      source page"}, "tags": {"type": "array", "items": {"type": "string"}, "description":
+      "Tags for categorization (e.g., [''climate'', ''statistics'', ''2024''])"}},
+      "required": ["finding"]}}}, {"type": "function", "function": {"name": "query_research_memory",
+      "description": "Search your research memory for previously saved findings.\nUses
+      semantic search to find relevant information from past research sessions.\nUseful
+      for recalling facts, statistics, or insights you''ve discovered before.", "parameters":
+      {"type": "object", "properties": {"query": {"type": "string", "description":
+      "What to search for in research memory"}, "limit": {"type": "integer", "default":
+      10, "description": "Maximum number of findings to return"}}, "required": ["query"]}}},
+      {"type": "function", "function": {"name": "list_sections", "description": "List
+      detected section headings for local corpus sources.\nUse this to inspect available
+      section titles before requesting a deep section summary.\nThis tool only supports
+      local corpus handles/sources, not web URLs.", "parameters": {"type": "object",
+      "properties": {"source": {"type": "string", "description": "Optional source
+      selector (prefer corpus://cache/<id>)."}, "sources": {"type": "array", "items":
+      {"type": "string"}, "description": "Optional source selectors for batch listing."},
+      "include_toc": {"type": "boolean", "description": "When true, include TOC/micro
+      heading rows in addition to canonical body sections.", "default": false}}, "required":
+      []}}}, {"type": "function", "function": {"name": "summarize_section", "description":
+      "Summarize one specific section from a local corpus source.\nUse exact section
+      titles from list_sections for reliable matching.\nThis tool only supports local
+      corpus handles/sources, not web URLs.", "parameters": {"type": "object", "properties":
+      {"source": {"type": "string", "description": "Source selector (prefer corpus://cache/<id>).
+      Legacy /<section-id> suffix is accepted."}, "section_query": {"type": "string",
+      "description": "Section title query to match strictly (fallback when section_id/section_ref
+      is omitted)."}, "section_id": {"type": "string", "description": "Exact section
+      ID from list_sections output."}, "section_ref": {"type": "string", "description":
+      "Section reference from list_sections output (corpus://cache/<id>#section=<section-id>)."},
+      "detail": {"type": "string", "description": "Summary detail profile: balanced|max|compact.",
+      "default": "balanced"}, "max_chunks": {"type": "integer", "description": "Optional
+      chunk limit for section slicing before summarization."}}, "required": []}}},
+      {"type": "function", "function": {"name": "list_dir", "description": "List the
+      contents of a directory.", "parameters": {"type": "object", "required": ["path"],
+      "properties": {"path": {"type": "string", "default": "."}, "flags": {"type":
+      "string", "default": "-la"}}}}}, {"type": "function", "function": {"name": "grep_search",
+      "description": "Search for a pattern in files recursively.", "parameters": {"type":
+      "object", "required": ["pattern"], "properties": {"pattern": {"type": "string",
+      "description": "The regex pattern to search for."}, "path": {"type": "string",
+      "description": "The directory path to search in.", "default": "."}}}}}, {"type":
+      "function", "function": {"name": "save_memory", "description": "Save an important
+      fact about the user or their preferences to long-term memory. Use when the user
+      explicitly asks to remember something or shares a persistent preference.", "parameters":
+      {"type": "object", "properties": {"memory": {"type": "string", "description":
+      "The fact, preference, or context to remember"}, "tags": {"type": "array", "items":
+      {"type": "string"}, "description": "Optional tags for categorization (e.g. [''preference'',
+      ''personal''])"}}, "required": ["memory"]}}}, {"type": "function", "function":
+      {"name": "transcribe_image_url", "description": "Describe or transcribe an image
+      from a public HTTPS URL. Supports formats like PNG, JPEG, WEBP, GIF.", "parameters":
+      {"type": "object", "properties": {"url": {"type": "string", "description": "The
+      public HTTPS URL of the image file."}, "prompt": {"type": "string", "description":
+      "Optional specific question or prompt about the image."}}, "required": ["url"]}}},
+      {"type": "function", "function": {"name": "transcribe_audio_url", "description":
+      "Transcribe an audio file from a public HTTPS URL to text. Supports common formats
+      like MP3, M4A, WAV, WebM, OGG.", "parameters": {"type": "object", "properties":
+      {"url": {"type": "string", "description": "The public HTTPS URL of the audio
+      file."}, "prompt": {"type": "string", "description": "Optional initial prompt
+      to guide transcription (e.g. spelling of names)."}, "language": {"type": "string",
+      "description": "Optional ISO 639-1 language code (e.g. ''en'', ''fr'')."}},
+      "required": ["url"]}}}], "tool_choice": "auto"}'
+    headers:
+      Accept:
+      - '*/*'
+      Accept-Encoding:
+      - gzip, deflate
+      Connection:
+      - keep-alive
+      Content-Length:
+      - '16966'
+      Content-Type:
+      - application/json
+      User-Agent:
+      - asky/1.0.0
+    method: POST
+    uri: https://openrouter.ai/api/v1/chat/completions
+  response:
+    body:
+      string: "\n         \n\n         \n{\"id\":\"gen-1772750598-VKzM6UXLMI3DqrYq3YAj\",\"object\":\"chat.completion\",\"created\":1772750598,\"model\":\"google/gemini-2.0-flash-lite-001\",\"provider\":\"Google
+        AI Studio\",\"choices\":[{\"index\":0,\"logprobs\":null,\"finish_reason\":\"tool_calls\",\"native_finish_reason\":\"STOP\",\"message\":{\"role\":\"assistant\",\"content\":null,\"refusal\":null,\"reasoning\":null,\"tool_calls\":[{\"type\":\"function\",\"index\":0,\"id\":\"tool_save_finding_q4bVVHe9Stu52hQZO7mZ\",\"function\":{\"name\":\"save_finding\",\"arguments\":\"{\\\"source_url\\\":\\\"corpus://cache/2\\\",\\\"source_title\\\":\\\"rfc6749.pdf\\\",\\\"tags\\\":[\\\"OAuth\\\",\\\"authorization
+        grant types\\\"],\\\"finding\\\":\\\"The four authorization grant types defined
+        in the OAuth 2.0 specification are: authorization code, implicit, resource
+        owner password credentials, and client credentials.\\\"}\"}}]}}],\"usage\":{\"prompt_tokens\":2883,\"completion_tokens\":57,\"total_tokens\":2940,\"cost\":0.00023099175,\"is_byok\":false,\"prompt_tokens_details\":{\"cached_tokens\":0,\"cache_write_tokens\":0,\"audio_tokens\":0,\"video_tokens\":0},\"cost_details\":{\"upstream_inference_cost\":0.000233325,\"upstream_inference_prompt_cost\":0.000216225,\"upstream_inference_completions_cost\":0.0000171},\"completion_tokens_details\":{\"reasoning_tokens\":0,\"image_tokens\":0,\"audio_tokens\":0}}}"
+    headers:
+      Access-Control-Allow-Origin:
+      - '*'
+      CF-RAY:
+      - 9d7ca38a2c165406-AMS
+      Connection:
+      - keep-alive
+      Content-Encoding:
+      - gzip
+      Content-Type:
+      - application/json
+      Date:
+      - Thu, 05 Mar 2026 22:43:19 GMT
+      Permissions-Policy:
+      - payment=(self "https://checkout.stripe.com" "https://connect-js.stripe.com"
+        "https://js.stripe.com" "https://*.js.stripe.com" "https://hooks.stripe.com")
+      Referrer-Policy:
+      - no-referrer, strict-origin-when-cross-origin
+      Server:
+      - cloudflare
+      Transfer-Encoding:
+      - chunked
+      X-Content-Type-Options:
+      - nosniff
+    status:
+      code: 200
+      message: OK
+- request:
+    body: '{"model": "google/gemini-2.0-flash-lite-001", "messages": [{"role": "system",
+      "content": "You are a research assistant conducting deep investigation on behalf
+      of the user.\n\nThe current date and time is: Monday, January 01, 2024 at 12:00\n\n**Research
+      Strategy - Follow this systematic workflow:**\n\n1. **RECALL** - Start by checking
+      your research memory\n   - Use `query_research_memory` to see if you''ve researched
+      this topic before\n   - Past findings can provide a foundation and save time\n   -
+      Build on previous discoveries rather than starting from scratch\n\n2. **DISCOVER**
+      - Use `extract_links` to explore pages and discover available information\n   -
+      Start with web_search to find relevant sources\n   - Use extract_links on promising
+      URLs to see what content is available\n   - Provide a query parameter to filter
+      links by relevance to your research\n   - Content is cached automatically -
+      you only see link labels and URLs\n\n3. **EVALUATE** - Review link labels and
+      relevance scores\n   - Prioritize high-relevance links (scores closer to 1.0)\n   -
+      Look for primary sources, research papers, authoritative sites\n   - Identify
+      which links likely have substantive information vs navigation/ads\n\n4. **SKIM**
+      - Use `get_link_summaries` to preview promising pages\n   - Read AI-generated
+      summaries to decide if full content is needed\n   - Summaries are generated
+      in the background - may show \"processing\" initially\n   - This saves tokens
+      and speeds up your research\n\n5. **DEEP READ** - Use `get_relevant_content`
+      for targeted extraction\n   - Provide a specific query to retrieve only relevant
+      content sections\n   - Use `get_full_content` only when comprehensive understanding
+      is needed\n   - The RAG system finds semantically similar content chunks\n\n6.
+      **REMEMBER** - Use `save_finding` to store important discoveries\n   - Save
+      key facts, statistics, and insights as you find them\n   - Include source URL
+      and descriptive tags for easy retrieval\n   - Use `save_finding` for source-backed
+      research evidence\n   - Use `save_memory` only for durable user preferences/facts\n\n7.
+      **VERIFY MEMORY LOOP** - Before final answer, re-check saved findings\n   -
+      Call `query_research_memory` with the refined question\n   - Ensure major claims
+      are grounded in saved findings or retrieved evidence\n   - This helps avoid
+      dropping earlier discoveries in long tool chains\n\n8. **ITERATE** - Repeat
+      as needed to build comprehensive understanding\n   - Follow promising leads
+      to new pages\n   - Cross-reference information across multiple sources\n   -
+      Synthesize findings into a coherent answer\n\n**Token Efficiency Guidelines:**\n-
+      Prefer summaries over full content when possible\n- Use targeted queries with
+      get_relevant_content to minimize token usage\n- Don''t request content you won''t
+      use\n- Batch multiple URL requests when possible\n\n**Available Tools:**\n-
+      `web_search` - Search the web for relevant sources\n- `extract_links` - Discover
+      links on pages (caches content, returns only links)\n- `get_link_summaries`
+      - Get AI summaries of cached pages\n- `get_relevant_content` - RAG-based retrieval
+      of relevant content sections\n- `get_full_content` - Get complete cached content
+      (use sparingly)\n- `save_finding` - Save a discovered fact to research memory\n-
+      `query_research_memory` - Search your research memory for past findings\n\nAlways
+      prioritize using markdown formatting in your final response.\nAlways start your
+      final response with a single H1 markdown header (# Title) that captures the
+      essence of your answer in a concise title (3-7 words).\n\nA research corpus
+      has been pre-loaded for this query. Your sources are already\nindexed and available.\n\nYour
+      task:\n1. Use `query_research_memory` to check if relevant findings already
+      exist.\n2. Use `get_relevant_content` with specific sub-questions to retrieve
+      evidence\n   from the indexed corpus.\n3. Use `save_finding` to persist key
+      facts with source attribution.\n4. Use `save_finding` for source-backed research
+      evidence.\n   Use `save_memory` only for durable user preferences/facts.\n5.
+      Before the final answer, run `query_research_memory` again and synthesize\n   from
+      the saved findings with citations.\n\nIf the user''s query is clearly unrelated
+      to the pre-loaded research corpus (e.g., greetings,\nsmall talk, or accidental
+      input), respond naturally without providing a research report.\nDo NOT attempt
+      to browse new URLs or extract links - the corpus is already built.\n\nLocal
+      Knowledge Base Guidance:\n- Local corpus sources were preloaded from configured
+      document roots.\n- Do not ask the user for local filesystem paths.\n- You may
+      call `query_research_memory` first, but if it returns no findings, immediately
+      call `get_relevant_content` against the preloaded corpus sources.\n- For section-focused
+      local corpus questions, call `list_sections` first, then `summarize_section`
+      with `section_ref` or exact `section_id`.\n- Do not append section IDs to corpus
+      URL paths. Use `section_ref` (`corpus://cache/<id>#section=<section-id>`) or
+      explicit section args.\n\nEnabled Tool Guidelines:\n- `web_search`: Use for
+      broad discovery and to refresh candidate sources as research evolves.\n- `get_relevant_content`:
+      Prefer this over full-page reads when you need targeted facts for a specific
+      question.\n- `save_finding`: Persist high-value findings with source metadata
+      as you validate them.\n- `query_research_memory`: Use at the start of research
+      to reuse prior findings before collecting new sources.\n- `list_sections`: For
+      local corpus research, call this first to discover exact section titles.\n-
+      `summarize_section`: Use after list_sections to produce deep section-bounded
+      summaries from local corpus sources.\n- `save_memory`: When the user says ''remember
+      this'', ''keep in mind'', ''don''t forget'', or shares a persistent preference
+      or personal fact, call save_memory. Do not save ephemeral request-specific information.\n\n[SYSTEM
+      UPDATE]:\n- Context Used: 7.52%- Turns Remaining: 17 (out of 20)\nPlease manage
+      your context usage efficiently."}, {"role": "user", "content": "Using only the
+      local research corpus, list the four authorization grant types defined by this
+      OAuth document. Reply as a comma-separated list.\n\nPreloaded sources gathered
+      before tool calls:\nLocal knowledge base preloaded before tool calls:\n- Documents
+      indexed: 1\n- Chunk embeddings added: 673\n- Total indexed characters: 162121\n-
+      Source handles: corpus://cache/2\n\nUse this preloaded corpus as a starting
+      point, then verify with tools before citing."}, {"role": "assistant", "content":
+      null, "refusal": null, "reasoning": null, "tool_calls": [{"type": "function",
+      "index": 0, "id": "tool_query_research_memory_kMClAq9SVouG7sMRXPpI", "function":
+      {"name": "query_research_memory", "arguments": "{\"query\":\"authorization grant
+      types\"}"}}]}, {"role": "tool", "tool_call_id": "tool_query_research_memory_kMClAq9SVouG7sMRXPpI",
+      "content": "{\"findings\": [{\"finding\": \"Prosecutions genuinely arising from
+      non-political crimes; acts contrary to the purposes and principles of the United
+      Nations\", \"source_url\": \"corpus://cache/1\", \"source_title\": \"UDHR.pdf\",
+      \"tags\": [\"asylum\", \"exceptions\", \"Article 14\"], \"relevance\": 0.0,
+      \"saved_at\": \"2026-03-05T23:43:15.295573\"}], \"count\": 1, \"search_type\":
+      \"semantic\"}"}, {"role": "assistant", "content": "Since the research memory
+      did not have an entry for the specific question, I will proceed to use the `get_relevant_content`
+      tool.\n", "refusal": null, "reasoning": null, "tool_calls": [{"type": "function",
+      "index": 0, "id": "tool_get_relevant_content_cTQSYCLUa7TNqyppefvS", "function":
+      {"name": "get_relevant_content", "arguments": "{\"urls\":[\"corpus://cache/2\"],\"query\":\"authorization
+      grant types defined by this OAuth document\"}"}}]}, {"role": "tool", "tool_call_id":
+      "tool_get_relevant_content_cTQSYCLUa7TNqyppefvS", "content": "{\"corpus://cache/2\":
+      {\"title\": \"rfc6749.pdf\", \"chunks\": [{\"text\": \"credential representing
+      the resource owner\\u2019s authorization, expressed using one of four grant
+      types defined in this specification or using an extension grant type. The authorization
+      grant type depends on the method used by the client to request authorizat\",
+      \"relevance\": 0.188, \"semantic_relevance\": 0.0, \"lexical_relevance\": 0.75},
+      {\"text\": \"s) used by the client to obtain an access token. This specification
+      defines four grant types -- authorization code, implicit, resource owner password
+      credentials, and client credentials -- as well as an extensibility mechanism
+      for defining additional types. 1.3.1.\", \"relevance\": 0.156, \"semantic_relevance\":
+      0.0, \"lexical_relevance\": 0.625}, {\"text\": \"they are used SHOULD utilize
+      a vendor-specific prefix that is not likely to conflict with other registered
+      values (e.g., begin with \\u2019companyname_\\u2019). 8.3. Defining New Authorization
+      Grant Types New authorization grant types can be defined by assigning them\",
+      \"relevance\": 0.156, \"semantic_relevance\": 0.0, \"lexical_relevance\": 0.625},
+      {\"text\": \"on grant types can be defined by assigning them a unique absolute
+      URI for use with the \\\"grant_type\\\" parameter. If the extension grant type
+      requires additional token endpoint parameters, they MUST be registered in the
+      OAuth Parameters registry as described by Section 11.2. 8.4.\", \"relevance\":
+      0.156, \"semantic_relevance\": 0.0, \"lexical_relevance\": 0.625}, {\"text\":
+      \"ime of access tokens issued via this grant type. The authorization server
+      and client SHOULD minimize use of this grant type and utilize other grant types
+      whenever possible. Hardt Standards Track [Page 57] RFC 6749 OAuth 2.0 October
+      2012 10.8.\", \"relevance\": 0.156, \"semantic_relevance\": 0.0, \"lexical_relevance\":
+      0.625}], \"chunk_count\": 5}}"}, {"role": "assistant", "content": null, "refusal":
+      null, "reasoning": null, "tool_calls": [{"type": "function", "index": 0, "id":
+      "tool_save_finding_q4bVVHe9Stu52hQZO7mZ", "function": {"name": "save_finding",
+      "arguments": "{\"source_url\":\"corpus://cache/2\",\"source_title\":\"rfc6749.pdf\",\"tags\":[\"OAuth\",\"authorization
+      grant types\"],\"finding\":\"The four authorization grant types defined in the
+      OAuth 2.0 specification are: authorization code, implicit, resource owner password
+      credentials, and client credentials.\"}"}}]}, {"role": "tool", "tool_call_id":
+      "tool_save_finding_q4bVVHe9Stu52hQZO7mZ", "content": "{\"status\": \"saved\",
+      \"finding_id\": 2, \"embedded\": true, \"note\": \"Finding saved to research
+      memory with embedding\"}"}], "stream": false, "tools": [{"type": "function",
+      "function": {"name": "web_search", "description": "Search the web and return
+      top results. Use this to find relevant sources for your research.", "parameters":
+      {"type": "object", "properties": {"q": {"type": "string", "description": "Search
+      query"}, "count": {"type": "integer", "default": 5, "description": "Number of
+      results"}}, "required": ["q"]}}}, {"type": "function", "function": {"name":
+      "get_relevant_content", "description": "Retrieve only the most relevant content
+      sections from cached pages using RAG.\nUses semantic search to find sections
+      matching your specific query - much more efficient than full content.\nBest
+      for extracting specific information without loading entire pages.\nRequires
+      embedding model to be available.", "parameters": {"type": "object", "properties":
+      {"urls": {"type": "array", "items": {"type": "string"}, "description": "URLs
+      to retrieve content from (must be cached)"}, "query": {"type": "string", "description":
+      "What specific information are you looking for?"}, "max_chunks": {"type": "integer",
+      "default": 5, "description": "Maximum content sections to return per URL"},
+      "dense_weight": {"type": "number", "default": 0.75, "description": "Weight of
+      semantic similarity in hybrid ranking (0 to 1)"}, "min_relevance": {"type":
+      "number", "default": 0.15, "description": "Minimum hybrid relevance threshold
+      to include a section"}, "section_id": {"type": "string", "description": "Optional
+      section scope from list_sections output."}, "section_ref": {"type": "string",
+      "description": "Optional section reference (corpus://cache/<id>#section=<section-id>)."}},
+      "required": ["urls", "query"]}}}, {"type": "function", "function": {"name":
+      "save_finding", "description": "Save a discovered fact or insight to research
+      memory for future reference.\nUse this to persist important findings that may
+      be useful in future research sessions.\nFindings are stored with embeddings
+      for semantic retrieval.\nInclude source URL and tags for better organization
+      and retrieval.", "parameters": {"type": "object", "properties": {"finding":
+      {"type": "string", "description": "The fact, insight, or piece of information
+      to save"}, "source_url": {"type": "string", "description": "URL where this information
+      was found"}, "source_title": {"type": "string", "description": "Title of the
+      source page"}, "tags": {"type": "array", "items": {"type": "string"}, "description":
+      "Tags for categorization (e.g., [''climate'', ''statistics'', ''2024''])"}},
+      "required": ["finding"]}}}, {"type": "function", "function": {"name": "query_research_memory",
+      "description": "Search your research memory for previously saved findings.\nUses
+      semantic search to find relevant information from past research sessions.\nUseful
+      for recalling facts, statistics, or insights you''ve discovered before.", "parameters":
+      {"type": "object", "properties": {"query": {"type": "string", "description":
+      "What to search for in research memory"}, "limit": {"type": "integer", "default":
+      10, "description": "Maximum number of findings to return"}}, "required": ["query"]}}},
+      {"type": "function", "function": {"name": "list_sections", "description": "List
+      detected section headings for local corpus sources.\nUse this to inspect available
+      section titles before requesting a deep section summary.\nThis tool only supports
+      local corpus handles/sources, not web URLs.", "parameters": {"type": "object",
+      "properties": {"source": {"type": "string", "description": "Optional source
+      selector (prefer corpus://cache/<id>)."}, "sources": {"type": "array", "items":
+      {"type": "string"}, "description": "Optional source selectors for batch listing."},
+      "include_toc": {"type": "boolean", "description": "When true, include TOC/micro
+      heading rows in addition to canonical body sections.", "default": false}}, "required":
+      []}}}, {"type": "function", "function": {"name": "summarize_section", "description":
+      "Summarize one specific section from a local corpus source.\nUse exact section
+      titles from list_sections for reliable matching.\nThis tool only supports local
+      corpus handles/sources, not web URLs.", "parameters": {"type": "object", "properties":
+      {"source": {"type": "string", "description": "Source selector (prefer corpus://cache/<id>).
+      Legacy /<section-id> suffix is accepted."}, "section_query": {"type": "string",
+      "description": "Section title query to match strictly (fallback when section_id/section_ref
+      is omitted)."}, "section_id": {"type": "string", "description": "Exact section
+      ID from list_sections output."}, "section_ref": {"type": "string", "description":
+      "Section reference from list_sections output (corpus://cache/<id>#section=<section-id>)."},
+      "detail": {"type": "string", "description": "Summary detail profile: balanced|max|compact.",
+      "default": "balanced"}, "max_chunks": {"type": "integer", "description": "Optional
+      chunk limit for section slicing before summarization."}}, "required": []}}},
+      {"type": "function", "function": {"name": "list_dir", "description": "List the
+      contents of a directory.", "parameters": {"type": "object", "required": ["path"],
+      "properties": {"path": {"type": "string", "default": "."}, "flags": {"type":
+      "string", "default": "-la"}}}}}, {"type": "function", "function": {"name": "grep_search",
+      "description": "Search for a pattern in files recursively.", "parameters": {"type":
+      "object", "required": ["pattern"], "properties": {"pattern": {"type": "string",
+      "description": "The regex pattern to search for."}, "path": {"type": "string",
+      "description": "The directory path to search in.", "default": "."}}}}}, {"type":
+      "function", "function": {"name": "save_memory", "description": "Save an important
+      fact about the user or their preferences to long-term memory. Use when the user
+      explicitly asks to remember something or shares a persistent preference.", "parameters":
+      {"type": "object", "properties": {"memory": {"type": "string", "description":
+      "The fact, preference, or context to remember"}, "tags": {"type": "array", "items":
+      {"type": "string"}, "description": "Optional tags for categorization (e.g. [''preference'',
+      ''personal''])"}}, "required": ["memory"]}}}, {"type": "function", "function":
+      {"name": "transcribe_image_url", "description": "Describe or transcribe an image
+      from a public HTTPS URL. Supports formats like PNG, JPEG, WEBP, GIF.", "parameters":
+      {"type": "object", "properties": {"url": {"type": "string", "description": "The
+      public HTTPS URL of the image file."}, "prompt": {"type": "string", "description":
+      "Optional specific question or prompt about the image."}}, "required": ["url"]}}},
+      {"type": "function", "function": {"name": "transcribe_audio_url", "description":
+      "Transcribe an audio file from a public HTTPS URL to text. Supports common formats
+      like MP3, M4A, WAV, WebM, OGG.", "parameters": {"type": "object", "properties":
+      {"url": {"type": "string", "description": "The public HTTPS URL of the audio
+      file."}, "prompt": {"type": "string", "description": "Optional initial prompt
+      to guide transcription (e.g. spelling of names)."}, "language": {"type": "string",
+      "description": "Optional ISO 639-1 language code (e.g. ''en'', ''fr'')."}},
+      "required": ["url"]}}}], "tool_choice": "auto"}'
+    headers:
+      Accept:
+      - '*/*'
+      Accept-Encoding:
+      - gzip, deflate
+      Connection:
+      - keep-alive
+      Content-Length:
+      - '17718'
+      Content-Type:
+      - application/json
+      User-Agent:
+      - asky/1.0.0
+    method: POST
+    uri: https://openrouter.ai/api/v1/chat/completions
+  response:
+    body:
+      string: "\n         \n{\"id\":\"gen-1772750599-JieIw4RlU5Nj1UbiLecW\",\"object\":\"chat.completion\",\"created\":1772750599,\"model\":\"google/gemini-2.0-flash-lite-001\",\"provider\":\"Google
+        AI Studio\",\"choices\":[{\"index\":0,\"logprobs\":null,\"finish_reason\":\"tool_calls\",\"native_finish_reason\":\"STOP\",\"message\":{\"role\":\"assistant\",\"content\":null,\"refusal\":null,\"reasoning\":null,\"tool_calls\":[{\"type\":\"function\",\"index\":0,\"id\":\"tool_query_research_memory_8c7VqDhIAo8cGAWKH2og\",\"function\":{\"name\":\"query_research_memory\",\"arguments\":\"{\\\"query\\\":\\\"authorization
+        grant types\\\"}\"}}]}}],\"usage\":{\"prompt_tokens\":2977,\"completion_tokens\":9,\"total_tokens\":2986,\"cost\":0.00022371525,\"is_byok\":false,\"prompt_tokens_details\":{\"cached_tokens\":0,\"cache_write_tokens\":0,\"audio_tokens\":0,\"video_tokens\":0},\"cost_details\":{\"upstream_inference_cost\":0.000225975,\"upstream_inference_prompt_cost\":0.000223275,\"upstream_inference_completions_cost\":0.0000027},\"completion_tokens_details\":{\"reasoning_tokens\":0,\"image_tokens\":0,\"audio_tokens\":0}}}"
+    headers:
+      Access-Control-Allow-Origin:
+      - '*'
+      CF-RAY:
+      - 9d7ca3910a1f66c1-AMS
+      Connection:
+      - keep-alive
+      Content-Encoding:
+      - gzip
+      Content-Type:
+      - application/json
+      Date:
+      - Thu, 05 Mar 2026 22:43:20 GMT
+      Permissions-Policy:
+      - payment=(self "https://checkout.stripe.com" "https://connect-js.stripe.com"
+        "https://js.stripe.com" "https://*.js.stripe.com" "https://hooks.stripe.com")
+      Referrer-Policy:
+      - no-referrer, strict-origin-when-cross-origin
+      Server:
+      - cloudflare
+      Transfer-Encoding:
+      - chunked
+      X-Content-Type-Options:
+      - nosniff
+    status:
+      code: 200
+      message: OK
+- request:
+    body: '{"model": "google/gemini-2.0-flash-lite-001", "messages": [{"role": "system",
+      "content": "You are a research assistant conducting deep investigation on behalf
+      of the user.\n\nThe current date and time is: Monday, January 01, 2024 at 12:00\n\n**Research
+      Strategy - Follow this systematic workflow:**\n\n1. **RECALL** - Start by checking
+      your research memory\n   - Use `query_research_memory` to see if you''ve researched
+      this topic before\n   - Past findings can provide a foundation and save time\n   -
+      Build on previous discoveries rather than starting from scratch\n\n2. **DISCOVER**
+      - Use `extract_links` to explore pages and discover available information\n   -
+      Start with web_search to find relevant sources\n   - Use extract_links on promising
+      URLs to see what content is available\n   - Provide a query parameter to filter
+      links by relevance to your research\n   - Content is cached automatically -
+      you only see link labels and URLs\n\n3. **EVALUATE** - Review link labels and
+      relevance scores\n   - Prioritize high-relevance links (scores closer to 1.0)\n   -
+      Look for primary sources, research papers, authoritative sites\n   - Identify
+      which links likely have substantive information vs navigation/ads\n\n4. **SKIM**
+      - Use `get_link_summaries` to preview promising pages\n   - Read AI-generated
+      summaries to decide if full content is needed\n   - Summaries are generated
+      in the background - may show \"processing\" initially\n   - This saves tokens
+      and speeds up your research\n\n5. **DEEP READ** - Use `get_relevant_content`
+      for targeted extraction\n   - Provide a specific query to retrieve only relevant
+      content sections\n   - Use `get_full_content` only when comprehensive understanding
+      is needed\n   - The RAG system finds semantically similar content chunks\n\n6.
+      **REMEMBER** - Use `save_finding` to store important discoveries\n   - Save
+      key facts, statistics, and insights as you find them\n   - Include source URL
+      and descriptive tags for easy retrieval\n   - Use `save_finding` for source-backed
+      research evidence\n   - Use `save_memory` only for durable user preferences/facts\n\n7.
+      **VERIFY MEMORY LOOP** - Before final answer, re-check saved findings\n   -
+      Call `query_research_memory` with the refined question\n   - Ensure major claims
+      are grounded in saved findings or retrieved evidence\n   - This helps avoid
+      dropping earlier discoveries in long tool chains\n\n8. **ITERATE** - Repeat
+      as needed to build comprehensive understanding\n   - Follow promising leads
+      to new pages\n   - Cross-reference information across multiple sources\n   -
+      Synthesize findings into a coherent answer\n\n**Token Efficiency Guidelines:**\n-
+      Prefer summaries over full content when possible\n- Use targeted queries with
+      get_relevant_content to minimize token usage\n- Don''t request content you won''t
+      use\n- Batch multiple URL requests when possible\n\n**Available Tools:**\n-
+      `web_search` - Search the web for relevant sources\n- `extract_links` - Discover
+      links on pages (caches content, returns only links)\n- `get_link_summaries`
+      - Get AI summaries of cached pages\n- `get_relevant_content` - RAG-based retrieval
+      of relevant content sections\n- `get_full_content` - Get complete cached content
+      (use sparingly)\n- `save_finding` - Save a discovered fact to research memory\n-
+      `query_research_memory` - Search your research memory for past findings\n\nAlways
+      prioritize using markdown formatting in your final response.\nAlways start your
+      final response with a single H1 markdown header (# Title) that captures the
+      essence of your answer in a concise title (3-7 words).\n\nA research corpus
+      has been pre-loaded for this query. Your sources are already\nindexed and available.\n\nYour
+      task:\n1. Use `query_research_memory` to check if relevant findings already
+      exist.\n2. Use `get_relevant_content` with specific sub-questions to retrieve
+      evidence\n   from the indexed corpus.\n3. Use `save_finding` to persist key
+      facts with source attribution.\n4. Use `save_finding` for source-backed research
+      evidence.\n   Use `save_memory` only for durable user preferences/facts.\n5.
+      Before the final answer, run `query_research_memory` again and synthesize\n   from
+      the saved findings with citations.\n\nIf the user''s query is clearly unrelated
+      to the pre-loaded research corpus (e.g., greetings,\nsmall talk, or accidental
+      input), respond naturally without providing a research report.\nDo NOT attempt
+      to browse new URLs or extract links - the corpus is already built.\n\nLocal
+      Knowledge Base Guidance:\n- Local corpus sources were preloaded from configured
+      document roots.\n- Do not ask the user for local filesystem paths.\n- You may
+      call `query_research_memory` first, but if it returns no findings, immediately
+      call `get_relevant_content` against the preloaded corpus sources.\n- For section-focused
+      local corpus questions, call `list_sections` first, then `summarize_section`
+      with `section_ref` or exact `section_id`.\n- Do not append section IDs to corpus
+      URL paths. Use `section_ref` (`corpus://cache/<id>#section=<section-id>`) or
+      explicit section args.\n\nEnabled Tool Guidelines:\n- `web_search`: Use for
+      broad discovery and to refresh candidate sources as research evolves.\n- `get_relevant_content`:
+      Prefer this over full-page reads when you need targeted facts for a specific
+      question.\n- `save_finding`: Persist high-value findings with source metadata
+      as you validate them.\n- `query_research_memory`: Use at the start of research
+      to reuse prior findings before collecting new sources.\n- `list_sections`: For
+      local corpus research, call this first to discover exact section titles.\n-
+      `summarize_section`: Use after list_sections to produce deep section-bounded
+      summaries from local corpus sources.\n- `save_memory`: When the user says ''remember
+      this'', ''keep in mind'', ''don''t forget'', or shares a persistent preference
+      or personal fact, call save_memory. Do not save ephemeral request-specific information.\n\n[SYSTEM
+      UPDATE]:\n- Context Used: 8.24%- Turns Remaining: 16 (out of 20)\nPlease manage
+      your context usage efficiently."}, {"role": "user", "content": "Using only the
+      local research corpus, list the four authorization grant types defined by this
+      OAuth document. Reply as a comma-separated list.\n\nPreloaded sources gathered
+      before tool calls:\nLocal knowledge base preloaded before tool calls:\n- Documents
+      indexed: 1\n- Chunk embeddings added: 673\n- Total indexed characters: 162121\n-
+      Source handles: corpus://cache/2\n\nUse this preloaded corpus as a starting
+      point, then verify with tools before citing."}, {"role": "assistant", "content":
+      null, "refusal": null, "reasoning": null, "tool_calls": [{"type": "function",
+      "index": 0, "id": "tool_query_research_memory_kMClAq9SVouG7sMRXPpI", "function":
+      {"name": "query_research_memory", "arguments": "{\"query\":\"authorization grant
+      types\"}"}}]}, {"role": "tool", "tool_call_id": "tool_query_research_memory_kMClAq9SVouG7sMRXPpI",
+      "content": "{\"findings\": [{\"finding\": \"Prosecutions genuinely arising from
+      non-political crimes; acts contrary to the purposes and principles of the United
+      Nations\", \"source_url\": \"corpus://cache/1\", \"source_title\": \"UDHR.pdf\",
+      \"tags\": [\"asylum\", \"exceptions\", \"Article 14\"], \"relevance\": 0.0,
+      \"saved_at\": \"2026-03-05T23:43:15.295573\"}], \"count\": 1, \"search_type\":
+      \"semantic\"}"}, {"role": "assistant", "content": "Since the research memory
+      did not have an entry for the specific question, I will proceed to use the `get_relevant_content`
+      tool.\n", "refusal": null, "reasoning": null, "tool_calls": [{"type": "function",
+      "index": 0, "id": "tool_get_relevant_content_cTQSYCLUa7TNqyppefvS", "function":
+      {"name": "get_relevant_content", "arguments": "{\"urls\":[\"corpus://cache/2\"],\"query\":\"authorization
+      grant types defined by this OAuth document\"}"}}]}, {"role": "tool", "tool_call_id":
+      "tool_get_relevant_content_cTQSYCLUa7TNqyppefvS", "content": "{\"corpus://cache/2\":
+      {\"title\": \"rfc6749.pdf\", \"chunks\": [{\"text\": \"credential representing
+      the resource owner\\u2019s authorization, expressed using one of four grant
+      types defined in this specification or using an extension grant type. The authorization
+      grant type depends on the method used by the client to request authorizat\",
+      \"relevance\": 0.188, \"semantic_relevance\": 0.0, \"lexical_relevance\": 0.75},
+      {\"text\": \"s) used by the client to obtain an access token. This specification
+      defines four grant types -- authorization code, implicit, resource owner password
+      credentials, and client credentials -- as well as an extensibility mechanism
+      for defining additional types. 1.3.1.\", \"relevance\": 0.156, \"semantic_relevance\":
+      0.0, \"lexical_relevance\": 0.625}, {\"text\": \"they are used SHOULD utilize
+      a vendor-specific prefix that is not likely to conflict with other registered
+      values (e.g., begin with \\u2019companyname_\\u2019). 8.3. Defining New Authorization
+      Grant Types New authorization grant types can be defined by assigning them\",
+      \"relevance\": 0.156, \"semantic_relevance\": 0.0, \"lexical_relevance\": 0.625},
+      {\"text\": \"on grant types can be defined by assigning them a unique absolute
+      URI for use with the \\\"grant_type\\\" parameter. If the extension grant type
+      requires additional token endpoint parameters, they MUST be registered in the
+      OAuth Parameters registry as described by Section 11.2. 8.4.\", \"relevance\":
+      0.156, \"semantic_relevance\": 0.0, \"lexical_relevance\": 0.625}, {\"text\":
+      \"ime of access tokens issued via this grant type. The authorization server
+      and client SHOULD minimize use of this grant type and utilize other grant types
+      whenever possible. Hardt Standards Track [Page 57] RFC 6749 OAuth 2.0 October
+      2012 10.8.\", \"relevance\": 0.156, \"semantic_relevance\": 0.0, \"lexical_relevance\":
+      0.625}], \"chunk_count\": 5}}"}, {"role": "assistant", "content": null, "refusal":
+      null, "reasoning": null, "tool_calls": [{"type": "function", "index": 0, "id":
+      "tool_save_finding_q4bVVHe9Stu52hQZO7mZ", "function": {"name": "save_finding",
+      "arguments": "{\"source_url\":\"corpus://cache/2\",\"source_title\":\"rfc6749.pdf\",\"tags\":[\"OAuth\",\"authorization
+      grant types\"],\"finding\":\"The four authorization grant types defined in the
+      OAuth 2.0 specification are: authorization code, implicit, resource owner password
+      credentials, and client credentials.\"}"}}]}, {"role": "tool", "tool_call_id":
+      "tool_save_finding_q4bVVHe9Stu52hQZO7mZ", "content": "{\"status\": \"saved\",
+      \"finding_id\": 2, \"embedded\": true, \"note\": \"Finding saved to research
+      memory with embedding\"}"}, {"role": "assistant", "content": null, "refusal":
+      null, "reasoning": null, "tool_calls": [{"type": "function", "index": 0, "id":
+      "tool_query_research_memory_8c7VqDhIAo8cGAWKH2og", "function": {"name": "query_research_memory",
+      "arguments": "{\"query\":\"authorization grant types\"}"}}]}, {"role": "tool",
+      "tool_call_id": "tool_query_research_memory_8c7VqDhIAo8cGAWKH2og", "content":
+      "{\"findings\": [{\"finding\": \"Prosecutions genuinely arising from non-political
+      crimes; acts contrary to the purposes and principles of the United Nations\",
+      \"source_url\": \"corpus://cache/1\", \"source_title\": \"UDHR.pdf\", \"tags\":
+      [\"asylum\", \"exceptions\", \"Article 14\"], \"relevance\": 0.0, \"saved_at\":
+      \"2026-03-05T23:43:15.295573\"}, {\"finding\": \"The four authorization grant
+      types defined in the OAuth 2.0 specification are: authorization code, implicit,
+      resource owner password credentials, and client credentials.\", \"source_url\":
+      \"corpus://cache/2\", \"source_title\": \"rfc6749.pdf\", \"tags\": [\"OAuth\",
+      \"authorization grant types\"], \"relevance\": 0.0, \"saved_at\": \"2026-03-05T23:43:19.769421\"}],
+      \"count\": 2, \"search_type\": \"semantic\"}"}], "stream": false, "tools": [{"type":
+      "function", "function": {"name": "web_search", "description": "Search the web
+      and return top results. Use this to find relevant sources for your research.",
+      "parameters": {"type": "object", "properties": {"q": {"type": "string", "description":
+      "Search query"}, "count": {"type": "integer", "default": 5, "description": "Number
+      of results"}}, "required": ["q"]}}}, {"type": "function", "function": {"name":
+      "get_relevant_content", "description": "Retrieve only the most relevant content
+      sections from cached pages using RAG.\nUses semantic search to find sections
+      matching your specific query - much more efficient than full content.\nBest
+      for extracting specific information without loading entire pages.\nRequires
+      embedding model to be available.", "parameters": {"type": "object", "properties":
+      {"urls": {"type": "array", "items": {"type": "string"}, "description": "URLs
+      to retrieve content from (must be cached)"}, "query": {"type": "string", "description":
+      "What specific information are you looking for?"}, "max_chunks": {"type": "integer",
+      "default": 5, "description": "Maximum content sections to return per URL"},
+      "dense_weight": {"type": "number", "default": 0.75, "description": "Weight of
+      semantic similarity in hybrid ranking (0 to 1)"}, "min_relevance": {"type":
+      "number", "default": 0.15, "description": "Minimum hybrid relevance threshold
+      to include a section"}, "section_id": {"type": "string", "description": "Optional
+      section scope from list_sections output."}, "section_ref": {"type": "string",
+      "description": "Optional section reference (corpus://cache/<id>#section=<section-id>)."}},
+      "required": ["urls", "query"]}}}, {"type": "function", "function": {"name":
+      "save_finding", "description": "Save a discovered fact or insight to research
+      memory for future reference.\nUse this to persist important findings that may
+      be useful in future research sessions.\nFindings are stored with embeddings
+      for semantic retrieval.\nInclude source URL and tags for better organization
+      and retrieval.", "parameters": {"type": "object", "properties": {"finding":
+      {"type": "string", "description": "The fact, insight, or piece of information
+      to save"}, "source_url": {"type": "string", "description": "URL where this information
+      was found"}, "source_title": {"type": "string", "description": "Title of the
+      source page"}, "tags": {"type": "array", "items": {"type": "string"}, "description":
+      "Tags for categorization (e.g., [''climate'', ''statistics'', ''2024''])"}},
+      "required": ["finding"]}}}, {"type": "function", "function": {"name": "query_research_memory",
+      "description": "Search your research memory for previously saved findings.\nUses
+      semantic search to find relevant information from past research sessions.\nUseful
+      for recalling facts, statistics, or insights you''ve discovered before.", "parameters":
+      {"type": "object", "properties": {"query": {"type": "string", "description":
+      "What to search for in research memory"}, "limit": {"type": "integer", "default":
+      10, "description": "Maximum number of findings to return"}}, "required": ["query"]}}},
+      {"type": "function", "function": {"name": "list_sections", "description": "List
+      detected section headings for local corpus sources.\nUse this to inspect available
+      section titles before requesting a deep section summary.\nThis tool only supports
+      local corpus handles/sources, not web URLs.", "parameters": {"type": "object",
+      "properties": {"source": {"type": "string", "description": "Optional source
+      selector (prefer corpus://cache/<id>)."}, "sources": {"type": "array", "items":
+      {"type": "string"}, "description": "Optional source selectors for batch listing."},
+      "include_toc": {"type": "boolean", "description": "When true, include TOC/micro
+      heading rows in addition to canonical body sections.", "default": false}}, "required":
+      []}}}, {"type": "function", "function": {"name": "summarize_section", "description":
+      "Summarize one specific section from a local corpus source.\nUse exact section
+      titles from list_sections for reliable matching.\nThis tool only supports local
+      corpus handles/sources, not web URLs.", "parameters": {"type": "object", "properties":
+      {"source": {"type": "string", "description": "Source selector (prefer corpus://cache/<id>).
+      Legacy /<section-id> suffix is accepted."}, "section_query": {"type": "string",
+      "description": "Section title query to match strictly (fallback when section_id/section_ref
+      is omitted)."}, "section_id": {"type": "string", "description": "Exact section
+      ID from list_sections output."}, "section_ref": {"type": "string", "description":
+      "Section reference from list_sections output (corpus://cache/<id>#section=<section-id>)."},
+      "detail": {"type": "string", "description": "Summary detail profile: balanced|max|compact.",
+      "default": "balanced"}, "max_chunks": {"type": "integer", "description": "Optional
+      chunk limit for section slicing before summarization."}}, "required": []}}},
+      {"type": "function", "function": {"name": "list_dir", "description": "List the
+      contents of a directory.", "parameters": {"type": "object", "required": ["path"],
+      "properties": {"path": {"type": "string", "default": "."}, "flags": {"type":
+      "string", "default": "-la"}}}}}, {"type": "function", "function": {"name": "grep_search",
+      "description": "Search for a pattern in files recursively.", "parameters": {"type":
+      "object", "required": ["pattern"], "properties": {"pattern": {"type": "string",
+      "description": "The regex pattern to search for."}, "path": {"type": "string",
+      "description": "The directory path to search in.", "default": "."}}}}}, {"type":
+      "function", "function": {"name": "save_memory", "description": "Save an important
+      fact about the user or their preferences to long-term memory. Use when the user
+      explicitly asks to remember something or shares a persistent preference.", "parameters":
+      {"type": "object", "properties": {"memory": {"type": "string", "description":
+      "The fact, preference, or context to remember"}, "tags": {"type": "array", "items":
+      {"type": "string"}, "description": "Optional tags for categorization (e.g. [''preference'',
+      ''personal''])"}}, "required": ["memory"]}}}, {"type": "function", "function":
+      {"name": "transcribe_image_url", "description": "Describe or transcribe an image
+      from a public HTTPS URL. Supports formats like PNG, JPEG, WEBP, GIF.", "parameters":
+      {"type": "object", "properties": {"url": {"type": "string", "description": "The
+      public HTTPS URL of the image file."}, "prompt": {"type": "string", "description":
+      "Optional specific question or prompt about the image."}}, "required": ["url"]}}},
+      {"type": "function", "function": {"name": "transcribe_audio_url", "description":
+      "Transcribe an audio file from a public HTTPS URL to text. Supports common formats
+      like MP3, M4A, WAV, WebM, OGG.", "parameters": {"type": "object", "properties":
+      {"url": {"type": "string", "description": "The public HTTPS URL of the audio
+      file."}, "prompt": {"type": "string", "description": "Optional initial prompt
+      to guide transcription (e.g. spelling of names)."}, "language": {"type": "string",
+      "description": "Optional ISO 639-1 language code (e.g. ''en'', ''fr'')."}},
+      "required": ["url"]}}}], "tool_choice": "auto"}'
+    headers:
+      Accept:
+      - '*/*'
+      Accept-Encoding:
+      - gzip, deflate
+      Connection:
+      - keep-alive
+      Content-Length:
+      - '18887'
+      Content-Type:
+      - application/json
+      User-Agent:
+      - asky/1.0.0
+    method: POST
+    uri: https://openrouter.ai/api/v1/chat/completions
+  response:
+    body:
+      string: "\n         \n{\"id\":\"gen-1772750600-gGMrBM18zz8UvHbI5bzE\",\"object\":\"chat.completion\",\"created\":1772750600,\"model\":\"google/gemini-2.0-flash-lite-001\",\"provider\":\"Google
+        AI Studio\",\"choices\":[{\"index\":0,\"logprobs\":null,\"finish_reason\":\"stop\",\"native_finish_reason\":\"STOP\",\"message\":{\"role\":\"assistant\",\"content\":\"#
+        OAuth 2.0 Authorization Grant Types\\n\\nThe four authorization grant types
+        defined in the OAuth 2.0 specification are: authorization code, implicit,
+        resource owner password credentials, and client credentials. [corpus://cache/2]\\n\",\"refusal\":null,\"reasoning\":null}}],\"usage\":{\"prompt_tokens\":3179,\"completion_tokens\":48,\"total_tokens\":3227,\"cost\":0.00025029675,\"is_byok\":false,\"prompt_tokens_details\":{\"cached_tokens\":0,\"cache_write_tokens\":0,\"audio_tokens\":0,\"video_tokens\":0},\"cost_details\":{\"upstream_inference_cost\":0.000252825,\"upstream_inference_prompt_cost\":0.000238425,\"upstream_inference_completions_cost\":0.0000144},\"completion_tokens_details\":{\"reasoning_tokens\":0,\"image_tokens\":0,\"audio_tokens\":0}}}"
+    headers:
+      Access-Control-Allow-Origin:
+      - '*'
+      CF-RAY:
+      - 9d7ca39558780b48-AMS
+      Connection:
+      - keep-alive
+      Content-Encoding:
+      - gzip
+      Content-Type:
+      - application/json
+      Date:
+      - Thu, 05 Mar 2026 22:43:21 GMT
+      Permissions-Policy:
+      - payment=(self "https://checkout.stripe.com" "https://connect-js.stripe.com"
+        "https://js.stripe.com" "https://*.js.stripe.com" "https://hooks.stripe.com")
+      Referrer-Policy:
+      - no-referrer, strict-origin-when-cross-origin
+      Server:
+      - cloudflare
+      Transfer-Encoding:
+      - chunked
+      X-Content-Type-Options:
+      - nosniff
+    status:
+      code: 200
+      message: OK
+version: 1

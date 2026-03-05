@@ -1,7 +1,7 @@
 import pytest
 
 from tests.integration.cli_recorded.helpers import (
-    assert_output_contains_sentences,
+    get_session_profile_by_name,
     normalize_cli_output,
     run_cli_inprocess,
 )
@@ -9,36 +9,120 @@ from tests.integration.cli_recorded.helpers import (
 pytestmark = [pytest.mark.recorded_cli, pytest.mark.vcr]
 
 
-def test_research_local_corpus_initial(local_research_corpus):
-    """`-r <local_fixture>` research answer includes expected evidence phrases."""
-    run_cli_inprocess(["-ss", "research_sess"])
-    result = run_cli_inprocess(["-r", str(local_research_corpus), "-L", "Just reply exactly with 'software engineering'."])
+def test_research_session_profile_persisted_with_local_corpus(local_research_corpus):
+    """Research run should persist session-level research profile and corpus pointers."""
+    session_name = "research_profile_persist"
+    run_cli_inprocess(["-ss", session_name])
+
+    result = run_cli_inprocess(
+        [
+            "-r",
+            str(local_research_corpus),
+            "Summarize the Alpha Objective section in one sentence.",
+        ]
+    )
     assert result.exit_code == 0
-    assert_output_contains_sentences(result.stdout, ["software engineering"])
+
+    profile = get_session_profile_by_name(session_name)
+    assert profile is not None
+    assert profile["research_mode"] is True
+    assert profile["research_source_mode"] == "local_only"
+    assert str(local_research_corpus) in profile["research_local_corpus_paths"]
 
 
-def test_research_session_follow_up(local_research_corpus):
-    """Follow-up in same research session retains research profile."""
-    run_cli_inprocess(["-ss", "research_sess_follow"])
-    run_cli_inprocess(["-r", str(local_research_corpus), "-L", "Just reply exactly with 'software engineering'."])
+def test_research_follow_up_keeps_session_profile(local_research_corpus):
+    """Follow-up without -r should still keep persisted local-only research profile."""
+    session_name = "research_profile_follow_up"
+    run_cli_inprocess(["-ss", session_name])
+    warmup = run_cli_inprocess(
+        [
+            "-r",
+            str(local_research_corpus),
+            "Answer with one word: initialized.",
+        ]
+    )
+    assert warmup.exit_code == 0
 
-    result = run_cli_inprocess(["-rs", "research_sess_follow", "-L", "Just reply exactly with 'interactive'."])
-    assert result.exit_code == 0
-    assert_output_contains_sentences(result.stdout, ["interactive"])
+    follow_up = run_cli_inprocess(
+        [
+            "-rs",
+            session_name,
+            "--",
+            "Now answer about the Beta risk in one short sentence.",
+        ]
+    )
+    assert follow_up.exit_code == 0
+
+    profile = get_session_profile_by_name(session_name)
+    assert profile is not None
+    assert profile["research_mode"] is True
+    assert profile["research_source_mode"] == "local_only"
+    assert str(local_research_corpus) in profile["research_local_corpus_paths"]
 
 
-def test_deterministic_corpus_query_without_cache(local_research_corpus):
-    """Deterministic corpus query command behavior."""
-    run_cli_inprocess(["-r", str(local_research_corpus), "-L", "Warm up corpus cache."])
-    result = run_cli_inprocess(["corpus", "query", "testing"])
+def test_deterministic_corpus_query_outputs_expected_structure(local_research_corpus):
+    """Manual corpus query should return deterministic command output shape."""
+    warmup = run_cli_inprocess(
+        [
+            "-r",
+            str(local_research_corpus),
+            "Warm up corpus cache.",
+        ]
+    )
+    assert warmup.exit_code == 0
+
+    result = run_cli_inprocess(["corpus", "query", "vendor lock-in"])
     normalized = normalize_cli_output(result.stdout).lower()
+    assert result.exit_code == 0
     assert "manual corpus query results" in normalized
     assert "sources queried:" in normalized
+    assert "corpus://cache/" in normalized
 
 
-def test_section_summarize_flow_without_cache(local_research_corpus):
-    """Section summarize flow behavior with section query/id."""
-    run_cli_inprocess(["-r", str(local_research_corpus), "-L", "Warm up corpus cache."])
-    result = run_cli_inprocess(["corpus", "summarize", "testing"])
+def test_section_summarize_reports_metadata_with_explicit_source(local_research_corpus):
+    """Explicit section source/query should return deterministic summary metadata lines."""
+    alpha_path = local_research_corpus / "alpha_overview.md"
+    warmup = run_cli_inprocess(
+        [
+            "-r",
+            str(alpha_path),
+            "Warm up corpus cache.",
+        ]
+    )
+    assert warmup.exit_code == 0
+
+    result = run_cli_inprocess(
+        [
+            "--summarize-section",
+            "--section-source",
+            "alpha_overview.md",
+        ]
+    )
     normalized = normalize_cli_output(result.stdout).lower()
-    assert "error: multiple local corpus sources found" in normalized
+    assert result.exit_code == 0
+    assert "section source:" in normalized
+    assert "sections returned:" in normalized
+    assert "all detected headings:" in normalized
+
+
+def test_section_summarize_errors_for_unknown_source_selector(local_research_corpus):
+    """Summarize command should fail clearly for an unknown section source selector."""
+    alpha_path = local_research_corpus / "alpha_overview.md"
+    warmup = run_cli_inprocess(
+        [
+            "-r",
+            str(alpha_path),
+            "Warm up corpus cache.",
+        ]
+    )
+    assert warmup.exit_code == 0
+
+    result = run_cli_inprocess(
+        [
+            "--summarize-section",
+            "--section-source",
+            "does-not-exist",
+        ]
+    )
+    normalized = normalize_cli_output(result.stdout).lower()
+    assert "error: no local source matched --section-source 'does-not-exist'" in normalized

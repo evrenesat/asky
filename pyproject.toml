@@ -87,14 +87,16 @@ dev = [
 ]
 
 [tool.pytest.ini_options]
-addopts = "-n auto --record-mode=none -m not\\ recorded_cli\\ and\\ not\\ subprocess_cli"
+addopts = "-n auto --record-mode=none -m not\\ recorded_cli\\ and\\ not\\ subprocess_cli\\ and\\ not\\ live_research"
 norecursedirs = [".hypothesis", "data", "dist", "temp", "plan", "evals/research_pipeline/matrices/temp"]
 filterwarnings = [
     "ignore:websockets.legacy is deprecated:DeprecationWarning",
 ]
 markers = [
     "recorded_cli: In-process recorded CLI tests",
+    "real_recorded_cli: Real-provider cassette-backed replay tests",
     "subprocess_cli: Subprocess integration tests",
+    "live_research: Slow live real-model research capability tests",
     "live_record: Cassette refresh workflows",
     "slow: Tests expected to exceed one second",
 ]

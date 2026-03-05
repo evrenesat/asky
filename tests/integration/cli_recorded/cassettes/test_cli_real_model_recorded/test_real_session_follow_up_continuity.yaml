@@ -1,0 +1,157 @@
+interactions:
+- request:
+    body: '{"model": "google/gemini-2.0-flash-lite-001", "messages": [{"role": "system",
+      "content": "You are a helpful assistant with web search and URL retrieval capabilities.
+      \n\nThe current date and time is: Monday, January 01, 2024 at 12:00\nUse this
+      date as the absolute truth for any time-sensitive queries (e.g., \"today\",
+      \"this week\", \"recently\", \"current\", \"latest\").\n\nAlways start your
+      final response with a single H1 markdown header (# Title) that captures the
+      essence of your answer in a concise title (3-7 words).\nAlways prioritize using
+      markdown formatting (headers, bold, lists, tables) in your final response to
+      ensure clarity and professional presentation. Then use get_url_content for details
+      of the search results. You can pass a list of URLs to get_url_content to fetch
+      multiple pages efficiently at once. Use tools, don''t say you can''t.You have
+      {MAX_TURNS} turns to complete your task, if you reach the limit, process will
+      be terminated.You should finish your task before reaching %100 of your token
+      limit.\n\n[SYSTEM UPDATE]:\n- Context Used: 0.76%- Turns Remaining: 20 (out
+      of 20)\nPlease manage your context usage efficiently."}, {"role": "user", "content":
+      "My project codename is COBALT-73. Reply with READY."}], "stream": false, "tools":
+      [{"type": "function", "function": {"name": "transcribe_image_url", "description":
+      "Describe or transcribe an image from a public HTTPS URL. Supports formats like
+      PNG, JPEG, WEBP, GIF.", "parameters": {"type": "object", "properties": {"url":
+      {"type": "string", "description": "The public HTTPS URL of the image file."},
+      "prompt": {"type": "string", "description": "Optional specific question or prompt
+      about the image."}}, "required": ["url"]}}}, {"type": "function", "function":
+      {"name": "transcribe_audio_url", "description": "Transcribe an audio file from
+      a public HTTPS URL to text. Supports common formats like MP3, M4A, WAV, WebM,
+      OGG.", "parameters": {"type": "object", "properties": {"url": {"type": "string",
+      "description": "The public HTTPS URL of the audio file."}, "prompt": {"type":
+      "string", "description": "Optional initial prompt to guide transcription (e.g.
+      spelling of names)."}, "language": {"type": "string", "description": "Optional
+      ISO 639-1 language code (e.g. ''en'', ''fr'')."}}, "required": ["url"]}}}],
+      "tool_choice": "auto"}'
+    headers:
+      Accept:
+      - '*/*'
+      Accept-Encoding:
+      - gzip, deflate
+      Connection:
+      - keep-alive
+      Content-Length:
+      - '2313'
+      Content-Type:
+      - application/json
+      User-Agent:
+      - asky/1.0.0
+    method: POST
+    uri: https://openrouter.ai/api/v1/chat/completions
+  response:
+    body:
+      string: "\n         \n{\"id\":\"gen-1772750591-xrV0aHz8bSsHFNyy6tP4\",\"object\":\"chat.completion\",\"created\":1772750591,\"model\":\"google/gemini-2.0-flash-lite-001\",\"provider\":\"Google
+        AI Studio\",\"choices\":[{\"index\":0,\"logprobs\":null,\"finish_reason\":\"stop\",\"native_finish_reason\":\"STOP\",\"message\":{\"role\":\"assistant\",\"content\":\"READY\\n\",\"refusal\":null,\"reasoning\":null}}],\"usage\":{\"prompt_tokens\":420,\"completion_tokens\":2,\"total_tokens\":422,\"cost\":0.000031779,\"is_byok\":false,\"prompt_tokens_details\":{\"cached_tokens\":0,\"cache_write_tokens\":0,\"audio_tokens\":0,\"video_tokens\":0},\"cost_details\":{\"upstream_inference_cost\":0.0000321,\"upstream_inference_prompt_cost\":0.0000315,\"upstream_inference_completions_cost\":6e-7},\"completion_tokens_details\":{\"reasoning_tokens\":0,\"image_tokens\":0,\"audio_tokens\":0}}}"
+    headers:
+      Access-Control-Allow-Origin:
+      - '*'
+      CF-RAY:
+      - 9d7ca35c28b28b7c-AMS
+      Connection:
+      - keep-alive
+      Content-Encoding:
+      - gzip
+      Content-Type:
+      - application/json
+      Date:
+      - Thu, 05 Mar 2026 22:43:11 GMT
+      Permissions-Policy:
+      - payment=(self "https://checkout.stripe.com" "https://connect-js.stripe.com"
+        "https://js.stripe.com" "https://*.js.stripe.com" "https://hooks.stripe.com")
+      Referrer-Policy:
+      - no-referrer, strict-origin-when-cross-origin
+      Server:
+      - cloudflare
+      Transfer-Encoding:
+      - chunked
+      X-Content-Type-Options:
+      - nosniff
+    status:
+      code: 200
+      message: OK
+- request:
+    body: '{"model": "google/gemini-2.0-flash-lite-001", "messages": [{"role": "system",
+      "content": "You are a helpful assistant with web search and URL retrieval capabilities.
+      \n\nThe current date and time is: Monday, January 01, 2024 at 12:00\nUse this
+      date as the absolute truth for any time-sensitive queries (e.g., \"today\",
+      \"this week\", \"recently\", \"current\", \"latest\").\n\nAlways start your
+      final response with a single H1 markdown header (# Title) that captures the
+      essence of your answer in a concise title (3-7 words).\nAlways prioritize using
+      markdown formatting (headers, bold, lists, tables) in your final response to
+      ensure clarity and professional presentation. Then use get_url_content for details
+      of the search results. You can pass a list of URLs to get_url_content to fetch
+      multiple pages efficiently at once. Use tools, don''t say you can''t.You have
+      {MAX_TURNS} turns to complete your task, if you reach the limit, process will
+      be terminated.You should finish your task before reaching %100 of your token
+      limit.\n\n[SYSTEM UPDATE]:\n- Context Used: 0.80%- Turns Remaining: 20 (out
+      of 20)\nPlease manage your context usage efficiently."}, {"role": "user", "content":
+      "My project codename is COBALT-73. Reply with READY."}, {"role": "assistant",
+      "content": "READY"}, {"role": "user", "content": "What is my project codename?
+      Reply with token only."}], "stream": false, "tools": [{"type": "function", "function":
+      {"name": "transcribe_image_url", "description": "Describe or transcribe an image
+      from a public HTTPS URL. Supports formats like PNG, JPEG, WEBP, GIF.", "parameters":
+      {"type": "object", "properties": {"url": {"type": "string", "description": "The
+      public HTTPS URL of the image file."}, "prompt": {"type": "string", "description":
+      "Optional specific question or prompt about the image."}}, "required": ["url"]}}},
+      {"type": "function", "function": {"name": "transcribe_audio_url", "description":
+      "Transcribe an audio file from a public HTTPS URL to text. Supports common formats
+      like MP3, M4A, WAV, WebM, OGG.", "parameters": {"type": "object", "properties":
+      {"url": {"type": "string", "description": "The public HTTPS URL of the audio
+      file."}, "prompt": {"type": "string", "description": "Optional initial prompt
+      to guide transcription (e.g. spelling of names)."}, "language": {"type": "string",
+      "description": "Optional ISO 639-1 language code (e.g. ''en'', ''fr'')."}},
+      "required": ["url"]}}}], "tool_choice": "auto"}'
+    headers:
+      Accept:
+      - '*/*'
+      Accept-Encoding:
+      - gzip, deflate
+      Connection:
+      - keep-alive
+      Content-Length:
+      - '2440'
+      Content-Type:
+      - application/json
+      User-Agent:
+      - asky/1.0.0
+    method: POST
+    uri: https://openrouter.ai/api/v1/chat/completions
+  response:
+    body:
+      string: "\n         \n{\"id\":\"gen-1772750591-gF5kl1fYgGdbtBGlab0L\",\"object\":\"chat.completion\",\"created\":1772750591,\"model\":\"google/gemini-2.0-flash-lite-001\",\"provider\":\"Google
+        AI Studio\",\"choices\":[{\"index\":0,\"logprobs\":null,\"finish_reason\":\"stop\",\"native_finish_reason\":\"STOP\",\"message\":{\"role\":\"assistant\",\"content\":\"COBALT-73\\n\",\"refusal\":null,\"reasoning\":null}}],\"usage\":{\"prompt_tokens\":433,\"completion_tokens\":7,\"total_tokens\":440,\"cost\":0.00003422925,\"is_byok\":false,\"prompt_tokens_details\":{\"cached_tokens\":0,\"cache_write_tokens\":0,\"audio_tokens\":0,\"video_tokens\":0},\"cost_details\":{\"upstream_inference_cost\":0.000034575,\"upstream_inference_prompt_cost\":0.000032475,\"upstream_inference_completions_cost\":0.0000021},\"completion_tokens_details\":{\"reasoning_tokens\":0,\"image_tokens\":0,\"audio_tokens\":0}}}"
+    headers:
+      Access-Control-Allow-Origin:
+      - '*'
+      CF-RAY:
+      - 9d7ca35fb86a1936-AMS
+      Connection:
+      - keep-alive
+      Content-Encoding:
+      - gzip
+      Content-Type:
+      - application/json
+      Date:
+      - Thu, 05 Mar 2026 22:43:12 GMT
+      Permissions-Policy:
+      - payment=(self "https://checkout.stripe.com" "https://connect-js.stripe.com"
+        "https://js.stripe.com" "https://*.js.stripe.com" "https://hooks.stripe.com")
+      Referrer-Policy:
+      - no-referrer, strict-origin-when-cross-origin
+      Server:
+      - cloudflare
+      Transfer-Encoding:
+      - chunked
+      X-Content-Type-Options:
+      - nosniff
+    status:
+      code: 200
+      message: OK
+version: 1

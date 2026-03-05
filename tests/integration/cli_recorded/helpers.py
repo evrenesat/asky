@@ -1,10 +1,13 @@
 import importlib
+import json
 import os
 import re
+import sqlite3
 import sys
+import time
 from io import StringIO
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 from unittest.mock import patch
 
 
@@ -13,6 +16,20 @@ class CliRunResult:
         self.exit_code = exit_code
         self.stdout = stdout
         self.stderr = stderr
+
+
+TRANSIENT_PROVIDER_ERROR_PATTERNS = (
+    "an error occurred: 'choices'",
+    "internal server error",
+    "rate limit",
+    "service unavailable",
+    "temporarily unavailable",
+)
+
+
+def _normalized_search_text(text: str) -> str:
+    """Normalize CLI output for resilient substring assertions."""
+    return re.sub(r"\s+", " ", normalize_cli_output(text).lower()).strip()
 
 
 def _with_default_model(argv: list[str], model_alias: str) -> list[str]:
@@ -79,7 +96,7 @@ def run_cli_inprocess(
             cli_main_mod.main()
         except SystemExit as e:
             exit_code = e.code if isinstance(e.code, int) else (1 if e.code else 0)
-    
+
     return CliRunResult(exit_code, stdout_buf.getvalue(), stderr_buf.getvalue())
 
 
@@ -95,10 +112,95 @@ def normalize_cli_output(text: str) -> str:
     return text.strip()
 
 
+def run_cli_inprocess_with_retries(
+    argv: list[str],
+    env_overrides: Optional[dict[str, str]] = None,
+    max_attempts: int = 3,
+    retry_delay_seconds: float = 1.0,
+) -> CliRunResult:
+    """Retry in-process CLI calls when provider responses fail transiently."""
+    attempts = max(1, int(max_attempts))
+    for attempt in range(1, attempts + 1):
+        result = run_cli_inprocess(argv, env_overrides=env_overrides)
+        combined = normalize_cli_output(f"{result.stdout}\n{result.stderr}").lower()
+        if not any(pattern in combined for pattern in TRANSIENT_PROVIDER_ERROR_PATTERNS):
+            return result
+        if attempt < attempts:
+            time.sleep(retry_delay_seconds)
+    return result
+
+
 def assert_output_contains_sentences(text: str, sentences: list[str]) -> None:
     """Assert that the normalized text contains the expected sentences."""
-    normalized = normalize_cli_output(text).lower()
+    normalized = _normalized_search_text(text)
     for sentence in sentences:
         assert sentence.lower() in normalized, (
             f"Expected sentence '{sentence}' not found in output:\n{normalized}"
         )
+
+
+def assert_output_contains_fragments(text: str, fragments: list[str]) -> None:
+    """Assert that normalized output contains all required fragments."""
+    normalized = _normalized_search_text(text)
+    for fragment in fragments:
+        assert fragment.lower() in normalized, (
+            f"Expected fragment '{fragment}' not found in output:\n{normalized}"
+        )
+
+
+def assert_output_excludes_fragments(text: str, fragments: list[str]) -> None:
+    """Assert that normalized output excludes forbidden fragments."""
+    normalized = _normalized_search_text(text)
+    for fragment in fragments:
+        assert fragment.lower() not in normalized, (
+            f"Forbidden fragment '{fragment}' found in output:\n{normalized}"
+        )
+
+
+def assert_output_contains_any_fragment(text: str, fragments: list[str]) -> None:
+    """Assert that normalized output contains at least one fragment from a set."""
+    normalized = _normalized_search_text(text)
+    for fragment in fragments:
+        if fragment.lower() in normalized:
+            return
+    joined = ", ".join(fragments)
+    raise AssertionError(
+        f"Expected one of '{joined}' to appear in output:\n{normalized}"
+    )
+
+
+def get_session_profile_by_name(session_name: str) -> Optional[dict[str, Any]]:
+    """Fetch persisted session research profile from the isolated test DB."""
+    db_path = os.environ.get("ASKY_DB_PATH", "").strip()
+    if not db_path:
+        raise RuntimeError("ASKY_DB_PATH is not set in test environment.")
+
+    with sqlite3.connect(db_path) as conn:
+        conn.row_factory = sqlite3.Row
+        row = conn.execute(
+            (
+                "SELECT id, name, research_mode, research_source_mode, "
+                "research_local_corpus_paths "
+                "FROM sessions WHERE name = ? ORDER BY created_at DESC LIMIT 1"
+            ),
+            (session_name,),
+        ).fetchone()
+
+    if row is None:
+        return None
+
+    raw_paths = row["research_local_corpus_paths"] or "[]"
+    try:
+        parsed_paths = json.loads(raw_paths)
+    except json.JSONDecodeError:
+        parsed_paths = []
+    if not isinstance(parsed_paths, list):
+        parsed_paths = []
+
+    return {
+        "id": int(row["id"]),
+        "name": str(row["name"]),
+        "research_mode": bool(row["research_mode"]),
+        "research_source_mode": str(row["research_source_mode"] or ""),
+        "research_local_corpus_paths": [str(path) for path in parsed_paths],
+    }

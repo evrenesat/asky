@@ -61,13 +61,26 @@ The `tests/integration/cli_recorded/` suite uses `pytest-recording` (VCR.py) to 
 
 ### Custom Markers
 - `@pytest.mark.recorded_cli`: Applied to in-process recorded CLI tests.
+- `@pytest.mark.real_recorded_cli`: Applied to real-provider cassette-backed replay tests under `cli_recorded`.
 - `@pytest.mark.subprocess_cli`: Applied to subprocess integration tests (e.g. interactive sessions, PTY realism).
+- `@pytest.mark.live_research`: Applied to slow live research capability checks under `tests/integration/cli_live/`.
 - `@pytest.mark.live_record`: Applied to the cassette refresh workflows. 
 
 ### Refresh Policy
 - **By default**, tests run in `none` record mode (replay only). Tests will fail if a cassette is missing or live network access is attempted.
-- **To refresh cassettes**, you must explicitly opt-in: `ASKY_CLI_RECORD=1 uv run pytest tests/integration/cli_recorded -q -o addopts='-n0 --record-mode=once' -m recorded_cli`
-- The project default pytest addopts excludes `recorded_cli` and `subprocess_cli` markers from `uv run pytest -q`. Run this lane explicitly with:
-  - `uv run pytest tests/integration/cli_recorded -q -o addopts='-n0 --record-mode=none'`
+- **To refresh fake cassettes**, run: `./scripts/refresh_cli_cassettes.sh fake`
+- **To refresh real-provider cassettes**, run: `ASKY_CLI_REAL_PROVIDER=1 ./scripts/refresh_cli_cassettes.sh real` (requires `OPENROUTER_API_KEY`).
+- `real_recorded_cli` replay/record runs are intentionally gated by `ASKY_CLI_REAL_PROVIDER=1`.
+- Real-provider recorded and live research assertions must use model-backed `-r <source> <question>` turns. Keep deterministic `--query-corpus` / `corpus query` coverage in the fake recorded lane.
+- The project default pytest addopts excludes `recorded_cli`, `subprocess_cli`, and `live_research` markers from `uv run pytest -q`. Run lanes explicitly with:
+  - `uv run pytest tests/integration/cli_recorded -q -o addopts='-n0 --record-mode=none' -m "recorded_cli and not real_recorded_cli"`
+  - `ASKY_CLI_REAL_PROVIDER=1 uv run pytest tests/integration/cli_recorded -q -o addopts='-n0 --record-mode=none' -m real_recorded_cli`
+  - `uv run pytest tests/integration/cli_live -q -o addopts='-n0 -m live_research'`
 - Recorded in-process CLI tests target a local fake OpenAI-compatible endpoint for deterministic cassette generation and replay.
 - Never allow cassette auto-growth in default runs. Redact sensitive headers/auth tokens in the `vcr_config` fixture.
+
+### Enforcement
+- The research quality gate is **not automatic** unless invoked.
+- Use `scripts/run_research_quality_gate.sh` in local `pre-push` and CI required checks.
+- Treat `pyproject.toml` as research-gate scope because it controls marker registration and default lane exclusions.
+- Reference policy/integration examples: `docs/research_testing_strategy.md`.
