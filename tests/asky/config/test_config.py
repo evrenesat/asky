@@ -61,3 +61,16 @@ def test_invalid_config_exits(tmp_path):
         with pytest.raises(SystemExit) as excinfo:
             load_config()
         assert excinfo.value.code == 1
+
+
+def test_plain_query_interface_config():
+    from asky.config import (
+        INTERFACE_MODEL_PLAIN_QUERY_ENABLED,
+        INTERFACE_MODEL_PLAIN_QUERY_PROMPT_ENRICHMENT_ENABLED,
+        PLAIN_QUERY_INTERFACE_SYSTEM_PROMPT,
+    )
+
+    assert isinstance(INTERFACE_MODEL_PLAIN_QUERY_ENABLED, bool)
+    assert isinstance(INTERFACE_MODEL_PLAIN_QUERY_PROMPT_ENRICHMENT_ENABLED, bool)
+    assert isinstance(PLAIN_QUERY_INTERFACE_SYSTEM_PROMPT, str)
+    assert len(PLAIN_QUERY_INTERFACE_SYSTEM_PROMPT) > 0

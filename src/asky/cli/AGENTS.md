@@ -86,7 +86,7 @@ Main conversation entry point via `run_chat()`:
 2. **Mention Parsing**: Parse `@persona_name` syntax from query and load persona before model invocation.
 3. **CLI Adaptation**: Parse args into `AskyTurnRequest` + UI callbacks.
 4. **API Orchestration**: `AskyClient.run_turn()` performs context/session/preload/model/persist flow.
-5. **UI Rendering**: `chat.py` maps API notices/events into Rich output + banner updates.
+5. **UI Rendering**: `chat.py` maps API notices/events into Rich output + banner updates. Helper-driven notices (`New memory:`, `Updated memory:`, `Your prompt enriched:`) are rendered in bold green after the final answer.
 6. **Interface Side Effects**: optional browser/email/push/report handling (including dynamic sidebar index updates).
 
 Research mode is session-owned:

@@ -21,6 +21,8 @@ class AskyConfig:
     disabled_tools: Set[str] = field(default_factory=set)
     model_parameters_override: Dict[str, Any] = field(default_factory=dict)
     system_prompt_override: Optional[str] = None
+    plain_query_interface_enabled: Optional[bool] = None
+    plain_query_prompt_enrichment_enabled: Optional[bool] = None
 
 
 @dataclass
@@ -57,6 +59,7 @@ class AskyTurnRequest:
     research_source_mode: Optional[str] = None
     replace_research_corpus: bool = False
     shortlist_override: Optional[str] = None
+    disabled_tools: Optional[Set[str]] = None
     persona_mention: Optional[str] = (
         None  # Persona name extracted from @mention syntax during query preprocessing
     )
@@ -114,6 +117,16 @@ class PreloadResolution:
     preloaded_source_urls: List[str] = field(default_factory=list)
     preloaded_source_handles: Dict[str, str] = field(default_factory=dict)
     query_classification: Optional[QueryClassification] = None
+
+    # Plain-query interface helper metadata
+    interface_helper_applied: bool = False
+    interface_helper_source: str = ""
+    interface_helper_reason: str = ""
+    interface_helper_web_tools_mode: str = "full"  # full|search_only|off
+    interface_prompt_enrichment: Optional[str] = None
+    interface_memory_result: Optional[Dict[str, Any]] = None
+    interface_notices: List[str] = field(default_factory=list)
+    interface_diagnostics: Optional[Dict[str, Any]] = None
 
     @property
     def is_corpus_preloaded(self) -> bool:

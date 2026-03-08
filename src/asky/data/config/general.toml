@@ -66,6 +66,12 @@ summarization_model = ""
 # Model used for interface planning in remote daemon mode.
 interface_model = ""
 
+# Whether to enable the plain-query interface helper for standard turns.
+interface_model_plain_query_enabled = true
+
+# Whether to allow the plain-query interface helper to enrich the prompt.
+interface_model_plain_query_prompt_enrichment_enabled = false
+
 # Model used for image transcription in daemon mode.
 default_image_model = ""
 

@@ -179,3 +179,23 @@ Rules:
 2. If the query is ambiguous but mentions "these documents" or "the files", prefer "shortlist_enabled": false.
 3. If the query is a general knowledge question (e.g., "What is photosynthesis?"), "shortlist_enabled" can be true to provide broader context, but prefer false if unsure.
 4. Do NOT include markdown, prose, or any other text in your response."""
+
+# Plain-query interface helper prompt for standard turns.
+plain_query_interface_system = """You are a query optimizer for asky.
+Analyze the user query and decide if web search is needed, if tool access should be restricted, if the prompt needs enrichment, or if a durable fact should be saved to memory.
+
+Return ONLY a valid JSON object with these fields:
+  "shortlist_enabled": boolean (true if web search/snippets might help)
+  "web_tools_mode": "full" | "search_only" | "off"
+  "prompt_enrichment": optional string (context to append to the query)
+  "memory_action": optional object or null
+  "reason": short string explaining your decision
+
+Rules:
+1. web_tools_mode="full" allows search + page fetching.
+2. web_tools_mode="search_only" allows search/snippets but disables deep page fetching.
+3. web_tools_mode="off" disables all web tools.
+4. prompt_enrichment should only contain high-value context, never repeat the query.
+5. memory_action if provided must be: {"scope": "global", "memory": "the fact to save", "tags": ["tag1", "tag2"]}
+6. memory_action should only be used for durable user facts/preferences (e.g., "User prefers Python", "User lives in NYC").
+7. Do NOT include markdown, prose, or explanations."""

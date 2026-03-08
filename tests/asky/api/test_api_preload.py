@@ -179,7 +179,12 @@ def test_seed_url_context_allows_direct_answer_false_on_errors():
     assert ready is False
 
 
-def test_run_preload_pipeline_forwards_trace_callback_to_shortlist_executor():
+def test_run_preload_pipeline_forwards_trace_callback_to_shortlist_executor(monkeypatch):
+    import asky.api.preload as preload_mod
+
+    monkeypatch.setattr(preload_mod, "USER_MEMORY_ENABLED", False)
+    monkeypatch.setattr(preload_mod, "QUERY_EXPANSION_ENABLED", False)
+
     observed = {"trace_forwarded": False}
 
     def shortlist_executor(**kwargs: Any) -> Dict[str, Any]:

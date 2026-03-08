@@ -214,8 +214,21 @@ class AskyClient:
             from asky.core.tool_registry_factory import get_all_available_tool_names
 
             disabled = set(self.config.disabled_tools)
+            if request.disabled_tools is not None:
+                disabled.update(request.disabled_tools)
             disabled.update(get_all_available_tool_names())
             return disabled, False
+
+        # Apply interface helper web tools mode (Checkpoint 2)
+        helper_disabled = set()
+        if not research_mode:
+            mode = getattr(preload, "interface_helper_web_tools_mode", "full")
+            if mode == "search_only":
+                helper_disabled.update({"get_url_content", "get_url_details"})
+            elif mode == "off":
+                helper_disabled.update(
+                    {"web_search", "get_url_content", "get_url_details"}
+                )
 
         if self._should_use_seed_direct_answer_mode(
             request=request,
@@ -223,8 +236,18 @@ class AskyClient:
             research_mode=research_mode,
         ):
             disabled = set(self.config.disabled_tools)
+            if request.disabled_tools is not None:
+                disabled.update(request.disabled_tools)
             disabled.update(STANDARD_SEED_DIRECT_ANSWER_DISABLED_TOOLS)
+            disabled.update(helper_disabled)
             return disabled, True
+
+        if helper_disabled or (request.disabled_tools is not None):
+            disabled = set(self.config.disabled_tools)
+            if request.disabled_tools is not None:
+                disabled.update(request.disabled_tools)
+            disabled.update(helper_disabled)
+            return disabled, False
 
         return None, False
 
@@ -291,6 +314,14 @@ class AskyClient:
                 "shortlist_warnings": list(shortlist_payload.get("warnings", []) or []),
                 "seed_documents": seed_doc_summaries,
                 "shortlist_selected": shortlist_selected,
+                "interface_helper_applied": preload.interface_helper_applied,
+                "interface_helper_source": preload.interface_helper_source,
+                "interface_helper_reason": preload.interface_helper_reason,
+                "interface_helper_web_tools_mode": preload.interface_helper_web_tools_mode,
+                "interface_prompt_enrichment": preload.interface_prompt_enrichment,
+                "interface_notices": preload.interface_notices,
+                "interface_memory_result": preload.interface_memory_result,
+                "interface_diagnostics": preload.interface_diagnostics,
             }
         )
 
@@ -641,6 +672,84 @@ class AskyClient:
             else request.local_corpus_paths
         )
 
+        # Resolve static tool disablement early for helper/auto-extract gating
+        turn_scoped_disabled_tools = set(self.config.disabled_tools)
+        if request.disabled_tools is not None:
+            turn_scoped_disabled_tools.update(request.disabled_tools)
+
+        # --- Interface Helper Decision (Checkpoint 2) ---
+        from asky.config import (
+            INTERFACE_MODEL,
+            INTERFACE_MODEL_PLAIN_QUERY_ENABLED,
+            INTERFACE_MODEL_PLAIN_QUERY_PROMPT_ENRICHMENT_ENABLED,
+            PLAIN_QUERY_INTERFACE_SYSTEM_PROMPT,
+        )
+
+        helper_enabled = self.config.plain_query_interface_enabled
+        if helper_enabled is None:
+            helper_enabled = INTERFACE_MODEL_PLAIN_QUERY_ENABLED
+
+        interface_helper_decision = None
+        interface_memory_result = None
+        interface_notices = []
+        helper_notices = []
+        if (
+            not effective_research_mode
+            and not request.lean
+            and helper_enabled
+            and INTERFACE_MODEL
+        ):
+            from asky.api.interface_query_policy import InterfaceQueryPolicyEngine
+
+            engine = InterfaceQueryPolicyEngine(
+                model_alias=INTERFACE_MODEL,
+                system_prompt=PLAIN_QUERY_INTERFACE_SYSTEM_PROMPT,
+                double_verbose=self.config.double_verbose,
+            )
+            interface_helper_decision = engine.decide(request.query_text)
+
+        # Apply helper decision to shortlist enablement if available (before PreloadResolution init)
+        if interface_helper_decision and effective_shortlist_override is None:
+            if interface_helper_decision.shortlist_enabled:
+                effective_shortlist_override = "on"
+            else:
+                effective_shortlist_override = "off"
+
+        # --- Interface Helper Memory Action (Checkpoint 3) ---
+        if (
+            interface_helper_decision
+            and interface_helper_decision.memory_action
+            and "save_memory" not in turn_scoped_disabled_tools
+        ):
+            from asky.memory.tools import execute_save_memory
+
+            mem_text = str(
+                interface_helper_decision.memory_action.get("memory", "")
+            ).strip()
+            if mem_text:
+                if preload_status_callback:
+                    preload_status_callback(f"Memory update: {mem_text[:30]}...")
+
+                # Force global scope by explicitly setting session_id=None.
+                sanitized_mem_action = {
+                    "memory": mem_text,
+                    "tags": interface_helper_decision.memory_action.get("tags") or [],
+                    "session_id": None,
+                }
+                mem_res = execute_save_memory(sanitized_mem_action)
+                interface_memory_result = mem_res
+
+                status = mem_res.get("status")
+                mem_id = mem_res.get("memory_id")
+                if status == "saved":
+                    notice_msg = f"New memory: {mem_text}. MemID#{mem_id}"
+                    interface_notices.append(notice_msg)
+                    helper_notices.append(notice_msg)
+                elif status == "updated":
+                    notice_msg = f"Updated memory: {mem_text}. MemID#{mem_id}"
+                    interface_notices.append(notice_msg)
+                    helper_notices.append(notice_msg)
+
         if effective_research_mode:
             notices.insert(
                 0, "Research mode enabled - using link extraction and RAG tools"
@@ -662,7 +771,7 @@ class AskyClient:
                     ),
                     halted=True,
                     halt_reason=session_resolution.halt_reason,
-                    notices=notices,
+                    notices=notices + helper_notices,
                     context=context,
                     session=session_resolution,
                     preload=PreloadResolution(),
@@ -671,6 +780,23 @@ class AskyClient:
 
         capture_global_memory = False
         effective_query_text = request.query_text
+
+        # --- Prompt Enrichment (Checkpoint 2) ---
+        if interface_helper_decision:
+            enrichment_enabled = self.config.plain_query_prompt_enrichment_enabled
+            if enrichment_enabled is None:
+                enrichment_enabled = INTERFACE_MODEL_PLAIN_QUERY_PROMPT_ENRICHMENT_ENABLED
+
+            if enrichment_enabled and interface_helper_decision.prompt_enrichment:
+                enrichment = str(interface_helper_decision.prompt_enrichment).strip()
+                if enrichment:
+                    effective_query_text = (
+                        f"{effective_query_text}\n\n[Helper Context]\n{enrichment}"
+                    )
+                    enrich_notice = f"Your prompt enriched: {enrichment[:50]}..."
+                    helper_notices.append(enrich_notice)
+                    interface_notices.append(enrich_notice)
+
         if not request.lean:
             # Global Memory Trigger Detection
             cf_query = effective_query_text.casefold()
@@ -695,6 +821,9 @@ class AskyClient:
             for notice in notices:
                 initial_notice_callback(notice)
             notices.clear()
+
+        # Re-inject helper notices after callback phase so they reach final result
+        notices.extend(helper_notices)
 
         preload_query_text = effective_query_text
         preload_local_sources = bool(request.preload_local_sources)
@@ -765,6 +894,9 @@ class AskyClient:
             ),
             trace_callback=(verbose_output_callback if self.config.verbose else None),
             research_source_mode=effective_source_mode,
+            interface_helper_decision=interface_helper_decision,
+            interface_notices=interface_notices,
+            interface_memory_result=interface_memory_result,
         )
         effective_query_text = preload_query_text
 

@@ -127,6 +127,7 @@ sequenceDiagram
     participant U as User
     participant CLI as cli/chat.py
     participant API as api/client.py (AskyClient)
+    participant HELPER as api/interface_query_policy.py
     participant PRE as api/preload.py
     participant ENG as core/engine.py
     participant REG as core/registry.py
@@ -135,6 +136,9 @@ sequenceDiagram
 
     U->>CLI: ask query
     CLI->>API: run_turn(request)
+    API->>HELPER: decide(query) [standard turns only]
+    HELPER-->>API: InterfaceQueryPolicyDecision
+    API->>API: Apply helper policy (shortlist, tools, enrichment, memory save)
     API->>PRE: resolve preload (history/local/shortlist)
     PRE-->>API: PreloadResolution
     API->>ENG: run(messages, settings)

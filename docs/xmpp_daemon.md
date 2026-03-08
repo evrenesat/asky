@@ -187,6 +187,17 @@ Planner guidance/invariants:
 - for `action_type=query` and `action_type=chat`, `command_text` must be empty
 - if planner output is invalid JSON or invalid action, router falls back to query behavior
 
+### Standard-Query Adaptive Helper
+
+Once an XMPP message is routed as a query, it passes through the shared `AskyClient.run_turn()` pipeline. This means XMPP queries benefit from the same **plain-query interface helper** as the CLI:
+
+1. **Web Tool Control**: The helper can automatically set `web_tools_mode` (e.g., `search_only`) to keep remote answers responsive.
+2. **Shortlist Enablement**: Automatic web search (shortlist) resolution for ambiguous queries.
+3. **Prompt Enrichment**: Context-aware query expansion before the main model call.
+4. **Global Memory Saves**: Remote preferences can be captured to your global memory automatically.
+
+These helper-driven side effects are visible in the XMPP transcript if they trigger notices.
+
 ### Planner Fallback Behavior
 
 When the planner cannot resolve a valid action, the original message is routed as a plain query. This covers:

@@ -33,8 +33,9 @@ from asky.config import (
 )
 from asky.lazy_imports import call_attr
 from .preload_policy import PreloadPolicyEngine, SOURCE_DETERMINISTIC
-
+from .interface_query_policy import InterfaceQueryPolicyDecision
 from .types import PreloadResolution
+
 
 StatusCallback = Callable[[str], None]
 SEED_URL_CONTEXT_BUDGET_RATIO = 0.8
@@ -509,9 +510,26 @@ def run_preload_pipeline(
     expansion_executor: Callable[..., List[str]] = expand_query,
     trace_callback: Optional[Callable[[Dict[str, Any]], None]] = None,
     research_source_mode: Optional[str] = None,
+    interface_helper_decision: Optional[InterfaceQueryPolicyDecision] = None,
+    interface_notices: Optional[List[str]] = None,
+    interface_memory_result: Optional[Dict[str, Any]] = None,
 ) -> PreloadResolution:
     """Run local+shortlist preloads and return their combined context payload."""
     preload = PreloadResolution()
+
+    # --- Populate Interface Helper Metadata (Checkpoint 2 & 3) ---
+    if interface_helper_decision:
+        preload.interface_helper_applied = True
+        preload.interface_helper_source = interface_helper_decision.source
+        preload.interface_helper_reason = interface_helper_decision.reason
+        preload.interface_helper_web_tools_mode = interface_helper_decision.web_tools_mode
+        preload.interface_prompt_enrichment = interface_helper_decision.prompt_enrichment
+        preload.interface_diagnostics = interface_helper_decision.diagnostics
+
+    if interface_notices:
+        preload.interface_notices = list(interface_notices)
+    if interface_memory_result:
+        preload.interface_memory_result = interface_memory_result
 
     # Memory recall — runs in all modes except lean
     if USER_MEMORY_ENABLED and not lean:

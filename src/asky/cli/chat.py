@@ -956,6 +956,18 @@ def run_chat(
                         f"  {session['id']}: {session['name'] or '(no name)'} ({session['created_at']})"
                     )
                 continue
+
+            if any(
+                notice.startswith(prefix)
+                for prefix in [
+                    "New memory:",
+                    "Updated memory:",
+                    "Your prompt enriched:",
+                ]
+            ):
+                console.print(f"[bold green]{notice}[/]")
+                continue
+
             console.print(f"\n[{notice}]")
 
         if turn_result.halted:

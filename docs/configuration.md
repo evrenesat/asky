@@ -10,7 +10,9 @@ This file controls the primary behavior of the CLI and its core limits.
 
 - `default_model`: The model used if `-m` is not provided (e.g., `"step35"`).
 - `summarization_model`: The model used to compress conversation history (more on this below).
-- `interface_model`: Optional planner model alias used by XMPP daemon routing for non-prefixed remote messages.
+- `interface_model`: Optional planner model alias. **Must be explicitly configured** for the plain-query interface helper and XMPP daemon routing to activate.
+- `interface_model_plain_query_enabled`: Whether to enable the adaptive interface helper for standard turns (default `true`). Inert if `interface_model` is not set.
+- `interface_model_plain_query_prompt_enrichment_enabled`: Whether to allow the helper to enrich your prompt with extra context (default `false`). When active, a notice is shown in the CLI after the answer.
 - `max_turns`: The maximum number of tool-call iterations the model can take before it is forced to yield a final answer (default `30`).
 - `log_level`: Set to `"DEBUG"`, `"INFO"`, etc. (Logs go to `~/.config/asky/asky.log` by default).
 

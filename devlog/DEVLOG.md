@@ -2,6 +2,23 @@
 
 For full detailed entries, see [DEVLOG_ARCHIVE.md](DEVLOG_ARCHIVE.md).
 
+## 2026-03-09: Added Plain-Query Interface Helper
+
+- **Summary**: Added a plain-query interface helper for standard turns and closed the follow-up gaps around activation, tool constraints, global-memory safety, and CLI notice delivery.
+- **Changes**:
+  - Introduced `InterfaceQueryPolicyEngine` and `InterfaceQueryPolicyDecision` for standard non-research turns.
+  - Added `interface_model_plain_query_enabled` and `interface_model_plain_query_prompt_enrichment_enabled`, plus matching `AskyConfig` overrides and `PreloadResolution` helper metadata.
+  - Wired the helper into standard-turn execution so it can shape shortlist behavior, gate `web_search`/`get_url_content`/`get_url_details`, and append prompt enrichment without replacing the original query.
+  - Added helper-driven automatic global-memory capture before preload recall, with strict global-only validation and sanitization before `execute_save_memory()`.
+  - Restored explicit activation semantics so an empty `interface_model` disables the helper instead of falling back to the default model.
+  - Enforced hard constraints for `lean` turns and turn-scoped disabled tools so helper side effects do not bypass caller intent.
+  - Fixed helper notice routing so prompt-enrichment and memory notices survive the early callback path and render in bold green after the final answer in the CLI.
+  - Added API and CLI regression coverage for helper gating, memory payload validation, and the callback-to-post-answer notice lifecycle.
+  - Updated architecture/configuration/memory docs and helper-related AGENTS guidance to match the shipped behavior.
+- **Verification**:
+  - Scoped helper tests were added and passed across API, config, memory, and CLI coverage.
+  - Full suite remained green during feature integration and follow-up fixes.
+
 ## 2026-03-08: Added Tavily Search Provider Integration
 
 - **Summary**: Integrated Tavily as a first-class search provider.

@@ -42,6 +42,15 @@ asky "For this project, we use Python 3.12 with strict typing."
 
 In verbose mode (`-v`), you will see the tool call if it happens.
 
+### 2a. Adaptive Helper (Automatic Global Save)
+
+When `interface_model` is configured and `interface_model_plain_query_enabled` is true, a lightweight interface helper runs **before** the main model for standard turns. If it identifies a high-confidence durable global fact (e.g., "User prefers Python", "User lives in Berlin"), it saves it to **global memory** automatically before starting the preload pipeline. These saves are always global, regardless of the current session.
+
+In the CLI, these appear as bold green notices **after the final answer**:
+`New memory: I prefer Python. MemID#42`
+
+Unlike Elephant Mode, these saves happen **pre-LLM** and only for clear global preferences resolved by the planner.
+
 ### 3. Elephant mode - background extraction after each turn
 
 `-em` (`--elephant-mode`) activates background extraction. After each turn, a background thread reviews the conversation and pulls out facts to save to the current session's memory.

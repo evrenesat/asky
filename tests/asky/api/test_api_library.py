@@ -466,6 +466,55 @@ def test_asky_client_run_turn_propagates_local_corpus_paths(
     mock_run.assert_called_once()
 
 
+@patch("asky.api.client.run_preload_pipeline", return_value=PreloadResolution())
+@patch(
+    "asky.api.client.resolve_session_for_turn", return_value=(None, SessionResolution())
+)
+@patch("asky.api.client.AskyClient.run_messages", return_value="Answer")
+@patch("asky.api.client.save_interaction")
+@patch("asky.api.interface_query_policy.InterfaceQueryPolicyEngine")
+def test_asky_client_run_turn_preserves_helper_notices_after_callback(
+    mock_engine_cls, mock_save, mock_run, mock_resolve_session, mock_preload
+):
+    # Ensure INTERFACE_MODEL is not empty for the test
+    with patch("asky.config.INTERFACE_MODEL", "gpt4"):
+        # Setup mock engine to return a decision with enrichment and memory action
+        mock_engine = mock_engine_cls.return_value
+        mock_engine.decide.return_value = MagicMock(
+            prompt_enrichment="Extra context",
+            memory_action={"memory": "new info", "tags": []},
+            shortlist_enabled=False,
+        )
+
+        # Setup mock for execute_save_memory
+        with patch("asky.memory.tools.execute_save_memory") as mock_save_mem:
+            mock_save_mem.return_value = {"status": "saved", "memory_id": "mem_123"}
+
+            client = AskyClient(
+                AskyConfig(
+                    model_alias="gf",
+                    plain_query_prompt_enrichment_enabled=True,
+                )
+            )
+
+            captured_early_notices = []
+
+            def initial_notice_cb(notice):
+                captured_early_notices.append(notice)
+
+            request = AskyTurnRequest(query_text="Tell me about python")
+            result = client.run_turn(request, initial_notice_callback=initial_notice_cb)
+
+            # Helper notices should NOT be in early notices
+            assert not any("Your prompt enriched" in n for n in captured_early_notices)
+            assert not any("New memory" in n for n in captured_early_notices)
+
+            # Helper notices SHOULD be in the final result
+            assert any("Your prompt enriched: Extra context" in n for n in result.notices)
+            assert any("New memory: new info. MemID#mem_123" in n for n in result.notices)
+
+
+
 @patch("asky.api.client.save_interaction")
 @patch.object(AskyClient, "run_messages", return_value="Final")
 @patch(

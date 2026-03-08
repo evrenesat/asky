@@ -53,6 +53,8 @@ Persist model changes using `tomlkit` to preserve formatting.
 | `REQUEST_TIMEOUT`       | `general.request_timeout`     |
 | `DB_PATH`               | `general.db_path` or env var  |
 | `LOG_LEVEL`, `LOG_FILE` | Logging config                |
+| `INTERFACE_MODEL_PLAIN_QUERY_ENABLED` | `general.interface_model_plain_query_enabled` |
+| `INTERFACE_MODEL_PLAIN_QUERY_PROMPT_ENRICHMENT_ENABLED` | `general.interface_model_plain_query_prompt_enrichment_enabled` |
 | `TAVILY_API_URL`        | `general.tavily_api_url`      |
 | `TAVILY_API_KEY_ENV`    | `general.tavily_api_key_env`  |
 
@@ -76,6 +78,7 @@ daemon multimodal routing eligibility checks.
 | `SEARCH_SUFFIX`                   | `prompts.search_suffix`            |
 | `RESEARCH_SYSTEM_PROMPT`          | `prompts.research_system`          |
 | `INTERFACE_PLANNER_SYSTEM_PROMPT` | `prompts.interface_planner_system` |
+| `PLAIN_QUERY_INTERFACE_SYSTEM_PROMPT` | `prompts.plain_query_interface_system` |
 
 ### Research Settings
 

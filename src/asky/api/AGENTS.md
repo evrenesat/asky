@@ -11,6 +11,7 @@ Programmatic library surface for full asky orchestration without CLI coupling.
 | `context.py` | History selector parsing and context loading |
 | `session.py` | Session lifecycle resolution (create/resume/auto/research) |
 | `preload.py` | Local-ingestion + shortlist preload pipeline |
+| `interface_query_policy.py` | Adaptive policy for standard plain-query turns |
 | `exceptions.py` | Public error exports |
 
 ## Primary Entry Point
@@ -19,8 +20,12 @@ Use `AskyClient.run_turn(request)` for CLI-equivalent orchestration:
 
 1. Resolve history context (`context.py`)
 2. Resolve session state (`session.py`)
-3. Run pre-LLM preload pipeline (`preload.py`)
-4. Emit plugin hooks (`SESSION_RESOLVED`, `PRE_PRELOAD`, `POST_PRELOAD`) when plugin runtime is attached
+3. Run pre-preload interface helper (`interface_query_policy.py`) for standard turns
+   - applies to turns where `research_mode=False`
+   - can shape shortlist, tool availability, and prompt enrichment
+   - can perform automatic global memory saves pre-LLM
+4. Run pre-LLM preload pipeline (`preload.py`)
+5. Emit plugin hooks (`SESSION_RESOLVED`, `PRE_PRELOAD`, `POST_PRELOAD`) when plugin runtime is attached
 5. Build messages (with local-target query redaction + optional local-KB system hint), apply `SYSTEM_PROMPT_EXTEND`, and execute `ConversationEngine`
 6. Emit `TURN_COMPLETED` plugin hook
 5. Generate summaries and persist session/history turns
@@ -50,6 +55,12 @@ Research mode is resolved per turn from effective session state:
   adaptive policy stage in `preload.py`/`preload_policy.py`:
   deterministic intent (`web` vs `local`) runs first, and interface-model
   fallback is used only for ambiguous intent.
+- For standard (non-research) turns, a separate plain-query helper in
+  `interface_query_policy.py` can optimize behavior before preload:
+  - `web_tools_mode` (`full`, `search_only`, `off`) limits web tool access.
+  - `shortlist_enabled` fills gaps when no explicit override is present.
+  - `prompt_enrichment` appends context to the original user query.
+  - `memory_action` saves one global user preference or fact pre-LLM.
 - `research_source_mode=local_only` always disables shortlist, including when
   `shortlist_override=on` is requested.
 - Shortlist behavior by effective pipeline/profile:

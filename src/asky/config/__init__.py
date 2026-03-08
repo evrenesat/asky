@@ -46,9 +46,21 @@ TERMINAL_CONTEXT_LINES = _gen.get("terminal_context_lines", 10)
 ANSWER_SUMMARY_MAX_CHARS = _gen["answer_summary_max_chars"]
 SEARXNG_URL = _gen["searxng_url"]
 MAX_TURNS = _gen["max_turns"]
-DEFAULT_MODEL = _gen["default_model"]
-SUMMARIZATION_MODEL = _gen["summarization_model"]
-INTERFACE_MODEL = _gen.get("interface_model", DEFAULT_MODEL)
+DEFAULT_MODEL = _gen.get("default_model") or ""
+if not DEFAULT_MODEL and _CONFIG.get("models"):
+    DEFAULT_MODEL = list(_CONFIG["models"].keys())[0]
+
+SUMMARIZATION_MODEL = _gen.get("summarization_model") or DEFAULT_MODEL
+INTERFACE_MODEL = _gen.get("interface_model", "")
+if INTERFACE_MODEL is None:
+    INTERFACE_MODEL = DEFAULT_MODEL
+
+INTERFACE_MODEL_PLAIN_QUERY_ENABLED = _gen.get(
+    "interface_model_plain_query_enabled", True
+)
+INTERFACE_MODEL_PLAIN_QUERY_PROMPT_ENRICHMENT_ENABLED = _gen.get(
+    "interface_model_plain_query_prompt_enrichment_enabled", False
+)
 DEFAULT_IMAGE_MODEL = _gen.get("default_image_model", DEFAULT_MODEL)
 SEARCH_PROVIDER = _gen.get("search_provider", "searxng")
 SERPER_API_URL = _gen.get("serper_api_url", "https://google.serper.dev/search")
@@ -158,6 +170,18 @@ INTERFACE_PRELOAD_POLICY_SYSTEM_PROMPT = _prompts.get(
         "Return ONLY valid JSON with fields:\n"
         '  "shortlist_enabled": boolean\n'
         '  "intent": "web" | "local" | "ambiguous"\n'
+        '  "reason": string\n'
+    ),
+)
+PLAIN_QUERY_INTERFACE_SYSTEM_PROMPT = _prompts.get(
+    "plain_query_interface_system",
+    (
+        "You are a query optimizer for asky.\n"
+        "Return ONLY valid JSON with fields:\n"
+        '  "shortlist_enabled": boolean\n'
+        '  "web_tools_mode": "full" | "search_only" | "off"\n'
+        '  "prompt_enrichment": string\n'
+        '  "memory_action": {"scope":"global", "memory":string, "tags":string[]} | null\n'
         '  "reason": string\n'
     ),
 )

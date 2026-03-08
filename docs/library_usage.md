@@ -320,6 +320,22 @@ resume_result = client.run_turn(
 print(resume_result.session_id)
 ```
 
+## Preload and Helper Metadata
+
+The `PreloadResolution` object returned by `run_turn()` contains detailed provenance for the interface helper:
+
+```python
+result = client.run_turn(AskyTurnRequest(query_text="how's the weather?"))
+preload = result.preload
+
+# Helper decisions (Checkpoint 2 & 3)
+print(preload.interface_helper_applied)      # True
+print(preload.interface_helper_reason)       # "requires_current_data"
+print(preload.interface_helper_web_tools_mode) # "search_only"
+print(preload.interface_notices)             # ["Your prompt enriched: ..."]
+print(preload.interface_memory_result)       # {"status": "saved", "memory_id": 42}
+```
+
 ## Notes
 
 - `model_alias` must match configured models in your asky configuration.
