@@ -2,6 +2,16 @@
 
 For full detailed entries, see [DEVLOG_ARCHIVE.md](DEVLOG_ARCHIVE.md).
 
+## 2026-03-08: Added Tavily Search Provider Integration
+
+- **Summary**: Integrated Tavily as a first-class search provider.
+- **Changes**:
+  - Added `TAVILY_API_URL` and `TAVILY_API_KEY_ENV` config defaults.
+  - Implemented `_execute_tavily_search` using `requests` with standard mapping.
+  - Updated `execute_web_search` to support `SEARCH_PROVIDER="tavily"`.
+  - Added unit tests for Tavily search execution and dispatch logic.
+- **Verification**: All 1342 tests pass.
+
 ## 2026-03-05: Corrected Research Lane Coverage and Gate Scope
 
 - **Summary**: Corrected the new research testing strategy so real-provider replay and live research checks now use actual model-backed `-r` turns, and widened the quality gate scope to include pytest policy changes in `pyproject.toml`.

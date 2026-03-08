@@ -228,6 +228,43 @@ def test_execute_web_search_dispatch_serper(mock_serper):
     mock_serper.assert_called_once()
 
 
+@patch("asky.tools.SEARCH_PROVIDER", "tavily")
+@patch("os.environ.get")
+@patch("requests.post")
+def test_execute_tavily_search_success(mock_post, mock_env_get):
+    mock_env_get.return_value = "fake-tavily-key"
+    mock_response = MagicMock()
+    mock_response.json.return_value = {
+        "results": [
+            {
+                "title": "Tavily Result",
+                "url": "http://tavily.com",
+                "content": "Tavily content",
+            }
+        ]
+    }
+    mock_response.status_code = 200
+    mock_response.headers = {"Content-Type": "application/json"}
+    mock_post.return_value = mock_response
+
+    from asky.tools import _execute_tavily_search
+
+    result = _execute_tavily_search("query", count=1)
+
+    assert "results" in result
+    assert result["results"][0]["title"] == "Tavily Result"
+    assert result["results"][0]["engine"] == "tavily"
+
+
+@patch("asky.tools.SEARCH_PROVIDER", "tavily")
+@patch("asky.tools._execute_tavily_search")
+def test_execute_web_search_dispatch_tavily(mock_tavily):
+    from asky.tools import execute_web_search
+
+    execute_web_search({"q": "test"})
+    mock_tavily.assert_called_once()
+
+
 @patch("asky.tools.SEARCH_PROVIDER", "searxng")
 @patch("asky.tools._execute_searxng_search")
 def test_execute_web_search_dispatch_searxng(mock_searxng):
@@ -410,7 +447,9 @@ def test_research_registry_injects_corpus_url_fallback_for_retrieval_tools():
         ],
         "extract_links": lambda _args: {},
         "get_link_summaries": lambda _args: {},
-        "get_relevant_content": lambda args: relevant_calls.append(args) or {"ok": True},
+        "get_relevant_content": lambda args: (
+            relevant_calls.append(args) or {"ok": True}
+        ),
         "get_full_content": lambda args: full_calls.append(args) or {"ok": True},
         "save_finding": lambda _args: {"ok": True},
         "query_research_memory": lambda _args: {"ok": True},
@@ -484,7 +523,9 @@ def test_research_registry_applies_config_tool_prompt_overrides():
 
     schemas = registry.get_schemas()
     save_schema = next(
-        item["function"] for item in schemas if item["function"]["name"] == "save_finding"
+        item["function"]
+        for item in schemas
+        if item["function"]["name"] == "save_finding"
     )
     assert save_schema["description"] == "Overridden save_finding description."
     assert registry.get_system_prompt_guidelines() == [
@@ -571,9 +612,18 @@ def test_research_registry_hides_section_tools_in_web_only_mode():
 
     bindings = {
         "schemas": [
-            {"name": "list_sections", "parameters": {"type": "object", "properties": {}}},
-            {"name": "summarize_section", "parameters": {"type": "object", "properties": {}}},
-            {"name": "query_research_memory", "parameters": {"type": "object", "properties": {}}},
+            {
+                "name": "list_sections",
+                "parameters": {"type": "object", "properties": {}},
+            },
+            {
+                "name": "summarize_section",
+                "parameters": {"type": "object", "properties": {}},
+            },
+            {
+                "name": "query_research_memory",
+                "parameters": {"type": "object", "properties": {}},
+            },
         ],
         "extract_links": lambda _args: {},
         "get_link_summaries": lambda _args: {},
@@ -602,8 +652,14 @@ def test_research_registry_hides_section_tools_when_source_mode_unknown():
 
     bindings = {
         "schemas": [
-            {"name": "list_sections", "parameters": {"type": "object", "properties": {}}},
-            {"name": "summarize_section", "parameters": {"type": "object", "properties": {}}},
+            {
+                "name": "list_sections",
+                "parameters": {"type": "object", "properties": {}},
+            },
+            {
+                "name": "summarize_section",
+                "parameters": {"type": "object", "properties": {}},
+            },
         ],
         "extract_links": lambda _args: {},
         "get_link_summaries": lambda _args: {},
@@ -632,7 +688,10 @@ def test_research_registry_keeps_section_tools_in_mixed_mode_and_injects_source_
 
     bindings = {
         "schemas": [
-            {"name": "list_sections", "parameters": {"type": "object", "properties": {}}},
+            {
+                "name": "list_sections",
+                "parameters": {"type": "object", "properties": {}},
+            },
         ],
         "extract_links": lambda _args: {},
         "get_link_summaries": lambda _args: {},

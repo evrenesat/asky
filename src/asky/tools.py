@@ -19,6 +19,8 @@ from asky.config import (
     MAX_URL_DETAIL_LINKS,
     SEARCH_SNIPPET_MAX_CHARS,
     SEARCH_TIMEOUT,
+    TAVILY_API_KEY_ENV,
+    TAVILY_API_URL,
 )
 from asky.html import strip_tags
 from asky.retrieval import fetch_url_document
@@ -241,6 +243,103 @@ def _execute_serper_search(
         return {"error": f"Serper search failed: {str(e)}"}
 
 
+def _execute_tavily_search(
+    q: str,
+    count: int,
+    trace_callback: Optional[TraceCallback] = None,
+) -> Dict[str, Any]:
+    """Execute a web search using Tavily API."""
+    api_key = os.environ.get(TAVILY_API_KEY_ENV)
+    if not api_key:
+        return {
+            "error": f"Tavily API key not found in environment variable {TAVILY_API_KEY_ENV}"
+        }
+
+    started = time.perf_counter()
+    _emit_trace_event(
+        trace_callback,
+        {
+            "kind": "transport_request",
+            "transport": "http",
+            "source": "tool",
+            "tool_name": "web_search",
+            "provider": "tavily",
+            "method": "POST",
+            "url": TAVILY_API_URL,
+        },
+    )
+    try:
+        headers = {
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+        }
+        payload = json.dumps(
+            {
+                "query": q,
+                "max_results": count,
+                "include_answer": False,
+            }
+        )
+        resp = requests.post(
+            TAVILY_API_URL,
+            headers=headers,
+            data=payload,
+            timeout=SEARCH_TIMEOUT,
+        )
+        _emit_trace_event(
+            trace_callback,
+            {
+                "kind": "transport_response",
+                "transport": "http",
+                "source": "tool",
+                "tool_name": "web_search",
+                "provider": "tavily",
+                "method": "POST",
+                "url": TAVILY_API_URL,
+                "status_code": resp.status_code,
+                "content_type": resp.headers.get("Content-Type", ""),
+                "response_type": _infer_response_type(
+                    resp.headers.get("Content-Type", "")
+                ),
+                "response_bytes": len(resp.content or b""),
+                "response_chars": len(resp.text or ""),
+                "elapsed_ms": (time.perf_counter() - started) * 1000,
+            },
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        results = []
+        for x in data.get("results", [])[:count]:
+            results.append(
+                {
+                    "title": strip_tags(x.get("title", "")),
+                    "url": x.get("url"),
+                    "snippet": strip_tags(x.get("content", ""))[
+                        :SEARCH_SNIPPET_MAX_CHARS
+                    ],
+                    "engine": "tavily",
+                }
+            )
+        return {"results": results}
+    except Exception as e:
+        _emit_trace_event(
+            trace_callback,
+            {
+                "kind": "transport_error",
+                "transport": "http",
+                "source": "tool",
+                "tool_name": "web_search",
+                "provider": "tavily",
+                "method": "POST",
+                "url": TAVILY_API_URL,
+                "error_type": "request_exception",
+                "error": str(e),
+                "elapsed_ms": (time.perf_counter() - started) * 1000,
+            },
+        )
+        return {"error": f"Tavily search failed: {str(e)}"}
+
+
 def execute_web_search(
     args: Dict[str, Any],
     trace_callback: Optional[TraceCallback] = None,
@@ -251,6 +350,8 @@ def execute_web_search(
 
     if SEARCH_PROVIDER == "serper":
         return _execute_serper_search(q, count, trace_callback=trace_callback)
+    elif SEARCH_PROVIDER == "tavily":
+        return _execute_tavily_search(q, count, trace_callback=trace_callback)
     else:
         return _execute_searxng_search(q, count, trace_callback=trace_callback)
 

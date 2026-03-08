@@ -13,18 +13,18 @@ Configuration loading and constant exports from TOML files.
 
 Located in `data/config/`:
 
-| File             | Contents                                              |
-| ---------------- | ----------------------------------------------------- |
-| `general.toml`   | Default model, timeouts, paths, UI settings           |
-| `api.toml`       | API endpoint definitions (URL, key env var)           |
-| `models.toml`    | Model definitions referencing APIs                    |
-| `prompts.toml`   | System prompts, summarization templates               |
-| `research.toml`  | Research mode settings, embeddings, shortlist         |
-| `user.toml`      | User-defined prompt shortcuts                         |
-| `xmpp.toml`      | Optional XMPP daemon transport settings               |
+| File                     | Contents                                      |
+| ------------------------ | --------------------------------------------- |
+| `general.toml`           | Default model, timeouts, paths, UI settings   |
+| `api.toml`               | API endpoint definitions (URL, key env var)   |
+| `models.toml`            | Model definitions referencing APIs            |
+| `prompts.toml`           | System prompts, summarization templates       |
+| `research.toml`          | Research mode settings, embeddings, shortlist |
+| `user.toml`              | User-defined prompt shortcuts                 |
+| `xmpp.toml`              | Optional XMPP daemon transport settings       |
 | `voice_transcriber.toml` | Voice transcription plugin settings           |
 | `image_transcriber.toml` | Image transcription plugin settings           |
-| `push_data.toml` | HTTP endpoint definitions for data push               |
+| `push_data.toml`         | HTTP endpoint definitions for data push       |
 
 ## Loading Flow (`loader.py`)
 
@@ -53,6 +53,8 @@ Persist model changes using `tomlkit` to preserve formatting.
 | `REQUEST_TIMEOUT`       | `general.request_timeout`     |
 | `DB_PATH`               | `general.db_path` or env var  |
 | `LOG_LEVEL`, `LOG_FILE` | Logging config                |
+| `TAVILY_API_URL`        | `general.tavily_api_url`      |
+| `TAVILY_API_KEY_ENV`    | `general.tavily_api_key_env`  |
 
 ### Model Configuration
 
@@ -77,23 +79,24 @@ daemon multimodal routing eligibility checks.
 
 ### Research Settings
 
-| Constant                                     | Description                                           |
-| -------------------------------------------- | ----------------------------------------------------- |
-| `RESEARCH_CACHE_TTL_HOURS`                   | Cache expiry                                          |
-| `RESEARCH_CHUNK_SIZE`                        | Token chunk size                                      |
-| `RESEARCH_EMBEDDING_MODEL`                   | Embedding model name                                  |
-| `RESEARCH_LOCAL_DOCUMENT_ROOTS`              | Allowed corpus roots for builtin local-source loading |
-| `RESEARCH_ALLOW_ABSOLUTE_PATHS_OUTSIDE_ROOTS` | Toggle to bypass absolute-path root containment checks|
-| `RESEARCH_ALLOWED_INGESTION_EXTENSIONS`      | Global allowlist of file extensions for local loading |
-| `RESEARCH_EVIDENCE_EXTRACTION_MAX_CHUNKS`    | Max chunks for bootstrap extraction                   |
-| `RESEARCH_EVIDENCE_SKIP_SHORTLIST_THRESHOLD` | Shortlist size threshold to skip extraction           |
-| `SOURCE_SHORTLIST_*`                         | Shortlist pipeline settings                           |
+| Constant                                      | Description                                            |
+| --------------------------------------------- | ------------------------------------------------------ |
+| `RESEARCH_CACHE_TTL_HOURS`                    | Cache expiry                                           |
+| `RESEARCH_CHUNK_SIZE`                         | Token chunk size                                       |
+| `RESEARCH_EMBEDDING_MODEL`                    | Embedding model name                                   |
+| `RESEARCH_LOCAL_DOCUMENT_ROOTS`               | Allowed corpus roots for builtin local-source loading  |
+| `RESEARCH_ALLOW_ABSOLUTE_PATHS_OUTSIDE_ROOTS` | Toggle to bypass absolute-path root containment checks |
+| `RESEARCH_ALLOWED_INGESTION_EXTENSIONS`       | Global allowlist of file extensions for local loading  |
+| `RESEARCH_EVIDENCE_EXTRACTION_MAX_CHUNKS`     | Max chunks for bootstrap extraction                    |
+| `RESEARCH_EVIDENCE_SKIP_SHORTLIST_THRESHOLD`  | Shortlist size threshold to skip extraction            |
+| `SOURCE_SHORTLIST_*`                          | Shortlist pipeline settings                            |
 
 Current bundled shortlist defaults in `research.toml` set a wider pre-LLM budget
 (`search_result_count=40`, `max_candidates=40`, `max_fetch_urls=20`) for richer
 candidate pools while keeping fetch cost bounded.
 
 Summarization chunk target behavior:
+
 - `summarizer.hierarchical_chunk_target_chars = 0` enables auto resolution.
 - Auto mode resolves the runtime target to `SUMMARIZATION_INPUT_LIMIT`.
 - Non-zero values are used as explicit chunk targets.
@@ -109,10 +112,10 @@ Summarization chunk target behavior:
 
 ### XMPP/Daemon Settings
 
-| Constant Group     | Description                                                                                                  |
-| ------------------ | ------------------------------------------------------------------------------------------------------------ |
-| `XMPP_*`           | Daemon transport/auth/allowlist/chunking/transcript caps                                                     |
-| `XMPP_INTERFACE_*` | Interface planner prompt-reference injection toggles in daemon mode                                          |
+| Constant Group     | Description                                                         |
+| ------------------ | ------------------------------------------------------------------- |
+| `XMPP_*`           | Daemon transport/auth/allowlist/chunking/transcript caps            |
+| `XMPP_INTERFACE_*` | Interface planner prompt-reference injection toggles in daemon mode |
 
 Note: Voice and image transcription settings have been moved to dedicated plugin configuration files (`voice_transcriber.toml`, `image_transcriber.toml`).
 
@@ -125,6 +128,7 @@ which updates `xmpp.toml` and startup-at-login registration per platform.
 | -------------------- | ---------------------- |
 | `ASKY_DB_PATH`       | Override database path |
 | `SERPER_API_KEY`     | Serper search API key  |
+| `TAVILY_API_KEY`     | Tavily search API key  |
 | `ASKY_SMTP_USER`     | SMTP username          |
 | `ASKY_SMTP_PASSWORD` | SMTP password          |
 

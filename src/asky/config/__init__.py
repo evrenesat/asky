@@ -53,6 +53,8 @@ DEFAULT_IMAGE_MODEL = _gen.get("default_image_model", DEFAULT_MODEL)
 SEARCH_PROVIDER = _gen.get("search_provider", "searxng")
 SERPER_API_URL = _gen.get("serper_api_url", "https://google.serper.dev/search")
 SERPER_API_KEY_ENV = _gen.get("serper_api_key_env", "SERPER_API_KEY")
+TAVILY_API_URL = _gen.get("tavily_api_url", "https://api.tavily.com/search")
+TAVILY_API_KEY_ENV = _gen.get("tavily_api_key_env", "TAVILY_API_KEY")
 USER_AGENT = _gen.get(
     "user_agent",
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36",
@@ -248,6 +250,7 @@ RESEARCH_ALLOW_ABSOLUTE_PATHS_OUTSIDE_ROOTS = _research.get(
     "allow_absolute_paths_outside_roots", False
 )
 
+
 def _normalize_extensions(exts: list[str]) -> list[str]:
     normalized = []
     for ext in exts:
@@ -258,6 +261,7 @@ def _normalize_extensions(exts: list[str]) -> list[str]:
             ext = "." + ext
         normalized.append(ext)
     return normalized
+
 
 RESEARCH_ALLOWED_INGESTION_EXTENSIONS = _normalize_extensions(
     _research.get("allowed_ingestion_extensions", [])

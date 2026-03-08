@@ -33,7 +33,7 @@ compact_banner = false
 # URL of your SearXNG instance.
 searxng_url = "http://localhost:8888"
 
-# Search provider to be used: "searxng" or "serper"
+# Search provider to be used: "searxng", "serper" or "tavily"
 search_provider = "searxng"
 
 # URL of the Serper API.
@@ -41,6 +41,12 @@ serper_api_url = "https://google.serper.dev/search"
 
 # Name of the environment variable that stores the Serper API key.
 serper_api_key_env = "SERPER_API_KEY"
+
+# URL of the Tavily API.
+tavily_api_url = "https://api.tavily.com/search"
+
+# Name of the environment variable that stores the Tavily API key.
+tavily_api_key_env = "TAVILY_API_KEY"
 
 # Maximum number of turns (tool calls) allowed in a single conversation loop.
 max_turns = 20

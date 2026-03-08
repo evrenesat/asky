@@ -9,8 +9,11 @@ It runs as `asky` or `ask`. You give it a query, it gives you an answer.
 
 ## What you need to get started
 
-- An API key for one LLM provider (Gemini, OpenAI, OpenRouter, or a local model via LM Studio)
-- A search provider for web queries: [Serper](https://serper.dev) (2500 free requests) or a local [SearXNG](https://searxng.github.io/searxng/) instance
+- Access to an OpenAI compatible LLM provider (OpenRouter, Gemini, OpenAI, Antrophic or a local model via LM Studio, Ollama, etc.)
+- A search provider for web queries, Asky supports:
+  - Local [SearXNG](https://searxng.github.io/searxng/) instance.
+  - [Tavily](https://tavily.com) (1000 free requests, per month).
+  - [Serper](https://serper.dev) (2500 free requests, one time).
 
 **New here?** Start with the [Quick Start guide](./docs/quickstart.md).
 
