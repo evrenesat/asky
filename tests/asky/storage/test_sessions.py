@@ -194,7 +194,8 @@ def test_count_sessions(temp_repo):
     assert temp_repo.count_sessions() == 2
 
 
-def test_generate_session_name_strips_terminal_context_wrapper():
+@patch("asky.summarization._summarize_content", side_effect=Exception("mocked failure"))
+def test_generate_session_name_strips_terminal_context_wrapper(mock_summarize):
     query = (
         "Terminal Context (Last 5 lines):\n"
         "```\n"

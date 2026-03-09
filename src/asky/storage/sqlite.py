@@ -2278,7 +2278,29 @@ class SQLiteHistoryRepository(HistoryRepository):
             return self.get_interaction_by_id(row["id"])
         return None
 
-    def convert_history_to_session(self, interaction_id: int) -> int:
+    def get_user_content_for_interaction(self, interaction_id: int) -> str:
+        """Find the user content associated with this interaction pair."""
+        interaction = self.get_interaction_by_id(interaction_id)
+        if not interaction:
+            return ""
+        if interaction.role == "user":
+            return interaction.content
+            
+        conn = self._get_conn()
+        conn.row_factory = sqlite3.Row
+        c = conn.cursor()
+        c.execute(
+            "SELECT content FROM messages WHERE session_id IS NULL AND role='user' AND id < ? ORDER BY id DESC LIMIT 1",
+            (interaction.id,),
+        )
+        row = c.fetchone()
+        conn.close()
+        
+        if row:
+            return row["content"]
+        return ""
+
+    def convert_history_to_session(self, interaction_id: int, session_name: Optional[str] = None) -> int:
         """Convert a history interaction into a new session.
 
         Creates a new session and copies the interaction (user+assistant pair)
@@ -2343,10 +2365,10 @@ class SQLiteHistoryRepository(HistoryRepository):
         conn.close()
 
         # Create Session Name
-        session_name = _build_session_name_from_user_content(user_content)
+        final_session_name = session_name or _build_session_name_from_user_content(user_content)
 
         # Create Session
-        new_session_id = self.create_session(model=interaction.model, name=session_name)
+        new_session_id = self.create_session(model=interaction.model, name=final_session_name)
 
         # Copy User Message
         if user_content:

@@ -12,6 +12,7 @@ from asky.config import (
     SESSION_COMPACTION_THRESHOLD,
     SESSION_COMPACTION_STRATEGY,
     SUMMARIZE_SESSION_PROMPT,
+    SUMMARIZE_SESSION_TITLE_PROMPT,
     MODELS,
     DEFAULT_CONTEXT_SIZE,
     SUMMARIZATION_MODEL,
@@ -185,24 +186,38 @@ def _strip_terminal_context_wrapper(query: str) -> str:
 
 
 def generate_session_name(query: str, max_words: int = 2) -> str:
-    """Generate a session name from query by extracting key words.
+    """Generate a session name from query by asking the summarization model.
 
-    Filters stopwords and joins with underscores.
-    Example: "what is the meaning of life" -> "meaning_life"
+    Falls back to extracting key words if the LLM call fails or returns empty.
     """
     normalized_query = _strip_terminal_context_wrapper(query)
 
-    # Extract words (alphanumeric only)
+    if not normalized_query:
+        return "session"
+
+    try:
+        from asky.summarization import _summarize_content
+        # Attempt to get a short, human-readable title via LLM.
+        # We allow up to a typical title length (e.g., 50 chars).
+        summarized_name = _summarize_content(
+            content=normalized_query,
+            prompt_template=SUMMARIZE_SESSION_TITLE_PROMPT,
+            max_output_chars=50,
+        )
+        if summarized_name:
+            # Clean up potential punctuation or quotes
+            cleaned = summarized_name.strip(' "\'.')
+            if cleaned:
+                return cleaned
+    except Exception as e:
+        logger.debug(f"Failed to generate session name via LLM: {e}")
+
+    # Deterministic fallback (legacy behavior)
     words = re.findall(r"[a-zA-Z]+", normalized_query.lower())
-
-    # Filter stopwords and short words
     key_words = [w for w in words if w not in STOPWORDS and len(w) > 2]
-
-    # Take first N words
     selected = key_words[:max_words]
 
     if not selected:
-        # Fallback if all words are stopwords
         return "session"
 
     return "_".join(selected)

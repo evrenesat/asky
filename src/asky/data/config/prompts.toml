@@ -42,6 +42,10 @@ Follow this structure:
 
 """
 
+# Prompt for short human-readable session title from the first query
+summarize_session_title = "Summarize the following query into a very short, human-readable session title (3 to 5 words). Do not use punctuation or quotes."
+
+
 # Research mode system prompt
 research_system = """You are a research assistant conducting deep investigation on behalf of the user.
 

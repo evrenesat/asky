@@ -87,11 +87,13 @@ def test_main_continue_resolves_sentinel_and_converts_session(
 
     # Mock repo
     mock_repo = mock_repo_cls.return_value
+    mock_repo.get_user_content_for_interaction.return_value = "hello"
     mock_repo.convert_history_to_session.return_value = 101
 
     main()
 
     assert mock_args.continue_ids == "~1"
     assert mock_args.resume_session == ["101"]
-    mock_repo.convert_history_to_session.assert_called_once_with(42)
+    from unittest.mock import ANY
+    mock_repo.convert_history_to_session.assert_called_once_with(42, session_name=ANY)
     mock_run_chat.assert_called_once()

@@ -197,6 +197,10 @@ SUMMARIZE_SESSION_PROMPT = _prompts.get(
     "summarize_session",
     "Summarize this conversation history into a concise context summary.",
 )
+SUMMARIZE_SESSION_TITLE_PROMPT = _prompts.get(
+    "summarize_session_title",
+    "Summarize the following query into a very short, human-readable session title (3 to 5 words). Do not use punctuation or quotes.",
+)
 GRACEFUL_EXIT_SYSTEM = _prompts.get("graceful_exit", "")
 RESEARCH_RETRIEVAL_ONLY_GUIDANCE_PROMPT = _prompts.get(
     "research_retrieval_only_guidance",
