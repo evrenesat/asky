@@ -2720,3 +2720,73 @@ def test_run_chat_uses_shell_session_for_follow_up_query(
     assert request.shell_session_id == 42
     assert request.sticky_session_name is None
     assert request.resume_session_term is None
+
+
+@patch("asky.cli.main.parse_args")
+@patch("asky.cli.main.chat.run_chat")
+@patch("asky.cli.main.init_db")
+@patch("asky.cli.main.SQLiteHistoryRepository")
+@patch("asky.api.context.load_context_from_history")
+@patch("asky.cli.main.get_shell_session_id")
+def test_main_explicit_conversion_sets_converted_message_id(
+    mock_get_shell_sid,
+    mock_load_ctx,
+    mock_repo_cls,
+    mock_init_db,
+    mock_run_chat,
+    mock_parse_args,
+):
+    import argparse
+    from asky.cli.main import main
+    mock_get_shell_sid.return_value = None
+    mock_args = MagicMock(spec=argparse.Namespace)
+    mock_args.reply = True
+    mock_args.session_from_message = None
+    mock_args.query = ["hello"]
+    mock_args.model = "gf"
+    mock_args.verbose = False
+    mock_args.completion_script = None
+    mock_args.add_model = False
+    mock_args.edit_model = None
+    mock_args.prompts = False
+    mock_args.list_tools = False
+    mock_args.list_memories = False
+    mock_args.delete_memory = None
+    mock_args.clear_memories = False
+    mock_args.history = None
+    mock_args.delete_messages = None
+    mock_args.delete_sessions = None
+    mock_args.print_session = None
+    mock_args.print_ids = None
+    mock_args.session_history = None
+    mock_args.session_end = False
+    mock_args.terminal_lines = None
+    mock_args.sticky_session = None
+    mock_args.resume_session = None
+    mock_args.open = False
+    mock_args.mail_recipients = None
+    mock_args.subject = None
+    mock_args.summarize = False
+    mock_args.continue_ids = None
+    mock_args.tools = None
+
+    mock_parse_args.return_value = mock_args
+
+    mock_res = MagicMock()
+    mock_res.resolved_ids = [42]
+    mock_load_ctx.return_value = mock_res
+
+    mock_repo = mock_repo_cls.return_value
+    mock_last = MagicMock()
+    mock_last.id = 42
+    mock_repo.get_last_interaction.return_value = mock_last
+    mock_interaction = MagicMock()
+    mock_interaction.session_id = None
+    mock_repo.get_interaction_by_id.return_value = mock_interaction
+    mock_repo.get_user_content_for_interaction.return_value = "hello"
+    mock_repo.convert_history_to_session.return_value = 101
+
+    main()
+
+    assert mock_args.resume_session == ["101"]
+    assert mock_args._converted_message_id == 42

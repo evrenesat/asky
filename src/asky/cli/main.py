@@ -2276,6 +2276,7 @@ def main() -> None:
                     session_name = generate_session_name(user_content) if user_content else None
                     new_sid = repo.convert_history_to_session(target_id, session_name=session_name)
                     args.resume_session = [str(new_sid)]
+                    args._converted_message_id = target_id
                     print(f"Converted message {target_id} to Session {new_sid}.")
                 except Exception as e:
                     print(f"Error converting message to session: {e}")

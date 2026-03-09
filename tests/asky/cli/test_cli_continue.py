@@ -94,6 +94,7 @@ def test_main_continue_resolves_sentinel_and_converts_session(
 
     assert mock_args.continue_ids == "~1"
     assert mock_args.resume_session == ["101"]
+    assert mock_args._converted_message_id == 42
     from unittest.mock import ANY
     mock_repo.convert_history_to_session.assert_called_once_with(42, session_name=ANY)
     mock_run_chat.assert_called_once()
