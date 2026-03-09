@@ -20,6 +20,7 @@ KNOWN_PARAMETERS = {
     "min_p": {"type": "float", "min": 0.0, "max": 1.0, "default": 0.0},
     "top_a": {"type": "float", "min": 0.0, "max": 1.0, "default": 0.0},
     "seed": {"type": "int"},
+    "reasoning": {"type": "bool"},
 }
 
 

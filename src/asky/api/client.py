@@ -706,7 +706,10 @@ class AskyClient:
                 system_prompt=PLAIN_QUERY_INTERFACE_SYSTEM_PROMPT,
                 double_verbose=self.config.double_verbose,
             )
-            interface_helper_decision = engine.decide(request.query_text)
+            interface_helper_decision = engine.decide(
+                request.query_text,
+                trace_callback=verbose_output_callback,
+            )
 
         # Apply helper decision to shortlist enablement if available (before PreloadResolution init)
         if interface_helper_decision and effective_shortlist_override is None:
@@ -785,7 +788,9 @@ class AskyClient:
         if interface_helper_decision:
             enrichment_enabled = self.config.plain_query_prompt_enrichment_enabled
             if enrichment_enabled is None:
-                enrichment_enabled = INTERFACE_MODEL_PLAIN_QUERY_PROMPT_ENRICHMENT_ENABLED
+                enrichment_enabled = (
+                    INTERFACE_MODEL_PLAIN_QUERY_PROMPT_ENRICHMENT_ENABLED
+                )
 
             if enrichment_enabled and interface_helper_decision.prompt_enrichment:
                 enrichment = str(interface_helper_decision.prompt_enrichment).strip()

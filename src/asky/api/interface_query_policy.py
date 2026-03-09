@@ -9,7 +9,7 @@ from typing import Any, Dict, Optional
 
 import requests
 from asky.config import MODELS
-from asky.core.api_client import get_llm_msg
+from asky.core.api_client import TraceCallback, get_llm_msg
 
 JSON_BLOCK_PATTERN = re.compile(r"\{.*\}", re.DOTALL)
 
@@ -44,7 +44,11 @@ class InterfaceQueryPolicyEngine:
     def interface_model_enabled(self) -> bool:
         return bool(self.model_alias) and self.model_alias in MODELS
 
-    def decide(self, query_text: str) -> InterfaceQueryPolicyDecision:
+    def decide(
+        self,
+        query_text: str,
+        trace_callback: Optional[TraceCallback] = None,
+    ) -> InterfaceQueryPolicyDecision:
         """Resolve adaptive policy for standard non-research turns."""
         if not self.interface_model_enabled or not self.system_prompt:
             return InterfaceQueryPolicyDecision(
@@ -69,7 +73,9 @@ class InterfaceQueryPolicyEngine:
                 ],
                 use_tools=False,
                 model_alias=self.model_alias,
+                parameters=model_config.get("parameters"),
                 verbose=self.double_verbose,
+                trace_callback=trace_callback if self.double_verbose else None,
                 trace_context={
                     "phase": "plain_query_interface",
                     "source": "interface_query_policy_engine",

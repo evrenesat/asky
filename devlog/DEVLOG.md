@@ -2,6 +2,21 @@
 
 For full detailed entries, see [DEVLOG_ARCHIVE.md](DEVLOG_ARCHIVE.md).
 
+## 2026-03-09: OpenRouter Reasoning Flag and Interface Tracing Refinements
+
+- **Summary**: Added support for OpenRouter's `reasoning` flag and refined interface tracing/policy logic to improve transparency and control.
+- **Changes**:
+  - Added `reasoning` parameter to OpenRouter configuration and registered it as a boolean in the CLI.
+  - Implemented automatic payload wrapping for the `reasoning` flag in the API client to match OpenRouter's `{ "enabled": boolean }` requirement.
+  - Fixed interface policy engine to conditionally pass `trace_callback` only when double-verbose mode (`-vv`) is enabled, preventing unwanted trace leaks in standard verbose mode.
+  - Refined the plain-query interface helper prompt in `prompts.toml` with stricter guidance for faster responses and smarter shortlisting (preferring `search_only` when enabled).
+  - Cleaned up `InterfaceQueryPolicyEngine` test data to use consistent multi-line formatting for memory actions.
+  - Added regression tests for `InterfaceQueryPolicyEngine` to verify correct `trace_callback` propagation.
+- **Verification**:
+  - `pytest tests/asky/api/test_interface_query_policy.py` passed (6 passed).
+  - Verified `reasoning` parameter registration in `src/asky/cli/openrouter.py`.
+  - Verified payload mapping in `src/asky/core/api_client.py`.
+
 ## 2026-03-09: Added Plain-Query Interface Helper
 
 - **Summary**: Added a plain-query interface helper for standard turns and closed the follow-up gaps around activation, tool constraints, global-memory safety, and CLI notice delivery.

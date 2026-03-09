@@ -28,7 +28,11 @@ def test_interface_query_policy_engine_success(mock_get_llm_msg):
                 "shortlist_enabled": False,
                 "web_tools_mode": "search_only",
                 "prompt_enrichment": "enhanced query",
-                "memory_action": {"scope": "global", "memory": "user likes python", "tags": ["pref"]},
+                "memory_action": {
+                    "scope": "global",
+                    "memory": "user likes python",
+                    "tags": ["pref"],
+                },
                 "reason": "minimal_context_needed",
             }
         )
@@ -40,7 +44,11 @@ def test_interface_query_policy_engine_success(mock_get_llm_msg):
     assert decision.shortlist_enabled is False
     assert decision.web_tools_mode == "search_only"
     assert decision.prompt_enrichment == "enhanced query"
-    assert decision.memory_action == {"scope": "global", "memory": "user likes python", "tags": ["pref"]}
+    assert decision.memory_action == {
+        "scope": "global",
+        "memory": "user likes python",
+        "tags": ["pref"],
+    }
     assert decision.reason == "minimal_context_needed"
     assert decision.source == "interface_model"
 
@@ -84,3 +92,21 @@ def test_interface_query_policy_engine_transport_error(mock_get_llm_msg):
 
     assert decision.source == "fallback"
     assert "interface_model_transport_error" in decision.reason
+
+
+@patch("asky.api.interface_query_policy.get_llm_msg")
+@patch("asky.api.interface_query_policy.MODELS", {"gpt4": {"id": "gpt-4"}})
+def test_interface_query_policy_engine_passes_trace_callback(mock_get_llm_msg):
+    """Engine should pass the trace_callback to get_llm_msg."""
+    mock_get_llm_msg.return_value = {"content": "{}"}
+    mock_callback = MagicMock()
+
+    engine = InterfaceQueryPolicyEngine(
+        model_alias="gpt4",
+        system_prompt="test prompt",
+        double_verbose=True,
+    )
+    engine.decide("test", trace_callback=mock_callback)
+
+    _, kwargs = mock_get_llm_msg.call_args
+    assert kwargs["trace_callback"] == mock_callback

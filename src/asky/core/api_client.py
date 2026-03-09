@@ -193,7 +193,10 @@ def get_llm_msg(
     if parameters:
         for key, value in parameters.items():
             if value is not None:
-                payload[key] = value
+                if key == "reasoning" and isinstance(value, bool):
+                    payload[key] = {"enabled": value}
+                else:
+                    payload[key] = value
 
     # Streaming responses are not consumed by the CLI path; keep requests non-streaming.
     payload["stream"] = False

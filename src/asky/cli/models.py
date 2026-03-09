@@ -249,8 +249,14 @@ def add_model_command():
             try:
                 if param_type == "float":
                     parameters[param] = float(value)
-                elif param_type == "int":
-                    parameters[param] = int(value)
+                elif param_type == "bool":
+                    val_lower = value.lower()
+                    if val_lower in ["true", "t", "yes", "y", "1"]:
+                        parameters[param] = True
+                    elif val_lower in ["false", "f", "no", "n", "0"]:
+                        parameters[param] = False
+                    else:
+                        raise ValueError(f"Invalid boolean value: {value}")
             except ValueError:
                 console.print(f"[yellow]Invalid value, skipping {param}[/yellow]")
 
@@ -496,6 +502,14 @@ def edit_model_command(model_alias: Optional[str] = None):
                     parameters[param_to_edit] = float(val_input)
                 elif param_type == "int":
                     parameters[param_to_edit] = int(val_input)
+                elif param_type == "bool":
+                    val_lower = val_input.lower()
+                    if val_lower in ["true", "t", "yes", "y", "1"]:
+                        parameters[param_to_edit] = True
+                    elif val_lower in ["false", "f", "no", "n", "0"]:
+                        parameters[param_to_edit] = False
+                    else:
+                        raise ValueError(f"Invalid boolean value: {val_input}")
             except ValueError:
                 console.print(
                     f"    [red]Invalid value for {param_to_edit}, skipping change[/red]"

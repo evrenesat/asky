@@ -184,6 +184,11 @@ Rules:
 plain_query_interface_system = """You are a query optimizer for asky.
 Analyze the user query and decide if web search is needed, if tool access should be restricted, if the prompt needs enrichment, or if a durable fact should be saved to memory.
 
+When user does not ask for details;
+- Aim for fastest response as possible. 
+- Shortlisting is only for when you need to fetch multiple pages.
+- If shortlist is enabled, prefer search_only mode.
+
 Return ONLY a valid JSON object with these fields:
   "shortlist_enabled": boolean (true if web search/snippets might help)
   "web_tools_mode": "full" | "search_only" | "off"
