@@ -3,15 +3,20 @@
   <head>
     <meta charset="UTF-8" />
     <title>{{TITLE}}</title>
-    <link rel="icon" type="image/png" href="assets/asky_icon_mono.ico">
+    <link rel="icon" type="image/png" href="assets/asky_icon_mono.ico" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <link rel="stylesheet" href="assets/asky-report_v{{ASSET_VERSION}}.css">
+    <link rel="stylesheet" href="assets/asky-report_v{{ASSET_VERSION}}.css" />
   </head>
 
   <body>
     <div id="content"></div>
 
-    <script>const rawContent = `{{CONTENT}}`;</script>
-    <script src="assets/asky-report_v{{ASSET_VERSION}}.js"></script>
+    <script>
+      const rawContent = `{{CONTENT}}`;
+    </script>
+    <script src="assets/marked.min_v{{ASSET_VERSION}}.js"></script>
+    <script>
+      document.getElementById("content").innerHTML = marked.parse(rawContent);
+    </script>
   </body>
 </html>

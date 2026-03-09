@@ -52,7 +52,7 @@ def _ensure_archive_assets() -> None:
 
     # Asset specifications: (src_name, dst_dir, dst_stem, is_versioned)
     specs = [
-        ("asky-report.js", _get_results_assets_dir(), "asky-report", True),
+        ("marked.min.js", _get_results_assets_dir(), "marked.min", True),
         ("asky-report.css", _get_results_assets_dir(), "asky-report", True),
         ("asky-sidebar.js", _get_assets_dir(), "asky-sidebar", True),
         ("asky-sidebar.css", _get_assets_dir(), "asky-sidebar", True),

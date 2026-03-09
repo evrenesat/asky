@@ -2,6 +2,16 @@
 
 For full detailed entries, see [DEVLOG_ARCHIVE.md](DEVLOG_ARCHIVE.md).
 
+## 2026-03-09: HTML Report Markdown Renderer Replacement
+
+- **Summary**: Replaced the naive regex-based markdown renderer (`asky-report.js`) with the standard `marked` library to fix structural and table rendering in HTML reports.
+- **Changes**:
+  - Downloaded the UMD build `marked.min.js` to `src/asky/data/`.
+  - Updated `rendering.py` to use `marked.min.js` instead of `asky-report.js`.
+  - Modified `template.html` to load `marked.min.js` via a regular `<script>` tag and render content synchronously using `marked.parse()`.
+  - Removed `asky-report.js`.
+- **Gotchas**: Initially tried the ES module variant (`marked.esm.js`), but it failed due to browser CORS restrictions on `file://` protocols. Regular script tag inclusion is used instead.
+
 ## 2026-03-09: OpenRouter Reasoning Flag and Interface Tracing Refinements
 
 - **Summary**: Added support for OpenRouter's `reasoning` flag and refined interface tracing/policy logic to improve transparency and control.
