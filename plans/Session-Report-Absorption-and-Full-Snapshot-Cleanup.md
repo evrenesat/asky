@@ -53,7 +53,7 @@
 - `--continue`, `--reply`, and `session from-message` all feed the converted history id into the session-report save path.
 - A git commit is created with message: `Fix converted history report absorption paths`
 
-### [ ] Checkpoint 2: Delete all superseded session snapshots
+### [x] Checkpoint 2: Delete all superseded session snapshots
 
 **Goal:**
 

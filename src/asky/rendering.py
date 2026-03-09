@@ -6,7 +6,7 @@ import webbrowser
 from datetime import datetime
 from importlib.metadata import version as _pkg_version
 from pathlib import Path
-from typing import Optional, Tuple
+from typing import Optional, Tuple, List
 
 from asky.config import ARCHIVE_DIR
 from asky.core.utils import generate_slug
@@ -230,7 +230,7 @@ def _update_sidebar_index(
     message_id: Optional[int] = None,
     session_id: Optional[int] = None,
     converted_message_id: Optional[int] = None,
-) -> Optional[str]:
+) -> List[str]:
     """Update the sidebar index HTML file with the latest generated report.
 
     Args:
@@ -282,18 +282,13 @@ def _update_sidebar_index(
 
     # Process entries to find and remove superseded ones
     new_entries = []
-    replaced = False
-    superseded_filename = None
+    superseded_filenames = []
 
     for e in entries:
         if session_id is not None and e.get("session_id") == session_id:
-            if not replaced:
-                superseded_filename = e.get("filename")
-                replaced = True
+            superseded_filenames.append(e.get("filename"))
         elif converted_message_id is not None and e.get("message_id") == converted_message_id and session_id is not None:
-            if not replaced:
-                superseded_filename = e.get("filename")
-                replaced = True
+            superseded_filenames.append(e.get("filename"))
         else:
             new_entries.append(e)
 
@@ -341,7 +336,7 @@ def _update_sidebar_index(
     with open(index_path, "w") as f:
         f.write(base_html)
 
-    return superseded_filename
+    return superseded_filenames
 
 
 def _save_to_archive(
@@ -387,7 +382,7 @@ def _save_to_archive(
     with open(file_path, "w") as f:
         f.write(html_content)
 
-    superseded_filename = _update_sidebar_index(
+    superseded_filenames = _update_sidebar_index(
         filename,
         display_title,
         session_name=session_name,
@@ -396,12 +391,13 @@ def _save_to_archive(
         converted_message_id=converted_message_id,
     )
 
-    if superseded_filename:
-        old_file_path = ARCHIVE_DIR / superseded_filename
-        if old_file_path.exists() and old_file_path.name != filename:
-            try:
-                old_file_path.unlink()
-            except Exception as e:
-                logger.warning(f"Failed to delete superseded report {old_file_path}: {e}")
+    for superseded_filename in superseded_filenames:
+        if superseded_filename:
+            old_file_path = ARCHIVE_DIR / superseded_filename
+            if old_file_path.exists() and old_file_path.name != filename:
+                try:
+                    old_file_path.unlink()
+                except Exception as e:
+                    logger.warning(f"Failed to delete superseded report {old_file_path}: {e}")
 
     return file_path

@@ -239,6 +239,59 @@ def test_save_html_report_session_deduplication():
             assert entries[0]["filename"] == f"results/{Path(path_str2).name}"
 
 
+def test_save_html_report_deletes_all_superseded_session_snapshots():
+    """Test that a new save removes all prior files for the same session_id if they exist in the index."""
+    import json
+    from unittest.mock import MagicMock
+
+    with tempfile.TemporaryDirectory() as temp_dir:
+        archive_dir = Path(temp_dir)
+        results_dir = archive_dir / "results"
+        results_dir.mkdir()
+
+        # Pre-seed index.html with two existing entries for session 42
+        f1_name = "results/old_1_s42.html"
+        f2_name = "results/old_2_s42.html"
+        (archive_dir / f1_name).write_text("old1")
+        (archive_dir / f2_name).write_text("old2")
+
+        entries = [
+            {"filename": f1_name, "title": "Old 1", "session_id": 42},
+            {"filename": f2_name, "title": "Old 2", "session_id": 42},
+            {"filename": "results/other.html", "title": "Other", "session_id": 99}
+        ]
+        entries_json = json.dumps(entries)
+        base_html = f"/* ENTRIES_JSON_START */ {entries_json} /* ENTRIES_JSON_END */"
+        (archive_dir / "index.html").write_text(base_html)
+
+        with (
+            patch("asky.rendering.ARCHIVE_DIR", archive_dir),
+            patch("asky.rendering._create_html_content", return_value="<html></html>"),
+            patch("asky.rendering.generate_slug", return_value="test_slug"),
+        ):
+            # Save new report for session 42
+            path_str_new, _ = save_html_report("# New Turn", "Hint", session_name="Sess", session_id=42)
+            assert Path(path_str_new).exists()
+            
+            # The old files should be deleted
+            assert not (archive_dir / f1_name).exists()
+            assert not (archive_dir / f2_name).exists()
+
+            # Check sidebar entries
+            index_path = archive_dir / "index.html"
+            content = index_path.read_text()
+            marker_start = "/* ENTRIES_JSON_START */"
+            marker_end = "/* ENTRIES_JSON_END */"
+            json_str = content.split(marker_start)[1].split(marker_end)[0].strip()
+            new_entries = json.loads(json_str)
+
+            # Should be exactly one entry for session 42, plus the other session's entry
+            assert len(new_entries) == 2
+            s42_entries = [e for e in new_entries if e.get("session_id") == 42]
+            assert len(s42_entries) == 1
+            assert s42_entries[0]["filename"] == f"results/{Path(path_str_new).name}"
+
+
 def test_save_html_report_absorbs_converted_history():
     """Test that a converted history message's report is absorbed by the session."""
     import json
