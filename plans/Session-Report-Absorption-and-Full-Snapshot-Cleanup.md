@@ -89,7 +89,7 @@
 - A new save for a session leaves one current HTML file on disk for that `session_id`.
 - A git commit is created with message: `Delete all superseded session report snapshots`
 
-### [ ] Checkpoint 3: Final verification and squash readiness
+### [x] Checkpoint 3: Final verification and squash readiness
 
 **Goal:**
 
