@@ -846,3 +846,13 @@ A simplified "retrieval-only" system prompt guidance is injected in these cases 
   - Subprocess tests do not use `pytest-recording`.
   - Default `uv run pytest -q` excludes `recorded_cli`, `subprocess_cli`, and `live_research`.
   - Assertions favor invariant/subset checks over brittle exact-string matching for LLM outputs.
+
+### Decision 25: Unified Session Naming and Single-Report Archive
+
+- **Context**: The auto-generated naming of sessions was based on crude keyword extraction and reports appended separate HTML files for every session message, polluting the archive with multiple redundant snapshot files.
+- **Decision**: Use a short-title summarizer model to auto-name sessions consistently across all creation paths, and maintain exactly one HTML report per session.
+- **Implementation**:
+  - `generate_session_name(...)` strips wrappers and uses an LLM call to summarize the first user query into a short human-readable session name.
+  - History-to-session conversion paths (`--continue`, `--reply`, `session from-message`) reuse the same session naming strategy.
+  - HTML reports for sessions are generated logically as single records. Writing a new session report logically upserts it via `session_id`, refreshing the timestamp and deleting the earlier snapshot of that session to avoid duplicates.
+  - If a history item promoted to a session already had a one-off report, that matching report is absorbed into the newly unified session report.

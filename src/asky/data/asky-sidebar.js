@@ -29,14 +29,14 @@ function render() {
   if (state.group) {
     const groupMap = new Map();
     items.forEach(item => {
-      const groupId = item.session_name || item.prefix || 'Other';
+      const groupId = item.session_id || item.prefix || 'Other';
       if (!groupMap.has(groupId)) groupMap.set(groupId, []);
       groupMap.get(groupId).push(item);
     });
 
     const renderedGroups = new Set();
     items.forEach(item => {
-      const groupId = item.session_name || item.prefix || 'Other';
+      const groupId = item.session_id || item.prefix || 'Other';
       const groupItems = groupMap.get(groupId);
 
       if (groupItems.length > 1) {
@@ -52,13 +52,8 @@ function render() {
 
           // Determine group copy command
           let copyCmd = '';
-          const sessionItem = groupItems.find(i => i.session_id);
-          if (item.session_name && sessionItem) {
-            copyCmd = `asky --resume-session ${sessionItem.session_id}`;
-          } else {
-            const ids = groupItems.map(i => i.message_id).filter(Boolean);
-            if (ids.length > 0) copyCmd = `asky --continue ${ids.join(',')}`;
-          }
+          const ids = groupItems.map(i => i.message_id).filter(Boolean);
+          if (ids.length > 0) copyCmd = `asky --continue ${ids.join(',')}`;
 
           const copyBtnHtml = copyCmd ? `
             <button class="copy-btn" title="Copy command" onclick="event.stopPropagation(); copyText(this, '${copyCmd}')">
@@ -76,7 +71,7 @@ function render() {
           `;
           if (!isCollapsed) {
             const ul = document.createElement('ul');
-            groupItems.forEach(item => ul.appendChild(createItemEl(item)));
+            groupItems.forEach(groupItem => ul.appendChild(createItemEl(groupItem)));
             groupEl.appendChild(ul);
           }
           list.appendChild(groupEl);
@@ -97,7 +92,7 @@ function createItemEl(item) {
   li.className = 'index-item';
   const sessionHtml = item.session_name ? `<span class="session-tag">${item.session_name}</span>` : '';
   
-  const copyCmd = item.message_id ? `asky --continue ${item.message_id}` : '';
+  const copyCmd = item.session_id ? `asky --resume-session ${item.session_id}` : (item.message_id ? `asky --continue ${item.message_id}` : '');
   const copyBtnHtml = copyCmd ? `
     <button class="copy-btn" title="Copy: ${copyCmd}" onclick="event.stopPropagation(); copyText(this, '${copyCmd}')">
       ${COPY_ICON}

@@ -2,6 +2,15 @@
 
 For full detailed entries, see [DEVLOG_ARCHIVE.md](DEVLOG_ARCHIVE.md).
 
+## 2026-03-09: Single HTML Report Per Session & Summarized Auto Session Titles
+
+- **Summary**: Unified automatic session naming using an LLM short-title summarizer, changed session HTML reports to upsert by `session_id` instead of appending, and updated the sidebar index to render session reports as single entries with resume copy actions.
+- **Changes**:
+  - Replaced keyword-based session naming with a shared short-title summarization flow for both new auto-created sessions and history-to-session conversions.
+  - Modified HTML report saving to upsert the session file by `session_id`, generating a new timestamped file and deleting the old one, while keeping a single archive entry.
+  - Allowed history items promoted to sessions to absorb matching single-turn reports.
+  - Updated sidebar JS to treat sessions as individual items without collapsing by name, providing `asky --resume-session <id>` copy actions for them.
+
 ## 2026-03-09: HTML Report Markdown Renderer Replacement
 
 - **Summary**: Replaced the naive regex-based markdown renderer (`asky-report.js`) with the standard `marked` library to fix structural and table rendering in HTML reports.

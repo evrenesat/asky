@@ -163,7 +163,7 @@
 - Existing metadata is insufficient to identify the converted history report without adding persistent DB state.
 - Safe replace semantics cannot be achieved without risking archive loss on failed writes.
 
-### [ ] Checkpoint 3: Remove Sidebar Assumptions About Multi-File Sessions and Update Docs
+### [x] Checkpoint 3: Remove Sidebar Assumptions About Multi-File Sessions and Update Docs
 
 **Goal:**
 

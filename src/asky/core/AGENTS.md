@@ -148,7 +148,7 @@ Initializes tool usage tracking for all available tools with a default of 0 at t
 
 - **Sessions are Persistent**: Conversation threads resumable anytime
 - **Shell-Sticky**: Lock files in `/tmp/asky_session_{PID}` tie to terminal
-- **Auto-Naming**: Names generated from query keywords (stopword filtering), with terminal-context wrappers stripped before extraction
+- **Auto-Naming**: Names generated via an LLM short-title summarization flow from the user query, with terminal-context wrappers stripped before extraction.
 - **Session-Owned Research Profile**: session records now persist
   `research_mode`, `research_source_mode`, and `research_local_corpus_paths`
   so resumed sessions can continue research behavior without repeating flags.
