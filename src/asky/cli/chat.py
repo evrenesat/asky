@@ -1036,6 +1036,7 @@ def run_chat(
                 session_name=session_name,
                 message_id=saved_message_id_for_archive,
                 session_id=session_id_int,
+                converted_message_id=getattr(args, "_converted_message_id", None),
             )
             if report_path:
                 console.print(f"Open in browser: [bold cyan]file://{report_path}[/]")

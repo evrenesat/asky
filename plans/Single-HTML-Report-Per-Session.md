@@ -112,7 +112,7 @@
 - The only feasible implementation requires LLM calls from storage code.
 - The summarization dependency would force auto-naming on non-creation code paths and materially slow normal resumed turns.
 
-### [ ] Checkpoint 2: Upsert Session Reports Instead of Appending
+### [x] Checkpoint 2: Upsert Session Reports Instead of Appending
 
 **Goal:**
 

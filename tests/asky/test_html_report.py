@@ -191,3 +191,83 @@ def test_extract_markdown_title():
     # Empty/None input
     assert extract_markdown_title("") is None
     assert extract_markdown_title(None) is None
+
+
+def test_save_html_report_session_deduplication():
+    """Test that saving multiple reports for the same session ID overwrites instead of appending."""
+    content1 = "# First Turn"
+    content2 = "# Second Turn"
+
+    import json
+    from unittest.mock import MagicMock
+
+    with tempfile.TemporaryDirectory() as temp_dir:
+        archive_dir = Path(temp_dir)
+
+        with (
+            patch("asky.rendering.ARCHIVE_DIR", archive_dir),
+            patch("asky.rendering._create_html_content", return_value="<html></html>"),
+            patch("asky.rendering.generate_slug", return_value="test_slug"),
+            patch("asky.rendering.datetime") as mock_datetime,
+        ):
+            mock_now = MagicMock()
+            mock_now.strftime.side_effect = ["20230101_120000", "2023-01-01 12:00", "20230101_120001", "2023-01-01 12:01"]
+            mock_now.isoformat.side_effect = ["2023-01-01T12:00:00", "2023-01-01T12:01:00"]
+            mock_datetime.now.return_value = mock_now
+
+            # First save
+            path_str1, _ = save_html_report(content1, "Test Slug Input", session_name="Sess", session_id=42)
+            assert "_s42.html" in path_str1
+            assert Path(path_str1).exists()
+
+            # Second save
+            path_str2, _ = save_html_report(content2, "Test Slug Input", session_name="Sess", session_id=42)
+            assert "_s42.html" in path_str2
+            assert Path(path_str2).exists()
+            assert not Path(path_str1).exists()  # Old file should be deleted
+            
+            # Check sidebar entries
+            index_path = archive_dir / "index.html"
+            content = index_path.read_text()
+            marker_start = "/* ENTRIES_JSON_START */"
+            marker_end = "/* ENTRIES_JSON_END */"
+            json_str = content.split(marker_start)[1].split(marker_end)[0].strip()
+            entries = json.loads(json_str)
+
+            assert len(entries) == 1
+            assert entries[0]["session_id"] == 42
+            assert entries[0]["filename"] == f"results/{Path(path_str2).name}"
+
+
+def test_save_html_report_absorbs_converted_history():
+    """Test that a converted history message's report is absorbed by the session."""
+    import json
+
+    with tempfile.TemporaryDirectory() as temp_dir:
+        archive_dir = Path(temp_dir)
+
+        with (
+            patch("asky.rendering.ARCHIVE_DIR", archive_dir),
+            patch("asky.rendering._create_html_content", return_value="<html></html>"),
+            patch("asky.rendering.generate_slug", return_value="test_slug"),
+        ):
+            # Save single-turn report
+            path_str1, _ = save_html_report("# Single Turn", "Hint", message_id=99)
+            assert Path(path_str1).exists()
+
+            # Save session report after conversion
+            path_str2, _ = save_html_report("# Session Turn", "Hint", session_name="Sess", session_id=42, converted_message_id=99)
+            assert Path(path_str2).exists()
+            assert not Path(path_str1).exists()  # Single-turn report should be deleted
+            
+            # Check sidebar entries
+            index_path = archive_dir / "index.html"
+            content = index_path.read_text()
+            marker_start = "/* ENTRIES_JSON_START */"
+            marker_end = "/* ENTRIES_JSON_END */"
+            json_str = content.split(marker_start)[1].split(marker_end)[0].strip()
+            entries = json.loads(json_str)
+
+            assert len(entries) == 1
+            assert entries[0]["session_id"] == 42
+            assert entries[0]["filename"] == f"results/{Path(path_str2).name}"

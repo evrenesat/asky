@@ -197,6 +197,7 @@ def save_html_report(
     session_name: str = "",
     message_id: Optional[int] = None,
     session_id: Optional[int] = None,
+    converted_message_id: Optional[int] = None,
 ) -> Tuple[str, str]:
     """
     Save markdown content as an HTML report in the archive directory.
@@ -209,6 +210,7 @@ def save_html_report(
             session_name=session_name,
             message_id=message_id,
             session_id=session_id,
+            converted_message_id=converted_message_id,
         )
 
         index_path = ARCHIVE_DIR / "index.html"
@@ -227,7 +229,8 @@ def _update_sidebar_index(
     session_name: str = "",
     message_id: Optional[int] = None,
     session_id: Optional[int] = None,
-) -> None:
+    converted_message_id: Optional[int] = None,
+) -> Optional[str]:
     """Update the sidebar index HTML file with the latest generated report.
 
     Args:
@@ -277,13 +280,30 @@ def _update_sidebar_index(
         except Exception as e:
             logger.warning(f"Could not parse existing index.html: {e}")
 
-    # Add new entry (avoid duplicates)
-    if not any(e.get("filename") == new_entry["filename"] for e in entries):
-        entries.insert(0, new_entry)
+    # Process entries to find and remove superseded ones
+    new_entries = []
+    replaced = False
+    superseded_filename = None
+
+    for e in entries:
+        if session_id is not None and e.get("session_id") == session_id:
+            if not replaced:
+                superseded_filename = e.get("filename")
+                replaced = True
+        elif converted_message_id is not None and e.get("message_id") == converted_message_id and session_id is not None:
+            if not replaced:
+                superseded_filename = e.get("filename")
+                replaced = True
+        else:
+            new_entries.append(e)
+
+    # Add new entry (avoid duplicates, insert at top)
+    if not any(e.get("filename") == new_entry["filename"] for e in new_entries):
+        new_entries.insert(0, new_entry)
 
     # Clean up entries (keep them unique and sorted by date by default)
     # We always rewrite the file to ensure the JS logic is up to date
-    entries_json = json.dumps(entries, indent=2)
+    entries_json = json.dumps(new_entries, indent=2)
 
     base_html = f"""<!doctype html>
 <html>
@@ -321,6 +341,8 @@ def _update_sidebar_index(
     with open(index_path, "w") as f:
         f.write(base_html)
 
+    return superseded_filename
+
 
 def _save_to_archive(
     markdown_content: str,
@@ -328,6 +350,7 @@ def _save_to_archive(
     session_name: str = "",
     message_id: Optional[int] = None,
     session_id: Optional[int] = None,
+    converted_message_id: Optional[int] = None,
 ) -> Path:
     """Save markdown content as an HTML report in the archive directory.
 
@@ -356,17 +379,29 @@ def _save_to_archive(
     html_content = _create_html_content(markdown_content, title=display_title)
 
     filename = f"{slug}_{timestamp}.html"
+    if session_id is not None:
+        filename = f"{slug}_{timestamp}_s{session_id}.html"
+
     file_path = _get_results_dir() / filename
 
     with open(file_path, "w") as f:
         f.write(html_content)
 
-    _update_sidebar_index(
+    superseded_filename = _update_sidebar_index(
         filename,
         display_title,
         session_name=session_name,
         message_id=message_id,
         session_id=session_id,
+        converted_message_id=converted_message_id,
     )
+
+    if superseded_filename:
+        old_file_path = ARCHIVE_DIR / superseded_filename
+        if old_file_path.exists() and old_file_path.name != filename:
+            try:
+                old_file_path.unlink()
+            except Exception as e:
+                logger.warning(f"Failed to delete superseded report {old_file_path}: {e}")
 
     return file_path

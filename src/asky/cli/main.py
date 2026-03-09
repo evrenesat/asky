@@ -2023,6 +2023,7 @@ def main() -> None:
                 session_name = generate_session_name(user_content) if user_content else None
                 new_sid = repo.convert_history_to_session(target_id, session_name=session_name)
                 args.resume_session = [str(new_sid)]
+                args._converted_message_id = target_id
                 # Note: args.continue_ids is PRESERVED so AskyClient.run_turn still
                 # uses it for context injection if needed (though session resumption
                 # will also bring in the converted messages).
