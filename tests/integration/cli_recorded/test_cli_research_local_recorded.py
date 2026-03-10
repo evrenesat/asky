@@ -126,3 +126,54 @@ def test_section_summarize_errors_for_unknown_source_selector(local_research_cor
     )
     normalized = normalize_cli_output(result.stdout).lower()
     assert "error: no local source matched --section-source 'does-not-exist'" in normalized
+
+
+def test_corpus_query_exhaustive(local_research_corpus):
+    """Test --query-corpus with all limit flags."""
+    run_cli_inprocess(["-r", str(local_research_corpus), "Warm up."])
+    
+    # --query-corpus
+    result = run_cli_inprocess([
+        "--query-corpus", "alpha",
+        "--query-corpus-max-sources", "1",
+        "--query-corpus-max-chunks", "1"
+    ])
+    assert result.exit_code == 0
+    assert "sources queried: 1" in normalize_cli_output(result.stdout).lower()
+
+    # grouped `corpus query`
+    result2 = run_cli_inprocess(["corpus", "query", "beta"])
+    assert result2.exit_code == 0
+    assert "manual corpus query" in normalize_cli_output(result2.stdout).lower()
+
+
+def test_corpus_summarize_exhaustive(local_research_corpus):
+    """Test --summarize-section with all flags."""
+    alpha_path = local_research_corpus / "alpha_overview.md"
+    run_cli_inprocess(["-r", str(alpha_path), "Warm up."])
+
+    # --summarize-section with detail and max-chunks
+    result = run_cli_inprocess([
+        "--summarize-section",
+        "--section-source", "alpha_overview.md",
+        "--section-detail", "compact",
+        "--section-max-chunks", "2"
+    ])
+    assert result.exit_code == 0
+    assert "section source:" in normalize_cli_output(result.stdout).lower()
+
+    # --section-id and --section-include-toc
+    # First get ID
+    result_list = run_cli_inprocess(["--summarize-section", "--section-source", "alpha_overview.md", "--section-include-toc"])
+    # ID is usually 0 or similar for the first section
+    result_id = run_cli_inprocess([
+        "--summarize-section",
+        "--section-source", "alpha_overview.md",
+        "--section-id", "0"
+    ])
+    assert result_id.exit_code == 0
+
+    # grouped `corpus summarize`
+    result_grouped = run_cli_inprocess(["corpus", "summarize", "--section-source", "alpha_overview.md"])
+    assert result_grouped.exit_code == 0
+

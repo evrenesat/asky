@@ -1,5 +1,41 @@
 interactions:
 - request:
+    body: '{"model": "fake/gf", "messages": [{"role": "system", "content": "Summarize
+      the following query into a very short, human-readable session title (3 to 5
+      words). Do not use punctuation or quotes."}, {"role": "user", "content": "Warm
+      up corpus cache."}], "stream": false}'
+    headers:
+      Accept:
+      - '*/*'
+      Accept-Encoding:
+      - gzip, deflate
+      Connection:
+      - keep-alive
+      Content-Length:
+      - '267'
+      Content-Type:
+      - application/json
+      User-Agent:
+      - asky/1.0.0
+    method: POST
+    uri: http://127.0.0.1:50000/v1/chat/completions
+  response:
+    body:
+      string: '{"id": "chatcmpl-recorded", "object": "chat.completion", "created":
+        1704110400, "model": "fake/gf", "choices": [{"index": 0, "message": {"role":
+        "assistant", "content": "ok"}, "finish_reason": "stop"}], "usage": {"prompt_tokens":
+        10, "completion_tokens": 5, "total_tokens": 15}}'
+    headers:
+      Content-Type:
+      - application/json
+      Date:
+      - Tue, 10 Mar 2026 11:43:39 GMT
+      Server:
+      - BaseHTTP/0.6 Python/3.13.5
+    status:
+      code: 200
+      message: OK
+- request:
     body: '{"model": "fake/gf", "messages": [{"role": "system", "content": "You are
       a research assistant conducting deep investigation on behalf of the user.\n\nThe
       current date and time is: Monday, January 01, 2024 at 12:00\n\n**Research Strategy
@@ -183,7 +219,7 @@ interactions:
       User-Agent:
       - asky/1.0.0
     method: POST
-    uri: http://127.0.0.1:52926/v1/chat/completions
+    uri: http://127.0.0.1:50000/v1/chat/completions
   response:
     body:
       string: '{"id": "chatcmpl-recorded", "object": "chat.completion", "created":
@@ -194,7 +230,7 @@ interactions:
       Content-Type:
       - application/json
       Date:
-      - Thu, 05 Mar 2026 15:40:33 GMT
+      - Tue, 10 Mar 2026 11:43:39 GMT
       Server:
       - BaseHTTP/0.6 Python/3.13.5
     status:

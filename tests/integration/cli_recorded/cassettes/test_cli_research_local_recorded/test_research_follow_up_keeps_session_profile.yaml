@@ -183,7 +183,7 @@ interactions:
       User-Agent:
       - asky/1.0.0
     method: POST
-    uri: http://127.0.0.1:52926/v1/chat/completions
+    uri: http://127.0.0.1:50000/v1/chat/completions
   response:
     body:
       string: '{"id": "chatcmpl-recorded", "object": "chat.completion", "created":
@@ -194,7 +194,7 @@ interactions:
       Content-Type:
       - application/json
       Date:
-      - Thu, 05 Mar 2026 15:40:33 GMT
+      - Tue, 10 Mar 2026 11:43:39 GMT
       Server:
       - BaseHTTP/0.6 Python/3.13.5
     status:
@@ -386,7 +386,7 @@ interactions:
       User-Agent:
       - asky/1.0.0
     method: POST
-    uri: http://127.0.0.1:52926/v1/chat/completions
+    uri: http://127.0.0.1:50000/v1/chat/completions
   response:
     body:
       string: '{"id": "chatcmpl-recorded", "object": "chat.completion", "created":
@@ -397,7 +397,7 @@ interactions:
       Content-Type:
       - application/json
       Date:
-      - Thu, 05 Mar 2026 15:40:33 GMT
+      - Tue, 10 Mar 2026 11:43:39 GMT
       Server:
       - BaseHTTP/0.6 Python/3.13.5
     status:

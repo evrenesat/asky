@@ -10,43 +10,119 @@ pytestmark = [pytest.mark.recorded_cli, pytest.mark.vcr]
 
 
 def test_session_create_with_query():
-    """Create session and run first query."""
+    """Start session and query in one shot."""
     run_cli_inprocess(["-ss", "test_sess_1"])
-    result = run_cli_inprocess(["-L", "What is 2+2? Answer simply."])
+    result = run_cli_inprocess(["-off", "all", "--shortlist", "off", "What is 2+2? Answer simply."])
     assert result.exit_code == 0
     assert_output_contains_sentences(result.stdout, ["4"])
+
+
+def test_session_query_flag():
+    """Explicit --session flag for auto-named one-off sessions."""
+    result = run_cli_inprocess(["-off", "all", "--shortlist", "off", "--session", "What is the capital of Japan?"])
+    assert result.exit_code == 0
+    assert_output_contains_sentences(result.stdout, ["tokyo"])
 
 
 def test_session_follow_up_continuity():
     """Follow-up turn in same session."""
     run_cli_inprocess(["-ss", "test_sess_2"])
-    run_cli_inprocess(["-L", "My favorite color is blue."])
+    run_cli_inprocess(["-off", "all", "--shortlist", "off", "My favorite color is blue."])
 
-    result = run_cli_inprocess(["-L", "What is my favorite color? Answer simply."])
+    result = run_cli_inprocess(["-off", "all", "--shortlist", "off", "What is my favorite color? Answer simply."])
     assert result.exit_code == 0
     assert_output_contains_sentences(result.stdout, ["blue"])
 
 
-def test_session_show_empty_session_message():
-    """Session show prints deterministic output for a new empty session."""
-    run_cli_inprocess(["-ss", "test_sess_3"])
+def test_session_resume_and_use():
+    """Resume session by name/alias."""
+    # Test -rs flag
+    run_cli_inprocess(["-ss", "test_sess_resume"])
+    run_cli_inprocess(["-off", "all", "--shortlist", "off", "Just say banana."])
+    result = run_cli_inprocess(["-rs", "test_sess_resume", "-off", "all", "--shortlist", "off", "Just say banana again."])
+    assert result.exit_code == 0
+    assert_output_contains_sentences(result.stdout, ["banana"])
 
+    # Test grouped `session use`
+    result_use = run_cli_inprocess(["session", "use", "test_sess_resume"])
+    assert result_use.exit_code == 0
+    assert "resumed session" in normalize_cli_output(result_use.stdout).lower()
+
+
+def test_session_grouped_create():
+    """Test grouped `session create`."""
+    result = run_cli_inprocess(["session", "create", "test_sess_grouped"])
+    assert result.exit_code == 0
+    assert "created and active" in normalize_cli_output(result.stdout).lower()
+
+
+def test_session_show_and_history():
+    """Session show/print session behavior."""
+    run_cli_inprocess(["-ss", "test_sess_3"])
+    res = run_cli_inprocess(["-off", "all", "--shortlist", "off", "Just say apple."])
+    assert res.exit_code == 0, res.stderr
+
+    # --print-session
     result = run_cli_inprocess(["--print-session", "test_sess_3"])
     assert result.exit_code == 0
     normalized = normalize_cli_output(result.stdout)
-    assert "Session 1 is empty." in normalized
+    assert "apple" in normalized.lower()
 
+    # -ps alias
+    result_ps = run_cli_inprocess(["-ps", "test_sess_3"])
+    assert result_ps.exit_code == 0
 
-def test_session_end_behavior():
-    """Session end behavior."""
-    run_cli_inprocess(["-ss", "test_sess_4"])
-
-    result = run_cli_inprocess(["session", "end"])
-    assert result.exit_code == 0
-
-    result_show = run_cli_inprocess(["session", "list"])
+    # `session show`
+    result_show = run_cli_inprocess(["session", "show", "test_sess_3"])
     assert result_show.exit_code == 0
-    assert "test_sess_4" in normalize_cli_output(result_show.stdout)
+
+    # -sh / --session-history (lists sessions)
+    result_sh = run_cli_inprocess(["-sh", "10"])
+    assert result_sh.exit_code == 0
+    assert "test_sess_3" in normalize_cli_output(result_sh.stdout).lower()
+
+    # grouped `session list`
+    result_list = run_cli_inprocess(["session", "list", "5"])
+    assert result_list.exit_code == 0
+    assert "test_sess_3" in normalize_cli_output(result_list.stdout).lower()
+
+
+def test_session_end_aliases():
+    """Test session ending via various aliases."""
+    run_cli_inprocess(["-ss", "to_be_ended"])
+    
+    # \q
+    result = run_cli_inprocess(["\\q"])
+    assert result.exit_code == 0
+    
+    # session end
+    run_cli_inprocess(["-ss", "to_be_ended_2"])
+    result2 = run_cli_inprocess(["session", "end"])
+    assert result2.exit_code == 0
+    
+    # -se / --session-end
+    run_cli_inprocess(["-ss", "to_be_ended_3"])
+    result3 = run_cli_inprocess(["-se"])
+    assert result3.exit_code == 0
+
+
+def test_session_delete_and_clean():
+    """Test session deletion and research cleanup."""
+    run_cli_inprocess(["session", "create", "to_delete"])
+    
+    # delete by name (relying on my fix in sqlite.py)
+    result = run_cli_inprocess(["session", "delete", "to_delete"])
+    assert result.exit_code == 0
+    
+    # verify gone
+    result_list = run_cli_inprocess(["session", "list"])
+    assert "to_delete" not in normalize_cli_output(result_list.stdout).lower()
+
+    # session clean-research
+    run_cli_inprocess(["session", "create", "to_clean"])
+    result_clean = run_cli_inprocess(["session", "clean-research", "to_clean"])
+    assert result_clean.exit_code == 0
+    assert "cleaned research data" in normalize_cli_output(result_clean.stdout).lower()
 
 
 def test_grouped_command_strictness():

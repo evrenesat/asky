@@ -2,6 +2,24 @@
 
 For full detailed entries, see [DEVLOG_ARCHIVE.md](DEVLOG_ARCHIVE.md).
 
+## 2026-03-10: Stabilized Recorded CLI Coverage and Runtime
+
+- **Summary**: Finished the exhaustive CLI integration coverage follow-up by removing debug artifacts, restoring truthful matcher policy, minimizing the recorded plugin roster, and cutting the slow subprocess realism path down to a bounded single slow test.
+- **Changes**:
+  - Updated `tests/integration/cli_recorded/cli_surface.py` and `tests/integration/cli_recorded/test_cli_surface_manifest.py` so the manifest is authoritative, ownership is complete, and persona subcommand parity is checked in-process instead of shelling out.
+  - Refactored `tests/integration/cli_recorded/conftest.py` to enable only per-test plugins, keep the real-provider transcriber tool surface, reuse the fake LLM port safely, and apply stricter request matching only where replay is deterministic.
+  - Updated `tests/integration/cli_recorded/helpers.py` to reinitialize plugin runtime per isolated HOME and use a deterministic local session-name fallback instead of spending model turns on title generation during recorded replay.
+  - Updated `tests/integration/cli_recorded/test_cli_plugin_surface_recorded.py`, `tests/integration/cli_recorded/test_cli_persona_recorded.py`, and related harness ownership so plugin-backed flags explicitly opt in to the plugins they require.
+  - Refined `tests/integration/cli_recorded/test_cli_interactive_subprocess.py` so PTY runs stop after child exit, the fake-LLM subprocess smoke test disables unrelated tools/shortlisting, and the only intentionally slower subprocess case is marked `slow`.
+  - Fixed `src/asky/cli/daemon_config.py` so password masking is only enabled on a real TTY, avoiding hangs in headless and piped subprocess integration runs.
+  - Updated `docs/testing_recorded_cli.md` so the matcher policy, plugin isolation, and daemon/browser boundary patching notes describe the actual shipped harness.
+- **Verification**:
+  - `uv run pytest tests/integration/cli_recorded/test_cli_interactive_subprocess.py -q -o addopts='-n0 --record-mode=none' --durations=10` (`4 passed in 5.34s`; slowest single test `4.75s`)
+  - `uv run pytest tests/integration/cli_recorded/test_cli_surface_manifest.py -q -o addopts='-n0 --record-mode=none' --durations=10` (`5 passed in 2.74s`)
+  - `uv run pytest tests/integration/cli_recorded -q -o addopts='-n0 --record-mode=none' --durations=20` (`54 passed, 5 skipped in 14.30s`)
+  - `ASKY_CLI_REAL_PROVIDER=1 uv run pytest tests/integration/cli_recorded -q -o addopts='-n0 --record-mode=none' -m real_recorded_cli` (`5 passed, 54 deselected in 2.85s`)
+  - `/usr/bin/time -p uv run pytest -q` (`1409 passed in 77.83s`; `real 78.01`)
+
 ## 2026-03-09: Single HTML Report Per Session & Summarized Auto Session Titles
 
 - **Summary**: Unified automatic session naming using an LLM short-title summarizer, changed session HTML reports to upsert by `session_id` instead of appending, and updated the sidebar index to render session reports as single entries with resume copy actions.
@@ -76,7 +94,13 @@ For full detailed entries, see [DEVLOG_ARCHIVE.md](DEVLOG_ARCHIVE.md).
   - Added `tests/scripts/test_run_research_quality_gate.py` to prove `scripts/run_research_quality_gate.sh` triggers for `pyproject.toml` changes and skips unrelated diffs.
   - Updated `scripts/run_research_quality_gate.sh` so `pyproject.toml` is treated as research-scoped because marker registration and default lane exclusions live there.
   - Refreshed real-provider cassettes for `tests/integration/cli_recorded/test_cli_real_model_recorded.py`.
-  - Updated `docs/testing_recorded_cli.md`, `docs/research_testing_strategy.md`, `tests/AGENTS.md`, and `ARCHITECTURE.md` to state that:
+  - Updated `docs/testing_recorded_cli.md` to state that:
+    - **Tool Isolation**: Web and research tools are disabled in the test config to prevent non-deterministic external calls.
+    - **Internal Boundary Patching**: Dispatch tests for background services (like `--daemon` or `--browser`) patch at the `asky.cli.main` boundary. This ensures we verify that the CLI correctly calls the intended launcher without actually spawning long-lived background processes during integration runs.
+    - real/live research lanes must use model-backed `-r` turns,
+    - deterministic `--query-corpus` coverage belongs in the fake recorded lane,
+    - `pyproject.toml` is part of research-gate scope.
+  - Updated `docs/research_testing_strategy.md`, `tests/AGENTS.md`, and `ARCHITECTURE.md` to state that:
     - real/live research lanes must use model-backed `-r` turns,
     - deterministic `--query-corpus` coverage belongs in the fake recorded lane,
     - `pyproject.toml` is part of research-gate scope.
@@ -253,6 +277,24 @@ For full detailed entries, see [DEVLOG_ARCHIVE.md](DEVLOG_ARCHIVE.md).
   - Added user phrasing guidance for triggering shortlist in eligible modes and for requesting deeper page-level verification beyond search snippets.
 - **Verification**:
   - `uv run pytest` (1366 passed)
+
+## 2026-03-10: Exhaustive Integration Test Coverage for CLI Surface
+
+- **Summary**: Implemented exhaustive integration coverage for the entire asky CLI surface, covering core chat controls, history/session management, manual research commands, user memory, personas, and plugin-contributed flags.
+- **Why**: To provide a deterministic, fast, and robust quality gate that prevents regressions in CLI parsing, orchestration, and rendering without requiring live LLM access.
+- **Key Changes**:
+  - Added `tests/integration/cli_recorded/test_cli_session_recorded.py` (history/session management).
+  - Added `tests/integration/cli_recorded/test_cli_history_session_recorded.py` (message history).
+  - Added `tests/integration/cli_recorded/test_cli_chat_controls_recorded.py` (model aliases, turns, lean mode, etc.).
+  - Added `tests/integration/cli_recorded/test_cli_memory_surface_recorded.py` (memory list/delete/clear).
+  - Added `tests/integration/cli_recorded/test_cli_persona_recorded.py` (persona lifecycle and @mentions).
+  - Added `tests/integration/cli_recorded/test_cli_plugin_surface_recorded.py` (email, push, browser, daemon).
+  - Enhanced `tests/integration/cli_recorded/test_cli_interactive_subprocess.py` with `model add` and `daemon edit` flows.
+  - Fixed bug in `SQLiteHistoryRepository.delete_sessions` to support session names.
+  - Improved `conftest.py` with stable worker-specific ports for the fake LLM server and enforced isolation.
+  - Updated VCR configuration to match on request bodies for turn-level determinism.
+- **Verification**:
+  - `uv run pytest tests/integration/cli_recorded` (43 passed, 5 skipped) - all green in `none` record mode.
 
 ## 2026-03-02: Prevent Silent Completion on Empty Graceful-Exit Final Answer
 

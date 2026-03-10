@@ -1107,9 +1107,15 @@ class SQLiteHistoryRepository(HistoryRepository):
                     if result:
                         session_ids_to_delete = [result[0]]
                 except ValueError:
-                    print("Error: Invalid ID format. Use an integer.")
-                    conn.close()
-                    return 0
+                    # Fallback to name search
+                    c.execute("SELECT id FROM sessions WHERE name = ?", (ids.strip(),))
+                    rows = c.fetchall()
+                    if rows:
+                        session_ids_to_delete = [r[0] for r in rows]
+                    else:
+                        print(f"Error: Session '{ids}' not found.")
+                        conn.close()
+                        return 0
         else:
             conn.close()
             return 0

@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 import logging
 import os
+import sys
 from pathlib import Path
 from typing import Optional
 
@@ -164,7 +165,12 @@ def edit_daemon_command() -> None:
     enabled = Confirm.ask("Enable XMPP daemon", default=current.enabled)
     jid = Prompt.ask("XMPP JID", default=current.jid)
     password_default = current.password if current.password else ""
-    password = Prompt.ask("XMPP Password", default=password_default, password=True)
+    # Mask password only if we have a real TTY to avoid hanging in pipes/tests
+    password = Prompt.ask(
+        "XMPP Password",
+        default=password_default,
+        password=sys.stdin.isatty(),
+    )
     allowlist_default = ",".join(current.allowed_jids)
     allowed_raw = Prompt.ask(
         "Allowed users (comma-separated bare/full JIDs)",

@@ -10,6 +10,8 @@ from pathlib import Path
 from typing import Any, Optional
 from unittest.mock import patch
 
+import pytest
+
 
 class CliRunResult:
     def __init__(self, exit_code: int, stdout: str, stderr: str):
@@ -51,6 +53,25 @@ def _with_default_model(argv: list[str], model_alias: str) -> list[str]:
     return ["-m", model_alias, *argv]
 
 
+def _deterministic_session_name(query: str, max_words: int = 2) -> str:
+    from asky.core import session_manager as session_manager_mod
+
+    normalized_query = session_manager_mod._strip_terminal_context_wrapper(query)
+    if not normalized_query:
+        return "session"
+
+    words = re.findall(r"[a-zA-Z]+", normalized_query.lower())
+    key_words = [
+        word
+        for word in words
+        if word not in session_manager_mod.STOPWORDS and len(word) > 2
+    ]
+    selected = key_words[:max_words]
+    if not selected:
+        return "session"
+    return "_".join(selected)
+
+
 def run_cli_inprocess(
     argv: list[str], env_overrides: Optional[dict[str, str]] = None
 ) -> CliRunResult:
@@ -83,6 +104,11 @@ def run_cli_inprocess(
             lock_dir = home_path / ".asky_shell_locks"
             lock_dir.mkdir(parents=True, exist_ok=True)
             setattr(core_session_mod, "LOCK_DIR", lock_dir)
+            setattr(
+                core_session_mod,
+                "generate_session_name",
+                _deterministic_session_name,
+            )
             core_mod = importlib.import_module("asky.core")
             importlib.reload(core_mod)
             storage_sqlite_mod = importlib.import_module("asky.storage.sqlite")
@@ -91,8 +117,23 @@ def run_cli_inprocess(
             importlib.reload(storage_mod)
             storage_mod.init_db()
 
+            api_session_mod = importlib.import_module("asky.api.session")
+            importlib.reload(api_session_mod)
+            setattr(
+                api_session_mod,
+                "generate_session_name",
+                _deterministic_session_name,
+            )
+
             cli_main_mod = importlib.import_module("asky.cli.main")
             importlib.reload(cli_main_mod)
+            
+            # Re-initialize plugin runtime for the new HOME/config_dir
+            runtime_mod = importlib.import_module("asky.plugins.runtime")
+            importlib.reload(runtime_mod)
+            setattr(runtime_mod, "_RUNTIME_CACHE", None)
+            setattr(runtime_mod, "_RUNTIME_INITIALIZED", False)
+
             cli_main_mod.main()
         except SystemExit as e:
             exit_code = e.code if isinstance(e.code, int) else (1 if e.code else 0)
@@ -167,6 +208,49 @@ def assert_output_contains_any_fragment(text: str, fragments: list[str]) -> None
     raise AssertionError(
         f"Expected one of '{joined}' to appear in output:\n{normalized}"
     )
+
+
+def get_captured_fake_requests(request: pytest.FixtureRequest) -> list[dict]:
+    """Get the list of captured request payloads from the fake LLM server."""
+    try:
+        server = request.getfixturevalue("fake_llm_server")
+        return list(server.get("requests", []))
+    except Exception:
+        return []
+
+def clear_captured_fake_requests(request: pytest.FixtureRequest) -> None:
+    """Clear the captured request payloads in the fake LLM server."""
+    try:
+        server = request.getfixturevalue("fake_llm_server")
+        if "requests" in server:
+            server["requests"].clear()
+    except Exception:
+        pass
+
+
+def configure_plugins_for_test(config_dir: Path, enabled_plugins: list[str]) -> None:
+    """Rewrite plugins.toml to explicitly enable the specified plugins."""
+    content = ""
+    if enabled_plugins:
+        content += "[plugins]\n"
+        for p in enabled_plugins:
+            content += f'"{p}" = true\n'
+    (config_dir / "plugins.toml").write_text(content, encoding="utf-8")
+
+
+def get_last_html_report(home_dir: Path) -> Optional[Path]:
+    """Find the most recently modified HTML report file in the test home directory."""
+    # Assuming reports are saved either under ASKY_HOME or standard paths
+    reports_dir = home_dir / ".config" / "asky" / "reports"
+    if not reports_dir.exists():
+        # Fallback if saved in .asky or somewhere else
+        reports_dir = home_dir / ".asky" / "reports"
+        if not reports_dir.exists():
+            return None
+    reports = list(reports_dir.glob("*.html"))
+    if not reports:
+        return None
+    return sorted(reports, key=lambda p: p.stat().st_mtime)[-1]
 
 
 def get_session_profile_by_name(session_name: str) -> Optional[dict[str, Any]]:

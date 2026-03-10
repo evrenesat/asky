@@ -88,3 +88,24 @@ This gate is only enforced when you call it.
 Recommended setup:
 1. Local `pre-push` hook calls `run_research_quality_gate.sh`.
 2. CI job calls the same script and is marked as a required branch protection check.
+
+## 5. Integration Coverage Surface
+
+The fake recorded and subprocess lanes provide exhaustive coverage for the Asky CLI:
+
+- **Core Chat**: One-shot queries, model overrides, max turns, and lean mode.
+- **History & Sessions**: Session creation, resumption, listing, deletion, and auto-naming.
+- **Research & Corpus**: Manual corpus queries and section summarization.
+- **Memory Management**: Listing, deleting, and clearing user memories.
+- **Personas**: Creation, listing, aliases, and @mention behavior.
+- **Plugins**: Email sending, data pushing, browser login, and daemon dispatch.
+- **Interactive Flows**: Model configuration and daemon setup.
+
+### Stability and Determinism
+
+- **Stable Ports**: The fake LLM server uses a stable port derived from the pytest worker ID (e.g., 50000 for `gw0`).
+- **Request Matching**: Fake recorded replay matches on method/scheme/host/path/query. Real-provider replay adds normalized JSON-body matching for deterministic one-shot/session cases, while multi-turn research replay uses endpoint plus ordered cassette interactions because corpus/tool payloads contain dynamic source handles.
+- **Time Freezing**: `ASKY_CLI_FIXED_TIME` is used to ensure deterministic system prompts.
+- **Tool Isolation**: Web and research tools are disabled in the test config to prevent non-deterministic external calls.
+- **Plugin Isolation**: The recorded harness enables only the plugins required by each test. The real-provider replay lane opts in to the transcriber plugins so recorded request bodies keep the same public tool surface.
+- **Internal Boundary Patching**: Dispatch tests for background services (like `--daemon` or `--browser`) patch at the `asky.cli.main` boundary. This ensures we verify that the CLI correctly calls the intended launcher without actually spawning long-lived background processes during integration runs.

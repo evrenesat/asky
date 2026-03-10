@@ -1,11 +1,12 @@
 import json
 import os
+import re
 import shutil
+import threading
 from datetime import datetime
 from hashlib import sha1
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
-import threading
 
 import pytest
 
@@ -14,6 +15,112 @@ RESEARCH_FIXTURE_ROOT = PROJECT_ROOT / "tests" / "fixtures" / "research_corpus"
 RESEARCH_QUERIES_ANSWERS_PATH = RESEARCH_FIXTURE_ROOT / "queries_answers.md"
 REAL_PROVIDER_URL = "https://openrouter.ai/api/v1/chat/completions"
 REAL_PROVIDER_DEFAULT_MODEL_ID = "google/gemini-2.0-flash-lite-001"
+
+_PLUGIN_METADATA = {
+    "manual_persona_creator": {
+        "module": "asky.plugins.manual_persona_creator.plugin",
+        "class": "ManualPersonaCreatorPlugin",
+        "capabilities": ["tool_registry", "preload", "prompt"],
+    },
+    "persona_manager": {
+        "module": "asky.plugins.persona_manager.plugin",
+        "class": "PersonaManagerPlugin",
+        "capabilities": ["tool_registry", "prompt", "preload", "session"],
+    },
+    "gui_server": {
+        "module": "asky.plugins.gui_server.plugin",
+        "class": "GUIServerPlugin",
+        "capabilities": ["daemon_server", "gui"],
+    },
+    "xmpp_daemon": {
+        "module": "asky.plugins.xmpp_daemon.plugin",
+        "class": "XMPPDaemonPlugin",
+        "capabilities": ["daemon_transport"],
+        "dependencies": ["voice_transcriber", "image_transcriber"],
+    },
+    "voice_transcriber": {
+        "module": "asky.plugins.voice_transcriber.plugin",
+        "class": "VoiceTranscriberPlugin",
+        "capabilities": ["capability", "local_source_handler", "tool_registry"],
+        "config_file": "voice_transcriber.toml",
+    },
+    "image_transcriber": {
+        "module": "asky.plugins.image_transcriber.plugin",
+        "class": "ImageTranscriberPlugin",
+        "capabilities": ["capability", "local_source_handler", "tool_registry"],
+        "config_file": "image_transcriber.toml",
+    },
+    "push_data": {
+        "module": "asky.plugins.push_data.plugin",
+        "class": "PushDataPlugin",
+        "capabilities": ["tool_registry", "post_turn"],
+    },
+    "email_sender": {
+        "module": "asky.plugins.email_sender.plugin",
+        "class": "EmailSenderPlugin",
+        "capabilities": ["post_turn"],
+    },
+    "playwright_browser": {
+        "module": "asky.plugins.playwright_browser.plugin",
+        "class": "PlaywrightBrowserPlugin",
+        "config_file": "plugins/playwright_browser.toml",
+    },
+}
+
+_CORPUS_HANDLE_PATTERN = re.compile(r"corpus://cache/\d+")
+
+
+def pytest_configure(config):
+    config.addinivalue_line(
+        "markers", "with_plugins(plugins): list of plugins to enable for the test"
+    )
+
+
+def _normalize_recorded_body_value(value):
+    if isinstance(value, dict):
+        normalized = {
+            key: _normalize_recorded_body_value(child) for key, child in value.items()
+        }
+        tools = normalized.get("tools")
+        if isinstance(tools, list):
+            normalized["tools"] = sorted(
+                tools,
+                key=lambda item: (
+                    item.get("function", {}).get("name", "")
+                    if isinstance(item, dict)
+                    else ""
+                ),
+            )
+        return normalized
+    if isinstance(value, list):
+        return [_normalize_recorded_body_value(item) for item in value]
+    if isinstance(value, str):
+        return _CORPUS_HANDLE_PATTERN.sub("corpus://cache/<id>", value)
+    return value
+
+
+def _normalized_json_body_matcher(r1, r2):
+    body1 = getattr(r1, "body", None)
+    body2 = getattr(r2, "body", None)
+    if isinstance(body1, bytes):
+        body1 = body1.decode("utf-8")
+    if isinstance(body2, bytes):
+        body2 = body2.decode("utf-8")
+
+    try:
+        payload1 = json.loads(body1 or "null")
+        payload2 = json.loads(body2 or "null")
+    except json.JSONDecodeError as exc:
+        raise AssertionError("request body was not valid JSON") from exc
+
+    normalized1 = _normalize_recorded_body_value(payload1)
+    normalized2 = _normalize_recorded_body_value(payload2)
+    if normalized1 != normalized2:
+        raise AssertionError
+
+
+def pytest_recording_configure(config, vcr):
+    vcr.register_matcher("normalized_json_body", _normalized_json_body_matcher)
 
 
 def pytest_collection_modifyitems(items):
@@ -26,14 +133,22 @@ def pytest_collection_modifyitems(items):
                 item.add_marker(pytest.mark.vcr)
 
 
-@pytest.fixture(scope="module")
-def vcr_config():
+@pytest.fixture
+def vcr_config(request: pytest.FixtureRequest):
     """Configure VCR with strict record mode rules and redact sensitive headers."""
     record_mode = "once" if os.environ.get("ASKY_CLI_RECORD") else "none"
+    node_path = str(getattr(request.node, "fspath", "")).replace("\\", "/")
+    node_id = str(getattr(request.node, "nodeid", ""))
+    match_on = ["method", "scheme", "host", "path", "query"]
+    if (
+        node_path.endswith("/test_cli_real_model_recorded.py")
+        and "test_real_research_" not in node_id
+    ):
+        match_on.append("normalized_json_body")
     return {
         "filter_headers": ["authorization", "x-goog-api-key", "x-api-key", "api-key"],
         "record_mode": record_mode,
-        "match_on": ["method", "scheme", "host", "path", "query"],
+        "match_on": match_on,
     }
 
 
@@ -65,6 +180,11 @@ class _RecordedFakeLLMHandler(BaseHTTPRequestHandler):
         body_size = int(self.headers.get("Content-Length", "0"))
         body = self.rfile.read(body_size).decode("utf-8")
         payload = json.loads(body)
+
+        if not hasattr(self.server, "captured_requests"):
+            self.server.captured_requests = []
+        self.server.captured_requests.append(payload)
+
         messages = payload.get("messages", [])
         user_text = ""
         for msg in reversed(messages):
@@ -75,13 +195,15 @@ class _RecordedFakeLLMHandler(BaseHTTPRequestHandler):
         content = "ok"
         if "capital of france" in user_text:
             content = "Paris"
+        elif "capital of japan" in user_text:
+            content = "Tokyo"
         elif "say exactly 'pong'" in user_text:
             content = "PONG"
         elif "are you claude" in user_text:
             content = "yes"
-        elif "2+2" in user_text:
+        elif "2+2" in user_text or "1+1" in user_text:
             content = "4"
-        elif "what is my favorite color" in user_text:
+        elif "favorite color" in user_text:
             content = "blue"
         elif "interactive" in user_text:
             content = "interactive"
@@ -89,6 +211,30 @@ class _RecordedFakeLLMHandler(BaseHTTPRequestHandler):
             content = "software engineering"
         elif "hello" in user_text:
             content = "Hello from recorded fake LLM."
+        elif "just say apple" in user_text:
+            content = "apple"
+        elif "just say banana" in user_text:
+            content = "banana"
+        elif "just say kiwi" in user_text:
+            content = "kiwi"
+        elif "just say mango" in user_text:
+            content = "mango"
+        elif "just say orange" in user_text:
+            content = "orange"
+        elif "just say grape" in user_text:
+            content = "grape"
+        elif "capital of italy" in user_text:
+            content = "Rome"
+        elif "capital of spain" in user_text:
+            content = "Madrid"
+        elif "capital of germany" in user_text:
+            content = "Berlin"
+        elif "is it berlin" in user_text:
+            content = "Berlin"
+        elif "my cat's name" in user_text or "whiskers" in user_text:
+            content = "Whiskers"
+        elif "my dog's name" in user_text or "rover" in user_text:
+            content = "Rover"
 
         self.send_response(200)
         self.send_header("Content-Type", "application/json")
@@ -113,14 +259,31 @@ class _RecordedFakeLLMHandler(BaseHTTPRequestHandler):
         return
 
 
+class _ReusableHTTPServer(HTTPServer):
+    allow_reuse_address = True
+
+
 @pytest.fixture(scope="session")
 def fake_llm_server():
     """Session-scoped fake OpenAI-compatible endpoint for recorded in-process tests."""
-    server = HTTPServer(("127.0.0.1", 0), _RecordedFakeLLMHandler)
+    worker_id = os.environ.get("PYTEST_XDIST_WORKER", "gw0")
+    try:
+        worker_num = int(worker_id[2:]) if worker_id.startswith("gw") else 0
+    except ValueError:
+        worker_num = 0
+    port = 50000 + worker_num
+
+    server = _ReusableHTTPServer(("127.0.0.1", port), _RecordedFakeLLMHandler)
+    server.captured_requests = []
     host, port = server.server_address
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
-    yield {"host": host, "port": port, "url": f"http://{host}:{port}/v1/chat/completions"}
+    yield {
+        "host": host,
+        "port": port,
+        "url": f"http://{host}:{port}/v1/chat/completions",
+        "requests": server.captured_requests,
+    }
     server.shutdown()
     server.server_close()
     thread.join(timeout=1.0)
@@ -133,6 +296,58 @@ def _is_real_recorded_case(request: pytest.FixtureRequest) -> bool:
         return True
     marker = request.node.get_closest_marker("real_recorded_cli")
     return marker is not None
+
+
+_REAL_RECORDED_DEFAULT_PLUGINS = ["image_transcriber", "voice_transcriber"]
+
+
+def _resolve_enabled_plugins(request: pytest.FixtureRequest) -> list[str]:
+    marker = request.node.get_closest_marker("with_plugins")
+    enabled = list(marker.args[0]) if marker and marker.args else []
+    if _is_real_recorded_case(request):
+        for plugin_name in _REAL_RECORDED_DEFAULT_PLUGINS:
+            if plugin_name not in enabled:
+                enabled.append(plugin_name)
+    resolved = set(enabled)
+    stack = list(enabled)
+    while stack:
+        plugin_name = stack.pop()
+        metadata = _PLUGIN_METADATA.get(plugin_name, {})
+        for dependency in metadata.get("dependencies", []):
+            if dependency not in resolved:
+                resolved.add(dependency)
+                stack.append(dependency)
+    return sorted(resolved)
+
+
+def _write_plugins_config(config_dir: Path, enabled_plugins: list[str]) -> None:
+    plugin_config_lines: list[str] = []
+    for plugin_name, metadata in _PLUGIN_METADATA.items():
+        plugin_config_lines.append(f"[plugin.{plugin_name}]")
+        plugin_config_lines.append(
+            f"enabled = {'true' if plugin_name in enabled_plugins else 'false'}"
+        )
+        plugin_config_lines.append(f'module = "{metadata["module"]}"')
+        plugin_config_lines.append(f'class = "{metadata["class"]}"')
+        capabilities = metadata.get("capabilities")
+        if capabilities:
+            plugin_config_lines.append(f"capabilities = {json.dumps(capabilities)}")
+        dependencies = metadata.get("dependencies")
+        if dependencies:
+            plugin_config_lines.append(f"dependencies = {json.dumps(dependencies)}")
+        config_file = metadata.get("config_file")
+        if config_file:
+            plugin_config_lines.append(f'config_file = "{config_file}"')
+            cfg_path = config_dir / config_file
+            cfg_path.parent.mkdir(parents=True, exist_ok=True)
+            if not cfg_path.exists():
+                cfg_path.write_text("", encoding="utf-8")
+        plugin_config_lines.append("")
+
+    (config_dir / "plugins.toml").write_text(
+        "\n".join(plugin_config_lines),
+        encoding="utf-8",
+    )
 
 
 def _write_model_and_api_configs(
@@ -214,10 +429,14 @@ def recorded_cli_environment(
         'default_model = "gf"\n'
         'summarization_model = "gf"\n'
         'interface_model = "gf"\n'
+        'shortlist_enabled = false\n'
         "\n"
         "[limits]\n"
         "max_retries = 1\n"
-        "initial_backoff = 0\n",
+        "initial_backoff = 0\n"
+        "\n"
+        "[tools]\n"
+        'off = ["web", "searxng", "wikipedia", "playwright_browser"]\n',
         encoding="utf-8",
     )
 
@@ -237,13 +456,14 @@ def recorded_cli_environment(
 
     (config_dir / "research.toml").write_text(
         "[research]\n"
+        "enabled = false\n"
         f'local_document_roots = ["{stable_research_root}", "{RESEARCH_FIXTURE_ROOT}"]\n'
         "allow_absolute_paths_outside_roots = true\n",
         encoding="utf-8",
     )
     (config_dir / "prompts.toml").write_text("", encoding="utf-8")
     (config_dir / "user.toml").write_text("", encoding="utf-8")
-    (config_dir / "plugins.toml").write_text("", encoding="utf-8")
+    _write_plugins_config(config_dir, _resolve_enabled_plugins(request))
     (config_dir / "xmpp.toml").write_text("", encoding="utf-8")
     (config_dir / "voice_transcriber.toml").write_text("", encoding="utf-8")
     (config_dir / "image_transcriber.toml").write_text("", encoding="utf-8")

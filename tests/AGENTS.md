@@ -84,3 +84,19 @@ The `tests/integration/cli_recorded/` suite uses `pytest-recording` (VCR.py) to 
 - Use `scripts/run_research_quality_gate.sh` in local `pre-push` and CI required checks.
 - Treat `pyproject.toml` as research-gate scope because it controls marker registration and default lane exclusions.
 - Reference policy/integration examples: `docs/research_testing_strategy.md`.
+
+## Exhaustive CLI Coverage Surface
+
+The `tests/integration/cli_recorded/` suite provides mandatory exhaustive coverage for the Asky CLI:
+
+- **Mandatory**: All new public CLI flags or subcommands MUST have a corresponding test in this lane.
+- **Mechanism**: Fast in-process execution (`run_cli_inprocess`) and realism-focused subprocess execution.
+- **Determinism**: Matches on stable ports (worker-specific) and request bodies. Time is frozen via fixture.
+- **Surface Area**:
+  - Chat controls (model selection, turns, lean mode, verbose, system prompts)
+  - Session/History management (listing, creation, deletion, resumption, auto-naming)
+  - Research/Corpus manual commands (`--query-corpus`, `--summarize-section`)
+  - Memory surface (list, delete, clear)
+  - Persona surface (create, import/export, aliases, @mentions)
+  - Plugin-contributed flags (email, push, browser, daemon)
+  - Interactive configuration flows (model add/edit, daemon config)

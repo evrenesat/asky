@@ -831,16 +831,17 @@ A simplified "retrieval-only" system prompt guidance is injected in these cases 
 ### Decision 24: Recorded CLI Integration Framework
 
 - **Context**: Relying solely on manual CLI testing or heavily mocked unit tests limits confidence in LLM integration and process boundaries.
-- **Decision**: Use a three-lane CLI research quality strategy: fake recorded replay, real-provider recorded replay, and live slow research checks.
+- **Decision**: Use a three-lane CLI integration quality strategy: fake recorded replay, real-provider recorded replay, and live slow research checks. The fake recorded and subprocess lanes provide exhaustive coverage for the entire supported CLI surface.
 - **Implementation**:
-  - **Fake Recorded Lane (In-Process)**: Uses `pytest-recording` (VCR.py) with a local fake OpenAI-compatible endpoint. Run explicitly with `uv run pytest tests/integration/cli_recorded -q -o addopts='-n0 --record-mode=none' -m "recorded_cli and not real_recorded_cli"`.
+  - **Fake Recorded Lane (In-Process)**: Provides exhaustive coverage for core chat, history, sessions, manual corpus commands, user memory, personas, and plugin flags. Uses `pytest-recording` (VCR.py) with a local fake OpenAI-compatible endpoint. Run explicitly with `uv run pytest tests/integration/cli_recorded -q -o addopts='-n0 --record-mode=none' -m "recorded_cli and not real_recorded_cli"`.
   - **Real-Provider Recorded Lane**: Uses `pytest-recording` against OpenRouter during refresh, then replay-only in CI/local checks. Research assertions in this lane must use model-backed `-r <source> <question>` turns rather than deterministic `--query-corpus` commands. Run with `ASKY_CLI_REAL_PROVIDER=1 uv run pytest tests/integration/cli_recorded -q -o addopts='-n0 --record-mode=none' -m real_recorded_cli`.
-  - **Subprocess Lane**: Uses `subprocess` and `pty` for tests requiring true process isolation or TTY realism (e.g., interactive prompts). Backed by a local fake HTTP server instead of VCR for determinism without real network dependencies.
+  - **Subprocess Lane**: Uses `subprocess` and `pty` for tests requiring true process isolation or TTY realism (e.g., interactive prompts like model add/edit and daemon config). Backed by a local fake HTTP server instead of VCR for determinism without real network dependencies.
   - **Live Research Lane**: `tests/integration/cli_live/` runs real-model research checks against committed realistic corpus fixtures (multi-file plus PDF/EPUB) via model-backed `-r` research turns. Marked `live_research` + `slow`; excluded from default suite.
   - **Quality Gate Script**: `scripts/run_research_quality_gate.sh` enforces fake replay + real replay + live checks when research-scoped paths are touched.
     It must be invoked explicitly (recommended: local `pre-push` + CI required status check), and its scope includes `pyproject.toml` because marker policy lives there.
-  - Isolated temporary home directories (`fake_home`) and fixed datetime fixtures ensure replay stability.
+  - **Determinism**: Isolated temporary home directories (`fake_home`), stable worker-specific ports, and fixed datetime fixtures ensure replay stability.
 - **Key invariants**:
+  - All new public CLI features MUST have a corresponding integration test.
   - Unrecorded network calls fail tests in default mode.
   - Real-provider recording and live lanes fail fast without `OPENROUTER_API_KEY`.
   - Subprocess tests do not use `pytest-recording`.

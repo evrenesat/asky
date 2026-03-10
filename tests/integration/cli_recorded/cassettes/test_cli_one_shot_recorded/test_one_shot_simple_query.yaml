@@ -2,9 +2,9 @@ interactions:
 - request:
     body: '{"model": "fake/gf", "messages": [{"role": "system", "content": "You are
       a helpful assistant with web search and URL retrieval capabilities. \n\nThe
-      current date and time is: Wednesday, March 04, 2026 at 13:55\nUse this date
-      as the absolute truth for any time-sensitive queries (e.g., \"today\", \"this
-      week\", \"recently\", \"current\", \"latest\").\n\nAlways start your final response
+      current date and time is: Monday, January 01, 2024 at 12:00\nUse this date as
+      the absolute truth for any time-sensitive queries (e.g., \"today\", \"this week\",
+      \"recently\", \"current\", \"latest\").\n\nAlways start your final response
       with a single H1 markdown header (# Title) that captures the essence of your
       answer in a concise title (3-7 words).\nAlways prioritize using markdown formatting
       (headers, bold, lists, tables) in your final response to ensure clarity and
@@ -36,13 +36,13 @@ interactions:
       Connection:
       - keep-alive
       Content-Length:
-      - '2165'
+      - '2164'
       Content-Type:
       - application/json
       User-Agent:
       - asky/1.0.0
     method: POST
-    uri: http://127.0.0.1:59334/v1/chat/completions
+    uri: http://127.0.0.1:50000/v1/chat/completions
   response:
     body:
       string: '{"id": "chatcmpl-recorded", "object": "chat.completion", "created":
@@ -53,7 +53,7 @@ interactions:
       Content-Type:
       - application/json
       Date:
-      - Wed, 04 Mar 2026 12:55:39 GMT
+      - Tue, 10 Mar 2026 11:26:26 GMT
       Server:
       - BaseHTTP/0.6 Python/3.13.5
     status:

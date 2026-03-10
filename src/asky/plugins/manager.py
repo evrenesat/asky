@@ -70,7 +70,6 @@ class PluginManager:
     def load_roster(self) -> List[PluginManifest]:
         """Load plugin roster from ~/.config/asky/plugins.toml."""
         self._ensure_roster_file()
-
         try:
             with self.roster_path.open("rb") as file_obj:
                 payload = tomllib.load(file_obj)

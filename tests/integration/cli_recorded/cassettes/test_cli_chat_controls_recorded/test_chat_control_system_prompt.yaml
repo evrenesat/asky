@@ -1,0 +1,102 @@
+interactions:
+- request:
+    body: '{"model": "fake/gf", "messages": [{"role": "system", "content": "You are
+      a query optimizer for asky.\nAnalyze the user query and decide if web search
+      is needed, if tool access should be restricted, if the prompt needs enrichment,
+      or if a durable fact should be saved to memory.\n\nWhen user does not ask for
+      details;\n- Aim for fastest response as possible. \n- Shortlisting is only for
+      when you need to fetch multiple pages.\n- If shortlist is enabled, prefer search_only
+      mode.\n\nReturn ONLY a valid JSON object with these fields:\n  \"shortlist_enabled\":
+      boolean (true if web search/snippets might help)\n  \"web_tools_mode\": \"full\"
+      | \"search_only\" | \"off\"\n  \"prompt_enrichment\": optional string (context
+      to append to the query)\n  \"memory_action\": optional object or null\n  \"reason\":
+      short string explaining your decision\n\nRules:\n1. web_tools_mode=\"full\"
+      allows search + page fetching.\n2. web_tools_mode=\"search_only\" allows search/snippets
+      but disables deep page fetching.\n3. web_tools_mode=\"off\" disables all web
+      tools.\n4. prompt_enrichment should only contain high-value context, never repeat
+      the query.\n5. memory_action if provided must be: {\"scope\": \"global\", \"memory\":
+      \"the fact to save\", \"tags\": [\"tag1\", \"tag2\"]}\n6. memory_action should
+      only be used for durable user facts/preferences (e.g., \"User prefers Python\",
+      \"User lives in NYC\").\n7. Do NOT include markdown, prose, or explanations."},
+      {"role": "user", "content": "Just say apple."}], "stream": false}'
+    headers:
+      Accept:
+      - '*/*'
+      Accept-Encoding:
+      - gzip, deflate
+      Connection:
+      - keep-alive
+      Content-Length:
+      - '1518'
+      Content-Type:
+      - application/json
+      User-Agent:
+      - asky/1.0.0
+    method: POST
+    uri: http://127.0.0.1:50000/v1/chat/completions
+  response:
+    body:
+      string: '{"id": "chatcmpl-recorded", "object": "chat.completion", "created":
+        1704110400, "model": "fake/gf", "choices": [{"index": 0, "message": {"role":
+        "assistant", "content": "apple"}, "finish_reason": "stop"}], "usage": {"prompt_tokens":
+        10, "completion_tokens": 5, "total_tokens": 15}}'
+    headers:
+      Content-Type:
+      - application/json
+      Date:
+      - Tue, 10 Mar 2026 11:41:19 GMT
+      Server:
+      - BaseHTTP/0.6 Python/3.13.5
+    status:
+      code: 200
+      message: OK
+- request:
+    body: '{"model": "fake/gf", "messages": [{"role": "system", "content": "You are
+      a pirate.\n\n[SYSTEM UPDATE]:\n- Context Used: 0.03%- Turns Remaining: 20 (out
+      of 20)\nPlease manage your context usage efficiently."}, {"role": "user", "content":
+      "Just say apple."}], "stream": false, "tools": [{"type": "function", "function":
+      {"name": "transcribe_image_url", "description": "Describe or transcribe an image
+      from a public HTTPS URL. Supports formats like PNG, JPEG, WEBP, GIF.", "parameters":
+      {"type": "object", "properties": {"url": {"type": "string", "description": "The
+      public HTTPS URL of the image file."}, "prompt": {"type": "string", "description":
+      "Optional specific question or prompt about the image."}}, "required": ["url"]}}},
+      {"type": "function", "function": {"name": "transcribe_audio_url", "description":
+      "Transcribe an audio file from a public HTTPS URL to text. Supports common formats
+      like MP3, M4A, WAV, WebM, OGG.", "parameters": {"type": "object", "properties":
+      {"url": {"type": "string", "description": "The public HTTPS URL of the audio
+      file."}, "prompt": {"type": "string", "description": "Optional initial prompt
+      to guide transcription (e.g. spelling of names)."}, "language": {"type": "string",
+      "description": "Optional ISO 639-1 language code (e.g. ''en'', ''fr'')."}},
+      "required": ["url"]}}}], "tool_choice": "auto"}'
+    headers:
+      Accept:
+      - '*/*'
+      Accept-Encoding:
+      - gzip, deflate
+      Connection:
+      - keep-alive
+      Content-Length:
+      - '1331'
+      Content-Type:
+      - application/json
+      User-Agent:
+      - asky/1.0.0
+    method: POST
+    uri: http://127.0.0.1:50000/v1/chat/completions
+  response:
+    body:
+      string: '{"id": "chatcmpl-recorded", "object": "chat.completion", "created":
+        1704110400, "model": "fake/gf", "choices": [{"index": 0, "message": {"role":
+        "assistant", "content": "apple"}, "finish_reason": "stop"}], "usage": {"prompt_tokens":
+        10, "completion_tokens": 5, "total_tokens": 15}}'
+    headers:
+      Content-Type:
+      - application/json
+      Date:
+      - Tue, 10 Mar 2026 11:41:19 GMT
+      Server:
+      - BaseHTTP/0.6 Python/3.13.5
+    status:
+      code: 200
+      message: OK
+version: 1
