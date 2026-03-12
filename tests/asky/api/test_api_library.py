@@ -477,7 +477,10 @@ def test_asky_client_run_turn_preserves_helper_notices_after_callback(
     mock_engine_cls, mock_save, mock_run, mock_resolve_session, mock_preload
 ):
     # Ensure INTERFACE_MODEL is not empty for the test
-    with patch("asky.config.INTERFACE_MODEL", "gpt4"):
+    with (
+        patch("asky.config.INTERFACE_MODEL", "gpt4"),
+        patch("asky.config.INTERFACE_MODEL_PLAIN_QUERY_ENABLED", True),
+    ):
         # Setup mock engine to return a decision with enrichment and memory action
         mock_engine = mock_engine_cls.return_value
         mock_engine.decide.return_value = MagicMock(

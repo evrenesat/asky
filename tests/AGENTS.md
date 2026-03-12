@@ -47,6 +47,8 @@ uv run pytest tests/asky/cli/test_cli.py::test_function_name
 - `tests/conftest.py` remains the shared top-level fixture module.
 - Keep common fixtures here unless scope/locality requires a package-level `conftest.py`.
 - All tests run with HOME/ASKY_HOME/ASKY_DB_PATH rooted under `tests/.test_home/` (gitignored) to prevent any writes to real user configuration.
+- Shared unit-test fixtures also disable the plain-query helper by default so ordinary API/CLI/storage tests do not make live helper-model calls.
+- Helper/planner suites that intentionally exercise that behavior must opt in explicitly or live in the fixture allowlist (`test_interface_query_policy.py`, `test_plain_query_memory_validation.py`, `test_plain_query_helper_gates.py`, `test_preload_policy.py`).
 
 ## Conventions
 
@@ -55,6 +57,7 @@ uv run pytest tests/asky/cli/test_cli.py::test_function_name
 - Put non-CLI module wiring tests in the owning component bucket under `tests/asky/`.
 - Use `@pytest.mark.slow` for tests expected to exceed one second.
 - Avoid path-depth assumptions from `__file__`; prefer repository-root discovery by locating `pyproject.toml`.
+- Unit tests should not depend on live helper/planner defaults or remote model availability unless that dependency is the explicit subject of the test.
 
 ## CLI Integration Testing & pytest-recording
 

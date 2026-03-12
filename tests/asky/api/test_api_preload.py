@@ -1,6 +1,7 @@
 """Tests for API preload seed URL context behavior."""
 
 from typing import Any, Dict
+from unittest.mock import patch
 
 from asky.api.preload import (
     _collect_preloaded_source_urls,
@@ -216,6 +217,33 @@ def test_run_preload_pipeline_forwards_trace_callback_to_shortlist_executor(monk
 
     assert preload.shortlist_enabled is True
     assert observed["trace_forwarded"] is True
+
+
+def test_run_preload_pipeline_skips_policy_engine_when_shortlist_disabled(monkeypatch):
+    import asky.api.preload as preload_mod
+
+    monkeypatch.setattr(preload_mod, "USER_MEMORY_ENABLED", False)
+    monkeypatch.setattr(preload_mod, "QUERY_EXPANSION_ENABLED", False)
+
+    with patch.object(preload_mod.PreloadPolicyEngine, "decide") as mock_decide:
+        preload = run_preload_pipeline(
+            query_text="Summarize the key points",
+            research_mode=True,
+            model_config={},
+            lean=False,
+            preload_local_sources=True,
+            preload_shortlist=False,
+            local_ingestion_executor=lambda **_kwargs: {
+                "enabled": True,
+                "ingested": [{"target": "doc1.txt", "source_handle": "corpus://1"}],
+            },
+            local_ingestion_formatter=lambda _payload: None,
+        )
+
+    mock_decide.assert_not_called()
+    assert preload.shortlist_enabled is False
+    assert preload.shortlist_reason == "request_disabled"
+    assert preload.shortlist_policy_source == "request"
 
 
 def test_shortlist_enabled_for_request_honors_request_override_on():

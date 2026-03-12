@@ -162,6 +162,7 @@ class TestVectorStore:
             embedding_client=mock_embedding_client,
             chroma_persist_directory=str(tmp_path / "chroma"),
         )
+        store._chroma_disabled = True
         return store
 
     def test_store_chunk_embeddings(self, vector_store, mock_embedding_client):
@@ -533,6 +534,7 @@ class TestVectorStoreFindingsMethods:
             embedding_client=mock_embedding_client,
             chroma_persist_directory=str(tmp_path / "chroma"),
         )
+        store._chroma_disabled = True
         return store
 
     def test_store_finding_embedding(self, vector_store_with_findings, mock_embedding_client):

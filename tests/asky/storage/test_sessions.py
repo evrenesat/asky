@@ -444,12 +444,16 @@ def test_deferred_auto_rename_triggers_on_first_query(temp_db_path):
             sid, {"pending_auto_name": True}
         )
 
-        _rename_pending_auto_named_session(sid, "explain quantum computing")
+        with patch(
+            "asky.cli.chat.generate_session_name",
+            return_value="quantum_computing",
+        ):
+            _rename_pending_auto_named_session(sid, "explain quantum computing")
 
         renamed = repo.get_session_by_id(sid)
         assert renamed is not None
         assert "unnamed" not in renamed.name.lower()
-        assert "quantum" in renamed.name.lower() or "computing" in renamed.name.lower()
+        assert renamed.name == "quantum_computing"
 
         defaults = renamed.query_defaults or {}
         assert "pending_auto_name" not in defaults

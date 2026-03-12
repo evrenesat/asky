@@ -161,8 +161,8 @@ def shortlist_enabled_for_request(
     query_text: Optional[str] = None,
     research_source_mode: Optional[str] = None,
     has_local_corpus: bool = False,
-    interface_model_alias: Optional[str] = INTERFACE_MODEL,
-    interface_model_prompt: Optional[str] = INTERFACE_PRELOAD_POLICY_SYSTEM_PROMPT,
+    interface_model_alias: Optional[str] = None,
+    interface_model_prompt: Optional[str] = None,
     double_verbose: bool = False,
 ) -> tuple[bool, str, str, str, Optional[Dict[str, Any]]]:
     """Resolve shortlist enablement with precedence: lean > request > mode_local_only > model > global > policy."""
@@ -189,11 +189,20 @@ def shortlist_enabled_for_request(
     if normalized_override == "off":
         return False, "request_override_off", SOURCE_GLOBAL, "", None
 
+    resolved_interface_model_alias = (
+        INTERFACE_MODEL if interface_model_alias is None else interface_model_alias
+    )
+    resolved_interface_model_prompt = (
+        INTERFACE_PRELOAD_POLICY_SYSTEM_PROMPT
+        if interface_model_prompt is None
+        else interface_model_prompt
+    )
+
     # For local-corpus turns, we use adaptive policy if not explicitly overridden
     if research_mode and has_local_corpus and query_text:
         policy = PreloadPolicyEngine(
-            model_alias=interface_model_alias,
-            system_prompt=interface_model_prompt,
+            model_alias=resolved_interface_model_alias,
+            system_prompt=resolved_interface_model_prompt,
             double_verbose=double_verbose,
         )
         decision = policy.decide(
@@ -630,29 +639,28 @@ def run_preload_pipeline(
         if research_source_mode == "local_only":
             skip_web_search = True
 
-    (
-        shortlist_enabled,
-        shortlist_reason,
-        policy_source,
-        policy_intent,
-        policy_diagnostics,
-    ) = shortlist_enabled_for_request(
-        lean=lean,
-        model_config=model_config,
-        research_mode=research_mode,
-        shortlist_override=shortlist_override,
-        query_text=query_text,
-        research_source_mode=research_source_mode,
-        has_local_corpus=bool(ingested_docs),
-    )
     if not preload_shortlist:
-        shortlist_enabled = False
-        shortlist_reason = "request_disabled"
-    preload.shortlist_enabled = shortlist_enabled
-    preload.shortlist_reason = shortlist_reason
-    preload.shortlist_policy_source = policy_source
-    preload.shortlist_policy_intent = policy_intent
-    preload.shortlist_policy_diagnostics = policy_diagnostics
+        preload.shortlist_enabled = False
+        preload.shortlist_reason = "request_disabled"
+        preload.shortlist_policy_source = "request"
+        preload.shortlist_policy_intent = ""
+        preload.shortlist_policy_diagnostics = None
+    else:
+        (
+            preload.shortlist_enabled,
+            preload.shortlist_reason,
+            preload.shortlist_policy_source,
+            preload.shortlist_policy_intent,
+            preload.shortlist_policy_diagnostics,
+        ) = shortlist_enabled_for_request(
+            lean=lean,
+            model_config=model_config,
+            research_mode=research_mode,
+            shortlist_override=shortlist_override,
+            query_text=query_text,
+            research_source_mode=research_source_mode,
+            has_local_corpus=bool(ingested_docs),
+        )
 
     shortlist_payload: Dict[str, Any] = {
         "enabled": False,
@@ -667,7 +675,7 @@ def run_preload_pipeline(
     }
     shortlist_context: Optional[str] = None
     shortlist_elapsed_ms = 0.0
-    if shortlist_enabled:
+    if preload.shortlist_enabled:
         if status_callback:
             status_callback("Shortlist: starting pre-LLM retrieval")
         shortlist_start = time.perf_counter()
@@ -700,7 +708,7 @@ def run_preload_pipeline(
                 f"selected in {shortlist_elapsed_ms:.0f}ms"
             )
     elif status_callback:
-        status_callback(f"Shortlist disabled ({shortlist_reason})")
+        status_callback(f"Shortlist disabled ({preload.shortlist_reason})")
 
     preload.shortlist_payload = shortlist_payload
     preload.seed_url_context = format_seed_url_context(

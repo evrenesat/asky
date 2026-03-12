@@ -8,6 +8,12 @@ from unittest.mock import patch
 import pytest
 
 TEST_HOME_ROOT = Path(__file__).resolve().parent / ".test_home"
+HELPER_POLICY_TEST_PATHS = (
+    "tests/asky/api/test_interface_query_policy.py",
+    "tests/asky/api/test_plain_query_memory_validation.py",
+    "tests/asky/api/test_plain_query_helper_gates.py",
+    "tests/asky/api/test_preload_policy.py",
+)
 
 
 def _test_home_for_node(nodeid: str, worker_id: str) -> Path:
@@ -68,3 +74,20 @@ def block_live_network_for_recorded_lane(request: pytest.FixtureRequest, monkeyp
 
     monkeypatch.setattr(socket.socket, "connect", guard)
     monkeypatch.setattr(socket, "create_connection", guard)
+
+
+@pytest.fixture(autouse=True)
+def disable_plain_query_helper_for_unit_tests(
+    request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch
+):
+    """Keep unit tests off the live plain-query helper unless they target it."""
+    node_path = str(getattr(request.node, "fspath", "")).replace("\\", "/")
+    if any(path in node_path for path in HELPER_POLICY_TEST_PATHS):
+        return
+    if "tests/integration/cli_recorded/" in node_path:
+        return
+    if "tests/integration/cli_live/" in node_path:
+        return
+
+    monkeypatch.setattr("asky.config.INTERFACE_MODEL", "")
+    monkeypatch.setattr("asky.config.INTERFACE_MODEL_PLAIN_QUERY_ENABLED", False)

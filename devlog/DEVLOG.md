@@ -23,6 +23,28 @@ For full detailed entries, see [DEVLOG_ARCHIVE.md](DEVLOG_ARCHIVE.md).
   - Recorded CLI assertions: `uv run pytest tests/integration/cli_recorded/test_cli_chat_controls_recorded.py tests/integration/cli_recorded/test_cli_history_session_recorded.py tests/integration/cli_recorded/test_cli_memory_surface_recorded.py tests/integration/cli_recorded/test_cli_session_recorded.py -q -o addopts='-n0 --record-mode=none'` -> `29 passed in 6.46s`
   - Final full suite: `uv run pytest` -> `1400 passed in 44.17s`
 
+## 2026-03-12: Removed Live Helper/Planner Latency from Unit Tests
+
+- **Summary**: Cut avoidable test runtime by stopping disabled-shortlist preload from invoking the planner model, disabling the plain-query helper by default in unit-test harnesses, and moving non-Chroma vector-store tests onto a SQLite-only fixture path.
+- **Changes**:
+  - Updated `src/asky/api/preload.py` so `preload_shortlist=False` short-circuits before shortlist policy evaluation instead of still consulting `PreloadPolicyEngine`.
+  - Changed `shortlist_enabled_for_request()` to resolve interface-model defaults at call time rather than freezing them as import-time defaults.
+  - Added preload regression coverage in `tests/asky/api/test_api_preload.py` to prove the planner is not invoked when shortlist execution is disabled.
+  - Added an autouse unit-test fixture in `tests/conftest.py` that disables the plain-query helper unless the test is explicitly exercising helper/planner behavior.
+  - Updated `tests/asky/api/test_api_library.py` so the helper-notice regression test opts back into helper mode explicitly.
+  - Patched `tests/asky/storage/test_sessions.py::test_deferred_auto_rename_triggers_on_first_query` to use a deterministic generated name instead of paying real summarization latency.
+  - Marked the default vector-store fixtures in `tests/asky/research/test_research_vector_store.py` as SQLite-only by disabling Chroma for non-Chroma tests.
+  - Added default CLI test-module fixture patches in `tests/asky/cli/test_cli.py` to keep unit tests off plugin-runtime startup and live-banner behavior unless a test explicitly overrides them.
+- **Gotchas**:
+  - The shared helper-disabling fixture will hide helper behavior unless a test opts back in. Any future helper/planner regression tests need to patch `INTERFACE_MODEL` and `INTERFACE_MODEL_PLAIN_QUERY_ENABLED` explicitly, or live under the existing helper-policy allowlist.
+  - The preload fix is user-visible correctness too, not just a test optimization. A caller that disables shortlist should never spend time on planner resolution.
+- **Verification**:
+  - Baseline before changes: `/usr/bin/time -p uv run pytest -q` -> `1400 passed in 37.78s` (`real 38.28`)
+  - Targeted preload regression: `uv run pytest tests/asky/api/test_api_preload.py -q -n0` -> `18 passed in 0.22s`
+  - Targeted helper regression: `uv run pytest tests/asky/api/test_api_turn_resolution.py::test_memory_trigger_prefix_removal_unicode_safe -q -n0 --durations=5` -> `1 passed in 0.12s`
+  - Targeted storage regression: `uv run pytest tests/asky/storage/test_sessions.py::test_deferred_auto_rename_triggers_on_first_query -q -n0 --durations=5` -> `1 passed in 0.20s`
+  - Final full suite: `/usr/bin/time -p uv run pytest -q` -> `1401 passed in 26.22s` (`real 26.39`)
+
 ## 2026-03-10: Stabilized Recorded CLI Coverage and Runtime
 
 - **Summary**: Finished the exhaustive CLI integration coverage follow-up by removing debug artifacts, restoring truthful matcher policy, minimizing the recorded plugin roster, and cutting the slow subprocess realism path down to a bounded single slow test.

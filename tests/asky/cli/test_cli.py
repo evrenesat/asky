@@ -48,6 +48,15 @@ def mock_args():
     )
 
 
+@pytest.fixture(autouse=True)
+def disable_plugin_runtime(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setattr(
+        "asky.plugins.runtime.get_or_create_plugin_runtime",
+        lambda *args, **kwargs: None,
+    )
+    monkeypatch.setattr("asky.cli.chat.LIVE_BANNER", False)
+
+
 def test_parse_args_defaults():
     with patch("asky.cli.main.DEFAULT_MODEL", "gf"):
         with patch("sys.argv", ["asky", "query"]):
