@@ -71,10 +71,12 @@ def test_session_show_and_history():
     # -ps alias
     result_ps = run_cli_inprocess(["-ps", "test_sess_3"])
     assert result_ps.exit_code == 0
+    assert "apple" in normalize_cli_output(result_ps.stdout).lower()
 
     # `session show`
     result_show = run_cli_inprocess(["session", "show", "test_sess_3"])
     assert result_show.exit_code == 0
+    assert "apple" in normalize_cli_output(result_show.stdout).lower()
 
     # -sh / --session-history (lists sessions)
     result_sh = run_cli_inprocess(["-sh", "10"])
@@ -89,21 +91,20 @@ def test_session_show_and_history():
 
 def test_session_end_aliases():
     """Test session ending via various aliases."""
-    run_cli_inprocess(["-ss", "to_be_ended"])
-    
-    # \q
-    result = run_cli_inprocess(["\\q"])
-    assert result.exit_code == 0
-    
-    # session end
     run_cli_inprocess(["-ss", "to_be_ended_2"])
     result2 = run_cli_inprocess(["session", "end"])
     assert result2.exit_code == 0
-    
+    assert "detached from session" in normalize_cli_output(result2.stdout).lower()
+    status2 = run_cli_inprocess(["session"])
+    assert "no active session" in normalize_cli_output(status2.stdout).lower()
+
     # -se / --session-end
     run_cli_inprocess(["-ss", "to_be_ended_3"])
     result3 = run_cli_inprocess(["-se"])
     assert result3.exit_code == 0
+    assert "detached from session" in normalize_cli_output(result3.stdout).lower()
+    status3 = run_cli_inprocess(["session"])
+    assert "no active session" in normalize_cli_output(status3.stdout).lower()
 
 
 def test_session_delete_and_clean():

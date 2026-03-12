@@ -4,6 +4,8 @@ import os
 import json
 from pathlib import Path
 
+from asky.storage.sqlite import SQLiteHistoryRepository
+
 from tests.integration.cli_recorded.helpers import (
     normalize_cli_output,
     run_cli_inprocess,
@@ -65,6 +67,9 @@ def test_elephant_mode(request):
     """Test -em / --elephant-mode flag."""
     run_cli_inprocess(["-ss", "elephant_test"])
     run_cli_inprocess(["-rs", "elephant_test", "--elephant-mode", "-off", "all", "--shortlist", "off", "Just say apple."])
-    
+
     result = run_cli_inprocess(["session", "show", "elephant_test"])
     assert result.exit_code == 0
+    session = SQLiteHistoryRepository().get_session_by_name("elephant_test")
+    assert session is not None
+    assert session.memory_auto_extract is True

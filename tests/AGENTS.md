@@ -38,7 +38,7 @@ uv run pytest tests/asky/cli/test_cli.py::test_function_name
 - `tests/asky/evals/research_pipeline/`: Eval dataset/assertion/matrix/source-provider contracts
 - `tests/asky/plugins/`: Shared plugin runtime tests
 - `tests/asky/plugins/<plugin_name>/`: Plugin-specific tests (xmpp_daemon, persona_manager, gui_server, transcribers, etc.)
-- `tests/integration/`: Cross-component integration tests
+- `tests/integration/`: Cross-cutting CLI and subprocess integration tests
 - `tests/performance/`: Performance guardrails
 - `tests/scripts/`: Script-level tests
 
@@ -51,7 +51,8 @@ uv run pytest tests/asky/cli/test_cli.py::test_function_name
 ## Conventions
 
 - Prefer test placement that matches source module ownership.
-- Keep cross-cutting tests in `tests/integration/` rather than a component bucket.
+- Keep CLI input-to-CLI output and subprocess realism tests in `tests/integration/`.
+- Put non-CLI module wiring tests in the owning component bucket under `tests/asky/`.
 - Use `@pytest.mark.slow` for tests expected to exceed one second.
 - Avoid path-depth assumptions from `__file__`; prefer repository-root discovery by locating `pyproject.toml`.
 

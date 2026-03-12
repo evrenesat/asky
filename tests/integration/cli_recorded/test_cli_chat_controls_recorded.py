@@ -1,6 +1,7 @@
 import pytest
 from unittest.mock import patch
-from pathlib import Path
+
+from asky.storage.sqlite import SQLiteHistoryRepository
 
 from tests.integration.cli_recorded.helpers import (
     assert_output_contains_fragments,
@@ -20,9 +21,23 @@ def test_chat_control_model_alias():
 
 def test_chat_control_summarize():
     """Test -s / --summarize flag."""
-    # We trust VCR to match the summarization request if recorded
-    result = run_cli_inprocess(["-s", "-off", "all", "--shortlist", "off", "Summarize https://example.com"])
+    run_cli_inprocess(["-ss", "summarize_test"])
+    result = run_cli_inprocess(
+        [
+            "-rs",
+            "summarize_test",
+            "-s",
+            "-off",
+            "all",
+            "--shortlist",
+            "off",
+            "Summarize https://example.com",
+        ]
+    )
     assert result.exit_code == 0
+    session = SQLiteHistoryRepository().get_session_by_name("summarize_test")
+    assert session is not None
+    assert session.query_defaults.get("summarize") is True
 
 
 def test_chat_control_turns():
@@ -51,6 +66,9 @@ def test_chat_control_shortlist():
     # Verify persisted in next turn
     result = run_cli_inprocess(["-rs", "shortlist_test", "-off", "all", "Query 2"])
     assert result.exit_code == 0
+    session = SQLiteHistoryRepository().get_session_by_name("shortlist_test")
+    assert session is not None
+    assert session.shortlist_override == "off"
 
 
 def test_chat_control_tools_overrides():
@@ -67,13 +85,31 @@ def test_chat_control_tools_overrides():
     # Verify persisted
     result = run_cli_inprocess(["-rs", "tools_test", "Just say apple."])
     assert result.exit_code == 0
+    session = SQLiteHistoryRepository().get_session_by_name("tools_test")
+    assert session is not None
+    assert session.query_defaults.get("tool_off") == ["all"]
 
 
 def test_chat_control_system_prompt():
     """Test -sp / --system-prompt override."""
-    # We trust VCR matching for the exact prompt
-    result = run_cli_inprocess(["-sp", "You are a pirate.", "-off", "all", "--shortlist", "off", "Just say apple."])
+    run_cli_inprocess(["-ss", "system_prompt_test"])
+    result = run_cli_inprocess(
+        [
+            "-rs",
+            "system_prompt_test",
+            "-sp",
+            "You are a pirate.",
+            "-off",
+            "all",
+            "--shortlist",
+            "off",
+            "Just say apple.",
+        ]
+    )
     assert result.exit_code == 0
+    session = SQLiteHistoryRepository().get_session_by_name("system_prompt_test")
+    assert session is not None
+    assert session.query_defaults.get("system_prompt") == "You are a pirate."
 
 
 @patch("asky.cli.terminal.get_terminal_context", return_value="LAST_TERMINAL_LINE")
@@ -81,6 +117,7 @@ def test_chat_control_terminal_lines(mock_get_term):
     """Test -tl / --terminal-lines flag."""
     result = run_cli_inprocess(["-tl", "5", "-off", "all", "--shortlist", "off", "What is above?"])
     assert result.exit_code == 0
+    assert mock_get_term.called
 
 
 def test_chat_control_verbose():

@@ -95,14 +95,16 @@ def test_session_from_message_and_reply():
 def test_continue_chat():
     """Test -c / --continue-chat."""
     run_cli_inprocess(["-off", "all", "--shortlist", "off", "First message."])
-    
+
     # continue last implicitly
     result = run_cli_inprocess(["-c", "Second message."])
     assert result.exit_code == 0
-    
+    assert "loaded context from ids" in normalize_cli_output(result.stdout).lower()
+
     # continue specific ID
     result2 = run_cli_inprocess(["-c", "1", "Third message."])
     assert result2.exit_code == 0
+    assert "loaded context from ids: 1" in normalize_cli_output(result2.stdout).lower()
 
 
 def test_prompts_list():
@@ -110,7 +112,13 @@ def test_prompts_list():
     # --prompts
     result = run_cli_inprocess(["--prompts"])
     assert result.exit_code == 0
-    
+    normalized = normalize_cli_output(result.stdout).lower()
+    assert "user prompts" in normalized
+    assert "/gn" in normalized
+
     # prompts list
     result2 = run_cli_inprocess(["prompts", "list"])
     assert result2.exit_code == 0
+    normalized2 = normalize_cli_output(result2.stdout).lower()
+    assert "user prompts" in normalized2
+    assert "/wh" in normalized2

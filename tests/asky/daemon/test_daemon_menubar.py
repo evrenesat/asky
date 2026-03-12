@@ -211,6 +211,40 @@ def test_menubar_actions_use_state_aware_labels(monkeypatch, tmp_path):
     assert app.action_startup.title == "Disable Run at Login"
 
 
+def test_tray_menu_register_hook_collects_plugin_entries():
+    """TRAY_MENU_REGISTER hook passes status/action entry lists to subscribers."""
+    from asky.plugins.hook_types import TRAY_MENU_REGISTER, TrayMenuRegisterContext
+
+    hooks = HookRegistry()
+    hooks.register(
+        TRAY_MENU_REGISTER,
+        lambda ctx: (
+            ctx.status_entries.append(TrayPluginEntry(get_label=lambda: "s1")),
+            ctx.action_entries.append(
+                TrayPluginEntry(get_label=lambda: "a1", on_action=lambda: None)
+            ),
+        ),
+        plugin_name="test_plugin",
+    )
+
+    status_entries = []
+    action_entries = []
+    ctx = TrayMenuRegisterContext(
+        status_entries=status_entries,
+        action_entries=action_entries,
+        start_service=lambda: None,
+        stop_service=lambda: None,
+        is_service_running=lambda: False,
+        on_error=lambda _: None,
+    )
+    hooks.invoke(TRAY_MENU_REGISTER, ctx)
+
+    assert len(status_entries) == 1
+    assert status_entries[0].get_label() == "s1"
+    assert len(action_entries) == 1
+    assert action_entries[0].get_label() == "a1"
+
+
 def test_start_service_with_daemon_user_error_shows_alert(monkeypatch):
     """TrayController.start_service surfaces DaemonUserError via on_error."""
     from asky.daemon.errors import DaemonUserError

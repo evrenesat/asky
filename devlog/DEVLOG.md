@@ -2,6 +2,27 @@
 
 For full detailed entries, see [DEVLOG_ARCHIVE.md](DEVLOG_ARCHIVE.md).
 
+## 2026-03-12: Tightened CLI Integration Assertions and Rehomed Misplaced Tests
+
+- **Summary**: Cleaned up the integration suite by removing redundant non-CLI tests from `tests/integration/`, moving module-wiring coverage into owning component buckets, and replacing several `exit_code == 0` checks in the recorded CLI lane with assertions on persisted session state or explicit CLI output.
+- **Changes**:
+  - Deleted `tests/integration/test_integration.py` because it only exercised storage/helpers directly and duplicated CLI coverage already present in the recorded history/session suite.
+  - Moved `tests/integration/test_mention_pipeline_integration.py` to `tests/asky/plugins/persona_manager/test_mention_pipeline.py`, and removed the duplicated `tests/asky/cli/test_mention_integration.py` file.
+  - Split `tests/integration/test_plugin_integration.py` by ownership into:
+    - `tests/asky/core/test_runtime_hook_wiring.py`
+    - `tests/asky/plugins/test_plugin_dependency_issues.py`
+    - `tests/asky/daemon/test_daemon_service.py`
+    - additional tray-menu hook coverage in `tests/asky/daemon/test_daemon_menubar.py`
+  - Strengthened recorded CLI tests so chat-control/session/history/memory assertions now verify persisted session defaults, shortlist and elephant-mode session state, prompt listing output, session-detach behavior, and continued-chat notices.
+  - Updated `tests/AGENTS.md` to reserve `tests/integration/` for CLI input-to-output and subprocess realism coverage, while keeping non-CLI wiring tests in `tests/asky/`.
+- **Gotchas**:
+  - The old `\q` expectation in `test_session_end_aliases` was a bad test assumption, not a CLI regression. `\q` is not implemented anywhere in the codebase or documented CLI surface, so the test now covers the actual supported session-end commands.
+- **Verification**:
+  - Baseline before changes: `uv run pytest` -> `1409 passed in 51.15s`
+  - Moved/split suites: `uv run pytest tests/asky/core/test_runtime_hook_wiring.py tests/asky/plugins/test_plugin_dependency_issues.py tests/asky/daemon/test_daemon_service.py tests/asky/daemon/test_daemon_menubar.py tests/asky/plugins/persona_manager/test_mention_pipeline.py -q` -> `42 passed in 4.23s`
+  - Recorded CLI assertions: `uv run pytest tests/integration/cli_recorded/test_cli_chat_controls_recorded.py tests/integration/cli_recorded/test_cli_history_session_recorded.py tests/integration/cli_recorded/test_cli_memory_surface_recorded.py tests/integration/cli_recorded/test_cli_session_recorded.py -q -o addopts='-n0 --record-mode=none'` -> `29 passed in 6.46s`
+  - Final full suite: `uv run pytest` -> `1400 passed in 44.17s`
+
 ## 2026-03-10: Stabilized Recorded CLI Coverage and Runtime
 
 - **Summary**: Finished the exhaustive CLI integration coverage follow-up by removing debug artifacts, restoring truthful matcher policy, minimizing the recorded plugin roster, and cutting the slow subprocess realism path down to a bounded single slow test.
