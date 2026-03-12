@@ -87,7 +87,7 @@ dev = [
 ]
 
 [tool.pytest.ini_options]
-addopts = "-n auto --record-mode=none -m not\\ recorded_cli\\ and\\ not\\ subprocess_cli\\ and\\ not\\ live_research"
+addopts = "-n 3 --record-mode=none -m not\\ subprocess_cli\\ and\\ not\\ real_recorded_cli\\ and\\ not\\ live_research"
 norecursedirs = [".hypothesis", "data", "dist", "temp", "plan", "evals/research_pipeline/matrices/temp"]
 filterwarnings = [
     "ignore:websockets.legacy is deprecated:DeprecationWarning",
@@ -98,5 +98,40 @@ markers = [
     "subprocess_cli: Subprocess integration tests",
     "live_research: Slow live real-model research capability tests",
     "live_record: Cassette refresh workflows",
+    "feature_domain(name): Assign a test module or item to a feature domain",
     "slow: Tests expected to exceed one second",
+]
+
+[tool.asky.pytest_feature_domains]
+fallback = "run_all"
+run_all_env_var = "ASKY_PYTEST_RUN_ALL_DOMAINS"
+
+[tool.asky.pytest_feature_domains.domains.research]
+activation_paths = [
+    "src/asky/research",
+    "src/asky/api/client.py",
+    "src/asky/api/preload.py",
+    "src/asky/api/session.py",
+    "src/asky/api/types.py",
+    "src/asky/cli/chat.py",
+    "src/asky/cli/main.py",
+    "src/asky/cli/section_commands.py",
+    "tests/integration/cli_recorded/test_cli_research_local_recorded.py",
+    "tests/integration/cli_recorded/test_cli_real_model_recorded.py",
+    "tests/integration/cli_live/test_cli_research_live.py",
+    "tests/fixtures/research_corpus",
+    "scripts/refresh_cli_cassettes.sh",
+    "scripts/run_research_quality_gate.sh",
+    "docs/research_mode.md",
+    "docs/document_qa.md",
+    "docs/testing_recorded_cli.md",
+    "docs/research_testing_strategy.md",
+    "ARCHITECTURE.md",
+    "tests/AGENTS.md",
+    "tests/ARCHITECTURE.md",
+    "pyproject.toml",
+]
+test_paths = [
+    "tests/integration/cli_live/test_cli_research_live.py",
+    "tests/integration/cli_recorded/test_cli_real_model_recorded.py",
 ]

@@ -21,9 +21,8 @@ def live_cli_environment(
     if not os.environ.get("OPENROUTER_API_KEY"):
         pytest.fail("OPENROUTER_API_KEY is required for live_research tests.")
 
-    worker_id = os.environ.get("PYTEST_XDIST_WORKER", "gw0")
     digest = sha1(request.node.nodeid.encode("utf-8")).hexdigest()[:12]
-    fake_home = test_home_root / worker_id / f"live-{digest}"
+    fake_home = test_home_root / f"live-{digest}"
     if fake_home.exists():
         shutil.rmtree(fake_home)
 

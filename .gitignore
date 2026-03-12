@@ -1,1 +1,2 @@
-tests/.test_home/
+temp/
+.gemini/ralph/state.json

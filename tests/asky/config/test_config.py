@@ -63,6 +63,15 @@ def test_invalid_config_exits(tmp_path):
         assert excinfo.value.code == 1
 
 
+def test_get_config_dir_prefers_asky_home_env(monkeypatch, tmp_path):
+    from asky.config.loader import _get_config_dir
+
+    asky_home = tmp_path / "custom-asky-home"
+    monkeypatch.setenv("ASKY_HOME", str(asky_home))
+
+    assert _get_config_dir() == asky_home
+
+
 def test_plain_query_interface_config():
     from asky.config import (
         INTERFACE_MODEL_PLAIN_QUERY_ENABLED,

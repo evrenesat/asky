@@ -3,11 +3,15 @@ import shutil
 import socket
 from hashlib import sha1
 from pathlib import Path
+from typing import Iterator
 from unittest.mock import patch
 
 import pytest
 
-TEST_HOME_ROOT = Path(__file__).resolve().parent / ".test_home"
+pytest_plugins = ("asky.testing.pytest_feature_domains",)
+
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+TEST_HOME_ROOT = PROJECT_ROOT / "temp" / "test_home"
 HELPER_POLICY_TEST_PATHS = (
     "tests/asky/api/test_interface_query_policy.py",
     "tests/asky/api/test_plain_query_memory_validation.py",
@@ -16,15 +20,37 @@ HELPER_POLICY_TEST_PATHS = (
 )
 
 
-def _test_home_for_node(nodeid: str, worker_id: str) -> Path:
+def _test_home_for_node(nodeid: str, worker_root: Path) -> Path:
     digest = sha1(nodeid.encode("utf-8")).hexdigest()[:12]
-    return TEST_HOME_ROOT / worker_id / digest
+    return worker_root / digest
+
+
+def _worker_test_home_root() -> Path:
+    worker_id = os.environ.get("PYTEST_XDIST_WORKER", "gw0")
+    return TEST_HOME_ROOT / worker_id / str(os.getpid())
+
+
+def _prune_empty_parents(path: Path, stop: Path) -> None:
+    current = path
+    while current != stop:
+        try:
+            current.rmdir()
+        except OSError:
+            return
+        current = current.parent
 
 
 @pytest.fixture(scope="session")
-def test_home_root() -> Path:
-    TEST_HOME_ROOT.mkdir(parents=True, exist_ok=True)
-    return TEST_HOME_ROOT
+def test_home_root() -> Iterator[Path]:
+    worker_root = _worker_test_home_root()
+    if worker_root.exists():
+        shutil.rmtree(worker_root)
+    worker_root.mkdir(parents=True, exist_ok=True)
+    yield worker_root
+    if worker_root.exists():
+        shutil.rmtree(worker_root)
+    _prune_empty_parents(worker_root.parent, PROJECT_ROOT)
+
 
 @pytest.fixture(autouse=True)
 def mock_settings_env_vars(request: pytest.FixtureRequest, test_home_root: Path):
@@ -33,9 +59,11 @@ def mock_settings_env_vars(request: pytest.FixtureRequest, test_home_root: Path)
     if "tests/integration/cli_recorded/" in node_path:
         yield
         return
+    if "tests/integration/cli_live/" in node_path:
+        yield
+        return
 
-    worker_id = os.environ.get("PYTEST_XDIST_WORKER", "gw0")
-    fake_home = _test_home_for_node(request.node.nodeid, worker_id)
+    fake_home = _test_home_for_node(request.node.nodeid, test_home_root)
     if fake_home.exists():
         shutil.rmtree(fake_home)
     fake_home.mkdir(parents=True, exist_ok=True)

@@ -28,10 +28,13 @@ Located in `data/config/`:
 
 ## Loading Flow (`loader.py`)
 
-1. Load bundled config files from `data/config/`
-2. Create user config at `~/.config/asky/` if missing
-3. Deep-merge user config over defaults
-4. Hydrate model definitions with API details
+1. Resolve the config directory.
+2. If `ASKY_HOME` is set, use that directory directly.
+3. Otherwise use the default user directory at `~/.config/asky/`.
+4. Load bundled config files from `data/config/`.
+5. Create missing user config files in the resolved config directory.
+6. Deep-merge user config over defaults.
+7. Hydrate model definitions with API details.
 
 ### Function: `load_config()`
 
@@ -129,6 +132,7 @@ which updates `xmpp.toml` and startup-at-login registration per platform.
 
 | Variable             | Purpose                |
 | -------------------- | ---------------------- |
+| `ASKY_HOME`          | Override config dir root |
 | `ASKY_DB_PATH`       | Override database path |
 | `SERPER_API_KEY`     | Serper search API key  |
 | `TAVILY_API_KEY`     | Tavily search API key  |

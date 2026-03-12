@@ -47,17 +47,11 @@ if [[ "${#changed_files[@]}" -eq 0 ]]; then
   exit 0
 fi
 
-research_scope_pattern='^(src/asky/research/|src/asky/api/(client|preload|session|types)\.py|src/asky/cli/(chat|main|section_commands)\.py|tests/integration/cli_recorded/|tests/integration/cli_live/|tests/fixtures/research_corpus/|scripts/refresh_cli_cassettes\.sh|scripts/run_research_quality_gate\.sh|docs/research_mode\.md|docs/document_qa\.md|docs/testing_recorded_cli\.md|docs/research_testing_strategy\.md|ARCHITECTURE\.md|tests/AGENTS\.md|pyproject\.toml)$'
-
-research_changed=0
-for file_path in "${changed_files[@]}"; do
-  if [[ "${file_path}" =~ ${research_scope_pattern} ]]; then
-    research_changed=1
-    break
-  fi
-done
-
-if [[ "${research_changed}" -eq 0 ]]; then
+if ! uv run python -m asky.testing.feature_domains domain-active \
+  --domain research \
+  --base "${base_ref}" \
+  --head "${head_ref}" \
+  --repo-root .; then
   echo "No research-scoped changes detected; skipping research quality gate."
   exit 0
 fi

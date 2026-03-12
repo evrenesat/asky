@@ -416,9 +416,8 @@ def recorded_cli_environment(
             "OPENROUTER_API_KEY is required to refresh real_recorded_cli cassettes."
         )
 
-    worker_id = os.environ.get("PYTEST_XDIST_WORKER", "gw0")
     digest = sha1(request.node.nodeid.encode("utf-8")).hexdigest()[:12]
-    fake_home = test_home_root / worker_id / f"recorded-{digest}"
+    fake_home = test_home_root / f"recorded-{digest}"
     if fake_home.exists():
         shutil.rmtree(fake_home)
     config_dir = fake_home / ".config" / "asky"

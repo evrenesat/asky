@@ -1,3 +1,4 @@
+import contextlib
 import importlib
 import json
 import os
@@ -26,6 +27,40 @@ TRANSIENT_PROVIDER_ERROR_PATTERNS = (
     "rate limit",
     "service unavailable",
     "temporarily unavailable",
+)
+
+MODULE_RELOAD_ORDER = (
+    "asky.config.loader",
+    "asky.config",
+    "asky.storage.sqlite",
+    "asky.storage",
+    "asky.plugins.manager",
+    "asky.plugins.runtime",
+    "asky.core.api_client",
+    "asky.core.tool_registry_factory",
+    "asky.core.session_manager",
+    "asky.core.engine",
+    "asky.core",
+    "asky.research.adapters",
+    "asky.research.cache",
+    "asky.research.vector_store",
+    "asky.cli.local_ingestion_flow",
+    "asky.api.preload_policy",
+    "asky.api.interface_query_policy",
+    "asky.api.preload",
+    "asky.api.session",
+    "asky.api.client",
+    "asky.api",
+    "asky.cli.display",
+    "asky.cli.history",
+    "asky.cli.prompts",
+    "asky.cli.sessions",
+    "asky.cli.memory_commands",
+    "asky.cli.research_commands",
+    "asky.cli.section_commands",
+    "asky.cli.utils",
+    "asky.cli.chat",
+    "asky.cli.main",
 )
 
 
@@ -72,6 +107,37 @@ def _deterministic_session_name(query: str, max_words: int = 2) -> str:
     return "_".join(selected)
 
 
+def _reset_stateful_runtime() -> None:
+    runtime_mod = sys.modules.get("asky.plugins.runtime")
+    if runtime_mod is not None:
+        runtime_cache = getattr(runtime_mod, "_RUNTIME_CACHE", None)
+        if runtime_cache is not None:
+            with contextlib.suppress(Exception):
+                runtime_cache.shutdown()
+        setattr(runtime_mod, "_RUNTIME_CACHE", None)
+        setattr(runtime_mod, "_RUNTIME_INITIALIZED", False)
+
+    for module_name, class_name in (
+        ("asky.research.embeddings", "EmbeddingClient"),
+        ("asky.research.cache", "ResearchCache"),
+        ("asky.research.vector_store", "VectorStore"),
+    ):
+        module = sys.modules.get(module_name)
+        if module is None:
+            continue
+        cls = getattr(module, class_name, None)
+        if cls is not None and hasattr(cls, "_instance"):
+            setattr(cls, "_instance", None)
+
+
+def _reload_runtime_modules() -> dict[str, Any]:
+    reloaded: dict[str, Any] = {}
+    for module_name in MODULE_RELOAD_ORDER:
+        module = importlib.import_module(module_name)
+        reloaded[module_name] = importlib.reload(module)
+    return reloaded
+
+
 def run_cli_inprocess(
     argv: list[str], env_overrides: Optional[dict[str, str]] = None
 ) -> CliRunResult:
@@ -97,10 +163,9 @@ def run_cli_inprocess(
     ):
         exit_code = 0
         try:
-            config_mod = importlib.import_module("asky.config")
-            importlib.reload(config_mod)
-            core_session_mod = importlib.import_module("asky.core.session_manager")
-            importlib.reload(core_session_mod)
+            _reset_stateful_runtime()
+            reloaded_modules = _reload_runtime_modules()
+            core_session_mod = reloaded_modules["asky.core.session_manager"]
             lock_dir = home_path / ".asky_shell_locks"
             lock_dir.mkdir(parents=True, exist_ok=True)
             setattr(core_session_mod, "LOCK_DIR", lock_dir)
@@ -109,31 +174,17 @@ def run_cli_inprocess(
                 "generate_session_name",
                 _deterministic_session_name,
             )
-            core_mod = importlib.import_module("asky.core")
-            importlib.reload(core_mod)
-            storage_sqlite_mod = importlib.import_module("asky.storage.sqlite")
-            importlib.reload(storage_sqlite_mod)
-            storage_mod = importlib.import_module("asky.storage")
-            importlib.reload(storage_mod)
+            storage_mod = reloaded_modules["asky.storage"]
             storage_mod.init_db()
 
-            api_session_mod = importlib.import_module("asky.api.session")
-            importlib.reload(api_session_mod)
+            api_session_mod = reloaded_modules["asky.api.session"]
             setattr(
                 api_session_mod,
                 "generate_session_name",
                 _deterministic_session_name,
             )
 
-            cli_main_mod = importlib.import_module("asky.cli.main")
-            importlib.reload(cli_main_mod)
-            
-            # Re-initialize plugin runtime for the new HOME/config_dir
-            runtime_mod = importlib.import_module("asky.plugins.runtime")
-            importlib.reload(runtime_mod)
-            setattr(runtime_mod, "_RUNTIME_CACHE", None)
-            setattr(runtime_mod, "_RUNTIME_INITIALIZED", False)
-
+            cli_main_mod = reloaded_modules["asky.cli.main"]
             cli_main_mod.main()
         except SystemExit as e:
             exit_code = e.code if isinstance(e.code, int) else (1 if e.code else 0)

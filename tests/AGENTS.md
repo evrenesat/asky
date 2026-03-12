@@ -1,106 +1,203 @@
 # Tests Directory (`tests/`)
 
-Pytest-based test suite organized to mirror `src/asky`.
+Pytest suite for `asky`. This file is the short operational guide. For the
+full testing architecture, lane wiring, and gating details, read
+`tests/ARCHITECTURE.md`.
 
-## Running Tests
+## Default Run
+
+Plain `uv run pytest` currently means:
 
 ```bash
-# Full test suite (parallel by default via `-n auto`)
 uv run pytest
-
-# Verbose with output
-uv run pytest -v
-
-# Force single-process execution when debugging
-uv run pytest -n 0
-
-# Specific component directory
-uv run pytest tests/asky/cli
-
-# Specific test file
-uv run pytest tests/asky/cli/test_cli.py
-
-# Specific test function
-uv run pytest tests/asky/cli/test_cli.py::test_function_name
 ```
 
-## Layout
+That expands to:
 
-- `tests/asky/`: Component and module tests mirroring `src/asky/`
-- `tests/asky/api/`: `asky.api` orchestration and preload behavior
-- `tests/asky/cli/`: CLI parsing, command routing, inline help, and command handlers
-- `tests/asky/core/`: Conversation engine and core runtime contracts
-- `tests/asky/daemon/`: Daemon lifecycle, startup, tray/menubar behavior
-- `tests/asky/config/`: Config loading and defaults
-- `tests/asky/storage/`: SQLite persistence and session lifecycle
-- `tests/asky/memory/`: User memory extraction/recall flows
-- `tests/asky/research/`: Retrieval/RAG pipelines, shortlist, embeddings, vector store
-- `tests/asky/evals/research_pipeline/`: Eval dataset/assertion/matrix/source-provider contracts
-- `tests/asky/plugins/`: Shared plugin runtime tests
-- `tests/asky/plugins/<plugin_name>/`: Plugin-specific tests (xmpp_daemon, persona_manager, gui_server, transcribers, etc.)
-- `tests/integration/`: Cross-cutting CLI and subprocess integration tests
-- `tests/performance/`: Performance guardrails
-- `tests/scripts/`: Script-level tests
+- `-n 3`
+- `--record-mode=none`
+- `-m "not subprocess_cli and not real_recorded_cli and not live_research"`
 
-## Fixtures (`conftest.py`)
+So the default lane includes:
 
-- `tests/conftest.py` remains the shared top-level fixture module.
-- Keep common fixtures here unless scope/locality requires a package-level `conftest.py`.
-- All tests run with HOME/ASKY_HOME/ASKY_DB_PATH rooted under `tests/.test_home/` (gitignored) to prevent any writes to real user configuration.
-- Shared unit-test fixtures also disable the plain-query helper by default so ordinary API/CLI/storage tests do not make live helper-model calls.
-- Helper/planner suites that intentionally exercise that behavior must opt in explicitly or live in the fixture allowlist (`test_interface_query_policy.py`, `test_plain_query_memory_validation.py`, `test_plain_query_helper_gates.py`, `test_preload_policy.py`).
+- `tests/asky/**`
+- `tests/scripts/**`
+- `tests/performance/**`
+- the fake recorded in-process CLI lane marked `recorded_cli`
 
-## Conventions
+The default lane excludes:
 
-- Prefer test placement that matches source module ownership.
-- Keep CLI input-to-CLI output and subprocess realism tests in `tests/integration/`.
-- Put non-CLI module wiring tests in the owning component bucket under `tests/asky/`.
-- Use `@pytest.mark.slow` for tests expected to exceed one second.
-- Avoid path-depth assumptions from `__file__`; prefer repository-root discovery by locating `pyproject.toml`.
-- Unit tests should not depend on live helper/planner defaults or remote model availability unless that dependency is the explicit subject of the test.
+- `subprocess_cli`
+- `real_recorded_cli`
+- `live_research`
 
-## CLI Integration Testing & pytest-recording
+On top of that static marker filter, the shared feature-domain plugin may
+deselect configured heavy suites based on the current uncommitted git worktree.
+Today that dynamic gate only applies to the heaviest research lanes. It does
+not exclude fast research unit tests or the fake recorded local-research file.
 
-The `tests/integration/cli_recorded/` suite uses `pytest-recording` (VCR.py) to snapshot CLI interactions with LLM providers. 
+## Where Tests Belong
 
-### Custom Markers
-- `@pytest.mark.recorded_cli`: Applied to in-process recorded CLI tests.
-- `@pytest.mark.real_recorded_cli`: Applied to real-provider cassette-backed replay tests under `cli_recorded`.
-- `@pytest.mark.subprocess_cli`: Applied to subprocess integration tests (e.g. interactive sessions, PTY realism).
-- `@pytest.mark.live_research`: Applied to slow live research capability checks under `tests/integration/cli_live/`.
-- `@pytest.mark.live_record`: Applied to the cassette refresh workflows. 
+- `tests/asky/`: module and package tests that mirror `src/asky/`
+- `tests/integration/cli_recorded/`: in-process CLI integration tests and the
+  authoritative CLI surface coverage
+- `tests/integration/cli_live/`: live provider research capability checks
+- `tests/performance/`: performance guardrails
+- `tests/scripts/`: script-level tests
 
-### Refresh Policy
-- **By default**, tests run in `none` record mode (replay only). Tests will fail if a cassette is missing or live network access is attempted.
-- **To refresh fake cassettes**, run: `./scripts/refresh_cli_cassettes.sh fake`
-- **To refresh real-provider cassettes**, run: `ASKY_CLI_REAL_PROVIDER=1 ./scripts/refresh_cli_cassettes.sh real` (requires `OPENROUTER_API_KEY`).
-- `real_recorded_cli` replay/record runs are intentionally gated by `ASKY_CLI_REAL_PROVIDER=1`.
-- Real-provider recorded and live research assertions must use model-backed `-r <source> <question>` turns. Keep deterministic `--query-corpus` / `corpus query` coverage in the fake recorded lane.
-- The project default pytest addopts excludes `recorded_cli`, `subprocess_cli`, and `live_research` markers from `uv run pytest -q`. Run lanes explicitly with:
-  - `uv run pytest tests/integration/cli_recorded -q -o addopts='-n0 --record-mode=none' -m "recorded_cli and not real_recorded_cli"`
-  - `ASKY_CLI_REAL_PROVIDER=1 uv run pytest tests/integration/cli_recorded -q -o addopts='-n0 --record-mode=none' -m real_recorded_cli`
-  - `uv run pytest tests/integration/cli_live -q -o addopts='-n0 -m live_research'`
-- Recorded in-process CLI tests target a local fake OpenAI-compatible endpoint for deterministic cassette generation and replay.
-- Never allow cassette auto-growth in default runs. Redact sensitive headers/auth tokens in the `vcr_config` fixture.
+Do not put non-CLI wiring tests in `tests/integration/` just because they span
+multiple modules. If the public surface under test is not the CLI, prefer the
+owning `tests/asky/<package>/` directory.
 
-### Enforcement
-- The research quality gate is **not automatic** unless invoked.
-- Use `scripts/run_research_quality_gate.sh` in local `pre-push` and CI required checks.
-- Treat `pyproject.toml` as research-gate scope because it controls marker registration and default lane exclusions.
-- Reference policy/integration examples: `docs/research_testing_strategy.md`.
+## Test Lanes
 
-## Exhaustive CLI Coverage Surface
+### `tests/asky/**`
 
-The `tests/integration/cli_recorded/` suite provides mandatory exhaustive coverage for the Asky CLI:
+- Fast unit/component coverage.
+- Runs by default.
+- Uses the root sandbox fixtures in `tests/conftest.py`.
+- The plain-query helper is disabled by default here unless a test explicitly
+  opts in through the existing allowlist or fixture overrides.
 
-- **Mandatory**: All new public CLI flags or subcommands MUST have a corresponding test in this lane.
-- **Mechanism**: Fast in-process execution (`run_cli_inprocess`) and realism-focused subprocess execution.
-- **Determinism**: Matches on stable ports (worker-specific) and request bodies. Time is frozen via fixture.
-- **Surface Area**:
-  - Chat controls (model selection, turns, lean mode, verbose, system prompts)
-  - Session/History management (listing, creation, deletion, resumption, auto-naming)
-  - Research/Corpus manual commands (`--query-corpus`, `--summarize-section`)
-  - Memory surface (list, delete, clear)
-  - Persona surface (create, import/export, aliases, @mentions)
-  - Plugin-contributed flags (email, push, browser, daemon)
-  - Interactive configuration flows (model add/edit, daemon config)
+### `recorded_cli`
+
+- Lives under `tests/integration/cli_recorded/`.
+- Runs by default.
+- Uses replay-only `pytest-recording` cassettes with the fake local
+  OpenAI-compatible server for the ordinary lane.
+- Uses per-test fake HOME/config/database sandboxes under `temp/test_home/`.
+- Exercises the real CLI surface in-process via `run_cli_inprocess()`.
+
+Run it explicitly when debugging:
+
+```bash
+uv run pytest tests/integration/cli_recorded -q -o addopts='-n0 --record-mode=none' -m "recorded_cli and not real_recorded_cli"
+```
+
+### `real_recorded_cli`
+
+- Lives in `tests/integration/cli_recorded/test_cli_real_model_recorded.py`.
+- Marked both `recorded_cli` and `real_recorded_cli`.
+- Replays committed real-provider cassettes and is intentionally not part of
+  the default suite.
+- Requires `ASKY_CLI_REAL_PROVIDER=1` even for replay so we do not run it by
+  accident in ordinary local loops.
+
+Run it explicitly:
+
+```bash
+ASKY_CLI_REAL_PROVIDER=1 uv run pytest tests/integration/cli_recorded -q -o addopts='-n0 --record-mode=none' -m real_recorded_cli
+```
+
+### `subprocess_cli`
+
+- Lives in `tests/integration/cli_recorded/test_cli_interactive_subprocess.py`.
+- Covers PTY/subprocess realism that the in-process lane cannot.
+- Excluded from default runs because startup and terminal handling make it
+  slower and more brittle than the in-process lane.
+
+Run it explicitly:
+
+```bash
+uv run pytest tests/integration/cli_recorded/test_cli_interactive_subprocess.py -q -o addopts='-n0 --record-mode=none'
+```
+
+### `live_research`
+
+- Lives under `tests/integration/cli_live/`.
+- Uses the real provider via `OPENROUTER_API_KEY`.
+- Marked `live_research` and `slow`.
+- Excluded from default runs.
+- These tests validate the real model plus the local research/vector pipeline.
+
+Run it explicitly:
+
+```bash
+uv run pytest tests/integration/cli_live -q -o addopts='-n0 -m live_research'
+```
+
+## Gating Mechanisms
+
+There are two separate gates. Do not mix them up.
+
+### Static marker gate
+
+Configured in `pyproject.toml` through default `addopts`.
+
+- `subprocess_cli`, `real_recorded_cli`, and `live_research` stay out of plain
+  `uv run pytest`.
+- This is unconditional until the command line overrides `addopts`.
+
+### Dynamic feature-domain gate
+
+Implemented by `asky.testing.pytest_feature_domains`, loaded from
+`tests/conftest.py`.
+
+- Reads `[tool.asky.pytest_feature_domains]` from `pyproject.toml`.
+- Inspects staged, unstaged, and untracked git paths in the current worktree.
+- Deselects configured heavy domain tests when no matching domain paths changed.
+- If git state is unavailable, it runs everything.
+- `ASKY_PYTEST_RUN_ALL_DOMAINS=1` disables the dynamic gate.
+- Explicit test path/node selection bypasses the dynamic deselection for that
+  domain.
+
+Today the `research` domain only targets the heavy real-provider research files:
+
+- `tests/integration/cli_live/test_cli_research_live.py`
+- `tests/integration/cli_recorded/test_cli_real_model_recorded.py`
+
+Fast research-owned tests still run by default:
+
+- `tests/asky/research/**`
+- `tests/asky/evals/research_pipeline/**`
+- `tests/integration/cli_recorded/test_cli_research_local_recorded.py`
+
+## Isolation And Sandboxes
+
+All tests must stay off real user state.
+
+- The root sandbox fixture writes under `temp/test_home/<worker>/<pid>/...`.
+- It patches `HOME`, `ASKY_HOME`, and `ASKY_DB_PATH`.
+- Worker roots are deleted at session start and again at session teardown.
+- Recorded/live integration fixtures create their own per-test homes inside the
+  worker root and manage their own config files.
+
+If you touch config loading, keep this invariant intact:
+
+- tests must be able to redirect config through `ASKY_HOME`
+
+`src/asky/config/loader.py` now honors `ASKY_HOME` directly. If that behavior
+regresses, integration lanes will silently start loading the real user config.
+
+## Recorded CLI Harness Rules
+
+- `tests/integration/cli_recorded/helpers.py` reloads stateful modules before
+  each in-process CLI invocation. If you add new long-lived singletons or
+  import-time caches that affect CLI behavior, extend that reload/reset path.
+- Do not assume the fake recorded lane and the live lane can share process
+  state safely without that reset path.
+- Keep exhaustive CLI surface assertions in the recorded lane. New public CLI
+  flags and subcommands should get coverage there unless they require true PTY
+  behavior.
+- Do not let ordinary replay tests make live outbound network calls. The root
+  network guard exists for that reason.
+
+## Research Gate Script
+
+`scripts/run_research_quality_gate.sh` is the explicit full research gate.
+
+- It uses the same shared feature-domain matcher as pytest.
+- When research-scoped files changed, it runs:
+  1. fake recorded replay
+  2. real recorded replay
+  3. live research checks
+- It does nothing unless you call it directly or wire it into CI/pre-push.
+
+## Runtime Expectations
+
+- Prefer `-n0` when debugging fixture leakage or import-order issues.
+- Use `--durations` when deciding whether a test should be marked `slow`.
+- We aim to keep ordinary local tests under one second per case unless the test
+  is inherently expensive.
+- A live/provider test failing because the provider answered poorly is a lane
+  stability problem, not a reason to move more coverage out of the default lane.

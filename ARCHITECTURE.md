@@ -194,6 +194,7 @@ src/asky/
 ├── storage/            # Data persistence → see storage/AGENTS.md
 ├── research/           # Research mode RAG → see research/AGENTS.md
 ├── memory/             # Cross-session user memory → see memory/AGENTS.md
+├── testing/            # Shared pytest/domain-selection helpers for local quality gates
 ├── plugins/            # Optional plugin runtime + built-in plugins (persona/gui/xmpp_daemon)
 ├── evals/              # Manual integration eval harnesses (research + standard)
 ├── config/             # Configuration → see config/AGENTS.md
@@ -211,9 +212,21 @@ src/asky/
 ```
 
 For test organization, see `tests/AGENTS.md`.
+For detailed test-lane wiring, isolation, and gating behavior, see
+`tests/ARCHITECTURE.md`.
 The test suite now mirrors this package layout under `tests/asky/` and keeps
 cross-cutting suites in `tests/integration/`, `tests/performance/`, and
 `tests/scripts/`.
+
+Default pytest runs also load a shared feature-domain plugin from
+`src/asky/testing/`. That plugin reads `[tool.asky.pytest_feature_domains]`
+from `pyproject.toml`, inspects the current uncommitted git worktree, and
+deselects configured heavy domain suites when no matching domain paths changed.
+The initial shipped domain is `research`, scoped to the slower research-owned
+lanes. If git state is unavailable, pytest falls back to running everything.
+Runtime test sandboxes now live under `temp/test_home/` instead of `tests/`,
+which keeps generated fake-HOME trees out of pytest directory traversal during
+top-level `tests/` collection.
 
 ---
 

@@ -2,6 +2,75 @@
 
 For full detailed entries, see [DEVLOG_ARCHIVE.md](DEVLOG_ARCHIVE.md).
 
+## 2026-03-12: Restored Fast Research Coverage To Default Runs And Documented Test Lanes
+
+- **Summary**: Fixed the temp test-home regression introduced by moving fake HOME sandboxes out of `tests/`, restored the fast recorded research coverage to the default pytest lane, narrowed dynamic research deselection to only the heavy real-provider research files, and added a dedicated test architecture document so the lane machinery is documented in one place.
+- **Changes**:
+  - Fixed the integration harness after the `temp/test_home` move:
+    - `tests/integration/cli_recorded/conftest.py` and `tests/integration/cli_live/conftest.py` no longer append `worker_id` twice.
+    - `tests/conftest.py` no longer applies the generic HOME patch to the live lane on top of its own fixture.
+    - `tests/conftest.py` now uses `temp/test_home/<worker>/<pid>/...` so separate pytest processes do not delete each other's sandboxes.
+  - Fixed config redirection for the harness by teaching `src/asky/config/loader.py` to honor `ASKY_HOME` directly, and added coverage in `tests/asky/config/test_config.py`.
+  - Hardened `tests/integration/cli_recorded/helpers.py` so in-process CLI runs reset plugin runtime and reload more stateful modules before each invocation.
+  - Restored default pytest addopts in `pyproject.toml` and changed the default marker filter to exclude only `subprocess_cli`, `real_recorded_cli`, and `live_research`.
+  - Narrowed `[tool.asky.pytest_feature_domains]` so the `research` domain only deselects the heavy real-provider research files, not:
+    - `tests/asky/research/**`
+    - `tests/asky/evals/research_pipeline/**`
+    - `tests/integration/cli_recorded/test_cli_research_local_recorded.py`
+  - Rewrote `tests/AGENTS.md` and added `tests/ARCHITECTURE.md` to document:
+    - lane taxonomy
+    - static marker gating vs dynamic feature-domain gating
+    - fake HOME/config/database isolation
+    - recorded vs real-recorded vs subprocess vs live lanes
+    - the explicit research quality gate
+  - Relaxed the live research assertions in `tests/integration/cli_live/test_cli_research_live.py` so they focus more on the stable capability invariants and less on exact provider wording.
+- **Gotchas**:
+  - Explicit `live_research` runs remain provider-dependent. They are intentionally kept out of the default suite and were not used as the final acceptance gate for this change.
+  - The default suite now includes the ordinary `recorded_cli` lane again. That is intentional because the fast recorded research path is cheap enough to keep in local feedback loops.
+- **Verification**:
+  - `uv run pytest tests/asky/config/test_config.py -q -n0` -> `7 passed in 0.07s`
+  - `uv run pytest tests/asky/testing/test_feature_domains.py tests/scripts/test_run_research_quality_gate.py -q -n0` -> `9 passed in 1.05s`
+  - `ASKY_PYTEST_CHANGED_PATHS=src/asky/core/engine.py uv run pytest tests/asky/research -q -n0` -> `295 passed in 2.65s`
+  - `uv run pytest tests/integration/cli_recorded -q -o addopts='-n0 --record-mode=none' -m "recorded_cli and not real_recorded_cli"` -> `50 passed, 9 deselected in 8.79s`
+  - Final default full suite: `uv run pytest -q` -> `1459 passed in 12.97s`
+
+## 2026-03-12: Moved Test HOME Sandboxes Out Of `tests/` And Added Session Cleanup
+
+- **Summary**: Moved the generated fake-HOME test sandboxes from `tests/.test_home/` to `temp/test_home/`, cleaned them per worker at session start and teardown, and removed the top-level `tests/` collection slowdown caused by pytest traversing tens of thousands of generated directories.
+- **Changes**:
+  - Updated `tests/conftest.py` so each xdist worker uses `temp/test_home/<worker>/...` instead of `tests/.test_home/<worker>/...`.
+  - The session-scoped `test_home_root` fixture now clears the current worker subtree before the run and removes it again after the suite finishes.
+  - Updated `.gitignore` to ignore `temp/` instead of the old `tests/.test_home/` path.
+  - Updated `tests/AGENTS.md` and `ARCHITECTURE.md` to document the new test-home location and why it exists.
+- **Gotchas**:
+  - Cleanup is worker-scoped on purpose. In xdist, each worker manages its own subtree so workers do not race each other by deleting a shared root during startup or teardown.
+  - An interrupted run can still leave artifacts behind, but they now live under `temp/` and no longer poison `pytest tests/ --collect-only` by sitting inside the test tree.
+- **Verification**:
+  - Before cleanup on this checkout, `tests/.test_home/` contained roughly `41,053` directories and `2,859` files.
+  - `uv run pytest tests/ --collect-only -q -n0` after moving the sandbox out of `tests/` runs without traversing the old generated tree.
+  - Final full suite verification recorded below after the implementation changes.
+
+## 2026-03-12: Added Git-Aware Pytest Feature-Domain Deselection
+
+- **Summary**: Added a shared feature-domain matcher plus a root pytest plugin so normal `uv run pytest` runs can automatically deselect heavy research-owned suites when the current uncommitted worktree does not touch research-scoped files.
+- **Changes**:
+  - Added `src/asky/testing/feature_domains.py` and `src/asky/testing/pytest_feature_domains.py`.
+  - The plugin now loads from `tests/conftest.py`, reads `[tool.asky.pytest_feature_domains]` from `pyproject.toml`, and deselects inactive domain tests at collection time.
+  - Added the generic `feature_domain(name)` marker for future outlier modules, while keeping the initial shipped `research` domain path-first and limited to the heavier research lanes.
+  - Refactored `scripts/run_research_quality_gate.sh` to reuse the shared Python domain matcher instead of keeping a private hardcoded scope regex.
+  - Added coverage in `tests/asky/testing/test_feature_domains.py` and updated `tests/scripts/test_run_research_quality_gate.py` so the gate script exercises the shared matcher.
+  - Updated `ARCHITECTURE.md` and `tests/AGENTS.md` to document the new default pytest behavior and override path.
+- **Gotchas**:
+  - The `ASKY_PYTEST_RUN_ALL_DOMAINS=1` override is intentionally inherited by nested pytest subprocesses, so the new `pytester` tests explicitly clear that env var before asserting deselection behavior.
+  - The initial `research` domain is intentionally narrower than “all research-adjacent tests” to avoid pushing too much coverage into CI-only discovery. Fast research-related unit tests still run by default.
+- **Verification**:
+  - Baseline before changes: `uv run pytest` -> `1400 passed in 55.13s`
+  - Focused plugin + gate tests: `uv run pytest tests/asky/testing/test_feature_domains.py tests/scripts/test_run_research_quality_gate.py -q -n0` -> `9 passed in 0.77s`
+  - Non-research override broad run: `ASKY_PYTEST_CHANGED_PATHS=src/asky/core/engine.py uv run pytest tests/asky -q -n0` -> `1079 passed, 319 deselected in 9.03s`
+  - Explicit research target bypass: `ASKY_PYTEST_CHANGED_PATHS=src/asky/core/engine.py uv run pytest tests/asky/research/test_research_cache.py -q -n0` -> `29 passed in 2.06s`
+  - Force-all override: `ASKY_PYTEST_RUN_ALL_DOMAINS=1 ASKY_PYTEST_CHANGED_PATHS=src/asky/core/engine.py uv run pytest tests/asky -q -n0` -> `1398 passed in 8.70s`
+  - Final full suite: `uv run pytest -q` -> `1408 passed in 27.60s`
+
 ## 2026-03-12: Tightened CLI Integration Assertions and Rehomed Misplaced Tests
 
 - **Summary**: Cleaned up the integration suite by removing redundant non-CLI tests from `tests/integration/`, moving module-wiring coverage into owning component buckets, and replacing several `exit_code == 0` checks in the recorded CLI lane with assertions on persisted session state or explicit CLI output.

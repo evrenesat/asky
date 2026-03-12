@@ -8,9 +8,14 @@ from importlib import resources
 from pathlib import Path
 from typing import Any, Dict
 
+ASKY_HOME_ENV_VAR = "ASKY_HOME"
+
 
 def _get_config_dir() -> Path:
     """Return the configuration directory path."""
+    configured_home = os.environ.get(ASKY_HOME_ENV_VAR, "").strip()
+    if configured_home:
+        return Path(configured_home).expanduser()
     return Path.home() / ".config" / "asky"
 
 
