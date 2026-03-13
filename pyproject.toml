@@ -91,6 +91,9 @@ addopts = "-n 3 --record-mode=none -m not\\ subprocess_cli\\ and\\ not\\ real_re
 norecursedirs = [".hypothesis", "data", "dist", "temp", "plan", "evals/research_pipeline/matrices/temp"]
 filterwarnings = [
     "ignore:websockets.legacy is deprecated:DeprecationWarning",
+    "ignore:builtin type SwigPyPacked has no __module__ attribute:DeprecationWarning",
+    "ignore:builtin type SwigPyObject has no __module__ attribute:DeprecationWarning",
+    "ignore:builtin type swigvarlink has no __module__ attribute:DeprecationWarning",
 ]
 markers = [
     "recorded_cli: In-process recorded CLI tests",

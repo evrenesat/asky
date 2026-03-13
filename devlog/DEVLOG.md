@@ -2,6 +2,21 @@
 
 For full detailed entries, see [DEVLOG_ARCHIVE.md](DEVLOG_ARCHIVE.md).
 
+## 2026-03-13: Filtered PyMuPDF SWIG Deprecation Noise In Pytest
+
+- **Summary**: Added narrow pytest warning filters for the three Python 3.13 `DeprecationWarning`s emitted by PyMuPDF's SWIG extension types during PDF-backed research tests.
+- **Changes**:
+  - Updated `pyproject.toml` `filterwarnings` so pytest ignores only:
+    - `SwigPyPacked has no __module__ attribute`
+    - `SwigPyObject has no __module__ attribute`
+    - `swigvarlink has no __module__ attribute`
+- **Gotchas**:
+  - This is intentionally narrow. It does not suppress unrelated `DeprecationWarning`s.
+  - The source is PyMuPDF import-time behavior on Python 3.13, not the feature-domain plugin or the test harness itself.
+- **Verification**:
+  - `uv run pytest -q` -> `1459 passed in 12.22s`
+  - The previous default-suite PyMuPDF SWIG warnings no longer appear in pytest output.
+
 ## 2026-03-12: Restored Fast Research Coverage To Default Runs And Documented Test Lanes
 
 - **Summary**: Fixed the temp test-home regression introduced by moving fake HOME sandboxes out of `tests/`, restored the fast recorded research coverage to the default pytest lane, narrowed dynamic research deselection to only the heavy real-provider research files, and added a dedicated test architecture document so the lane machinery is documented in one place.
