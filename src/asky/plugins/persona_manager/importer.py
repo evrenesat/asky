@@ -9,11 +9,12 @@ from typing import Any, Dict
 from zipfile import ZipFile
 
 from asky.plugins.manual_persona_creator.storage import (
+    AUTHORED_BOOKS_DIR_NAME,
     CHUNKS_FILENAME,
     METADATA_FILENAME,
-    PERSONA_SCHEMA_VERSION,
     PERSONAS_DIR_NAME,
     PROMPT_FILENAME,
+    SUPPORTED_SCHEMA_VERSIONS,
     get_persona_paths,
     validate_persona_name,
     write_chunks,
@@ -64,10 +65,10 @@ def import_persona_archive(*, data_dir: Path, archive_path: str) -> Dict[str, An
         raise InvalidPersonaPackageError(str(path), "metadata missing [persona] section")
 
     schema_version = int(persona_block.get("schema_version", 0) or 0)
-    if schema_version != PERSONA_SCHEMA_VERSION:
+    if schema_version not in SUPPORTED_SCHEMA_VERSIONS:
         raise InvalidPersonaPackageError(
             str(path),
-            f"unsupported schema version {schema_version}; expected {PERSONA_SCHEMA_VERSION}"
+            f"unsupported schema version {schema_version}; expected one of {SUPPORTED_SCHEMA_VERSIONS}"
         )
 
     persona_name = validate_persona_name(str(persona_block.get("name", "") or ""))
@@ -82,6 +83,14 @@ def import_persona_archive(*, data_dir: Path, archive_path: str) -> Dict[str, An
     write_metadata(paths.metadata_path, metadata)
     write_prompt(paths.prompt_path, prompt_text)
     write_chunks(paths.chunks_path, chunks)
+
+    # Extract authored-book artifacts if present
+    with ZipFile(path, "r") as archive:
+        for member_name in archive.namelist():
+            if member_name.startswith(f"{AUTHORED_BOOKS_DIR_NAME}/"):
+                target_path = paths.root_dir / member_name
+                target_path.parent.mkdir(parents=True, exist_ok=True)
+                target_path.write_bytes(archive.read(member_name))
 
     embedding_stats = rebuild_embeddings(persona_dir=paths.root_dir, chunks=chunks)
 

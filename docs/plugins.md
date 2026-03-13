@@ -62,56 +62,43 @@ host = "127.0.0.1"
 port = 8766
 ```
 
-## 4. Persona Plugin Entry Points (Current)
+## 4. Persona Plugin Entry Points
 
-Persona features are currently entered through LLM tool calls.
+Persona features are accessible via direct CLI commands and LLM tool calls.
 
-There is no standalone CLI command like `asky --create-persona ...` yet.
+### 4.1 Persona CLI Commands
 
-### 4.1 Manual Persona Creator Tools
+Common management:
+- `asky persona list` - List all available personas.
+- `asky persona create <name> --prompt <file>` - Create new persona from prompt file.
+- `asky persona load <name>` - Load persona into current session.
+- `asky persona unload` - Unload current persona.
+- `asky persona current` - Show currently loaded persona.
+- `asky persona import <path>` - Import persona from ZIP file.
+- `asky persona export <name>` - Export persona to ZIP file.
+- `asky persona alias <alias> <name>` - Create persona alias.
 
-Registered tool names:
+Authored Book Ingestion:
+- `asky persona ingest-book <persona> <path>` - Ingest a long-form source (PDF, EPUB, Text) into a persona. Includes metadata lookup and structured viewpoint extraction.
+- `asky persona reingest-book <persona> <book_key> <path>` - Replace an existing book's data while preserving its identity.
+- `asky persona books <persona>` - List all ingested books for a persona.
+- `asky persona book-report <persona> <book_key>` - View detailed ingestion report (timings, warnings, targets).
+- `asky persona viewpoints <persona> [--book <key>] [--topic <query>] [--limit <n>]` - Query extracted viewpoints across one or all books.
 
-- `manual_persona_create`
-- `manual_persona_add_sources`
-- `manual_persona_list`
-- `manual_persona_export`
+### 4.2 Mentions and Auto-loading
 
-Practical usage in chat:
+You can load a persona for a single query (or start a session with it) using the `@` syntax:
+- `@arendt How does she define labor?` - Loads the `arendt` persona before executing the query.
 
-- Ask the model explicitly to call one of these tools with concrete args.
-- In verbose mode, tool calls and payloads are visible.
+### 4.3 Plugin Tools (LLM Entry Points)
 
-Example prompt patterns:
+Persona plugins still expose runtime tools for import/load/unload style operations where the runtime surface needs them, but persona creation and authored-book ingestion are now CLI-first workflows.
 
-- "Create a persona named `analyst_alpha` with behavior prompt 'Answer with concise risk-first analysis', and ingest sources `/Users/me/docs/a.md` and `/Users/me/docs/b.md` using `manual_persona_create`."
-- "Export persona `analyst_alpha` with `manual_persona_export` and return archive path."
-
-### 4.2 Persona Manager Tools
-
-Registered tool names:
-
-- `persona_import_package`
-- `persona_load`
-- `persona_unload`
-- `persona_current`
-- `persona_list`
-
-Important runtime requirement:
-
-- `persona_load` requires an active session context; otherwise it returns: `no active session; load persona within a session`.
-
-Recommended flow:
-
-1. Start/resume a session (`-ss` or `-rs`)
-2. Import persona package if needed (`persona_import_package`)
-3. Load persona into active session (`persona_load`)
-4. Ask normal queries; plugin injects persona prompt + top persona knowledge chunks
-
-Example prompt patterns:
-
-- "In this active session, call `persona_load` with name `analyst_alpha`."
-- "Show current loaded persona by calling `persona_current`."
+Use the CLI when you need deterministic file-based persona management.
+Use runtime persona loading when you need to bind an already-created persona to the current session.
+Patterns for chat usage:
+- "Create a persona named `analyst_alpha`..."
+- "Load persona `arendt` in this session."
 
 ## 5. Where Persona Data Lives
 

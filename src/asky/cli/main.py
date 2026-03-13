@@ -1628,6 +1628,40 @@ def main() -> None:
             "unload", help="Unload the current persona"
         )
 
+        ingest_book_parser = subparsers.add_parser(
+            "ingest-book", help="Ingest an authored book into a persona"
+        )
+        ingest_book_parser.add_argument("name", help="Persona name")
+        ingest_book_parser.add_argument("path", help="Path to book file")
+
+        reingest_book_parser = subparsers.add_parser(
+            "reingest-book", help="Re-ingest an already completed book"
+        )
+        reingest_book_parser.add_argument("name", help="Persona name")
+        reingest_book_parser.add_argument("book_key", help="Existing book key")
+        reingest_book_parser.add_argument("path", help="Path to book file")
+
+        books_parser = subparsers.add_parser(
+            "books", help="List ingested books for a persona"
+        )
+        books_parser.add_argument("name", help="Persona name")
+
+        book_report_parser = subparsers.add_parser(
+            "book-report", help="Show ingestion report for a book"
+        )
+        book_report_parser.add_argument("name", help="Persona name")
+        book_report_parser.add_argument("book_key", help="Book key")
+
+        viewpoints_parser = subparsers.add_parser(
+            "viewpoints", help="List extracted viewpoints"
+        )
+        viewpoints_parser.add_argument("name", help="Persona name")
+        viewpoints_parser.add_argument("--book", help="Filter by book key")
+        viewpoints_parser.add_argument("--topic", help="Filter by topic")
+        viewpoints_parser.add_argument(
+            "--limit", type=int, default=20, help="Max results"
+        )
+
         current_parser = subparsers.add_parser(
             "current", help="Show the currently loaded persona"
         )
@@ -1683,6 +1717,16 @@ def main() -> None:
             persona_commands.handle_persona_load(persona_args)
         elif persona_cmd == "unload":
             persona_commands.handle_persona_unload(persona_args)
+        elif persona_cmd == "ingest-book":
+            persona_commands.handle_persona_ingest_book(persona_args)
+        elif persona_cmd == "reingest-book":
+            persona_commands.handle_persona_reingest_book(persona_args)
+        elif persona_cmd == "books":
+            persona_commands.handle_persona_books(persona_args)
+        elif persona_cmd == "book-report":
+            persona_commands.handle_persona_book_report(persona_args)
+        elif persona_cmd == "viewpoints":
+            persona_commands.handle_persona_viewpoints(persona_args)
         elif persona_cmd == "current":
             persona_commands.handle_persona_current(persona_args)
         elif persona_cmd == "list":
