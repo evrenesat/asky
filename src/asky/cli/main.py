@@ -102,240 +102,60 @@ GROUPED_DOMAIN_ACTIONS: dict[str, frozenset[str]] = {
 }
 
 
-def _format_contribution_lines(contribution: "CLIContribution") -> list[str]:
-    """Format one CLIContribution into indented help lines."""
-    flags_str = ", ".join(contribution.flags)
-    metavar = contribution.kwargs.get("metavar")
-    if isinstance(metavar, tuple):
-        metavar_str = " ".join(metavar)
-    elif metavar:
-        metavar_str = str(metavar)
-    else:
-        metavar_str = ""
-    header = (
-        f"  {flags_str} {metavar_str}".rstrip() if metavar_str else f"  {flags_str}"
-    )
-    help_text = contribution.kwargs.get("help", "")
-    if help_text:
-        return [header, f"      {help_text}"]
-    return [header]
-
-
 def _print_top_level_help(plugin_manager=None) -> None:
     """Print curated top-level help focused on user-facing command surface."""
-    from asky.plugins.base import CATEGORY_LABELS, CapabilityCategory
+    from asky.cli.help_catalog import render_top_level_help
 
-    lines = [
-        "usage: asky [query ...]",
-        "       asky --config <domain> <action>",
-        "       asky <group> <action> [args]",
-        "",
-        "Tool-calling CLI with grouped operational commands.",
-        "",
-        "Grouped commands:",
-        "  history list [count]                    List recent history entries.",
-        "  history show <id_selector>              Show full answer(s) for selected history item(s).",
-        "  history delete <id_selector|--all>      Delete history entries.",
-        "  session list [count]                    List recent sessions.",
-        "  session show <session_selector>         Print session transcript.",
-        "  session create <name>                   Create and activate a named session.",
-        "  session use <session_selector>          Resume a session by id/name.",
-        "  session end                             End active shell-bound session.",
-        "  session delete <session_selector|--all> Delete sessions, messages, and associated research data.",
-        "  session clean-research <session_selector>",
-        "                                          Remove session research findings/vectors and session corpus links/paths.",
-        "  session from-message <history_id|last>  Convert history message into a session.",
-        "  memory list                             List user memories.",
-        "  memory delete <id>                      Delete one memory.",
-        "  memory clear                            Delete all memories.",
-        "  corpus query <text>                     Deterministic corpus query (no main model call).",
-        "  corpus summarize [query]                Deterministic section summary flow.",
-        "  prompts list                            List configured user prompts.",
-        "",
-        "Configuration:",
-        "  --config model add",
-        "  --config model edit [alias]",
-        "  --config daemon edit",
-        "",
-        "Query options:",
-        "  -m, --model ALIAS",
-        "      Select model alias for this run.",
-        "  -r, --research [CORPUS_POINTER]",
-        "      Enable deep research mode; optionally bind local/web corpus source(s).",
-        "  -s, --summarize",
-        "      Summarize URL content before main answer generation.",
-        "  -L, --lean",
-        "      Lean mode: disable all tool calls, skip shortlist/memory recall preload,",
-        "      and skip memory extraction/context compaction side effects.",
-        "  -t, --turns MAX_TURNS",
-        "      Set per-session max turns.",
-        "  -sp, --system-prompt TEXT",
-        "      Override system prompt.",
-        "  -tl, --terminal-lines [LINE_COUNT]",
-        "      Include recent terminal context in query.",
-        "  --shortlist {on,off,reset}",
-        "      Persist shortlist preference to current session (or clear with reset).",
-        "  --tools [off [a,b,c]|reset]",
-        "      List tools, disable all/some tools, or clear tool override.",
-        "  --session <query...>",
-        "      Create a new session named from query text and run the query.",
-        "  -v, --verbose",
-        "      Verbose output (-vv for double-verbose).",
-    ]
-
-    # Collect plugin contributions grouped by category.
-    contributions_by_category: dict[str, list] = {}
-    if plugin_manager is not None:
-        for _, contrib in plugin_manager.collect_cli_contributions():
-            contributions_by_category.setdefault(contrib.category, []).append(contrib)
-
-    # Output Delivery: core --open is always present; plugins may add more.
-    output_title, _ = CATEGORY_LABELS[CapabilityCategory.OUTPUT_DELIVERY]
-    lines += [
-        "",
-        f"{output_title}:",
-        "  -o, --open",
-        "      Open final answer in browser.",
-    ]
-    for contrib in contributions_by_category.get(
-        CapabilityCategory.OUTPUT_DELIVERY, []
-    ):
-        lines += _format_contribution_lines(contrib)
-
-    # Other categories appear only when a plugin contributes to them.
-    for category in (
-        CapabilityCategory.BROWSER_SETUP,
-        CapabilityCategory.BACKGROUND_SERVICE,
-        CapabilityCategory.SESSION_CONTROL,
-    ):
-        contribs = contributions_by_category.get(category, [])
-        if contribs:
-            cat_title, _ = CATEGORY_LABELS[category]
-            lines += ["", f"{cat_title}:"]
-            for contrib in contribs:
-                lines += _format_contribution_lines(contrib)
-
-    lines += [
-        "",
-        "Process options:",
-        "  --completion-script {bash,zsh}",
-        "",
-        "More help:",
-        "  asky --help-all",
-        "  asky corpus --help",
-        "  asky corpus query --help",
-        "  asky corpus summarize --help",
-        "  asky history --help",
-        "  asky session --help",
-        "  asky memory --help",
-    ]
-    print("\n".join(lines))
+    print(render_top_level_help(plugin_manager))
 
 
 def _print_corpus_help() -> None:
     """Print grouped help for corpus operations."""
-    print(
-        """usage: asky corpus <query|summarize> ...
+    from asky.cli.help_catalog import render_corpus_help
 
-Corpus commands:
-  asky corpus query <text>
-  asky corpus summarize [query]
-
-Run:
-  asky corpus query --help
-  asky corpus summarize --help"""
-    )
+    print(render_corpus_help())
 
 
 def _print_corpus_query_help() -> None:
     """Print help for corpus query subcommand."""
-    print(
-        """usage: asky corpus query <text> [options]
+    from asky.cli.help_catalog import render_corpus_query_help
 
-Deterministically query cached/ingested corpus without invoking the main model.
-
-Options:
-  --query-corpus-max-sources COUNT
-      Maximum corpus sources to scan (default 20).
-  --query-corpus-max-chunks COUNT
-      Maximum chunks per source (default 3).
-  --section-include-toc
-      Include TOC/micro heading rows in corpus section output."""
-    )
+    print(render_corpus_query_help())
 
 
 def _print_corpus_summarize_help() -> None:
     """Print help for corpus summarize subcommand."""
-    print(
-        """usage: asky corpus summarize [query] [options]
+    from asky.cli.help_catalog import render_corpus_summarize_help
 
-Summarize corpus sections without invoking the main model.
-
-Options:
-  --section-source SOURCE
-      Select corpus source (corpus://cache/<id>, cache id, title/url match).
-  --section-id SECTION_ID
-      Select exact section ID.
-  --section-include-toc
-      Include TOC/micro heading rows when listing sections.
-  --section-detail {balanced,max,compact}
-      Section summary detail profile (default balanced).
-  --section-max-chunks COUNT
-      Optional chunk limit for section summarization."""
-    )
+    print(render_corpus_summarize_help())
 
 
 def _print_history_help() -> None:
     """Print grouped help for history operations."""
-    print(
-        """usage: asky history <list|show|delete> [args]
+    from asky.cli.help_catalog import render_history_help
 
-Commands:
-  asky history list [count]
-  asky history show <id_selector>
-  asky history delete <id_selector|--all>"""
-    )
+    print(render_history_help())
 
 
 def _print_session_help() -> None:
     """Print grouped help for session operations."""
-    print(
-        """usage: asky session <action> [args]
+    from asky.cli.help_catalog import render_session_help
 
-Commands:
-  asky session list [count]
-  asky session show <session_selector>
-  asky session create <name>
-  asky session use <session_selector>
-  asky session end
-  asky session clean-research <session_selector>
-  asky session from-message <history_id|last>
-
-Note: 'session delete' also performs implicit research cleanup for the deleted sessions.
-"""
-    )
+    print(render_session_help())
 
 
 def _print_memory_help() -> None:
     """Print grouped help for memory operations."""
-    print(
-        """usage: asky memory <list|delete|clear> [args]
+    from asky.cli.help_catalog import render_memory_help
 
-Commands:
-  asky memory list
-  asky memory delete <id>
-  asky memory clear"""
-    )
+    print(render_memory_help())
 
 
 def _print_prompts_help() -> None:
     """Print grouped help for prompts operations."""
-    print(
-        """usage: asky prompts list
+    from asky.cli.help_catalog import render_prompts_help
 
-Commands:
-  asky prompts list"""
-    )
+    print(render_prompts_help())
 
 
 def _consume_grouped_help(tokens: list[str], plugin_manager=None) -> bool:
@@ -770,7 +590,6 @@ _INTERNAL_ONLY_FLAGS = frozenset(
         "--add-model",
         "--edit-model",
         "-me",
-        "--help-all",
         "--completion-script",
         "--prompts",
         "-p",
@@ -875,11 +694,6 @@ def parse_args(
         prog="asky",
         description="Tool-calling CLI with model selection.",
         formatter_class=argparse.RawTextHelpFormatter,
-    )
-    parser.add_argument(
-        "--help-all",
-        action="help",
-        help="Show full option reference including advanced/internal routing flags.",
     )
 
     # Note: persona subcommand is handled separately in main() before parse_args()
@@ -1269,6 +1083,11 @@ def parse_args(
     parser._option_string_actions["--tool-off"].completer = complete_tool_names
 
     enable_argcomplete(parser)
+
+    # Check for --help-all before parsing to ensure plugin contributions are included
+    if "--help-all" in normalized_tokens:
+        parser.print_help()
+        raise SystemExit(0)
 
     parsed_args = parser.parse_args(normalized_tokens)
     parsed_args._raw_tokens = raw_tokens

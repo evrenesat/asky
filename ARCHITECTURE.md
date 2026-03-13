@@ -183,6 +183,55 @@ sequenceDiagram
 
 ---
 
+## CLI Help Discoverability
+
+The CLI uses a production-side help catalog (`src/asky/cli/help_catalog.py`) to render
+curated help surfaces and define the discoverability contract that tests enforce.
+
+### Help Surfaces
+
+Three help surfaces provide different levels of detail:
+
+- **Top-level curated help** (`asky --help`): Short grouped guide focusing on
+  user-facing commands. Includes grouped commands, configuration, query options,
+  plugin-contributed sections, and links to more detailed help.
+- **Full help reference** (`asky --help-all`): Complete argparse-generated
+  flag reference including all public flags (both core and plugin-contributed).
+  This is the single source of truth for all CLI flags and their documentation.
+- **Grouped command help** (e.g., `asky session --help`): Per-command
+  detailed help for grouped operational domains (history, session, memory, corpus, prompts).
+- **Persona help** (`asky persona --help`): Persona subcommand documentation.
+
+### Discoverability Contract
+
+Production code in `help_catalog.py` defines explicit discoverability requirements:
+
+- Top-level short help must include: `asky persona --help`, `--continue-chat`,
+  `--reply`, `--elephant-mode`, and `session delete`.
+- `--help-all` must include all public top-level flags from `cli_surface.py`:
+  `PUBLIC_TOP_LEVEL_FLAGS` and `PLUGIN_FLAGS`.
+- Grouped commands must appear on their respective help pages:
+  `history *` → `asky history --help`
+  `session *` → `asky session --help`
+  `memory *` → `asky memory --help`
+  `corpus *` → `asky corpus --help` or specific corpus sub-help
+  `prompts list` → top-level short help
+- Persona subcommands must appear in `asky persona --help`:
+  `PERSONA_SUBCOMMANDS` from `cli_surface.py`.
+
+Tests in `test_help_discoverability.py` enforce this contract by checking each declared
+public surface item appears in its assigned help surface.
+
+### Plugin Flag Handling
+
+Plugin-contributed flags (like `--daemon`, `--sendmail`, `--browser`) are
+added to the parser via the plugin manager's `collect_cli_contributions()` method.
+The plugin manager is bootstrapped on-demand for `--help-all` invocations to ensure
+these flags appear in the full help output, both for the normal CLI entrypoint
+and for direct `from asky.cli import parse_args` callers.
+
+---
+
 ## Package Structure
 
 ```

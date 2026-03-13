@@ -24,6 +24,15 @@ _EXPORTS: Dict[str, Tuple[str, Optional[str]]] = {
     "openrouter": ("asky.cli.openrouter", None),
 }
 
+# Plugin public flags that narrow bootstrap should cover
+_PLUGIN_PUBLIC_FLAGS = frozenset({
+    "--daemon",
+    "--sendmail",
+    "--subject",
+    "--push-data",
+    "--browser",
+})
+
 
 def _restore_main_entrypoint() -> None:
     """Ensure package attribute `main` stays the callable entrypoint."""
@@ -38,11 +47,55 @@ def _main_entrypoint() -> None:
     main_impl()
 
 
+def _needs_plugin_bootstrap(argv: Optional[list[str]] = None) -> bool:
+    """Determine if plugin manager bootstrap is needed for this invocation.
+
+    Narrow bootstrap only for:
+    - `--help-all` (to show complete help including plugin flags)
+    - Plugin public flags (to ensure argparse recognizes them)
+
+    Does not bootstrap for ordinary non-help parses without plugin flags.
+    """
+    import sys
+    import logging
+    logger = logging.getLogger(__name__)
+
+    raw = list(sys.argv[1:] if argv is None else argv)
+
+    # Check for --help-all
+    if "--help-all" in raw:
+        return True
+
+    # Check for known plugin public flags
+    for token in raw:
+        if token in _PLUGIN_PUBLIC_FLAGS:
+            return True
+
+    return False
+
+
 def parse_args(argv=None):
     from asky.cli.main import parse_args as parse_args_impl
 
     _restore_main_entrypoint()
-    return parse_args_impl(argv)
+
+    # Narrow plugin manager bootstrap when needed
+    plugin_manager = None
+    if _needs_plugin_bootstrap(argv):
+        try:
+            from asky.plugins.manager import PluginManager
+
+            manager = PluginManager()
+            manager.load_roster()
+            plugin_manager = manager
+        except Exception:
+            import logging
+            logging.getLogger(__name__).debug(
+                "Plugin manager bootstrap failed; skipping plugin CLI contributions",
+                exc_info=True,
+            )
+
+    return parse_args_impl(argv, plugin_manager=plugin_manager)
 
 
 def handle_print_answer_implicit(args):

@@ -2,6 +2,38 @@
 
 For full detailed entries, see [DEVLOG_ARCHIVE.md](DEVLOG_ARCHIVE.md).
 
+## 2026-03-13: CLI Help Discoverability Implementation
+
+- **Summary**: Implemented CLI help discoverability with a production-side help catalog and comprehensive contract enforcement.
+- **Changes**:
+  - Created `src/asky/cli/help_catalog.py` with typed structures for help content,
+    curated help pages, and discoverability contract definitions.
+  - Refactored CLI help rendering in `main.py` to use the help catalog,
+    removing large handwritten string blocks.
+  - Fixed `--help-all` to include plugin public flags by removing it from
+    `_INTERNAL_ONLY_FLAGS` so the plugin manager is bootstrapped for help
+    invocations.
+  - Updated `src/asky/cli/__init__.py` to bootstrap the plugin manager
+    automatically for `--help-all` and plugin flag invocations, ensuring the
+    `--help-all` contract holds for both the local CLI entrypoint and
+    direct `parse_args()` callers.
+  - Created `tests/asky/cli/test_help_discoverability.py` to enforce the
+    discoverability contract, checking that every public CLI surface item
+    appears in its assigned help surface.
+  - Updated `ARCHITECTURE.md` to document the CLI help catalog,
+    three help surfaces, and discoverability contract.
+  - Updated `src/asky/cli/AGENTS.md` to reference the help catalog and
+    discoverability contract.
+- **Gotchas**:
+  - The help catalog owns all curated help content; tests validate it but don't
+    import from test manifests.
+  - Plugin bootstrap is narrow (only for `--help-all` and plugin flags),
+    not for every parse invocation.
+- **Verification**:
+  - `uv run pytest tests/asky/cli/test_help_discoverability.py -q -n0` -> `7 passed in 4.65s`
+  - `uv run pytest tests/asky/cli/test_cli.py -q -n0` -> `102 passed in 8.98s`
+  - Full suite: `uv run pytest -q` -> `1408 passed in 27.60s`
+
 ## 2026-03-13: Filtered PyMuPDF SWIG Deprecation Noise In Pytest
 
 - **Summary**: Added narrow pytest warning filters for the three Python 3.13 `DeprecationWarning`s emitted by PyMuPDF's SWIG extension types during PDF-backed research tests.

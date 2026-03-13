@@ -32,12 +32,19 @@ Command-line interface layer handling argument parsing, command routing, and use
   - Help placeholders (`metavar`) are intentionally explicit typed descriptors
     (e.g., `HISTORY_IDS`, `SESSION_SELECTOR`, `LINE_COUNT`) to keep `--help`
     output user-oriented instead of mirroring internal destination names.
+  - Help rendering uses `src/asky/cli/help_catalog.py` for production-side
+    structured help content. This catalog defines the discoverability contract
+    enforced by `test_help_discoverability.py`.
   - Top-level `--help` is curated around grouped user-facing commands; corpus-
     specific option details are emitted only from grouped sub-help pages
     (`corpus query --help`, `corpus summarize --help`).
   - Curated top-level help includes concise one-line semantics for key flags
     and grouped operations so users can discover behavior quickly.
   - `--help-all` prints argparse-generated full option reference for power users.
+    This includes all public flags, both core and plugin-contributed.
+  - Plugin flags are added via the plugin manager's `collect_cli_contributions()`
+    method. The plugin manager is bootstrapped on-demand for `--help-all`
+    invocations.
 - Routes to appropriate handler based on command flags
 - Implements lazy startup for fast CLI response:
   - Completion, imports, DB init are deferred until needed
