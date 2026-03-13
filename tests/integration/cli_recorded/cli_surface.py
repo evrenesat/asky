@@ -85,6 +85,11 @@ PERSONA_SUBCOMMANDS = {
     "persona alias",
     "persona unalias",
     "persona aliases",
+    "persona ingest-book",
+    "persona reingest-book",
+    "persona books",
+    "persona book-report",
+    "persona viewpoints",
 }
 
 PLUGIN_FLAGS = {
@@ -210,6 +215,11 @@ COVERAGE_OWNERSHIP = {
     "persona alias": "test_cli_persona_recorded.py",
     "persona unalias": "test_cli_persona_recorded.py",
     "persona aliases": "test_cli_persona_recorded.py",
+    "persona ingest-book": "test_cli_persona_recorded.py",
+    "persona reingest-book": "test_cli_persona_recorded.py",
+    "persona books": "test_cli_persona_recorded.py",
+    "persona book-report": "test_cli_persona_recorded.py",
+    "persona viewpoints": "test_cli_persona_recorded.py",
     "persona @mention": "test_cli_persona_recorded.py",
     "persona alias mention": "test_cli_persona_recorded.py",
 

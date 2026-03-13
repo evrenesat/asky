@@ -26,6 +26,13 @@ Command-line interface layer handling argument parsing, command routing, and use
 | `terminal.py`             | Terminal context fetching                                                                                                                      |
 | `utils.py`                | Query expansion, config printing                                                                                                               |
 
+## CLI Design Invariants
+
+- **Thin Wrappers**: CLI command handlers (especially for complex workflows like authored books) must be thin presentation wrappers over reusable backend services. Business logic, identity guards, and data orchestration belong in the service layer.
+- **Lazy Imports**: Commands that require heavy dependencies or database initialization must defer those imports until the command is actually invoked.
+- **Rich Interaction**: Use `rich.console`, `rich.prompt`, and `rich.table` for all user-facing output and interaction.
+- **Error Transparency**: Surfaced errors should provide actionable guidance or descriptive feedback rather than raw tracebacks.
+
 ## Entry Point (`main.py`)
 
 - Parses arguments with `argparse`

@@ -2,6 +2,21 @@
 
 For full detailed entries, see [DEVLOG_ARCHIVE.md](DEVLOG_ARCHIVE.md).
 
+## 2026-03-13: Authored-Book Milestone 1 Follow-Up Fixes
+
+- **Summary**: Hardened the authored-book ingestion pipeline with stricter identity guards, a reusable service layer, and improved report fidelity.
+- **Changes**:
+  - Implemented `book_service.py` to decouple CLI presentation from authored-book business logic and identity enforcement.
+  - Hardened identity guards to prevent `ingest-book` from overwriting completed books even after manual metadata edits.
+  - Reworked the preflight loop to include mandatory editable metadata/targets for both new and resumable ingestion jobs.
+  - Replaced permissive extraction parsing with strict JSON validation and accumulated warnings for malformed model payloads.
+  - Extended `AuthoredBookReport` and inspection CLI (`books`, `book-report`) to include stage timings, warnings, and requested extraction targets.
+  - Refactored CLI commands into thin wrappers over the service layer.
+- **Verification**:
+  - `uv run pytest tests/asky/plugins/manual_persona_creator/ -q` passed.
+  - `uv run pytest tests/asky/cli/test_persona_ingestion_commands.py -q` passed.
+  - Full suite remains green.
+
 ## 2026-03-13: Filtered PyMuPDF SWIG Deprecation Noise In Pytest
 
 - **Summary**: Added narrow pytest warning filters for the three Python 3.13 `DeprecationWarning`s emitted by PyMuPDF's SWIG extension types during PDF-backed research tests.

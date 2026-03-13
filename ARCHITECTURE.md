@@ -95,6 +95,7 @@ graph TD
     xmpp["plugins/xmpp_daemon/*"]
     transcribers["plugins/voice_transcriber/* + plugins/image_transcriber/*"]
     other_plugins["Other built-in plugins"]
+    book_service["plugins/manual_persona_creator/book_service.py"]
     config["config/loader.py + constants"]
 
     main --> chat --> api
@@ -106,6 +107,9 @@ graph TD
     plugin_rt --> transcribers
     plugin_rt --> other_plugins
     xmpp --> api
+    
+    other_plugins -. persona plugins .-> book_service
+    book_service --> storage
 
     api --> preload
     api --> core
@@ -180,6 +184,30 @@ sequenceDiagram
     end
     XS-->>XU: chunked XMPP reply
 ```
+
+---
+
+## Authored Books and Persona Service Layer
+
+The `manual_persona_creator` plugin implements a structured **Authored Book** ingestion pipeline. This allows users to ingest long-form content (PDF, EPUB, Text) into a persona with high-fidelity extraction of viewpoints and claims.
+
+### Key Architectural Components
+
+- **Service Layer (`book_service.py`)**: A UI-agnostic orchestration layer that enforces business rules, identity guards, and coordinates preflight, ingestion, and inspection. It is designed to be reused by both CLI and future GUI/API surfaces.
+- **Ingestion Pipeline (`book_ingestion.py`)**: A multi-pass process (Read → Summarize → Discover → Extract → Materialize) managed by a resumable `BookIngestionJob`.
+- **Identity Guard**: Enforces canonical book identity (`book_key`) derived from title, year, and ISBN. `ingest-book` prevents overwriting completed books, while `reingest-book` allows replacement only when the identity matches.
+- **Artifacts**:
+    - `book.toml`: Confirmed metadata.
+    - `viewpoints.json`: Extracted structured viewpoints with evidence.
+    - `report.json`: Detailed ingestion report including warnings and per-stage timings.
+    - `index.json`: Global index of ingested books for the persona.
+
+### Interaction Flow
+
+1. **Preflight**: Metadata lookup (OpenLibrary) and source analysis. Returns ranked candidates and proposed targets.
+2. **Editable Preflight**: User confirms/edits metadata and extraction targets. Resuming a job also enters this mandatory step.
+3. **Execution**: Multi-pass extraction with strict JSON validation and warning accumulation.
+4. **Inspection**: Reusable queries for listing books, viewing reports, and searching viewpoints across the persona.
 
 ---
 

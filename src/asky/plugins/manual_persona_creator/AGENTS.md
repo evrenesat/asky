@@ -7,9 +7,27 @@ Creates and maintains local persona packages from manually provided prompts and 
 | Module | Purpose |
 | --- | --- |
 | `plugin.py` | Plugin entrypoint and hook registration |
-| `storage.py` | Persona file layout, metadata, atomic writes |
-| `ingestion.py` | Source expansion + chunk normalization |
-| `exporter.py` | ZIP export with metadata/prompt/chunks |
+| `storage.py`   | Persona file layout, metadata, atomic writes, book identity guards |
+| `book_service.py`| UI-agnostic orchestration layer for authored-book preflight, ingestion, and inspection |
+| `book_ingestion.py`| Multi-pass extraction pipeline and resumable job management |
+| `book_lookup.py`| Metadata candidate lookup and preflight analysis |
+| `ingestion.py` | (Legacy) General source expansion + chunk normalization |
+| `exporter.py`  | ZIP export with metadata/prompt/chunks/authored-books |
+
+## Authored Books Contract
+
+The plugin manages a structured ingestion pipeline for long-form content.
+
+### Invariants
+- **Service-Driven**: All authored-book operations must go through `book_service.py`. The CLI and future UI surfaces must not open-code storage traversal or identity checks.
+- **Identity Guard**: Canonical `book_key` (title+year or ISBN) is the source of truth for replacement/duplicate checks.
+- **Fidelity**: Extraction must include structured viewpoints with evidence. Malformed LLM payloads must be rejected via strict validation, with errors accumulated as warnings in the report.
+- **Durability**: Timings, warnings, and targets must be persisted in `report.json`.
+
+### Inspection & Reports
+- **Books**: Lists all completed books with metadata and viewpoint counts.
+- **Reports**: Renders full ingestion lifecycle details (targets, actuals, warnings, timings).
+- **Viewpoints**: Provides filtered/limited access to structured claims across persona content.
 
 ## Storage Contract
 

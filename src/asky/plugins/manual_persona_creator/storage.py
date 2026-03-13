@@ -12,11 +12,22 @@ from typing import Any, Dict, List
 
 import tomlkit
 
-PERSONA_SCHEMA_VERSION = 1
+PERSONA_SCHEMA_VERSION = 2
+SUPPORTED_SCHEMA_VERSIONS = {1, 2}
 PERSONAS_DIR_NAME = "personas"
 METADATA_FILENAME = "metadata.toml"
 PROMPT_FILENAME = "behavior_prompt.md"
 CHUNKS_FILENAME = "chunks.json"
+
+AUTHORED_BOOKS_DIR_NAME = "authored_books"
+AUTHORED_BOOKS_INDEX_FILENAME = "index.json"
+BOOK_METADATA_FILENAME = "book.toml"
+VIEWPOINTS_FILENAME = "viewpoints.json"
+REPORT_FILENAME = "report.json"
+
+INGESTION_JOBS_DIR_NAME = "ingestion_jobs"
+JOB_MANIFEST_FILENAME = "job.toml"
+
 PERSONA_NAME_PATTERN = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9_-]{1,63}$")
 
 
@@ -30,6 +41,24 @@ class PersonaPaths:
     chunks_path: Path
 
 
+@dataclass(frozen=True)
+class AuthoredBookPaths:
+    """Filesystem layout for one authored book inside a persona."""
+
+    book_dir: Path
+    metadata_path: Path
+    viewpoints_path: Path
+    report_path: Path
+
+
+@dataclass(frozen=True)
+class IngestionJobPaths:
+    """Filesystem layout for one ingestion job inside a persona."""
+
+    job_dir: Path
+    manifest_path: Path
+
+
 def validate_persona_name(name: str) -> str:
     """Validate and normalize persona name."""
     normalized = str(name or "").strip()
@@ -38,6 +67,25 @@ def validate_persona_name(name: str) -> str:
             "persona name must match ^[a-zA-Z0-9][a-zA-Z0-9_-]{1,63}$"
         )
     return normalized
+
+
+def get_book_key(*, title: str, publication_year: Optional[int], isbn: Optional[str]) -> str:
+    """
+    Generate a path-safe, deterministic book key.
+    Prefers ISBN if available, otherwise uses normalized title and year.
+    """
+    if isbn:
+        normalized_isbn = re.sub(r"[^a-zA-Z0-9]", "", isbn).lower()
+        if normalized_isbn:
+            return f"isbn-{normalized_isbn}"
+
+    # Fallback to title and year
+    slug = re.sub(r"[^a-z0-9]+", "-", title.lower()).strip("-")
+    if not slug:
+        slug = "unknown-book"
+    if publication_year:
+        return f"{slug}-{publication_year}"
+    return slug
 
 
 def get_personas_root(data_dir: Path) -> Path:
@@ -55,6 +103,42 @@ def get_persona_paths(data_dir: Path, persona_name: str) -> PersonaPaths:
         prompt_path=persona_root / PROMPT_FILENAME,
         chunks_path=persona_root / CHUNKS_FILENAME,
     )
+
+
+def get_book_paths(persona_root: Path, book_key: str) -> AuthoredBookPaths:
+    """Resolve canonical files for one authored book."""
+    book_dir = persona_root / AUTHORED_BOOKS_DIR_NAME / book_key
+    return AuthoredBookPaths(
+        book_dir=book_dir,
+        metadata_path=book_dir / BOOK_METADATA_FILENAME,
+        viewpoints_path=book_dir / VIEWPOINTS_FILENAME,
+        report_path=book_dir / REPORT_FILENAME,
+    )
+
+
+def get_job_paths(persona_root: Path, job_id: str) -> IngestionJobPaths:
+    """Resolve canonical files for one ingestion job."""
+    job_dir = persona_root / INGESTION_JOBS_DIR_NAME / job_id
+    return IngestionJobPaths(
+        job_dir=job_dir,
+        manifest_path=job_dir / JOB_MANIFEST_FILENAME,
+    )
+
+
+def list_books(persona_root: Path) -> List[str]:
+    """List authored book keys for a persona."""
+    books_root = persona_root / AUTHORED_BOOKS_DIR_NAME
+    if not books_root.exists():
+        return []
+    return sorted([path.name for path in books_root.iterdir() if path.is_dir()])
+
+
+def list_jobs(persona_root: Path) -> List[str]:
+    """List ingestion job IDs for a persona."""
+    jobs_root = persona_root / INGESTION_JOBS_DIR_NAME
+    if not jobs_root.exists():
+        return []
+    return sorted([path.name for path in jobs_root.iterdir() if path.is_dir()])
 
 
 def list_persona_names(data_dir: Path) -> List[str]:
@@ -110,9 +194,9 @@ def read_metadata(metadata_path: Path) -> Dict[str, Any]:
 
     name = validate_persona_name(str(persona_block.get("name", "")))
     schema_version = int(persona_block.get("schema_version", 0) or 0)
-    if schema_version != PERSONA_SCHEMA_VERSION:
+    if schema_version not in SUPPORTED_SCHEMA_VERSIONS:
         raise ValueError(
-            f"unsupported persona schema_version={schema_version}; expected {PERSONA_SCHEMA_VERSION}"
+            f"unsupported persona schema_version={schema_version}; expected one of {SUPPORTED_SCHEMA_VERSIONS}"
         )
 
     metadata = dict(payload)
@@ -126,7 +210,8 @@ def write_metadata(metadata_path: Path, metadata: Dict[str, Any]) -> None:
     """Persist metadata atomically."""
     document = tomlkit.document()
     for key, value in metadata.items():
-        document[key] = value
+        if value is not None:
+            document[key] = _clean_toml_value(value)
     rendered = tomlkit.dumps(document)
     _write_text_atomic(metadata_path, rendered)
 
@@ -173,6 +258,38 @@ def write_chunks(chunks_path: Path, chunks: List[Dict[str, Any]]) -> None:
     _write_text_atomic(chunks_path, rendered)
 
 
+def read_job_manifest(manifest_path: Path) -> Dict[str, Any]:
+    """Read and validate job manifest file."""
+    with manifest_path.open("rb") as file_obj:
+        return tomllib.load(file_obj)
+
+
+def write_job_manifest(manifest_path: Path, manifest: Dict[str, Any]) -> None:
+    """Persist job manifest atomically."""
+    document = tomlkit.document()
+    for key, value in manifest.items():
+        if value is not None:
+            document[key] = _clean_toml_value(value)
+    rendered = tomlkit.dumps(document)
+    _write_text_atomic(manifest_path, rendered)
+
+
+def read_book_metadata(metadata_path: Path) -> Dict[str, Any]:
+    """Read and validate authored book metadata file."""
+    with metadata_path.open("rb") as file_obj:
+        return tomllib.load(file_obj)
+
+
+def write_book_metadata(metadata_path: Path, metadata: Dict[str, Any]) -> None:
+    """Persist authored book metadata atomically."""
+    document = tomlkit.document()
+    for key, value in metadata.items():
+        if value is not None:
+            document[key] = _clean_toml_value(value)
+    rendered = tomlkit.dumps(document)
+    _write_text_atomic(metadata_path, rendered)
+
+
 def touch_updated_at(metadata_path: Path) -> None:
     """Update metadata timestamp after mutating persona data."""
     metadata = read_metadata(metadata_path)
@@ -183,6 +300,15 @@ def touch_updated_at(metadata_path: Path) -> None:
 
 def _utc_now_iso() -> str:
     return datetime.now(UTC).replace(microsecond=0).isoformat()
+
+
+def _clean_toml_value(value: Any) -> Any:
+    """Recursively remove None values from dicts/lists for TOML compatibility."""
+    if isinstance(value, dict):
+        return {k: _clean_toml_value(v) for k, v in value.items() if v is not None}
+    if isinstance(value, (list, tuple)):
+        return [_clean_toml_value(v) for v in value if v is not None]
+    return value
 
 
 def _write_text_atomic(path: Path, content: str) -> None:
