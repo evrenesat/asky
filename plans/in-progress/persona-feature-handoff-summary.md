@@ -5,7 +5,6 @@
 This is a product-level summary of the persona feature direction, based on the original feature description plus the later roadmap clarifications. It is meant to travel together with:
 
 - [persona-roadmap.md](persona-roadmap.md)
-- [persona-milestone1-authored-book-ingestion-ralf.md](implemented/persona-milestone1-authored-book-ingestion-ralf.md)
 
 This summary is not an implementation plan. It explains the intended product behavior, the reasoning behind it, the intended milestone order, and the non-goals that should stay stable across future sessions.
 
