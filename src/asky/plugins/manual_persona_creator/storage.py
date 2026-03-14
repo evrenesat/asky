@@ -12,8 +12,8 @@ from typing import Any, Dict, List
 
 import tomlkit
 
-PERSONA_SCHEMA_VERSION = 2
-SUPPORTED_SCHEMA_VERSIONS = {1, 2}
+PERSONA_SCHEMA_VERSION = 3
+SUPPORTED_SCHEMA_VERSIONS = {1, 2, 3}
 PERSONAS_DIR_NAME = "personas"
 METADATA_FILENAME = "metadata.toml"
 PROMPT_FILENAME = "behavior_prompt.md"
@@ -198,6 +198,17 @@ def read_metadata(metadata_path: Path) -> Dict[str, Any]:
         raise ValueError(
             f"unsupported persona schema_version={schema_version}; expected one of {SUPPORTED_SCHEMA_VERSIONS}"
         )
+
+    # Automatic rebuild for missing v1/v2 catalogs
+    if schema_version < 3:
+        from asky.plugins.manual_persona_creator.knowledge_catalog import (
+            get_knowledge_paths,
+            rebuild_catalog_from_legacy,
+        )
+
+        paths = get_knowledge_paths(metadata_path.parent)
+        if not paths["sources"].exists() or not paths["entries"].exists():
+            rebuild_catalog_from_legacy(metadata_path.parent)
 
     metadata = dict(payload)
     metadata["persona"] = dict(persona_block)

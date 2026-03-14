@@ -62,12 +62,13 @@ def test_fetch_models_refreshes_on_force(mock_get):
     mock_response.json.return_value = {"data": [{"id": "fresh"}]}
     mock_get.return_value = mock_response
 
-    with patch("asky.cli.openrouter.get_cache_path") as mock_path:
-        # Mock open for writing
-        with patch("builtins.open", mock_open()):
-            models = openrouter.fetch_models(force_refresh=True)
-            assert models == [{"id": "fresh"}]
-            mock_get.assert_called_once()
+    with patch.dict("os.environ", {"OPENROUTER_API_KEY": "test-key"}):
+        with patch("asky.cli.openrouter.get_cache_path") as mock_path:
+            # Mock open for writing
+            with patch("builtins.open", mock_open()):
+                models = openrouter.fetch_models(force_refresh=True)
+                assert models == [{"id": "fresh"}]
+                mock_get.assert_called_once()
 
 
 def test_search_models():

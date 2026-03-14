@@ -8,6 +8,12 @@ from typing import Any, Dict, List
 
 from asky.research.embeddings import get_embedding_client
 from asky.research.vector_store_common import cosine_similarity
+from asky.plugins.manual_persona_creator.knowledge_catalog import read_catalog
+from asky.plugins.manual_persona_creator.knowledge_types import (
+    PersonaSourceClass,
+    PersonaTrustClass,
+)
+from asky.plugins.persona_manager.runtime_grounding import PersonaEvidencePacket
 
 EMBEDDINGS_FILENAME = "embeddings.json"
 DEFAULT_TOP_K = 3
@@ -102,7 +108,80 @@ def retrieve_relevant_chunks(
             "text": str(item.get("text", "") or ""),
             "source": str(item.get("source", "") or ""),
             "title": str(item.get("title", "") or ""),
+            "chunk_id": str(item.get("chunk_id", "") or ""),
         }
         for score, item in ranked[: max(1, int(top_k))]
         if str(item.get("text", "") or "").strip()
     ]
+
+
+def retrieve_evidence_packets(
+    *,
+    persona_dir: Path,
+    query_text: str,
+    top_k: int = DEFAULT_TOP_K,
+) -> List[PersonaEvidencePacket]:
+    """Retrieve top persona evidence packets with full metadata."""
+    chunks = retrieve_relevant_chunks(
+        persona_dir=persona_dir,
+        query_text=query_text,
+        top_k=top_k,
+    )
+    if not chunks:
+        return []
+
+    catalog = read_catalog(persona_dir)
+    if catalog is None:
+        # Fallback for v1/v2 if catalog missing
+        return [
+            PersonaEvidencePacket(
+                packet_id=f"P{i+1}",
+                source_label=c["source"],
+                source_class=PersonaSourceClass.MANUAL_SOURCE,
+                trust_class=PersonaTrustClass.USER_SUPPLIED_UNREVIEWED,
+                text=c["text"],
+                entry_id=f"chunk:{c['chunk_id']}",
+                source_id="manual:unknown",
+            )
+            for i, c in enumerate(chunks)
+        ]
+
+    sources_map = {s.source_id: s for s in catalog["sources"]}
+    entries_map = {e.entry_id: e for e in catalog["entries"]}
+
+    packets: List[PersonaEvidencePacket] = []
+    for i, chunk in enumerate(chunks):
+        chunk_id = chunk["chunk_id"]
+        entry_id = f"chunk:{chunk_id}"
+        entry = entries_map.get(entry_id)
+        
+        if entry:
+            source = sources_map.get(entry.source_id)
+            if source:
+                packets.append(
+                    PersonaEvidencePacket(
+                        packet_id=f"P{i+1}",
+                        source_label=source.label,
+                        source_class=source.source_class,
+                        trust_class=source.trust_class,
+                        text=entry.text,
+                        entry_id=entry_id,
+                        source_id=source.source_id,
+                    )
+                )
+                continue
+
+        # Fallback if entry/source not found in catalog
+        packets.append(
+            PersonaEvidencePacket(
+                packet_id=f"P{i+1}",
+                source_label=chunk["source"],
+                source_class=PersonaSourceClass.MANUAL_SOURCE,
+                trust_class=PersonaTrustClass.USER_SUPPLIED_UNREVIEWED,
+                text=chunk["text"],
+                entry_id=entry_id,
+                source_id="manual:unknown",
+            )
+        )
+
+    return packets

@@ -137,7 +137,7 @@ def test_prompt_and_preload_injection_for_loaded_persona(monkeypatch, tmp_path: 
         additional_source_context=None,
     )
     hooks.invoke("PRE_PRELOAD", pre_payload)
-    assert "Persona knowledge context:" in str(pre_payload.additional_source_context)
+    assert "Persona Evidence Packet: P1" in str(pre_payload.additional_source_context)
 
 
 def test_session_binding_persists_and_child_session_is_unbound(

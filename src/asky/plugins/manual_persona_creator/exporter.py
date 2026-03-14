@@ -11,6 +11,7 @@ from zipfile import ZIP_DEFLATED, ZipFile
 
 import tomlkit
 
+from asky.plugins.manual_persona_creator.knowledge_catalog import KNOWLEDGE_DIR_NAME
 from asky.plugins.manual_persona_creator.storage import (
     AUTHORED_BOOKS_DIR_NAME,
     PERSONA_SCHEMA_VERSION,
@@ -44,15 +45,27 @@ def export_persona_package(
         EXPORT_CHUNKS_FILENAME: _sha256_hex(chunks_payload.encode("utf-8")),
     }
 
-    # Collect authored-book artifacts
+    # Collect additional artifacts
+    artifacts_to_export = []
+
+    # Authored books
     authored_books_root = paths.root_dir / AUTHORED_BOOKS_DIR_NAME
-    authored_book_files = []
     if authored_books_root.exists():
         for file_path in authored_books_root.rglob("*"):
             if file_path.is_file():
-                relative_path = file_path.relative_to(paths.root_dir)
-                authored_book_files.append(file_path)
-                checksums[str(relative_path)] = _sha256_hex(file_path.read_bytes())
+                artifacts_to_export.append(file_path)
+
+    # Knowledge catalog
+    knowledge_root = paths.root_dir / KNOWLEDGE_DIR_NAME
+    if knowledge_root.exists():
+        for file_path in knowledge_root.rglob("*"):
+            if file_path.is_file():
+                artifacts_to_export.append(file_path)
+
+    # Calculate checksums for all collected artifacts
+    for file_path in artifacts_to_export:
+        relative_path = file_path.relative_to(paths.root_dir)
+        checksums[str(relative_path)] = _sha256_hex(file_path.read_bytes())
 
     metadata_payload = _build_export_metadata(metadata, checksums)
     metadata_rendered = tomlkit.dumps(metadata_payload)
@@ -69,7 +82,7 @@ def export_persona_package(
         archive.writestr(EXPORT_METADATA_FILENAME, metadata_rendered)
         archive.writestr(EXPORT_PROMPT_FILENAME, prompt_text)
         archive.writestr(EXPORT_CHUNKS_FILENAME, chunks_payload)
-        for file_path in authored_book_files:
+        for file_path in artifacts_to_export:
             relative_path = file_path.relative_to(paths.root_dir)
             archive.write(file_path, str(relative_path))
     temp_destination.replace(destination)

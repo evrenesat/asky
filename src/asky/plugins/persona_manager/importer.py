@@ -8,6 +8,11 @@ from pathlib import Path, PurePosixPath
 from typing import Any, Dict
 from zipfile import ZipFile
 
+from asky.plugins.manual_persona_creator.knowledge_catalog import (
+    KNOWLEDGE_DIR_NAME,
+    get_knowledge_paths,
+    rebuild_catalog_from_legacy,
+)
 from asky.plugins.manual_persona_creator.storage import (
     AUTHORED_BOOKS_DIR_NAME,
     CHUNKS_FILENAME,
@@ -84,13 +89,20 @@ def import_persona_archive(*, data_dir: Path, archive_path: str) -> Dict[str, An
     write_prompt(paths.prompt_path, prompt_text)
     write_chunks(paths.chunks_path, chunks)
 
-    # Extract authored-book artifacts if present
+    # Extract additional artifacts (authored-books, knowledge-catalog) if present
     with ZipFile(path, "r") as archive:
         for member_name in archive.namelist():
-            if member_name.startswith(f"{AUTHORED_BOOKS_DIR_NAME}/"):
+            if member_name.startswith(f"{AUTHORED_BOOKS_DIR_NAME}/") or \
+               member_name.startswith(f"{KNOWLEDGE_DIR_NAME}/"):
                 target_path = paths.root_dir / member_name
                 target_path.parent.mkdir(parents=True, exist_ok=True)
                 target_path.write_bytes(archive.read(member_name))
+
+    # Ensure catalog exists for legacy schemas
+    if schema_version < 3:
+        k_paths = get_knowledge_paths(paths.root_dir)
+        if not k_paths["sources"].exists() or not k_paths["entries"].exists():
+            rebuild_catalog_from_legacy(paths.root_dir)
 
     embedding_stats = rebuild_embeddings(persona_dir=paths.root_dir, chunks=chunks)
 

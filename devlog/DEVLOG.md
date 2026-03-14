@@ -2,6 +2,25 @@
 
 For full detailed entries, see [DEVLOG_ARCHIVE.md](DEVLOG_ARCHIVE.md).
 
+## 2026-03-14: Persona Milestone 0 Baseline Hardening And Data Foundation
+
+- **Summary**: Completed persona milestone 0 as the additive baseline hardening pass for persona storage, ingestion, grounded answering, deterministic evaluation, and documentation parity.
+- **Changes**:
+  - Added the schema-v3 additive persona knowledge catalog with durable `persona_knowledge/sources.json` and `persona_knowledge/entries.json`, while keeping `chunks.json` and `embeddings.json` as compatibility artifacts.
+  - Repaired `asky persona add-sources` with a persona-owned source service that updates chunks, canonical knowledge records, embeddings, and deterministic dedupe state instead of importing the removed research ingestion module.
+  - Added the minimal grounded persona runtime contract for non-lean turns, including labeled persona evidence packets, visible grounding classes, and an insufficient-evidence fallback when the reply is structurally ungrounded.
+  - Added deterministic persona-eval coverage and tightened the eval assertions so missing or misplaced evidence labels fail in the default pytest lane.
+  - Fixed the post-review follow-up gaps by teaching catalog rebuild to understand real authored-book artifacts and by enforcing that citations live in the `Evidence:` section when packets exist.
+  - Updated persona architecture/docs guidance and finalized the milestone handoff artifacts under `plans/implemented/`.
+- **Gotchas**:
+  - `chunks.json` and `embeddings.json` are still compatibility artifacts. The canonical durable persona knowledge store remains file-backed under each persona package.
+  - The runtime grounding contract is intentionally minimal. It does not add the later authored-book planner or recent-event reasoning pipeline.
+  - The final review/fix cycle discovered that a temporary fix plan can exist even when the desired end state is one full accumulated milestone commit; the implemented handoff plan remains the authoritative final record.
+- **Verification**:
+  - `uv run pytest tests/asky/plugins/manual_persona_creator/test_knowledge_catalog.py tests/asky/plugins/persona_manager/test_authored_book_import.py tests/asky/plugins/persona_manager/test_grounding.py tests/asky/evals/persona_pipeline/test_persona_eval_gate.py -q -n0` -> `20 passed in 1.83s`
+  - `uv run pytest -q` -> `1510 passed in 14.68s`
+  - Shell timing: `real 14.841`, `user 35.237`, `sys 4.070`
+
 ## 2026-03-13: CLI Help Discoverability Implementation
 
 - **Summary**: Implemented CLI help discoverability with a production-side help catalog and comprehensive contract enforcement.

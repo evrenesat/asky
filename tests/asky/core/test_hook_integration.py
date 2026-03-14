@@ -459,7 +459,7 @@ class TestPrePreloadHook:
         hooks.invoke("PRE_PRELOAD", pre_payload)
 
         assert pre_payload.additional_source_context is not None
-        assert "Persona knowledge context:" in pre_payload.additional_source_context
+        assert "Persona Evidence Packet: P1" in pre_payload.additional_source_context
         assert "testing_guide.md" in pre_payload.additional_source_context
 
     def test_pre_preload_skips_when_lean_mode(self, monkeypatch, tmp_path: Path):
@@ -627,7 +627,7 @@ class TestEndToEndHookFlow:
         hooks.invoke("PRE_PRELOAD", pre_payload)
 
         assert pre_payload.additional_source_context is not None
-        assert "Persona knowledge context:" in pre_payload.additional_source_context
+        assert "Persona Evidence Packet: P1" in pre_payload.additional_source_context
         assert "react_notes.md" in pre_payload.additional_source_context
 
     def test_complete_alias_mention_to_hooks_flow(

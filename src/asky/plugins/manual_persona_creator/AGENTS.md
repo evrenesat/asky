@@ -1,76 +1,48 @@
 # Manual Persona Creator Plugin (`plugins/manual_persona_creator/`)
 
-Creates and maintains local persona packages from manually provided prompts and sources.
+Creates and maintains local persona packages using **Schema v3** foundation.
 
 ## Module Overview
 
 | Module | Purpose |
 | --- | --- |
 | `plugin.py` | Plugin entrypoint and hook registration |
-| `storage.py`   | Persona file layout, metadata, atomic writes, book identity guards |
-| `book_service.py`| UI-agnostic orchestration layer for authored-book preflight, ingestion, and inspection |
-| `book_ingestion.py`| Multi-pass extraction pipeline and resumable job management |
-| `book_lookup.py`| Metadata candidate lookup and preflight analysis |
-| `ingestion.py` | (Legacy) General source expansion + chunk normalization |
-| `exporter.py`  | ZIP export with metadata/prompt/chunks/authored-books |
+| `storage.py`   | Persona file layout, metadata, atomic writes, versioning (v3) |
+| `knowledge_types.py`| Canonical catalog data structures and locked enums |
+| `knowledge_catalog.py`| Persistence and rebuild logic for v3 knowledge catalog |
+| `source_service.py`| Orchestration for manual source ingestion and deduplication |
+| `book_service.py`| Orchestration layer for authored-book ingestion |
+| `exporter.py`  | ZIP export with full v3 catalog and artifacts |
+
+## Schema v3 Foundation
+
+This version introduces a canonical knowledge catalog:
+- `persona_knowledge/sources.json`: Track original sources with content fingerprints.
+- `persona_knowledge/entries.json`: Maps knowledge entries (chunks, viewpoints) to sources.
+
+### Ingestion and Deduplication
+- `add-sources` uses deterministic content fingerprints.
+- Duplicate content is skipped automatically at the source level.
+- Re-ingesting existing sources returns a skipped count instead of appending duplicates.
 
 ## Authored Books Contract
 
-The plugin manages a structured ingestion pipeline for long-form content.
-
-### Invariants
-- **Service-Driven**: All authored-book operations must go through `book_service.py`. The CLI and future UI surfaces must not open-code storage traversal or identity checks.
-- **Identity Guard**: Canonical `book_key` (title+year or ISBN) is the source of truth for replacement/duplicate checks.
-- **Fidelity**: Extraction must include structured viewpoints with evidence. Malformed LLM payloads must be rejected via strict validation, with errors accumulated as warnings in the report.
-- **Durability**: Timings, warnings, and targets must be persisted in `report.json`.
-
-### Inspection & Reports
-- **Books**: Lists all completed books with metadata and viewpoint counts.
-- **Reports**: Renders full ingestion lifecycle details (targets, actuals, warnings, timings).
-- **Viewpoints**: Provides filtered/limited access to structured claims across persona content.
+Managed via `book_service.py`:
+- **Identity Guard**: Canonical `book_key` is the source of truth.
+- **Fidelity**: Viewpoints and evidence are projected into the canonical v3 catalog.
+- **Reports**: Detailed ingestion metrics and warnings.
 
 ## Storage Contract
 
 Persona root: `<plugin_data>/personas/<persona_name>/`
 
 Required files:
-
-- `metadata.toml`
+- `metadata.toml` (schema_version = 3)
 - `behavior_prompt.md`
-- `chunks.json`
-
-`metadata.toml` must include `[persona]` with `schema_version`.
+- `chunks.json` (compatibility)
+- `persona_knowledge/` (v3 catalog)
 
 ## Behavior Notes
-
-- Persona names are validated with strict slug-style constraints.
-- Writes are atomic (`.tmp` + replace) for metadata/prompt/chunks updates.
-- Ingestion tolerates partial failures and returns warnings instead of failing whole operation.
-- Export payload excludes absolute path leakage from source metadata.
-
-## User Entry Points
-
-Persona creation is now **CLI-first** and **deterministic**:
-
-### CLI Commands
-
-- `asky persona create <name> --prompt <file>` - Create new persona from prompt file
-- `asky persona add-sources <name> <sources...>` - Add knowledge sources to persona
-- `asky persona export <name> [--output <path>]` - Export persona to ZIP file
-- `asky persona list` - List all available personas
-
-### Design Rationale
-
-Persona creation operations are **user-driven** and occur outside of model execution. This ensures:
-
-1. **Explicit control** - User creates personas intentionally, not via model discovery
-2. **No tool surface** - Model cannot autonomously create or modify personas
-3. **CLI-first workflow** - Direct commands for persona management
-4. **File-based prompts** - Behavior prompts come from files, not inline strings
-
-### Operational Notes
-
-- Persona names must follow slug-style constraints (alphanumeric, underscore, hyphen)
-- Writes are atomic (`.tmp` + replace) for metadata/prompt/chunks updates
-- Ingestion tolerates partial failures and returns warnings
-- Export excludes absolute path leakage from source metadata
+- Writes are atomic (`.tmp` + replace).
+- Export payload excludes absolute path leakage.
+- Automatic catalog rebuild from v1/v2 artifacts on read/import.

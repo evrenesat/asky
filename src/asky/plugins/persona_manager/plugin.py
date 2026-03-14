@@ -8,11 +8,13 @@ from typing import Any, Dict, Optional
 
 from asky.plugins.base import AskyPlugin, PluginContext
 from asky.plugins.hook_types import (
+    POST_LLM_RESPONSE,
     PRE_PRELOAD,
     SESSION_RESOLVED,
     SYSTEM_PROMPT_EXTEND,
     TOOL_REGISTRY_BUILD,
     TURN_COMPLETED,
+    PostLLMResponseContext,
     PrePreloadContext,
     SessionResolvedContext,
     ToolRegistryBuildContext,
@@ -26,6 +28,10 @@ from asky.plugins.manual_persona_creator.storage import (
 from asky.plugins.persona_manager.session_binding import (
     get_session_binding,
     set_session_binding,
+)
+from asky.plugins.persona_manager.runtime_grounding import (
+    format_grounding_prompt_extension,
+    validate_grounded_response,
 )
 
 SESSION_HOOK_PRIORITY = 100
@@ -75,6 +81,11 @@ class PersonaManagerPlugin(AskyPlugin):
             priority=PROMPT_HOOK_PRIORITY,
         )
         context.hook_registry.register(
+            POST_LLM_RESPONSE,
+            self._on_post_llm_response,
+            plugin_name=context.plugin_name,
+        )
+        context.hook_registry.register(
             TURN_COMPLETED,
             self._on_turn_completed,
             plugin_name=context.plugin_name,
@@ -86,6 +97,8 @@ class PersonaManagerPlugin(AskyPlugin):
         self._active_by_session.clear()
         if hasattr(self._thread_local, "session_id"):
             delattr(self._thread_local, "session_id")
+        if hasattr(self._thread_local, "current_packets"):
+            delattr(self._thread_local, "current_packets")
 
     def _on_tool_registry_build(self, payload: ToolRegistryBuildContext) -> None:
         """
@@ -140,27 +153,22 @@ class PersonaManagerPlugin(AskyPlugin):
 
         persona_dir = self._persona_dir(persona_name)
         top_k = int(context.config.get("knowledge_top_k", DEFAULT_PERSONA_CONTEXT_TOP_K))
-        from asky.plugins.persona_manager.knowledge import retrieve_relevant_chunks
+        from asky.plugins.persona_manager.knowledge import retrieve_evidence_packets
 
-        chunks = retrieve_relevant_chunks(
+        packets = retrieve_evidence_packets(
             persona_dir=persona_dir,
             query_text=query_text,
             top_k=top_k,
         )
-        if not chunks:
+        if not packets:
             return
 
-        snippet_lines = ["Persona knowledge context:"]
-        for item in chunks:
-            source = str(item.get("source", "") or "")
-            score = float(item.get("score", 0.0) or 0.0)
-            text = str(item.get("text", "") or "").strip()
-            if not text:
-                continue
-            if source:
-                snippet_lines.append(f"- {source} (score={score:.3f}): {text}")
-            else:
-                snippet_lines.append(f"- score={score:.3f}: {text}")
+        # Store packets for POST_LLM_RESPONSE validation
+        setattr(self._thread_local, "current_packets", packets)
+
+        snippet_lines = []
+        for packet in packets:
+            snippet_lines.append(packet.format())
 
         persona_context = "\n".join(snippet_lines)
         existing_context = str(payload.additional_source_context or "").strip()
@@ -184,15 +192,39 @@ class PersonaManagerPlugin(AskyPlugin):
         if not persona_prompt:
             return system_prompt
 
+        grounding_extension = format_grounding_prompt_extension(persona_name)
+
         return (
             f"{system_prompt}\n\n"
             f"Loaded Persona ({persona_name}):\n"
-            f"{persona_prompt}"
+            f"{persona_prompt}\n"
+            f"{grounding_extension}"
         )
+
+    def _on_post_llm_response(self, payload: PostLLMResponseContext) -> None:
+        """Validate and possibly replace persona response with fallback."""
+        packets = getattr(self._thread_local, "current_packets", None)
+        if not packets:
+            return
+
+        # Don't validate tool calls
+        if payload.calls:
+            return
+
+        message = payload.message
+        content = str(message.get("content", "") or "").strip()
+        if not content:
+            return
+
+        fallback = validate_grounded_response(content, packets)
+        if fallback:
+            message["content"] = fallback
 
     def _on_turn_completed(self, _payload: Any) -> None:
         if hasattr(self._thread_local, "session_id"):
             delattr(self._thread_local, "session_id")
+        if hasattr(self._thread_local, "current_packets"):
+            delattr(self._thread_local, "current_packets")
 
     def _tool_import_persona(self, args: Dict[str, Any]) -> Dict[str, Any]:
         context = self._context

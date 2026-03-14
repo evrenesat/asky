@@ -471,25 +471,30 @@ def handle_persona_add_sources(args: argparse.Namespace) -> None:
         return
     
     try:
-        from asky.research.ingestion import ingest_sources
-        from asky.plugins.persona_manager.knowledge import rebuild_embeddings
+        from asky.plugins.manual_persona_creator.source_service import add_manual_sources
         
         paths = get_persona_paths(data_dir, persona_name)
-        existing_chunks = read_chunks(paths.chunks_path)
         
         console.print(f"[cyan]Ingesting {len(sources)} source(s)...[/cyan]")
-        new_chunks = ingest_sources(sources)
+        result = add_manual_sources(persona_root=paths.root_dir, sources=sources)
         
-        all_chunks = existing_chunks + new_chunks
-        write_chunks(paths.chunks_path, all_chunks)
+        if result.processed_sources > 0:
+            console.print(f"[green]✓[/green] Added {result.processed_sources} new source(s) to '[cyan]{persona_name}[/cyan]'")
         
-        console.print("[cyan]Rebuilding embeddings...[/cyan]")
-        stats = rebuild_embeddings(persona_dir=paths.root_dir, chunks=all_chunks)
-        
-        touch_updated_at(paths.metadata_path)
-        
-        console.print(f"[green]✓[/green] Added {len(new_chunks)} chunk(s) to persona '[cyan]{persona_name}[/cyan]'")
-        console.print(f"  Total chunks: {stats['embedded_chunks']}")
+        if result.skipped_existing_sources > 0:
+            console.print(f"[yellow]![/yellow] Skipped {result.skipped_existing_sources} source(s) that already exist in this persona")
+            
+        if result.added_chunks > 0:
+            console.print(f"  Added {result.added_chunks} chunk(s)")
+            
+        if result.warning_count > 0:
+            console.print(f"[yellow]Warnings ({result.warning_count}):[/yellow]")
+            for warning in result.warnings:
+                console.print(f"  - {warning}")
+                
+        if result.processed_sources == 0 and result.skipped_existing_sources == 0:
+             console.print("[yellow]No sources were processed.[/yellow]")
+
     except Exception as e:
         console.print(f"[red]Error adding sources: {e}[/red]")
 

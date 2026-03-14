@@ -1831,7 +1831,6 @@ def test_main_flow(
 @patch("asky.cli.chat.ConversationEngine.run")
 @patch("asky.cli.chat.generate_summaries")
 @patch("asky.cli.chat.save_interaction")
-@patch("asky.cli.utils.os.environ.get")
 @patch("asky.cli.main.setup_logging")
 @patch("asky.cli.main.ResearchCache")
 @patch("asky.cli.terminal.get_terminal_context")
@@ -1843,7 +1842,6 @@ def test_main_flow_verbose(
     mock_get_term,
     mock_research_cache,
     mock_setup_logging,
-    mock_env_get,
     mock_save,
     mock_gen_sum,
     mock_run,
@@ -1855,7 +1853,6 @@ def test_main_flow_verbose(
 ):
     # Mock terminal context to prevent iTerm2 connection attempts in tests
     mock_get_term.return_value = "Mocked Terminal Context"
-    mock_env_get.return_value = "fake_key_123456789"
     mock_parse.return_value = argparse.Namespace(
         model="gf",
         history=None,
