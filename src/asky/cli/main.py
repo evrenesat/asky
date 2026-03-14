@@ -1686,6 +1686,11 @@ def main() -> None:
             "persona_name", nargs="?", help="Show aliases for specific persona"
         )
 
+        rebuild_index_parser = subparsers.add_parser(
+            "rebuild-index", help="Manually rebuild the runtime index for a persona"
+        )
+        rebuild_index_parser.add_argument("name", help="Persona name")
+
         # Parse persona args (skip "persona" token)
         persona_args = parser.parse_args(sys.argv[2:])
 
@@ -1743,6 +1748,8 @@ def main() -> None:
             persona_commands.handle_persona_unalias(persona_args)
         elif persona_cmd == "aliases":
             persona_commands.handle_persona_aliases(persona_args)
+        elif persona_cmd == "rebuild-index":
+            persona_commands.handle_persona_rebuild_index(persona_args)
         return
 
     # Normal query parsing flow

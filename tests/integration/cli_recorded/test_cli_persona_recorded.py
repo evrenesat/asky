@@ -75,6 +75,11 @@ def test_persona_surface_exhaustive(tmp_path):
     result_unalias = run_cli_inprocess(["persona", "unalias", "p1"])
     assert result_unalias.exit_code == 0
 
+    # 12. Rebuild index
+    result_rebuild = run_cli_inprocess(["persona", "rebuild-index", "pirate_persona"])
+    assert result_rebuild.exit_code == 0
+    assert "rebuilt successfully" in normalize_cli_output(result_rebuild.stdout).lower()
+
 
 def test_persona_mention_behavior(tmp_path):
     """Test @persona and @alias mentions in turns."""

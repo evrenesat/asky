@@ -27,6 +27,7 @@ from asky.plugins.manual_persona_creator.knowledge_types import (
     PersonaSourceRecord,
     PersonaTrustClass,
 )
+from asky.plugins.manual_persona_creator.runtime_index import rebuild_runtime_index
 from asky.plugins.persona_manager.knowledge import rebuild_embeddings
 from asky.plugins.persona_manager.session_binding import set_session_binding
 from asky.evals.persona_pipeline.assertions import evaluate_persona_answer
@@ -50,6 +51,14 @@ def mock_models(monkeypatch):
 def eval_persona_data(tmp_path: Path, monkeypatch):
     monkeypatch.setattr(
         "asky.plugins.persona_manager.knowledge.get_embedding_client",
+        lambda: _FakeEmbeddingClient(),
+    )
+    monkeypatch.setattr(
+        "asky.plugins.persona_manager.runtime_planner.get_embedding_client",
+        lambda: _FakeEmbeddingClient(),
+    )
+    monkeypatch.setattr(
+        "asky.plugins.manual_persona_creator.runtime_index.get_embedding_client",
         lambda: _FakeEmbeddingClient(),
     )
     
@@ -124,6 +133,7 @@ def eval_persona_data(tmp_path: Path, monkeypatch):
     ]
     write_chunks(persona_root / CHUNKS_FILENAME, chunks)
     rebuild_embeddings(persona_dir=persona_root, chunks=chunks)
+    rebuild_runtime_index(persona_dir=persona_root)
     
     return tmp_path
 
@@ -246,6 +256,49 @@ def test_eval_gate_insufficient_evidence_unseen_topic(eval_persona_data, monkeyp
         result.final_answer, 
         expected_grounding="insufficient_evidence", 
         expected_citations=["P1", "P2"] # Fallback includes all retrieved packets
+    )
+    assert assertion.passed, assertion.detail
+
+
+def test_eval_gate_bounded_inference_passed(eval_persona_data, monkeypatch):
+    """Scenario: Model synthesizes persona info with current context citations."""
+    model_response = (
+        "Answer: The secret code was 1234 but a recent strike changed things.\n"
+        "Grounding: bounded_inference\n"
+        "Evidence: [P1]\n"
+        "Current Context: - [W1] recent strike"
+    )
+    
+    monkeypatch.setattr(
+        "asky.core.engine.get_llm_msg", 
+        lambda *args, **kwargs: {"content": model_response, "role": "assistant"}
+    )
+    
+    # Mock live sources in thread-local
+    def mock_run_turn(*args, **kwargs):
+        from asky.plugins.runtime import get_or_create_plugin_runtime
+        runtime = get_or_create_plugin_runtime()
+        plugin = runtime.get_plugin("persona_manager")
+        plugin._thread_local.live_sources = [{"label": "recent strike"}]
+        # Original call would happen here, but we are mocking the whole path in _run_turn_with_mention
+        return client.run_turn(*args, **kwargs)
+
+    client = _create_client()
+    
+    # We need to ensure live_sources is populated before validation.
+    # In a real run, POST_TOOL_EXECUTE does this.
+    # Here we can patch the plugin's thread local directly.
+    runtime = client.plugin_runtime
+    plugin = runtime.manager.get_plugin("persona_manager")
+    plugin._thread_local.live_sources = [{"label": "recent strike"}]
+    
+    result = _run_turn_with_mention(client, "@eval_p What is the code and status?", eval_persona_data)
+    
+    assertion = evaluate_persona_answer(
+        result.final_answer, 
+        expected_grounding="bounded_inference", 
+        expected_citations=["P1"],
+        expected_w_citations=["W1"]
     )
     assert assertion.passed, assertion.detail
 

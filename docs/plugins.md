@@ -60,18 +60,32 @@ Authored Book Ingestion:
 You can load a persona for a single query using the `@` syntax. This is handled as a **preprocessing operation** before the query reaches the model:
 - `@arendt How does she define labor?` - Loads the `arendt` persona and removes the mention from the query.
 
-### 3.3 Minimal Grounding Contract
+### 3.3 Milestone-2 Grounding Contract
 
-When a persona is loaded, the runtime enforces a grounded answer contract. The model is instructed to follow this format:
+When a persona is loaded, the runtime enforces a grounded answer contract. The model is provided with **Structured Evidence Packets** which include source class, trust level, and linked evidence excerpts.
+
+The model is instructed to follow this exact format:
 
 ```text
 Answer: <the grounded answer>
 Grounding: <direct_evidence | supported_pattern | bounded_inference | insufficient_evidence>
 Evidence: <citations like [P1], [P2]>
+Current Context: <citations like [W1] for fresh web context, only when used>
 ```
 
+#### 3.3.1 Structured Retrieval and Priority
+Retrieval uses a multi-level priority system to ensure the most reliable information is presented first:
+1. **Viewpoints**: Extracted high-level worldview claims from authored books.
+2. **Evidence Excerpts**: Direct supporting quotes linked to viewpoints.
+3. **Raw Chunks**: General knowledge fragments from manual sources.
+
+#### 3.3.2 Current Context Attribution
+If live tools (like web search) are used during a persona turn, the model must attribute them separately in the `Current Context:` section using `[W#]` citations. If persona knowledge is synthesized with live context, `Grounding: bounded_inference` is required.
+
+#### 3.3.3 Validation and Fallback
 If the response lacks required grounding or citations while evidence was provided, the runtime automatically collapses the reply to a safe fallback:
 - `I don't have enough grounded persona evidence to answer this reliably.`
+- The fallback includes a list of the evidence packets the model was supposed to consider.
 
 ## 4. Persona Data and Schema
 

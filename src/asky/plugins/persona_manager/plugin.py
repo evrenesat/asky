@@ -9,12 +9,14 @@ from typing import Any, Dict, Optional
 from asky.plugins.base import AskyPlugin, PluginContext
 from asky.plugins.hook_types import (
     POST_LLM_RESPONSE,
+    POST_TOOL_EXECUTE,
     PRE_PRELOAD,
     SESSION_RESOLVED,
     SYSTEM_PROMPT_EXTEND,
     TOOL_REGISTRY_BUILD,
     TURN_COMPLETED,
     PostLLMResponseContext,
+    PostToolExecuteContext,
     PrePreloadContext,
     SessionResolvedContext,
     ToolRegistryBuildContext,
@@ -86,6 +88,11 @@ class PersonaManagerPlugin(AskyPlugin):
             plugin_name=context.plugin_name,
         )
         context.hook_registry.register(
+            POST_TOOL_EXECUTE,
+            self._on_post_tool_execute,
+            plugin_name=context.plugin_name,
+        )
+        context.hook_registry.register(
             TURN_COMPLETED,
             self._on_turn_completed,
             plugin_name=context.plugin_name,
@@ -99,6 +106,8 @@ class PersonaManagerPlugin(AskyPlugin):
             delattr(self._thread_local, "session_id")
         if hasattr(self._thread_local, "current_packets"):
             delattr(self._thread_local, "current_packets")
+        if hasattr(self._thread_local, "live_sources"):
+            delattr(self._thread_local, "live_sources")
 
     def _on_tool_registry_build(self, payload: ToolRegistryBuildContext) -> None:
         """
@@ -153,18 +162,19 @@ class PersonaManagerPlugin(AskyPlugin):
 
         persona_dir = self._persona_dir(persona_name)
         top_k = int(context.config.get("knowledge_top_k", DEFAULT_PERSONA_CONTEXT_TOP_K))
-        from asky.plugins.persona_manager.knowledge import retrieve_evidence_packets
+        from asky.plugins.persona_manager.runtime_planner import plan_persona_packets
 
-        packets = retrieve_evidence_packets(
+        packets = plan_persona_packets(
             persona_dir=persona_dir,
             query_text=query_text,
             top_k=top_k,
         )
+
+        # Store packets (even if empty) to signal this is a persona turn for validation
+        setattr(self._thread_local, "current_packets", packets)
+
         if not packets:
             return
-
-        # Store packets for POST_LLM_RESPONSE validation
-        setattr(self._thread_local, "current_packets", packets)
 
         snippet_lines = []
         for packet in packets:
@@ -203,8 +213,9 @@ class PersonaManagerPlugin(AskyPlugin):
 
     def _on_post_llm_response(self, payload: PostLLMResponseContext) -> None:
         """Validate and possibly replace persona response with fallback."""
+        # Use None check because [] means persona turn with no packets
         packets = getattr(self._thread_local, "current_packets", None)
-        if not packets:
+        if packets is None:
             return
 
         # Don't validate tool calls
@@ -216,15 +227,43 @@ class PersonaManagerPlugin(AskyPlugin):
         if not content:
             return
 
-        fallback = validate_grounded_response(content, packets)
+        live_sources = getattr(self._thread_local, "live_sources", [])
+        fallback = validate_grounded_response(content, packets, live_sources)
         if fallback:
             message["content"] = fallback
+
+    def _on_post_tool_execute(self, payload: PostToolExecuteContext) -> None:
+        """Track live current-context sources used during persona turns."""
+        packets = getattr(self._thread_local, "current_packets", None)
+        if not packets:
+            return
+
+        # Track only web tools
+        web_tools = {"web_search", "get_url_content", "get_url_details"}
+        if payload.tool_name not in web_tools:
+            return
+
+        if not hasattr(self._thread_local, "live_sources"):
+            self._thread_local.live_sources = []
+
+        # Try to extract a label from result
+        label = payload.arguments.get("query") or payload.arguments.get("url") or payload.tool_name
+        
+        # Avoid duplicates if possible
+        if not any(src.get("label") == label for src in self._thread_local.live_sources):
+            self._thread_local.live_sources.append({
+                "tool": payload.tool_name,
+                "label": label,
+                "arguments": payload.arguments,
+            })
 
     def _on_turn_completed(self, _payload: Any) -> None:
         if hasattr(self._thread_local, "session_id"):
             delattr(self._thread_local, "session_id")
         if hasattr(self._thread_local, "current_packets"):
             delattr(self._thread_local, "current_packets")
+        if hasattr(self._thread_local, "live_sources"):
+            delattr(self._thread_local, "live_sources")
 
     def _tool_import_persona(self, args: Dict[str, Any]) -> Dict[str, Any]:
         context = self._context

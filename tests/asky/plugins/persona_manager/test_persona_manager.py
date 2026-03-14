@@ -39,7 +39,7 @@ def _create_persona_archive(tmp_path: Path, name: str = "demo") -> Path:
     metadata = (
         "[persona]\n"
         f'name = "{name}"\n'
-        f"schema_version = {PERSONA_SCHEMA_VERSION}\n"
+        f"schema_version = 2\n"
     )
     chunks = [
         {
@@ -80,6 +80,10 @@ def test_import_rebuilds_embeddings(monkeypatch, tmp_path: Path):
         "asky.plugins.persona_manager.knowledge.get_embedding_client",
         lambda: _FakeEmbeddingClient(),
     )
+    monkeypatch.setattr(
+        "asky.plugins.manual_persona_creator.runtime_index.get_embedding_client",
+        lambda: _FakeEmbeddingClient(),
+    )
 
     archive_path = _create_persona_archive(tmp_path, name="imported")
     result = import_persona_archive(
@@ -93,6 +97,14 @@ def test_import_rebuilds_embeddings(monkeypatch, tmp_path: Path):
 
 
 def test_prompt_and_preload_injection_for_loaded_persona(monkeypatch, tmp_path: Path):
+    monkeypatch.setattr(
+        "asky.plugins.persona_manager.runtime_planner.get_embedding_client",
+        lambda: _FakeEmbeddingClient(),
+    )
+    monkeypatch.setattr(
+        "asky.plugins.manual_persona_creator.runtime_index.get_embedding_client",
+        lambda: _FakeEmbeddingClient(),
+    )
     monkeypatch.setattr(
         "asky.plugins.persona_manager.knowledge.get_embedding_client",
         lambda: _FakeEmbeddingClient(),
@@ -197,3 +209,69 @@ def test_session_binding_persists_and_child_session_is_unbound(
         ),
     )
     assert hooks_b.invoke_chain("SYSTEM_PROMPT_EXTEND", "base") == "base"
+
+
+def test_post_llm_response_validation_runs_for_zero_packet_turn(monkeypatch, tmp_path: Path):
+    monkeypatch.setattr(
+        "asky.plugins.persona_manager.runtime_planner.get_embedding_client",
+        lambda: _FakeEmbeddingClient(),
+    )
+    monkeypatch.setattr(
+        "asky.plugins.manual_persona_creator.runtime_index.get_embedding_client",
+        lambda: _FakeEmbeddingClient(),
+    )
+
+    # 1. Setup persona and session
+    archive_path = _create_persona_archive(tmp_path, name="validation_test")
+    import_persona_archive(data_dir=tmp_path / "persona_data", archive_path=str(archive_path))
+
+    hooks = HookRegistry()
+    plugin = PersonaManagerPlugin()
+    context = _plugin_context(tmp_path, hooks)
+    plugin.activate(context)
+
+    hooks.invoke(
+        "SESSION_RESOLVED",
+        SessionResolvedContext(
+            request=None,
+            session_manager=None,
+            session_resolution=type("S", (), {"session_id": 100})(),
+        )
+    )
+    plugin._tool_load_persona({"name": "validation_test"})
+
+    # 2. Mock planner to return ZERO packets
+    monkeypatch.setattr(
+        "asky.plugins.persona_manager.runtime_planner.plan_persona_packets",
+        lambda **kwargs: []
+    )
+
+    # 3. Trigger PRE_PRELOAD to set current_packets to []
+    pre_payload = PrePreloadContext(
+        request=type("R", (), {"lean": False})(),
+        query_text="unseen topic",
+        research_mode=False,
+        research_source_mode=None,
+        local_corpus_paths=None,
+        preload_local_sources=True,
+        preload_shortlist=True,
+        shortlist_override=None,
+        additional_source_context=None,
+    )
+    hooks.invoke("PRE_PRELOAD", pre_payload)
+
+    # 4. Trigger POST_LLM_RESPONSE with a generic answer
+    message = {"content": "I am answering from my own knowledge.", "role": "assistant"}
+    from asky.plugins.hook_types import PostLLMResponseContext
+    post_payload = PostLLMResponseContext(
+        turn=1,
+        message=message,
+        calls=[],
+        messages=[],
+    )
+
+    hooks.invoke("POST_LLM_RESPONSE", post_payload)
+
+    # 5. Verify it collapsed to insufficient_evidence
+    assert "insufficient_evidence" in message["content"]
+    assert "I don't have enough grounded persona evidence" in message["content"]

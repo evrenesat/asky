@@ -71,7 +71,7 @@ def _create_persona_archive(
     metadata = (
         "[persona]\n"
         f'name = "{name}"\n'
-        f"schema_version = {PERSONA_SCHEMA_VERSION}\n"
+        f"schema_version = 2\n"
     )
 
     if chunks is None:
@@ -144,6 +144,14 @@ class TestSessionResolvedHook:
     ):
         """Test that SESSION_RESOLVED hook restores persona from session binding."""
         monkeypatch.setattr(
+            "asky.plugins.persona_manager.runtime_planner.get_embedding_client",
+            lambda: _FakeEmbeddingClient(),
+        )
+        monkeypatch.setattr(
+            "asky.plugins.manual_persona_creator.runtime_index.get_embedding_client",
+            lambda: _FakeEmbeddingClient(),
+        )
+        monkeypatch.setattr(
             "asky.plugins.persona_manager.knowledge.get_embedding_client",
             lambda: _FakeEmbeddingClient(),
         )
@@ -184,6 +192,14 @@ class TestSessionResolvedHook:
         self, monkeypatch, tmp_path: Path, kvstore: PluginKVStore
     ):
         """Test SESSION_RESOLVED hook with persona loaded via @mention."""
+        monkeypatch.setattr(
+            "asky.plugins.persona_manager.runtime_planner.get_embedding_client",
+            lambda: _FakeEmbeddingClient(),
+        )
+        monkeypatch.setattr(
+            "asky.plugins.manual_persona_creator.runtime_index.get_embedding_client",
+            lambda: _FakeEmbeddingClient(),
+        )
         monkeypatch.setattr(
             "asky.plugins.persona_manager.knowledge.get_embedding_client",
             lambda: _FakeEmbeddingClient(),
@@ -237,6 +253,14 @@ class TestSessionResolvedHook:
     ):
         """Test that SESSION_RESOLVED clears binding if persona doesn't exist."""
         monkeypatch.setattr(
+            "asky.plugins.persona_manager.runtime_planner.get_embedding_client",
+            lambda: _FakeEmbeddingClient(),
+        )
+        monkeypatch.setattr(
+            "asky.plugins.manual_persona_creator.runtime_index.get_embedding_client",
+            lambda: _FakeEmbeddingClient(),
+        )
+        monkeypatch.setattr(
             "asky.plugins.persona_manager.knowledge.get_embedding_client",
             lambda: _FakeEmbeddingClient(),
         )
@@ -272,6 +296,14 @@ class TestSystemPromptExtendHook:
         self, monkeypatch, tmp_path: Path
     ):
         """Test that SYSTEM_PROMPT_EXTEND hook injects persona behavior prompt."""
+        monkeypatch.setattr(
+            "asky.plugins.persona_manager.runtime_planner.get_embedding_client",
+            lambda: _FakeEmbeddingClient(),
+        )
+        monkeypatch.setattr(
+            "asky.plugins.manual_persona_creator.runtime_index.get_embedding_client",
+            lambda: _FakeEmbeddingClient(),
+        )
         monkeypatch.setattr(
             "asky.plugins.persona_manager.knowledge.get_embedding_client",
             lambda: _FakeEmbeddingClient(),
@@ -338,6 +370,14 @@ class TestSystemPromptExtendHook:
     ):
         """Test SYSTEM_PROMPT_EXTEND with persona loaded via alias."""
         monkeypatch.setattr(
+            "asky.plugins.persona_manager.runtime_planner.get_embedding_client",
+            lambda: _FakeEmbeddingClient(),
+        )
+        monkeypatch.setattr(
+            "asky.plugins.manual_persona_creator.runtime_index.get_embedding_client",
+            lambda: _FakeEmbeddingClient(),
+        )
+        monkeypatch.setattr(
             "asky.plugins.persona_manager.knowledge.get_embedding_client",
             lambda: _FakeEmbeddingClient(),
         )
@@ -394,6 +434,14 @@ class TestPrePreloadHook:
         self, monkeypatch, tmp_path: Path
     ):
         """Test that PRE_PRELOAD hook injects persona knowledge chunks."""
+        monkeypatch.setattr(
+            "asky.plugins.persona_manager.runtime_planner.get_embedding_client",
+            lambda: _FakeEmbeddingClient(),
+        )
+        monkeypatch.setattr(
+            "asky.plugins.manual_persona_creator.runtime_index.get_embedding_client",
+            lambda: _FakeEmbeddingClient(),
+        )
         monkeypatch.setattr(
             "asky.plugins.persona_manager.knowledge.get_embedding_client",
             lambda: _FakeEmbeddingClient(),
@@ -464,6 +512,14 @@ class TestPrePreloadHook:
 
     def test_pre_preload_skips_when_lean_mode(self, monkeypatch, tmp_path: Path):
         """Test that PRE_PRELOAD skips persona knowledge in lean mode."""
+        monkeypatch.setattr(
+            "asky.plugins.persona_manager.runtime_planner.get_embedding_client",
+            lambda: _FakeEmbeddingClient(),
+        )
+        monkeypatch.setattr(
+            "asky.plugins.manual_persona_creator.runtime_index.get_embedding_client",
+            lambda: _FakeEmbeddingClient(),
+        )
         monkeypatch.setattr(
             "asky.plugins.persona_manager.knowledge.get_embedding_client",
             lambda: _FakeEmbeddingClient(),
@@ -548,6 +604,14 @@ class TestEndToEndHookFlow:
         self, monkeypatch, tmp_path: Path, kvstore: PluginKVStore
     ):
         """Test complete flow from @mention to all hooks executing."""
+        monkeypatch.setattr(
+            "asky.plugins.persona_manager.runtime_planner.get_embedding_client",
+            lambda: _FakeEmbeddingClient(),
+        )
+        monkeypatch.setattr(
+            "asky.plugins.manual_persona_creator.runtime_index.get_embedding_client",
+            lambda: _FakeEmbeddingClient(),
+        )
         monkeypatch.setattr(
             "asky.plugins.persona_manager.knowledge.get_embedding_client",
             lambda: _FakeEmbeddingClient(),
@@ -635,6 +699,14 @@ class TestEndToEndHookFlow:
     ):
         """Test complete flow with alias: @alias → resolve → load → hooks execute."""
         monkeypatch.setattr(
+            "asky.plugins.persona_manager.runtime_planner.get_embedding_client",
+            lambda: _FakeEmbeddingClient(),
+        )
+        monkeypatch.setattr(
+            "asky.plugins.manual_persona_creator.runtime_index.get_embedding_client",
+            lambda: _FakeEmbeddingClient(),
+        )
+        monkeypatch.setattr(
             "asky.plugins.persona_manager.knowledge.get_embedding_client",
             lambda: _FakeEmbeddingClient(),
         )
@@ -720,6 +792,14 @@ class TestEndToEndHookFlow:
         self, monkeypatch, tmp_path: Path, kvstore: PluginKVStore
     ):
         """Test that replacing persona via mention updates all hooks."""
+        monkeypatch.setattr(
+            "asky.plugins.persona_manager.runtime_planner.get_embedding_client",
+            lambda: _FakeEmbeddingClient(),
+        )
+        monkeypatch.setattr(
+            "asky.plugins.manual_persona_creator.runtime_index.get_embedding_client",
+            lambda: _FakeEmbeddingClient(),
+        )
         monkeypatch.setattr(
             "asky.plugins.persona_manager.knowledge.get_embedding_client",
             lambda: _FakeEmbeddingClient(),

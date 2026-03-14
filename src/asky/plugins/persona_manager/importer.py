@@ -13,6 +13,7 @@ from asky.plugins.manual_persona_creator.knowledge_catalog import (
     get_knowledge_paths,
     rebuild_catalog_from_legacy,
 )
+from asky.plugins.manual_persona_creator.runtime_index import rebuild_runtime_index
 from asky.plugins.manual_persona_creator.storage import (
     AUTHORED_BOOKS_DIR_NAME,
     CHUNKS_FILENAME,
@@ -105,6 +106,7 @@ def import_persona_archive(*, data_dir: Path, archive_path: str) -> Dict[str, An
             rebuild_catalog_from_legacy(paths.root_dir)
 
     embedding_stats = rebuild_embeddings(persona_dir=paths.root_dir, chunks=chunks)
+    rebuild_runtime_index(persona_dir=paths.root_dir)
 
     return {
         "ok": True,

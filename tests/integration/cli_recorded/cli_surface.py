@@ -91,6 +91,7 @@ PERSONA_SUBCOMMANDS = {
     "persona books",
     "persona book-report",
     "persona viewpoints",
+    "persona rebuild-index",
 }
 
 PLUGIN_FLAGS = {
@@ -223,6 +224,7 @@ COVERAGE_OWNERSHIP = {
     "persona books": "test_cli_persona_recorded.py",
     "persona book-report": "test_cli_persona_recorded.py",
     "persona viewpoints": "test_cli_persona_recorded.py",
+    "persona rebuild-index": "test_cli_persona_recorded.py",
     "persona @mention": "test_cli_persona_recorded.py",
     "persona alias mention": "test_cli_persona_recorded.py",
 

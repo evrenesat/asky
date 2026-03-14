@@ -12,6 +12,7 @@ Creates and maintains local persona packages using **Schema v3** foundation.
 | `knowledge_catalog.py`| Persistence and rebuild logic for v3 knowledge catalog |
 | `source_service.py`| Orchestration for manual source ingestion and deduplication |
 | `book_service.py`| Orchestration layer for authored-book ingestion |
+| `runtime_index.py`| Rebuildable runtime index with embeddings and structured metadata |
 | `exporter.py`  | ZIP export with full v3 catalog and artifacts |
 
 ## Schema v3 Foundation
@@ -44,5 +45,5 @@ Required files:
 
 ## Behavior Notes
 - Writes are atomic (`.tmp` + replace).
-- Export payload excludes absolute path leakage.
-- Automatic catalog rebuild from v1/v2 artifacts on read/import.
+- Export payload excludes absolute path leakage and derived `runtime_index.json`.
+- Automatic catalog and runtime-index rebuild from v1/v2 artifacts on read/import.

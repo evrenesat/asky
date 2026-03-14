@@ -5,6 +5,7 @@ from __future__ import annotations
 import pytest
 
 from asky.plugins.manual_persona_creator.knowledge_types import (
+    PersonaEntryKind,
     PersonaGroundingClass,
     PersonaSourceClass,
     PersonaTrustClass,
@@ -26,6 +27,7 @@ def sample_packets() -> list[PersonaEvidencePacket]:
             text="Evidence from Book A.",
             entry_id="e1",
             source_id="s1",
+            entry_kind=PersonaEntryKind.VIEWPOINT,
         ),
         PersonaEvidencePacket(
             packet_id="P2",
@@ -35,6 +37,7 @@ def sample_packets() -> list[PersonaEvidencePacket]:
             text="Evidence from Manual B.",
             entry_id="e2",
             source_id="s2",
+            entry_kind=PersonaEntryKind.RAW_CHUNK,
         ),
     ]
 
@@ -117,6 +120,21 @@ def test_validate_citations_outside_evidence_section_fail(sample_packets):
     assert fallback is not None
 
 
-def test_validate_no_packets_available():
+def test_validate_no_packets_available_falls_back():
+    # Zero-packet persona turns must always fallback to standardized insufficient_evidence
     response = "No packets, no problem."
-    assert validate_grounded_response(response, []) is None
+    fallback = validate_grounded_response(response, [])
+    assert fallback is not None
+    assert "insufficient_evidence" in fallback
+    assert "Evidence: none" in fallback
+
+
+def test_validate_bounded_inference_requires_live_sources(sample_packets):
+    # bounded_inference is ONLY for live sources + persona
+    response = (
+        "Answer: I am using persona packets.\n"
+        "Grounding: bounded_inference\n"
+        "Evidence: [P1]"
+    )
+    fallback = validate_grounded_response(response, sample_packets, None)
+    assert fallback is not None

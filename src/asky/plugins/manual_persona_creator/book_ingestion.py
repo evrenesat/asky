@@ -33,6 +33,10 @@ from asky.plugins.manual_persona_creator.book_types import (
     ViewpointEntry,
     ViewpointEvidence,
 )
+from asky.plugins.manual_persona_creator.knowledge_catalog import (
+    rebuild_catalog_from_legacy,
+)
+from asky.plugins.manual_persona_creator.runtime_index import rebuild_runtime_index
 from asky.plugins.manual_persona_creator.storage import (
     AUTHORED_BOOKS_INDEX_FILENAME,
     CHUNKS_FILENAME,
@@ -486,8 +490,10 @@ class BookIngestionJob:
         final_chunks = other_chunks + new_chunks
         write_chunks(self.paths.chunks_path, final_chunks)
         
-        # Rebuild embeddings
+        # Rebuild catalog, embeddings and runtime index
+        rebuild_catalog_from_legacy(persona_root=self.paths.root_dir)
         rebuild_embeddings(persona_dir=self.paths.root_dir, chunks=final_chunks)
+        rebuild_runtime_index(persona_dir=self.paths.root_dir)
         
         # Cleanup job artifacts (except manifest)
         self._cleanup_job_artifacts()

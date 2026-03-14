@@ -24,6 +24,7 @@ from asky.plugins.manual_persona_creator.storage import (
     touch_updated_at,
     write_chunks,
 )
+from asky.plugins.manual_persona_creator.runtime_index import rebuild_runtime_index
 from asky.plugins.persona_manager.knowledge import rebuild_embeddings
 
 
@@ -151,8 +152,9 @@ def add_manual_sources(
     all_compat_chunks = existing_chunks + compat_chunks
     write_chunks(persona_root / "chunks.json", all_compat_chunks)
 
-    # Rebuild embeddings
+    # Rebuild embeddings and runtime index
     rebuild_embeddings(persona_dir=persona_root, chunks=all_compat_chunks)
+    rebuild_runtime_index(persona_dir=persona_root)
     
     touch_updated_at(persona_root / "metadata.toml")
 

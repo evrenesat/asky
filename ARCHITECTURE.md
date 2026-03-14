@@ -211,6 +211,31 @@ The `manual_persona_creator` plugin implements a structured **Authored Book** in
 
 ---
 
+## Persona Runtime Answering Pipeline (Milestone 2)
+
+The `persona_manager` plugin coordinates the grounded answering pipeline, ensuring that persona responses are backed by evidence from the knowledge catalog.
+
+### Knowledge Layering
+
+1.  **Canonical Catalog**: Managed by `manual_persona_creator`, this contains the source of truth for all persona knowledge (viewpoints, excerpts, chunks) in `persona_knowledge/sources.json` and `entries.json`.
+2.  **Runtime Index**: A derived, rebuildable `persona_knowledge/runtime_index.json` containing embeddings and structured metadata. This index is automatically rebuilt on import or when knowledge changes.
+
+### Structured Retrieval and Ranking
+
+The runtime uses a structured planner (`runtime_planner.py`) that implements multi-level priority ranking:
+*   **Kind Priority**: Viewpoints (highest) > Evidence Excerpts > Raw Chunks (fallback).
+*   **Trust Priority**: Authored primary sources are preferred over user-supplied or unreviewed web content.
+*   **Hydration**: Top viewpoints are automatically hydrated with their linked supporting evidence excerpts so the model sees both the worldview claim and the underlying evidence.
+
+### Grounding Contract and Validation
+
+The runtime enforces a strict response contract via system prompt extension and post-response validation:
+*   **Exact Format**: Answers must include `Grounding:`, `Evidence:` (citing `[P1], [P2]`), and optionally `Current Context:` (citing `[W1], [W2]`).
+*   **Validation**: If a response lacks required citations or uses incorrect grounding labels, it is automatically replaced with a safe fallback: *"I don't have enough grounded persona evidence to answer this reliably."*
+*   **Current Context Attribution**: When live web tools are used during a persona turn, they must be attributed separately from the static persona knowledge. Synthesis of persona worldview with live events is validated as `bounded_inference`.
+
+---
+
 ## CLI Help Discoverability
 
 The CLI uses a production-side help catalog (`src/asky/cli/help_catalog.py`) to render

@@ -199,16 +199,23 @@ def read_metadata(metadata_path: Path) -> Dict[str, Any]:
             f"unsupported persona schema_version={schema_version}; expected one of {SUPPORTED_SCHEMA_VERSIONS}"
         )
 
-    # Automatic rebuild for missing v1/v2 catalogs
+    # Automatic rebuild for missing v1/v2 catalogs and runtime index
     if schema_version < 3:
         from asky.plugins.manual_persona_creator.knowledge_catalog import (
             get_knowledge_paths,
             rebuild_catalog_from_legacy,
         )
+        from asky.plugins.manual_persona_creator.runtime_index import (
+            rebuild_runtime_index,
+            runtime_index_path,
+        )
 
         paths = get_knowledge_paths(metadata_path.parent)
         if not paths["sources"].exists() or not paths["entries"].exists():
             rebuild_catalog_from_legacy(metadata_path.parent)
+        
+        if not runtime_index_path(metadata_path.parent).exists():
+            rebuild_runtime_index(metadata_path.parent)
 
     metadata = dict(payload)
     metadata["persona"] = dict(persona_block)

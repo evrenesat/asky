@@ -59,7 +59,7 @@ def export_persona_package(
     knowledge_root = paths.root_dir / KNOWLEDGE_DIR_NAME
     if knowledge_root.exists():
         for file_path in knowledge_root.rglob("*"):
-            if file_path.is_file():
+            if file_path.is_file() and file_path.name != "runtime_index.json":
                 artifacts_to_export.append(file_path)
 
     # Calculate checksums for all collected artifacts

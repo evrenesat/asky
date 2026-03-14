@@ -385,6 +385,40 @@ def handle_persona_viewpoints(args: argparse.Namespace) -> None:
 
     if len(viewpoints) >= limit:
         console.print(f"\n[dim]... showing {limit} viewpoints. Use --limit to see more.[/dim]")
+
+
+def handle_persona_rebuild_index(args: argparse.Namespace) -> None:
+    """Manually rebuild the runtime index for a persona."""
+    persona_name = str(args.name).strip()
+    data_dir = _get_data_dir()
+
+    if not persona_exists(data_dir, persona_name):
+        console.print(f"[red]Error: Persona '{persona_name}' does not exist.[/red]")
+        return
+
+    try:
+        from asky.plugins.manual_persona_creator.runtime_index import (
+            rebuild_runtime_index,
+        )
+        from asky.plugins.manual_persona_creator.storage import get_persona_paths
+
+        paths = get_persona_paths(data_dir, persona_name)
+
+        with console.status(
+            f"[cyan]Rebuilding runtime index for '{persona_name}'...[/cyan]"
+        ):
+            result = rebuild_runtime_index(paths.root_dir)
+
+        if result.get("rebuilt"):
+            console.print(f"[green]✓[/green] Runtime index rebuilt successfully.")
+            console.print(f"  Indexed entries: {result.get('indexed_entries', 0)}")
+        else:
+            console.print(
+                f"[red]Error rebuilding index: {result.get('reason', 'unknown')}[/red]"
+            )
+
+    except Exception as e:
+        console.print(f"[red]Error: {e}[/red]")
 from asky.plugins.persona_manager.errors import (
     InvalidAliasError,
     InvalidPersonaPackageError,

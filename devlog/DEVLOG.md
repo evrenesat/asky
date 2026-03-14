@@ -2,6 +2,24 @@
 
 For full detailed entries, see [DEVLOG_ARCHIVE.md](DEVLOG_ARCHIVE.md).
 
+## 2026-03-14: Persona Milestone 2 Structured Retrieval and Evidence-Backed Answering
+
+- **Summary**: Implemented persona milestone 2, introducing a structured runtime answering pipeline with authored-book-first retrieval, expanded grounding validation, and separate current-context attribution.
+- **Changes**:
+  - Added a rebuildable `persona_knowledge/runtime_index.json` derived from the canonical catalog, containing embeddings and structured metadata optimized for runtime retrieval.
+  - Implemented a structured `runtime_planner.py` that prioritizes authored-book viewpoints over raw manual chunks and automatically hydrates viewpoints with linked evidence excerpts.
+  - Expanded the persona grounding contract to include `Current Context:` attribution for live web sources used during persona turns.
+  - Hardened post-response validation to enforce strict citation rules: `direct_evidence` (1+), `supported_pattern` (2+), and `bounded_inference` (1+ persona + live context).
+  - Added `asky persona rebuild-index` CLI command for manual maintenance of the derived runtime index.
+  - Extended persona eval assertions and the eval gate to verify multi-line evidence sections and current-context mapping.
+  - Updated `ARCHITECTURE.md`, `docs/plugins.md`, and plugin `AGENTS.md` files to match the milestone-2 implementation.
+- **Gotchas**:
+  - `runtime_index.json` is derived and excluded from exports; it is automatically rebuilt on import or knowledge mutation.
+  - The validation fallback replaces ungrounded answers with a "Considered Evidence" list to aid user transparency.
+- **Verification**:
+  - Scoped tests: `uv run pytest tests/asky/plugins/manual_persona_creator/test_runtime_index.py tests/asky/plugins/persona_manager/test_runtime_planner.py tests/asky/plugins/persona_manager/test_grounding.py tests/asky/evals/persona_pipeline/test_persona_eval_gate.py tests/asky/plugins/persona_manager/test_runtime_current_context.py -q -n0` -> `49 passed in 3.99s`
+  - Full suite: `uv run pytest -q` -> `1529 passed in 14.56s` (real 14.72s)
+
 ## 2026-03-14: Added Clipboard Copy CLI Flag
 
 - **Summary**: Added core CLI flags `-cc` and `--copy-clipboard` to copy the raw model final answer text to the system clipboard after rendering.
