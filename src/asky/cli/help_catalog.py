@@ -210,6 +210,8 @@ def render_top_level_help(plugin_manager=None) -> str:
         f"{output_title}:",
         "  -o, --open",
         "      Open final answer in browser.",
+        "  -cc, --copy-clipboard",
+        "      Copy final answer to system clipboard.",
     ])
 
     for contrib in contributions_by_category.get(CapabilityCategory.OUTPUT_DELIVERY, []):

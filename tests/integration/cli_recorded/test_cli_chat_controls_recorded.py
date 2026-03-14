@@ -148,3 +148,21 @@ def test_chat_control_open(mock_open):
     assert result.exit_code == 0
     assert mock_open.called
     assert "open in browser" in normalize_cli_output(result.stdout).lower()
+
+@patch("pyperclip.copy")
+def test_chat_control_clipboard_copy(mock_copy):
+    """Test -cc / --copy-clipboard flag."""
+    result = run_cli_inprocess(["-cc", "-off", "all", "--shortlist", "off", "Just say apple."])
+    assert result.exit_code == 0
+    assert mock_copy.called
+    copy_text = mock_copy.call_args[0][0]
+    assert "apple" in copy_text.lower()
+
+
+@patch("pyperclip.copy", side_effect=Exception("clipboard fail"))
+def test_chat_control_clipboard_failure_warning(mock_copy):
+    """Test -cc / --copy-clipboard flag failure warning."""
+    result = run_cli_inprocess(["-cc", "-off", "all", "--shortlist", "off", "Just say apple."])
+    assert result.exit_code == 0
+    assert "warning: could not copy to clipboard: clipboard fail" in normalize_cli_output(result.stdout).lower()
+    assert "apple" in normalize_cli_output(result.stdout).lower()

@@ -45,6 +45,7 @@ from asky.storage import (
     save_interaction,
 )
 from asky.cli.display import InterfaceRenderer
+from asky.cli.utils import copy_text_to_clipboard
 from asky.lazy_imports import call_attr
 from asky.core.session_manager import generate_session_name
 
@@ -1078,6 +1079,13 @@ def run_chat(
                     answer_title=filename_hint or "",
                 ),
             )
+
+        if final_answer and getattr(args, "copy_clipboard", False):
+            failure_reason = copy_text_to_clipboard(final_answer)
+            if failure_reason:
+                console.print(
+                    f"[yellow]Warning: Could not copy to clipboard: {failure_reason}[/]"
+                )
             
         # Post-turn runtime inline hints
         try:

@@ -150,3 +150,12 @@ def print_config(
             else:
                 print(f"    {k}: {v}")
     print("=====================\n")
+
+
+def copy_text_to_clipboard(text: str) -> str | None:
+    """Copy text to clipboard using pyperclip. Returns failure reason string or None."""
+    try:
+        pyperclip.copy(text)
+        return None
+    except Exception as e:
+        return str(e)

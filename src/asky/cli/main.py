@@ -802,6 +802,12 @@ def parse_args(
         action="store_true",
         help="Open the final answer in a browser using a markdown template.",
     )
+    output_delivery_group.add_argument(
+        "-cc",
+        "--copy-clipboard",
+        action="store_true",
+        help="Copy the final answer to the system clipboard.",
+    )
 
     parser.add_argument(
         "-ss",

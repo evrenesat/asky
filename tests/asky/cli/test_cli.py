@@ -2796,3 +2796,256 @@ def test_main_explicit_conversion_sets_converted_message_id(
 
     assert mock_args.resume_session == ["101"]
     assert mock_args._converted_message_id == 42
+
+def test_parse_args_clipboard():
+    with patch("asky.cli.main.DEFAULT_MODEL", "gf"):
+        with patch("sys.argv", ["asky", "-cc", "query"]):
+            args = parse_args()
+            assert args.copy_clipboard is True
+
+        with patch("sys.argv", ["asky", "--copy-clipboard", "query"]):
+            args = parse_args()
+            assert args.copy_clipboard is True
+
+
+def test_run_chat_clipboard_copy_success():
+    from asky.cli.chat import run_chat
+
+    mock_args = argparse.Namespace(
+        model="gf",
+        research=False,
+        local_corpus=None,
+        summarize=False,
+        open=False,
+        copy_clipboard=True,
+        continue_ids=None,
+        sticky_session=None,
+        resume_session=None,
+        lean=False,
+        tool_off=[],
+        terminal_lines=None,
+        save_history=True,
+        verbose=False,
+        system_prompt=None,
+        elephant_mode=False,
+        turns=None,
+        sendmail=None,
+        subject=None,
+        push_data=None,
+    )
+
+    turn_result = MagicMock()
+    turn_result.final_answer = "Final answer"
+    turn_result.halted = False
+    turn_result.notices = []
+    turn_result.session_id = None
+    turn_result.preload = MagicMock(shortlist_stats={}, shortlist_payload=None)
+    turn_result.session = MagicMock(matched_sessions=[])
+
+    with (
+        patch("asky.cli.chat.MODELS", {"gf": {"id": "gemini-flash"}}),
+        patch("asky.cli.chat.get_shell_session_id", return_value=None),
+        patch("asky.cli.chat.InterfaceRenderer") as mock_renderer_cls,
+        patch("asky.cli.chat.LIVE_BANNER", False),
+        patch("asky.cli.chat.AskyClient") as mock_client_cls,
+        patch("asky.rendering.extract_markdown_title", return_value="title"),
+        patch("asky.rendering.save_html_report", return_value=(None, None)),
+        patch("asky.cli.chat.copy_text_to_clipboard") as mock_copy,
+        ):
+        
+        mock_copy.return_value = None
+        
+        renderer = MagicMock()
+        renderer.console = MagicMock()
+        mock_renderer_cls.return_value = renderer
+
+        mock_client = MagicMock()
+        mock_client.run_turn.return_value = turn_result
+        mock_client.finalize_turn_history.return_value = MagicMock(notices=[])
+        mock_client_cls.return_value = mock_client
+
+        run_chat(mock_args, "query")
+        
+        mock_copy.assert_called_once_with("Final answer")
+
+
+def test_run_chat_clipboard_copy_failure_warning():
+    from asky.cli.chat import run_chat
+
+    mock_args = argparse.Namespace(
+        model="gf",
+        research=False,
+        local_corpus=None,
+        summarize=False,
+        open=False,
+        copy_clipboard=True,
+        continue_ids=None,
+        sticky_session=None,
+        resume_session=None,
+        lean=False,
+        tool_off=[],
+        terminal_lines=None,
+        save_history=True,
+        verbose=False,
+        system_prompt=None,
+        elephant_mode=False,
+        turns=None,
+        sendmail=None,
+        subject=None,
+        push_data=None,
+    )
+
+    turn_result = MagicMock()
+    turn_result.final_answer = "Final answer"
+    turn_result.halted = False
+    turn_result.notices = []
+    turn_result.session_id = None
+    turn_result.preload = MagicMock(shortlist_stats={}, shortlist_payload=None)
+    turn_result.session = MagicMock(matched_sessions=[])
+
+    with (
+        patch("asky.cli.chat.MODELS", {"gf": {"id": "gemini-flash"}}),
+        patch("asky.cli.chat.get_shell_session_id", return_value=None),
+        patch("asky.cli.chat.InterfaceRenderer") as mock_renderer_cls,
+        patch("asky.cli.chat.LIVE_BANNER", False),
+        patch("asky.cli.chat.AskyClient") as mock_client_cls,
+        patch("asky.rendering.extract_markdown_title", return_value="title"),
+        patch("asky.rendering.save_html_report", return_value=(None, None)),
+        patch("asky.cli.chat.copy_text_to_clipboard") as mock_copy,
+        patch("asky.cli.chat.Console") as mock_console_cls,
+        ):
+        
+        mock_copy.return_value = "No backend"
+        
+        mock_console = MagicMock()
+        mock_console_cls.return_value = mock_console
+
+        renderer = MagicMock()
+        mock_renderer_cls.return_value = renderer
+
+        mock_client = MagicMock()
+        mock_client.run_turn.return_value = turn_result
+        mock_client.finalize_turn_history.return_value = MagicMock(notices=[])
+        mock_client_cls.return_value = mock_client
+
+        run_chat(mock_args, "query")
+        
+        mock_copy.assert_called_once_with("Final answer")
+        mock_console.print.assert_any_call("[yellow]Warning: Could not copy to clipboard: No backend[/]")
+
+
+def test_run_chat_clipboard_no_copy_when_halted():
+    from asky.cli.chat import run_chat
+
+    mock_args = argparse.Namespace(
+        model="gf",
+        research=False,
+        local_corpus=None,
+        summarize=False,
+        open=False,
+        copy_clipboard=True,
+        continue_ids=None,
+        sticky_session=None,
+        resume_session=None,
+        lean=False,
+        tool_off=[],
+        terminal_lines=None,
+        save_history=True,
+        verbose=False,
+        system_prompt=None,
+        elephant_mode=False,
+        turns=None,
+        sendmail=None,
+        subject=None,
+        push_data=None,
+    )
+
+    turn_result = MagicMock()
+    turn_result.final_answer = "Final answer"
+    turn_result.halted = True
+    turn_result.notices = []
+    turn_result.session_id = None
+    turn_result.preload = MagicMock(shortlist_stats={}, shortlist_payload=None)
+    turn_result.session = MagicMock(matched_sessions=[])
+
+    with (
+        patch("asky.cli.chat.MODELS", {"gf": {"id": "gemini-flash"}}),
+        patch("asky.cli.chat.get_shell_session_id", return_value=None),
+        patch("asky.cli.chat.InterfaceRenderer") as mock_renderer_cls,
+        patch("asky.cli.chat.LIVE_BANNER", False),
+        patch("asky.cli.chat.AskyClient") as mock_client_cls,
+        patch("asky.rendering.extract_markdown_title", return_value="title"),
+        patch("asky.rendering.save_html_report", return_value=(None, None)),
+        patch("asky.cli.chat.copy_text_to_clipboard") as mock_copy,
+        ):
+        
+        renderer = MagicMock()
+        renderer.console = MagicMock()
+        mock_renderer_cls.return_value = renderer
+
+        mock_client = MagicMock()
+        mock_client.run_turn.return_value = turn_result
+        mock_client_cls.return_value = mock_client
+
+        run_chat(mock_args, "query")
+        
+        mock_copy.assert_not_called()
+
+
+def test_run_chat_clipboard_no_copy_when_empty_answer():
+    from asky.cli.chat import run_chat
+
+    mock_args = argparse.Namespace(
+        model="gf",
+        research=False,
+        local_corpus=None,
+        summarize=False,
+        open=False,
+        copy_clipboard=True,
+        continue_ids=None,
+        sticky_session=None,
+        resume_session=None,
+        lean=False,
+        tool_off=[],
+        terminal_lines=None,
+        save_history=True,
+        verbose=False,
+        system_prompt=None,
+        elephant_mode=False,
+        turns=None,
+        sendmail=None,
+        subject=None,
+        push_data=None,
+    )
+
+    turn_result = MagicMock()
+    turn_result.final_answer = ""
+    turn_result.halted = False
+    turn_result.notices = []
+    turn_result.session_id = None
+    turn_result.preload = MagicMock(shortlist_stats={}, shortlist_payload=None)
+    turn_result.session = MagicMock(matched_sessions=[])
+
+    with (
+        patch("asky.cli.chat.MODELS", {"gf": {"id": "gemini-flash"}}),
+        patch("asky.cli.chat.get_shell_session_id", return_value=None),
+        patch("asky.cli.chat.InterfaceRenderer") as mock_renderer_cls,
+        patch("asky.cli.chat.LIVE_BANNER", False),
+        patch("asky.cli.chat.AskyClient") as mock_client_cls,
+        patch("asky.rendering.extract_markdown_title", return_value="title"),
+        patch("asky.rendering.save_html_report", return_value=(None, None)),
+        patch("asky.cli.chat.copy_text_to_clipboard") as mock_copy,
+        ):
+        
+        renderer = MagicMock()
+        renderer.console = MagicMock()
+        mock_renderer_cls.return_value = renderer
+
+        mock_client = MagicMock()
+        mock_client.run_turn.return_value = turn_result
+        mock_client.finalize_turn_history.return_value = MagicMock(notices=[])
+        mock_client_cls.return_value = mock_client
+
+        run_chat(mock_args, "query")
+        
+        mock_copy.assert_not_called()

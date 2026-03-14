@@ -73,6 +73,7 @@ Command-line interface layer handling argument parsing, command routing, and use
 | `--daemon`                                           | macOS menubar daemon (`daemon/menubar.py`) or foreground fallback (`daemon/service.py`)    |
 | `--browser <url>`                                    | Browser session flow (Playwright plugin login/session capture path)                        |
 | `persona <subcommand>`                               | Persona management (create, load, unload, import, export, alias)                           |
+| `-cc` / `--copy-clipboard`                          | Copy final answer to system clipboard (post-render CLI-side)                              |
 
 Preset invocation notes:
 
@@ -102,6 +103,7 @@ Main conversation entry point via `run_chat()`:
 4. **API Orchestration**: `AskyClient.run_turn()` performs context/session/preload/model/persist flow.
 5. **UI Rendering**: `chat.py` maps API notices/events into Rich output + banner updates. Helper-driven notices (`New memory:`, `Updated memory:`, `Your prompt enriched:`) are rendered in bold green after the final answer.
 6. **Interface Side Effects**: optional browser/email/push/report handling (including dynamic sidebar index updates).
+7. **Output Delivery**: conditionally copy final answer to system clipboard (`-cc`, `--copy-clipboard`). Copy is post-render; failure is warning-only and does not abort.
 
 Research mode is session-owned:
 

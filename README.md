@@ -92,6 +92,12 @@ asky -ss "Project X" "Let's plan the API structure"
 # Use a specific model alias (defined in models.toml)
 asky -m gf "Explain quantum entanglement"
 
+# Copy final answer to clipboard
+asky -cc "Write a regex to match email addresses"
+
+# Pro-tip: Create a clipboard-first alias for command-only terminal assistance:
+# alias al='asky -L -cc -sp "You are a CLI assistant. Answer briefly. When the user asks for a shell command, return only the command text. No markdown, no code fences, no explanation."'
+
 # Run XMPP daemon (menu bar on macOS, foreground otherwise)
 asky --daemon
 

@@ -2,6 +2,25 @@
 
 For full detailed entries, see [DEVLOG_ARCHIVE.md](DEVLOG_ARCHIVE.md).
 
+## 2026-03-14: Added Clipboard Copy CLI Flag
+
+- **Summary**: Added core CLI flags `-cc` and `--copy-clipboard` to copy the raw model final answer text to the system clipboard after rendering.
+- **Changes**:
+  - Added `-cc` / `--copy-clipboard` to the core CLI parser in `src/asky/cli/main.py` under the output-delivery group.
+  - Added `copy_text_to_clipboard()` helper in `src/asky/cli/utils.py` using `pyperclip`.
+  - Wired clipboard copy into the post-render flow in `src/asky/cli/chat.py` with warning-only failure handling.
+  - Updated `src/asky/cli/help_catalog.py` so curated top-level help shows the new flag.
+  - Updated `tests/integration/cli_recorded/cli_surface.py` to include the new flags in the public manifest.
+  - Added unit tests in `tests/asky/cli/test_cli.py` and recorded CLI integration tests in `tests/integration/cli_recorded/test_cli_chat_controls_recorded.py`.
+  - Updated `README.md` with a clipboard example and an improved terminal assistant alias.
+  - Updated `src/asky/cli/AGENTS.md` for CLI design parity.
+- **Gotchas**:
+  - Clipboard copy happens after the answer has been rendered to the terminal.
+  - Failures (e.g. missing clipboard backend) are reported as a light warning and do not affect the command exit status.
+- **Verification**:
+  - `uv run pytest tests/asky/cli/test_cli.py tests/integration/cli_recorded/test_cli_chat_controls_recorded.py tests/asky/cli/test_help_discoverability.py -q -n0` -> `132 passed in 14.5s`
+  - Full suite: `uv run pytest -q` -> `1517 passed in 15.66s` (real 15.836s)
+
 ## 2026-03-14: Persona Milestone 0 Baseline Hardening And Data Foundation
 
 - **Summary**: Completed persona milestone 0 as the additive baseline hardening pass for persona storage, ingestion, grounded answering, deterministic evaluation, and documentation parity.
