@@ -30,6 +30,7 @@ class PersonaEntryKind(StrEnum):
     RAW_CHUNK = "raw_chunk"
     VIEWPOINT = "viewpoint"
     PERSONA_FACT = "persona_fact"
+    TIMELINE_EVENT = "timeline_event"
     EVIDENCE_EXCERPT = "evidence_excerpt"
 
 

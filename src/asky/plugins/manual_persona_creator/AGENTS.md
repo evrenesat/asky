@@ -14,12 +14,23 @@ Creates and maintains local persona packages using **Schema v3** foundation.
 | `book_service.py`| Orchestration layer for authored-book ingestion |
 | `runtime_index.py`| Rebuildable runtime index with embeddings and structured metadata |
 | `exporter.py`  | ZIP export with full v3 catalog and artifacts |
+| `source_job.py` | Resumable job orchestration for milestone-3 structured extraction |
+| `source_prompts.py`| Kind-aware extraction prompts and validation logic |
 
 ## Schema v3 Foundation
 
 This version introduces a canonical knowledge catalog:
 - `persona_knowledge/sources.json`: Track original sources with content fingerprints.
-- `persona_knowledge/entries.json`: Maps knowledge entries (chunks, viewpoints) to sources.
+- `persona_knowledge/entries.json`: Maps knowledge entries (chunks, viewpoints, facts, timeline) to sources.
+- `persona_knowledge/conflict_groups.json`: Preserved contradictions between sources.
+
+## Milestone 3: Source-Aware Ingestion and Review
+
+Introduces a review boundary for third-party or mixed-attribution sources:
+- **Durable Bundles**: Ingested sources are stored under `ingested_sources/<source_id>/` before approval.
+- **Auto-Approval**: Authored primary short-form (articles, posts) projects immediately.
+- **Review Boundary**: Biographies and interviews remain `pending` until explicit approval.
+- **Structured Extraction**: Kind-aware strategies for viewpoints, facts, and timeline events.
 
 ### Ingestion and Deduplication
 - `add-sources` uses deterministic content fingerprints.

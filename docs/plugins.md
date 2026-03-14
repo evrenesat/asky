@@ -55,6 +55,16 @@ Authored Book Ingestion:
 - `asky persona book-report <persona> <book_key>` - View detailed ingestion report.
 - `asky persona viewpoints <persona> [--book <key>] [--topic <query>] [--limit <n>]` - Query extracted viewpoints.
 
+Source-Aware Ingestion and Review (Milestone 3):
+- `asky persona ingest-source <persona> <kind> <path>` - Ingest various source kinds (biography, article, interview, etc.).
+- `asky persona sources <persona> [--status <filter>] [--kind <filter>]` - List ingested source bundles.
+- `asky persona source-report <persona> <source_id>` - View extraction report for a specific source bundle.
+- `asky persona approve-source <persona> <source_id>` - Approve and project knowledge from a pending source.
+- `asky persona reject-source <persona> <source_id>` - Reject a source bundle.
+- `asky persona facts <persona> [--source <id>] [--topic <query>]` - Query approved biographical facts.
+- `asky persona timeline <persona> [--source <id>] [--year <n>]` - Query approved chronological events.
+- `asky persona conflicts <persona> [--topic <query>]` - Query preserved contradictions between sources.
+
 ### 3.2 Mentions and Auto-loading
 
 You can load a persona for a single query using the `@` syntax. This is handled as a **preprocessing operation** before the query reaches the model:

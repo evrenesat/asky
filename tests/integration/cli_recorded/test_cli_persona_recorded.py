@@ -102,3 +102,46 @@ def test_persona_mention_behavior(tmp_path):
     # Use @alias
     result2 = run_cli_inprocess(["@n1", "Just say banana."])
     assert result2.exit_code == 0
+
+
+def test_persona_source_commands_smoke(tmp_path):
+    """Smoke test for the new persona source command family."""
+    # Setup persona
+    prompt_file = tmp_path / "arendt.md"
+    prompt_file.write_text("You are Hannah Arendt.")
+    run_cli_inprocess(["persona", "create", "arendt", "--prompt", str(prompt_file)])
+    
+    # 1. ingest-source --help
+    result_help = run_cli_inprocess(["persona", "ingest-source", "--help"])
+    assert result_help.exit_code == 0
+    assert "ingest-source" in normalize_cli_output(result_help.stdout).lower()
+    
+    # 2. sources
+    result_sources = run_cli_inprocess(["persona", "sources", "arendt"])
+    assert result_sources.exit_code == 0
+    assert "no source bundles found" in normalize_cli_output(result_sources.stdout).lower()
+    
+    # 3. facts
+    result_facts = run_cli_inprocess(["persona", "facts", "arendt"])
+    assert result_facts.exit_code == 0
+    
+    # 4. timeline
+    result_timeline = run_cli_inprocess(["persona", "timeline", "arendt"])
+    assert result_timeline.exit_code == 0
+    
+    # 5. conflicts
+    result_conflicts = run_cli_inprocess(["persona", "conflicts", "arendt"])
+    assert result_conflicts.exit_code == 0
+
+    # 6. source-report
+    result_report = run_cli_inprocess(["persona", "source-report", "arendt", "nonexistent"])
+    # It prints an error message but typically exits 0 in these handlers
+    assert "report not found" in normalize_cli_output(result_report.stdout).lower()
+
+    # 7. approve-source (help smoke)
+    result_approve = run_cli_inprocess(["persona", "approve-source", "--help"])
+    assert result_approve.exit_code == 0
+    
+    # 8. reject-source (help smoke)
+    result_reject = run_cli_inprocess(["persona", "reject-source", "--help"])
+    assert result_reject.exit_code == 0

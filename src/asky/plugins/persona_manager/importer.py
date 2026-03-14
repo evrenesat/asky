@@ -17,6 +17,7 @@ from asky.plugins.manual_persona_creator.runtime_index import rebuild_runtime_in
 from asky.plugins.manual_persona_creator.storage import (
     AUTHORED_BOOKS_DIR_NAME,
     CHUNKS_FILENAME,
+    INGESTED_SOURCES_DIR_NAME,
     METADATA_FILENAME,
     PERSONAS_DIR_NAME,
     PROMPT_FILENAME,
@@ -90,10 +91,11 @@ def import_persona_archive(*, data_dir: Path, archive_path: str) -> Dict[str, An
     write_prompt(paths.prompt_path, prompt_text)
     write_chunks(paths.chunks_path, chunks)
 
-    # Extract additional artifacts (authored-books, knowledge-catalog) if present
+    # Extract additional artifacts (authored-books, ingested-sources, knowledge-catalog) if present
     with ZipFile(path, "r") as archive:
         for member_name in archive.namelist():
             if member_name.startswith(f"{AUTHORED_BOOKS_DIR_NAME}/") or \
+               member_name.startswith(f"{INGESTED_SOURCES_DIR_NAME}/") or \
                member_name.startswith(f"{KNOWLEDGE_DIR_NAME}/"):
                 target_path = paths.root_dir / member_name
                 target_path.parent.mkdir(parents=True, exist_ok=True)

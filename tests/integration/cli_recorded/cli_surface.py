@@ -92,6 +92,14 @@ PERSONA_SUBCOMMANDS = {
     "persona book-report",
     "persona viewpoints",
     "persona rebuild-index",
+    "persona ingest-source",
+    "persona sources",
+    "persona source-report",
+    "persona approve-source",
+    "persona reject-source",
+    "persona facts",
+    "persona timeline",
+    "persona conflicts",
 }
 
 PLUGIN_FLAGS = {
@@ -225,6 +233,14 @@ COVERAGE_OWNERSHIP = {
     "persona book-report": "test_cli_persona_recorded.py",
     "persona viewpoints": "test_cli_persona_recorded.py",
     "persona rebuild-index": "test_cli_persona_recorded.py",
+    "persona ingest-source": "test_cli_persona_recorded.py",
+    "persona sources": "test_cli_persona_recorded.py",
+    "persona source-report": "test_cli_persona_recorded.py",
+    "persona approve-source": "test_cli_persona_recorded.py",
+    "persona reject-source": "test_cli_persona_recorded.py",
+    "persona facts": "test_cli_persona_recorded.py",
+    "persona timeline": "test_cli_persona_recorded.py",
+    "persona conflicts": "test_cli_persona_recorded.py",
     "persona @mention": "test_cli_persona_recorded.py",
     "persona alias mention": "test_cli_persona_recorded.py",
 

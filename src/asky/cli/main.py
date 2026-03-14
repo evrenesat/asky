@@ -1663,10 +1663,69 @@ def main() -> None:
         )
         viewpoints_parser.add_argument("name", help="Persona name")
         viewpoints_parser.add_argument("--book", help="Filter by book key")
+        viewpoints_parser.add_argument("--source", help="Filter by source ID")
         viewpoints_parser.add_argument("--topic", help="Filter by topic")
         viewpoints_parser.add_argument(
             "--limit", type=int, default=20, help="Max results"
         )
+
+        ingest_source_parser = subparsers.add_parser(
+            "ingest-source", help="Ingest a non-book source into a persona"
+        )
+        ingest_source_parser.add_argument("name", help="Persona name")
+        ingest_source_parser.add_argument("kind", help="Source kind (biography, article, etc.)")
+        ingest_source_parser.add_argument("path", help="Path to source file or directory")
+
+        sources_parser = subparsers.add_parser(
+            "sources", help="List ingested source bundles"
+        )
+        sources_parser.add_argument("name", help="Persona name")
+        sources_parser.add_argument("--status", help="Filter by review status")
+        sources_parser.add_argument("--kind", help="Filter by source kind")
+        sources_parser.add_argument("--limit", type=int, default=20, help="Max results")
+
+        source_report_parser = subparsers.add_parser(
+            "source-report", help="Show ingestion report for a source bundle"
+        )
+        source_report_parser.add_argument("name", help="Persona name")
+        source_report_parser.add_argument("source_id", help="Source ID")
+
+        approve_source_parser = subparsers.add_parser(
+            "approve-source", help="Approve a source bundle and project its knowledge"
+        )
+        approve_source_parser.add_argument("name", help="Persona name")
+        approve_source_parser.add_argument("source_id", help="Source ID")
+
+        reject_source_parser = subparsers.add_parser(
+            "reject-source", help="Reject a source bundle"
+        )
+        reject_source_parser.add_argument("name", help="Persona name")
+        reject_source_parser.add_argument("source_id", help="Source ID")
+
+        facts_parser = subparsers.add_parser(
+            "facts", help="Query approved fact entries"
+        )
+        facts_parser.add_argument("name", help="Persona name")
+        facts_parser.add_argument("--source", help="Filter by source ID")
+        facts_parser.add_argument("--topic", help="Filter by topic")
+        facts_parser.add_argument("--limit", type=int, default=20, help="Max results")
+
+        timeline_parser = subparsers.add_parser(
+            "timeline", help="Query approved timeline entries"
+        )
+        timeline_parser.add_argument("name", help="Persona name")
+        timeline_parser.add_argument("--source", help="Filter by source ID")
+        timeline_parser.add_argument("--topic", help="Filter by topic")
+        timeline_parser.add_argument("--year", type=int, help="Filter by year")
+        timeline_parser.add_argument("--limit", type=int, default=20, help="Max results")
+
+        conflicts_parser = subparsers.add_parser(
+            "conflicts", help="Query approved conflict groups"
+        )
+        conflicts_parser.add_argument("name", help="Persona name")
+        conflicts_parser.add_argument("--source", help="Filter by source ID")
+        conflicts_parser.add_argument("--topic", help="Filter by topic")
+        conflicts_parser.add_argument("--limit", type=int, default=20, help="Max results")
 
         current_parser = subparsers.add_parser(
             "current", help="Show the currently loaded persona"
@@ -1738,6 +1797,22 @@ def main() -> None:
             persona_commands.handle_persona_book_report(persona_args)
         elif persona_cmd == "viewpoints":
             persona_commands.handle_persona_viewpoints(persona_args)
+        elif persona_cmd == "ingest-source":
+            persona_commands.handle_persona_ingest_source(persona_args)
+        elif persona_cmd == "sources":
+            persona_commands.handle_persona_sources(persona_args)
+        elif persona_cmd == "source-report":
+            persona_commands.handle_persona_source_report(persona_args)
+        elif persona_cmd == "approve-source":
+            persona_commands.handle_persona_approve_source(persona_args)
+        elif persona_cmd == "reject-source":
+            persona_commands.handle_persona_reject_source(persona_args)
+        elif persona_cmd == "facts":
+            persona_commands.handle_persona_facts(persona_args)
+        elif persona_cmd == "timeline":
+            persona_commands.handle_persona_timeline(persona_args)
+        elif persona_cmd == "conflicts":
+            persona_commands.handle_persona_conflicts(persona_args)
         elif persona_cmd == "current":
             persona_commands.handle_persona_current(persona_args)
         elif persona_cmd == "list":

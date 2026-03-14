@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 import tomllib
@@ -28,6 +29,14 @@ REPORT_FILENAME = "report.json"
 INGESTION_JOBS_DIR_NAME = "ingestion_jobs"
 JOB_MANIFEST_FILENAME = "job.toml"
 
+INGESTED_SOURCES_DIR_NAME = "ingested_sources"
+SOURCE_METADATA_FILENAME = "source.toml"
+SOURCE_FACTS_FILENAME = "facts.json"
+SOURCE_TIMELINE_FILENAME = "timeline.json"
+SOURCE_CONFLICTS_FILENAME = "conflicts.json"
+
+SOURCE_INGESTION_JOBS_DIR_NAME = "source_ingestion_jobs"
+
 PERSONA_NAME_PATTERN = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9_-]{1,63}$")
 
 
@@ -52,8 +61,29 @@ class AuthoredBookPaths:
 
 
 @dataclass(frozen=True)
+class SourceBundlePaths:
+    """Filesystem layout for one milestone-3 source bundle."""
+
+    source_dir: Path
+    metadata_path: Path
+    report_path: Path
+    viewpoints_path: Path
+    facts_path: Path
+    timeline_path: Path
+    conflicts_path: Path
+
+
+@dataclass(frozen=True)
 class IngestionJobPaths:
     """Filesystem layout for one ingestion job inside a persona."""
+
+    job_dir: Path
+    manifest_path: Path
+
+
+@dataclass(frozen=True)
+class SourceIngestionJobPaths:
+    """Filesystem layout for one milestone-3 source ingestion job."""
 
     job_dir: Path
     manifest_path: Path
@@ -86,6 +116,12 @@ def get_book_key(*, title: str, publication_year: Optional[int], isbn: Optional[
     if publication_year:
         return f"{slug}-{publication_year}"
     return slug
+
+
+def get_source_id(kind: str, bundle_text: str) -> str:
+    """Generate a deterministic milestone-3 source ID."""
+    fingerprint = hashlib.sha256(bundle_text.encode("utf-8")).hexdigest()[:16]
+    return f"source:{kind}:{fingerprint}"
 
 
 def get_personas_root(data_dir: Path) -> Path:
@@ -125,6 +161,29 @@ def get_job_paths(persona_root: Path, job_id: str) -> IngestionJobPaths:
     )
 
 
+def get_source_bundle_paths(persona_root: Path, source_id_slug: str) -> SourceBundlePaths:
+    """Resolve canonical files for one milestone-3 source bundle."""
+    source_dir = persona_root / INGESTED_SOURCES_DIR_NAME / source_id_slug
+    return SourceBundlePaths(
+        source_dir=source_dir,
+        metadata_path=source_dir / SOURCE_METADATA_FILENAME,
+        report_path=source_dir / REPORT_FILENAME,
+        viewpoints_path=source_dir / VIEWPOINTS_FILENAME,
+        facts_path=source_dir / SOURCE_FACTS_FILENAME,
+        timeline_path=source_dir / SOURCE_TIMELINE_FILENAME,
+        conflicts_path=source_dir / SOURCE_CONFLICTS_FILENAME,
+    )
+
+
+def get_source_job_paths(persona_root: Path, job_id: str) -> SourceIngestionJobPaths:
+    """Resolve canonical files for one milestone-3 source ingestion job."""
+    job_dir = persona_root / SOURCE_INGESTION_JOBS_DIR_NAME / job_id
+    return SourceIngestionJobPaths(
+        job_dir=job_dir,
+        manifest_path=job_dir / JOB_MANIFEST_FILENAME,
+    )
+
+
 def list_books(persona_root: Path) -> List[str]:
     """List authored book keys for a persona."""
     books_root = persona_root / AUTHORED_BOOKS_DIR_NAME
@@ -136,6 +195,22 @@ def list_books(persona_root: Path) -> List[str]:
 def list_jobs(persona_root: Path) -> List[str]:
     """List ingestion job IDs for a persona."""
     jobs_root = persona_root / INGESTION_JOBS_DIR_NAME
+    if not jobs_root.exists():
+        return []
+    return sorted([path.name for path in jobs_root.iterdir() if path.is_dir()])
+
+
+def list_source_bundles(persona_root: Path) -> List[str]:
+    """List source bundle IDs for a persona."""
+    sources_root = persona_root / INGESTED_SOURCES_DIR_NAME
+    if not sources_root.exists():
+        return []
+    return sorted([path.name for path in sources_root.iterdir() if path.is_dir()])
+
+
+def list_source_jobs(persona_root: Path) -> List[str]:
+    """List milestone-3 source ingestion job IDs for a persona."""
+    jobs_root = persona_root / SOURCE_INGESTION_JOBS_DIR_NAME
     if not jobs_root.exists():
         return []
     return sorted([path.name for path in jobs_root.iterdir() if path.is_dir()])
@@ -226,6 +301,33 @@ def read_metadata(metadata_path: Path) -> Dict[str, Any]:
 
 def write_metadata(metadata_path: Path, metadata: Dict[str, Any]) -> None:
     """Persist metadata atomically."""
+    document = tomlkit.document()
+    for key, value in metadata.items():
+        if value is not None:
+            document[key] = _clean_toml_value(value)
+    rendered = tomlkit.dumps(document)
+    _write_text_atomic(metadata_path, rendered)
+
+
+def read_source_metadata(metadata_path: Path) -> Dict[str, Any]:
+    """Read source metadata, tolerating legacy JSON for backward compatibility."""
+    if not metadata_path.exists():
+        raise FileNotFoundError(f"Source metadata not found: {metadata_path}")
+    
+    # Try TOML first (canonical for this version)
+    try:
+        with metadata_path.open("rb") as file_obj:
+            return tomllib.load(file_obj)
+    except Exception:
+        # Fallback to legacy JSON
+        try:
+            return json.loads(metadata_path.read_text(encoding="utf-8"))
+        except Exception as e:
+            raise ValueError(f"Could not read source metadata as TOML or JSON: {e}") from e
+
+
+def write_source_metadata(metadata_path: Path, metadata: Dict[str, Any]) -> None:
+    """Persist source metadata as TOML atomically."""
     document = tomlkit.document()
     for key, value in metadata.items():
         if value is not None:

@@ -26,6 +26,7 @@ from asky.plugins.manual_persona_creator.storage import (
 KNOWLEDGE_DIR_NAME = "persona_knowledge"
 SOURCES_FILENAME = "sources.json"
 ENTRIES_FILENAME = "entries.json"
+CONFLICTS_FILENAME = "conflict_groups.json"
 
 
 def get_knowledge_paths(persona_root: Path) -> Dict[str, Path]:
@@ -35,6 +36,7 @@ def get_knowledge_paths(persona_root: Path) -> Dict[str, Path]:
         "dir": knowledge_dir,
         "sources": knowledge_dir / SOURCES_FILENAME,
         "entries": knowledge_dir / ENTRIES_FILENAME,
+        "conflicts": knowledge_dir / CONFLICTS_FILENAME,
     }
 
 

@@ -62,6 +62,8 @@ def rebuild_runtime_index(persona_dir: Path) -> Dict[str, Any]:
             "book_title",
             "publication_year",
             "section_ref",
+            "source_kind",
+            "attribution",
         ]:
             if key in entry.metadata:
                 runtime_metadata[key] = entry.metadata[key]

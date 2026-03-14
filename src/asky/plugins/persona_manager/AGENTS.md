@@ -14,6 +14,14 @@ Hardened runtime orchestration for grounded persona behavior.
 | `knowledge.py` | Legacy embedding build helpers |
 | `session_binding.py` | Persistent session-to-persona mappings |
 
+## Milestone-3 Runtime Boundary
+
+Enforces approved-only knowledge usage:
+- **Approved Knowledge Only**: Only sources promoted to the canonical catalog are included in the runtime index.
+- **Viewpoint Centric**: Primary packets remain limited to `viewpoint` and `raw_chunk`.
+- **Query Only**: `persona_fact` and `timeline_event` are available via CLI query but are not injected as primary voice packets.
+- **Kind Preservation**: Metadata preserves `source_kind` for formatting and debugging.
+
 ## Milestone-2 Grounding Contract
 
 Enforces factual accuracy and citation discipline with separate live-context attribution:

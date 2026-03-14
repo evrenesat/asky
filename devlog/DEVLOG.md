@@ -2,6 +2,29 @@
 
 For full detailed entries, see [DEVLOG_ARCHIVE.md](DEVLOG_ARCHIVE.md).
 
+## 2026-03-14: Persona Milestone 3 Source-Aware Ingestion and Review
+
+- **Summary**: Implemented persona milestone 3, expanding personas beyond authored books with a source-aware ingestion layer, explicit review boundaries for third-party content, preserved conflict groups, and follow-up fixes for bundle inputs, approval idempotence, query filtering, and CLI surface parity.
+- **Changes**:
+  - Introduced source-kind awareness (biography, interview, article, etc.) with kind-specific extraction prompts and strategies.
+  - Implemented a durable source bundle storage contract under `ingested_sources/<source_id>/`, preserving viewpoints, facts, timeline events, and conflicts before approval.
+  - Added deterministic `notes` and `posts` bundle ingestion for single files, directories, and manifest files, and switched `source.toml` writes to real TOML with backward-compatible reads for legacy JSON-formatted source metadata.
+  - Added a review boundary: biographies and interviews remain `pending` until explicit approval, while authored primary short-form (articles, posts) projects immediately.
+  - Implemented `approve-source` and `reject-source` CLI commands to manage the promotion of knowledge into the canonical persona catalog, and made approval re-projection idempotent so repeated approval refreshes source-scoped records instead of duplicating them.
+  - Added approved-knowledge query commands: `facts`, `timeline`, and `conflicts`, expanded `viewpoints` with `--source` support, and made the approved query commands honor `--topic`.
+  - Enforced an approved-only runtime boundary: pending or rejected sources are completely excluded from runtime index rebuilds and persona answering.
+  - Preserved contradictions between sources as linked conflict groups in `persona_knowledge/conflict_groups.json`.
+  - Synced the recorded CLI surface manifest and deterministic recorded persona coverage with the shipped `source-*` command family.
+  - Updated `ARCHITECTURE.md`, `docs/plugins.md`, and plugin `AGENTS.md` files to reflect the expanded ingestion and review architecture.
+- **Gotchas**:
+  - `persona_fact` and `timeline_event` entries are queryable via CLI but are not currently injected as primary persona voice packets.
+  - `source.toml` now uses TOML as the canonical format, but reads still tolerate legacy JSON bundles created before the follow-up fix pass.
+- **Verification**:
+  - `uv run pytest tests/asky/plugins/manual_persona_creator/test_source_job.py tests/asky/plugins/manual_persona_creator/test_checkpoint1.py -q -n0` -> `6 passed in 3.07s`
+  - `uv run pytest tests/asky/plugins/manual_persona_creator/test_source_review.py tests/asky/plugins/manual_persona_creator/test_checkpoint2.py tests/asky/plugins/persona_manager/test_source_runtime.py tests/asky/cli/test_persona_source_commands.py -q -n0` -> `10 passed in 4.30s`
+  - `uv run pytest tests/integration/cli_recorded/test_cli_surface_manifest.py tests/integration/cli_recorded/test_cli_persona_recorded.py -q -o addopts='-n0 --record-mode=none'` -> `8 passed in 7.00s`
+  - `uv run pytest -q` -> `1559 passed in 17.90s` (`real 18.144`)
+
 ## 2026-03-14: Persona Milestone 2 Structured Retrieval and Evidence-Backed Answering
 
 - **Summary**: Implemented persona milestone 2, introducing a structured runtime answering pipeline with authored-book-first retrieval, expanded grounding validation, and separate current-context attribution.

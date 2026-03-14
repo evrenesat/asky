@@ -17,7 +17,7 @@ from rich.table import Table
 from asky.config.loader import _get_config_dir
 from asky.core import get_shell_session_id
 from asky.plugins.kvstore import PluginKVStore
-from asky.plugins.manual_persona_creator import book_service
+from asky.plugins.manual_persona_creator import book_service, source_service
 from asky.plugins.manual_persona_creator.book_ingestion import BookIngestionJob
 from asky.plugins.manual_persona_creator.book_types import (
     BookMetadata,
@@ -353,6 +353,7 @@ def handle_persona_viewpoints(args: argparse.Namespace) -> None:
     """List extracted viewpoints."""
     persona_name = str(args.name).strip()
     target_book = getattr(args, "book", None)
+    target_source = getattr(args, "source", None)
     target_topic = getattr(args, "topic", None)
     limit = int(getattr(args, "limit", 20))
     data_dir = _get_data_dir()
@@ -361,13 +362,45 @@ def handle_persona_viewpoints(args: argparse.Namespace) -> None:
         console.print(f"[red]Error: Persona '{persona_name}' does not exist.[/red]")
         return
 
-    viewpoints = book_service.query_authored_viewpoints(
-        data_dir=data_dir,
-        persona_name=persona_name,
-        book_key=target_book,
-        topic_query=target_topic,
-        limit=limit
-    )
+    # Query both authored books and milestone-3 sources
+    viewpoints = []
+    
+    # Authored books
+    if not target_source:
+        viewpoints.extend(book_service.query_authored_viewpoints(
+            data_dir=data_dir,
+            persona_name=persona_name,
+            book_key=target_book,
+            topic_query=target_topic,
+            limit=limit
+        ))
+    
+    # Milestone-3 sources
+    if not target_book:
+        source_vps = source_service.query_approved_viewpoints(
+            data_dir=data_dir,
+            persona_name=persona_name,
+            source_id=target_source
+        )
+        # Filter source_vps by topic if requested
+        if target_topic:
+            source_vps = [v for v in source_vps if target_topic.lower() in v.metadata.get("topic", "").lower() or target_topic.lower() in v.text.lower()]
+        
+        # Convert to a common display format if needed, but here we just append
+        # In a real implementation we'd unify the models for display
+        for v in source_vps:
+            # Simple conversion for display
+            class ViewpointStub:
+                def __init__(self, v):
+                    self.topic = v.metadata.get("topic", "unknown")
+                    self.claim = v.text
+                    self.confidence = v.metadata.get("confidence", 0.0)
+                    self.book_title = f"Source: {v.source_id}"
+                    self.publication_year = ""
+                    self.evidence = []
+            viewpoints.append(ViewpointStub(v))
+
+    viewpoints = viewpoints[:limit]
 
     if not viewpoints:
         console.print("[yellow]No viewpoints found matching criteria.[/yellow]")
@@ -376,7 +409,7 @@ def handle_persona_viewpoints(args: argparse.Namespace) -> None:
     for v in viewpoints:
         console.print(f"\n[bold cyan]Topic: {v.topic}[/bold cyan] (Conf: {v.confidence:.2f})")
         console.print(f"[bold]Claim:[/bold] {v.claim}")
-        console.print(f"[dim]Source: {v.book_title} ({v.publication_year})[/dim]")
+        console.print(f"[dim]Source: {v.book_title} {f'({v.publication_year})' if v.publication_year else ''}[/dim]")
         
         if v.evidence:
             console.print("[italic]Evidence:[/italic]")
@@ -385,6 +418,223 @@ def handle_persona_viewpoints(args: argparse.Namespace) -> None:
 
     if len(viewpoints) >= limit:
         console.print(f"\n[dim]... showing {limit} viewpoints. Use --limit to see more.[/dim]")
+
+
+def handle_persona_ingest_source(args: argparse.Namespace) -> None:
+    """Ingest a non-book source into a persona."""
+    persona_name = str(args.name).strip()
+    kind_str = str(args.kind).strip()
+    source_path = Path(args.path).expanduser()
+    data_dir = _get_data_dir()
+
+    from asky.plugins.manual_persona_creator.source_types import PersonaSourceKind
+    try:
+        kind = PersonaSourceKind(kind_str)
+    except ValueError:
+        console.print(f"[red]Error: Invalid source kind '{kind_str}'.[/red]")
+        console.print(f"Supported kinds: {', '.join([k.value for k in PersonaSourceKind])}")
+        return
+
+    if not persona_exists(data_dir, persona_name):
+        console.print(f"[red]Error: Persona '{persona_name}' does not exist.[/red]")
+        return
+
+    try:
+        preflight = source_service.prepare_source_preflight(data_dir, persona_name, kind, source_path)
+        
+        console.print("\n[bold cyan]Source Preflight[/bold cyan]")
+        console.print(f"Persona: [bold]{persona_name}[/bold]")
+        console.print(f"Kind:    [bold]{kind}[/bold]")
+        console.print(f"Source:  {source_path}")
+        console.print(f"Class:   {preflight['source_class']}")
+        console.print(f"Trust:   {preflight['trust_class']}")
+        console.print(f"Status:  [bold]{preflight['initial_status']}[/bold]")
+        
+        if preflight["initial_status"] == "pending":
+            console.print("\n[yellow]Note: This source will require manual approval before knowledge is projected.[/yellow]")
+        
+        if not Confirm.ask("\nProceed with ingestion?"):
+            return
+            
+        job_id = source_service.create_source_ingestion_job(data_dir, persona_name, kind, source_path)
+        with console.status(f"[cyan]Running ingestion job {job_id}...[/cyan]"):
+            report = source_service.run_source_job(data_dir, persona_name, job_id)
+            
+        console.print(f"\n[green]✓ Source ingested successfully![/green]")
+        console.print(f"Source ID: [bold]{report.source_id}[/bold]")
+        console.print(f"Results:   {report.extracted_counts['viewpoints']} viewpoints, {report.extracted_counts['facts']} facts, {report.extracted_counts['timeline']} events")
+
+    except Exception as e:
+        console.print(f"[red]Error: {e}[/red]")
+
+
+def handle_persona_sources(args: argparse.Namespace) -> None:
+    """List ingested source bundles."""
+    persona_name = str(args.name).strip()
+    status_filter = getattr(args, "status", None)
+    kind_filter = getattr(args, "kind", None)
+    limit = int(getattr(args, "limit", 20))
+    data_dir = _get_data_dir()
+
+    if not persona_exists(data_dir, persona_name):
+        console.print(f"[red]Error: Persona '{persona_name}' does not exist.[/red]")
+        return
+
+    bundles = source_service.list_source_bundles_for_persona(data_dir, persona_name)
+    
+    if status_filter:
+        bundles = [b for b in bundles if b.get("review_status") == status_filter]
+    if kind_filter:
+        bundles = [b for b in bundles if b.get("kind") == kind_filter]
+        
+    bundles = bundles[:limit]
+
+    if not bundles:
+        console.print("[yellow]No source bundles found.[/yellow]")
+        return
+
+    table = Table(title=f"Sources for {persona_name}")
+    table.add_column("ID", style="cyan")
+    table.add_column("Label")
+    table.add_column("Kind")
+    table.add_column("Status")
+    table.add_column("Updated", style="dim")
+
+    for b in bundles:
+        status_style = "green" if b.get("review_status") == "approved" else "yellow"
+        table.add_row(
+            b.get("source_id"),
+            b.get("label"),
+            b.get("kind"),
+            f"[{status_style}]{b.get('review_status')}[/{status_style}]",
+            b.get("updated_at"),
+        )
+
+    console.print(table)
+
+
+def handle_persona_source_report(args: argparse.Namespace) -> None:
+    """Show ingestion report for a source bundle."""
+    persona_name = str(args.name).strip()
+    source_id = str(args.source_id).strip()
+    data_dir = _get_data_dir()
+
+    report = source_service.get_source_report(data_dir, persona_name, source_id)
+    if not report:
+        console.print(f"[red]Error: Report not found for source '{source_id}'.[/red]")
+        return
+
+    console.print(f"\n[bold cyan]Source Report: {source_id}[/bold cyan]")
+    console.print(f"Kind:   {report['kind']}")
+    console.print(f"Status: {report['status']}")
+    
+    console.print("\n[bold]Extracted Counts:[/bold]")
+    for k, v in report['extracted_counts'].items():
+        console.print(f"  {k:12} {v}")
+        
+    if report.get("stage_timings"):
+        console.print("\n[bold]Stage Timings:[/bold]")
+        for stage, duration in report['stage_timings'].items():
+            console.print(f"  {stage:20} {duration:6.1f}s")
+
+
+def handle_persona_approve_source(args: argparse.Namespace) -> None:
+    """Approve a source bundle and project its knowledge."""
+    persona_name = str(args.name).strip()
+    source_id = str(args.source_id).strip()
+    data_dir = _get_data_dir()
+
+    if not Confirm.ask(f"Approve source '{source_id}' and project into '{persona_name}'?"):
+        return
+
+    try:
+        source_service.approve_source_bundle(data_dir, persona_name, source_id)
+        console.print(f"[green]✓ Source '{source_id}' approved and projected successfully.[/green]")
+    except Exception as e:
+        console.print(f"[red]Error: {e}[/red]")
+
+
+def handle_persona_reject_source(args: argparse.Namespace) -> None:
+    """Reject a source bundle."""
+    persona_name = str(args.name).strip()
+    source_id = str(args.source_id).strip()
+    data_dir = _get_data_dir()
+
+    if not Confirm.ask(f"Reject source '{source_id}'?"):
+        return
+
+    try:
+        source_service.reject_source_bundle(data_dir, persona_name, source_id)
+        console.print(f"[green]✓ Source '{source_id}' rejected.[/green]")
+    except Exception as e:
+        console.print(f"[red]Error: {e}[/red]")
+
+
+def handle_persona_facts(args: argparse.Namespace) -> None:
+    """Query approved facts."""
+    persona_name = str(args.name).strip()
+    source_id = getattr(args, "source", None)
+    topic = getattr(args, "topic", None)
+    limit = int(getattr(args, "limit", 20))
+    data_dir = _get_data_dir()
+
+    facts = source_service.query_approved_facts(data_dir, persona_name, source_id, topic=topic)
+    facts = facts[:limit]
+
+    if not facts:
+        console.print("[yellow]No approved facts found.[/yellow]")
+        return
+
+    for f in facts:
+        console.print(f"\n[bold cyan]Fact:[/bold cyan] {f.text}")
+        if f.metadata.get("topic"):
+            console.print(f"[dim]Topic: {f.metadata['topic']}[/dim]")
+        console.print(f"[dim]Source: {f.source_id}[/dim]")
+
+
+def handle_persona_timeline(args: argparse.Namespace) -> None:
+    """Query approved timeline events."""
+    persona_name = str(args.name).strip()
+    source_id = getattr(args, "source", None)
+    year = getattr(args, "year", None)
+    topic = getattr(args, "topic", None)
+    limit = int(getattr(args, "limit", 20))
+    data_dir = _get_data_dir()
+
+    events = source_service.query_approved_timeline(data_dir, persona_name, source_id, topic=topic)
+    if year:
+        events = [e for e in events if e.metadata.get("year") == int(year)]
+    events = events[:limit]
+
+    if not events:
+        console.print("[yellow]No approved timeline events found.[/yellow]")
+        return
+
+    for e in events:
+        year_label = f"[{e.metadata.get('year')}]" if e.metadata.get('year') else "[????]"
+        console.print(f"\n[bold cyan]{year_label}[/bold cyan] {e.text}")
+        console.print(f"[dim]Source: {e.source_id}[/dim]")
+
+
+def handle_persona_conflicts(args: argparse.Namespace) -> None:
+    """Query approved conflict groups."""
+    persona_name = str(args.name).strip()
+    source_id = getattr(args, "source", None)
+    topic = getattr(args, "topic", None)
+    limit = int(getattr(args, "limit", 20))
+    data_dir = _get_data_dir()
+
+    conflicts = source_service.query_approved_conflicts(data_dir, persona_name, source_id, topic=topic)
+    conflicts = conflicts[:limit]
+
+    if not conflicts:
+        console.print("[yellow]No approved conflict groups found.[/yellow]")
+        return
+
+    for c in conflicts:
+        console.print(f"\n[bold red]Conflict Topic: {c['topic']}[/bold red]")
+        console.print(f"Description: {c['description']}")
+        console.print(f"[dim]Source: {c.get('source_id')}[/dim]")
 
 
 def handle_persona_rebuild_index(args: argparse.Namespace) -> None:

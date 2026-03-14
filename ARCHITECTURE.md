@@ -236,7 +236,34 @@ The runtime enforces a strict response contract via system prompt extension and 
 
 ---
 
-## CLI Help Discoverability
+## Source-Aware Ingestion and Review (Milestone 3)
+
+Milestone 3 expands personas beyond authored books by introducing a source-aware ingestion layer that handles various source kinds (biography, interview, article, etc.) with explicit review boundaries.
+
+### Source-Kind Awareness
+
+The ingestion pipeline varies its extraction strategy based on the source kind:
+- **Biography/Autobiography**: Extracts viewpoints, facts, timeline events, and conflict candidates.
+- **Interview**: Extracts persona-attributed knowledge with speaker-role metadata.
+- **Short-form (Article, Essay, etc.)**: Extracts authored viewpoints and facts.
+
+### Review and Promotion Flow
+
+To preserve the trust boundary, certain source kinds (biography, interview) are review-gated:
+1.  **Pending State**: Ingested sources are stored as durable bundles but do not influence persona answering.
+2.  **Review**: Users can inspect extracted knowledge via `source-report`.
+3.  **Promotion**: Explicit approval projects the knowledge into the canonical catalog and rebuilds the runtime index.
+4.  **Auto-Approval**: Authored primary short-form sources are automatically approved and projected on ingestion.
+
+### Conflict Preservation
+
+Contradictions between sources are preserved as linked conflict groups rather than being deduplicated. These are queryable via `asky persona conflicts`.
+
+### Expanded Artifacts
+
+- `ingested_sources/<source_id>/`: Durable source bundles containing metadata, viewpoints, facts, timeline, and conflicts.
+- `persona_knowledge/conflict_groups.json`: Global store of approved contradictions.
+- `source_ingestion_jobs/`: Resumable job scratch state (excluded from export).
 
 The CLI uses a production-side help catalog (`src/asky/cli/help_catalog.py`) to render
 curated help surfaces and define the discoverability contract that tests enforce.

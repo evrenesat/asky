@@ -14,6 +14,7 @@ import tomlkit
 from asky.plugins.manual_persona_creator.knowledge_catalog import KNOWLEDGE_DIR_NAME
 from asky.plugins.manual_persona_creator.storage import (
     AUTHORED_BOOKS_DIR_NAME,
+    INGESTED_SOURCES_DIR_NAME,
     PERSONA_SCHEMA_VERSION,
     get_persona_paths,
     read_chunks,
@@ -52,6 +53,13 @@ def export_persona_package(
     authored_books_root = paths.root_dir / AUTHORED_BOOKS_DIR_NAME
     if authored_books_root.exists():
         for file_path in authored_books_root.rglob("*"):
+            if file_path.is_file():
+                artifacts_to_export.append(file_path)
+
+    # Ingested sources
+    ingested_sources_root = paths.root_dir / INGESTED_SOURCES_DIR_NAME
+    if ingested_sources_root.exists():
+        for file_path in ingested_sources_root.rglob("*"):
             if file_path.is_file():
                 artifacts_to_export.append(file_path)
 
