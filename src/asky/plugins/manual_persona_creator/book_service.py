@@ -292,5 +292,21 @@ def query_authored_viewpoints(
     return all_viewpoints[:limit]
 
 
+def run_ingestion_job(
+    *,
+    data_dir: Path,
+    persona_name: str,
+    job_id: str,
+) -> None:
+    """Delegate to the BookIngestionJob runner."""
+    from asky.plugins.manual_persona_creator.book_ingestion import BookIngestionJob
+    job = BookIngestionJob(
+        data_dir=data_dir,
+        persona_name=persona_name,
+        job_id=job_id,
+    )
+    job.run()
+
+
 def _utc_now_iso() -> str:
     return datetime.now(UTC).isoformat()

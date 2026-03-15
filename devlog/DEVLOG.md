@@ -2,7 +2,25 @@
 
 For full detailed entries, see [DEVLOG_ARCHIVE.md](DEVLOG_ARCHIVE.md).
 
-## 2026-03-15: Persona Milestone 4 Guided Web Scraping and Review
+## 2026-03-15: Persona Milestone 6 Review Console and Web Workflow
+
+- **Summary**: Finalized milestone 6 as a daemon-hosted authenticated review console for persona workflows, with plugin-owned GUI pages, a daemon-core SQLite queue, authenticated intake endpoints, and follow-up fixes for resumable authored-book jobs and browser-side validation.
+- **Changes**:
+  - Added the shared GUI shell, login flow, daemon-neutral hosting behavior, and plugin page registration contract for `GUIServerPlugin`.
+  - Added the daemon-core SQLite job queue and wired persona GUI workflows through explicit job handlers instead of a second worker process.
+  - Added plugin-owned `/personas`, `/sessions`, and web-review pages plus browser admin flows for authored books, manual sources, web intake, and session binding.
+  - Reworked authored-book browser ingestion so resumable jobs update and reuse the existing manifest, no-candidate preflight requires explicit metadata, and invalid title/author/target values are rejected before queueing.
+  - Added focused GUI coverage for extension registration, authored-book dialog validation, and resumable authored-book submission.
+  - Updated architecture and plugin guidance to match the shipped GUI and review-console behavior.
+- **Gotchas**:
+  - The GUI remains daemon-hosted and review/admin only. This handoff does not add browser chat or query-answering pages.
+  - Browser-authored-book and manual-source submission still use server-local paths. Upload support remains out of scope.
+  - The full default-suite runtime was higher than the mid-handoff baseline during final verification, so it is worth rechecking if later changes touch the same GUI/test areas.
+- **Verification**:
+  - Focused GUI regression: `uv run pytest tests/asky/plugins/gui_server/test_gui_extension_registration.py tests/asky/plugins/manual_persona_creator/test_gui_book_flow.py tests/asky/plugins/manual_persona_creator/test_gui_book_resume_flow.py tests/asky/plugins/manual_persona_creator/test_persona_gui_service.py -q -n0` -> `9 passed in 4.97s`
+  - Full suite: `uv run pytest -q` -> `1602 passed in 31.53s` (`real 32.143`)
+
+## 2026-03-15: Persona Milestone 4 Guided Web Collection and Review
 
 - **Summary**: Finalized persona milestone 4 as a review-first web collection pipeline for personas, including the follow-up hardening needed for stable source identity, shared-retrieval provenance, and parity with generic source-management commands.
 - **Changes**:
@@ -1075,3 +1093,27 @@ Total tests: 1344 passed.
 - **Research & retrieval**: Unified URL retrieval in `retrieval.py`; hierarchical summarization; shared shortlist pipeline; seed-link expansion; cache-first embeddings with fallback model.
 - **Reliability**: Graceful max-turns exit; XML tool call parsing; non-streaming LLM requests; summarization latency reduction (bounded map + single reduce).
 - Suite: ~402 passed.
+
+## Iteration 6 - Authoried-Book Browser Flow Fixes
+
+**Date**: 2026-03-15  
+**Status**: In Progress - Structural fixes completed for gui_service.py
+
+### Completed
+1. ✅ Added `AuthoredBookPreflightDTO` class to gui_service.py
+2. ✅ Added `from_preflight_result()` function to convert preflight to DTO
+3. ✅ Added `submit_authored_book()` function to handle fresh vs resumable submission
+4. ✅ Committed gui_service.py changes with proper imports and documentation
+
+### Current State
+- gui_service.py: ✅ Ready (commited)
+- personas.py: ⚠️  Needs structural fixes for dialog function nesting
+- Test status: 72 passing, 1 failing (original test failure, not caused by recent changes)
+
+### Next Steps
+1. Fix personas.py to use gui_service helpers correctly
+2. Ensure all functions are properly nested inside the dialog block
+3. Remove "Restart New" behavior from browser flow
+4. Add proper validation for inputs
+5. Remove ISBN input field (not in BookMetadata)
+6. Update submit logic to use `submit_authored_book` helper

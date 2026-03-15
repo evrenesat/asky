@@ -519,6 +519,100 @@ def reject_web_page(
     p_paths.manifest_path.write_text(tomlkit.dumps(doc), encoding="utf-8")
 
 
+def intake_url(
+    *,
+    data_dir: Path,
+    persona_name: str,
+    url: str,
+    llm_client: Optional[Any] = None,
+) -> str:
+    """Fetch and classification-stage a single URL for review."""
+    return start_seed_domain_collection(
+        data_dir=data_dir,
+        persona_name=persona_name,
+        target_results=1,
+        urls=[url],
+        llm_client=llm_client,
+    )
+
+
+def intake_content(
+    *,
+    data_dir: Path,
+    persona_name: str,
+    title: str,
+    content: str,
+    url: str,
+    llm_client: Optional[Any] = None,
+) -> str:
+    """Stage manually provided content as a 'web' source for review."""
+    from asky.plugins.manual_persona_creator.web_job import WebCollectionJob
+    from asky.plugins.manual_persona_creator.storage import get_web_page_id, write_web_page_report
+    from asky.plugins.manual_persona_creator.web_types import WebPageStatus
+    import hashlib
+
+    paths = get_persona_paths(data_dir, persona_name)
+    collection_id = get_web_collection_id()
+    c_paths = get_web_collection_paths(paths.root_dir, collection_id)
+    c_paths.collection_dir.mkdir(parents=True, exist_ok=True)
+
+    manifest = WebCollectionManifest(
+        collection_id=collection_id,
+        persona_name=persona_name,
+        mode=WebCollectionMode.SEED_DOMAIN,
+        input_mode=WebCollectionInputMode.SEED_URLS,
+        status=WebCollectionStatus.COMPLETED,
+        target_results=1,
+        seed_inputs=[url],
+        created_at=datetime.now(UTC).isoformat(),
+        updated_at=datetime.now(UTC).isoformat(),
+    )
+    _write_collection_manifest(c_paths.manifest_path, manifest)
+
+    page_id = get_web_page_id(url)
+    p_paths = get_web_page_paths(c_paths.collection_dir, page_id)
+    p_paths.page_dir.mkdir(parents=True, exist_ok=True)
+
+    content_fingerprint = hashlib.sha256(content.encode("utf-8")).hexdigest()
+    p_paths.content_path.write_text(content, encoding="utf-8")
+
+    page_manifest = {
+        "page_id": page_id,
+        "requested_url": url,
+        "final_url": url,
+        "normalized_final_url": url,
+        "title": title,
+        "status": WebPageStatus.REVIEW_READY.value,
+        "content_fingerprint": content_fingerprint,
+        "created_at": datetime.now(UTC).isoformat(),
+        "updated_at": datetime.now(UTC).isoformat(),
+    }
+    p_paths.manifest_path.write_text(tomlkit.dumps(page_manifest), encoding="utf-8")
+
+    # Write a report so preview can be extracted
+    report = {
+        "page_id": page_id,
+        "final_url": url,
+        "status": WebPageStatus.REVIEW_READY.value,
+        "retrieval": {"method": "manual_intake", "success": True},
+    }
+    write_web_page_report(p_paths.report_path, report)
+
+    # Trigger extraction if LLM is available
+    if llm_client:
+        job = WebCollectionJob(
+            persona_name=persona_name,
+            persona_description="", # We could load it if needed
+            paths=c_paths,
+            target_results=1,
+            mode=WebCollectionMode.SEED_DOMAIN,
+            llm_client=llm_client,
+        )
+        job._extract_previews([page_id])
+
+    return collection_id
+
+
 def _write_collection_manifest(path: Path, manifest: WebCollectionManifest):
     doc = tomlkit.document()
     for k, v in manifest.__dict__.items():

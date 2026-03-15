@@ -25,6 +25,7 @@ TRAY_MENU_REGISTER = "TRAY_MENU_REGISTER"
 FETCH_URL_OVERRIDE = "FETCH_URL_OVERRIDE"
 PLUGIN_CAPABILITY_REGISTER = "PLUGIN_CAPABILITY_REGISTER"
 LOCAL_SOURCE_HANDLER_REGISTER = "LOCAL_SOURCE_HANDLER_REGISTER"
+GUI_EXTENSION_REGISTER = "GUI_EXTENSION_REGISTER"
 
 CLI_INLINE_HINTS_BUILD = "CLI_INLINE_HINTS_BUILD"
 
@@ -49,6 +50,7 @@ SUPPORTED_HOOK_NAMES = {
     FETCH_URL_OVERRIDE,
     PLUGIN_CAPABILITY_REGISTER,
     LOCAL_SOURCE_HANDLER_REGISTER,
+    GUI_EXTENSION_REGISTER,
     CLI_INLINE_HINTS_BUILD,
 }
 
@@ -290,3 +292,23 @@ class CLIInlineHintsContext:
     result: Any
     cli_args: Any
     hints: List[Any] = field(default_factory=list)
+
+
+@dataclass
+class GUIPageSpec:
+    """Registration contract for plugin-provided GUI pages."""
+
+    route: str
+    title: str
+    render: Callable[[Any], None]  # Accepts NiceGUI 'ui' module
+    nav_title: Optional[str] = None  # If set, appears in shared navigation
+
+
+@dataclass
+class GUIExtensionRegisterContext:
+    """Mutable payload for GUI extension registration hooks."""
+
+    register_page: Callable[[GUIPageSpec], None]
+    register_job_handler: Callable[[str, Callable[..., None]], None]
+    queue: Any # JobQueue instance
+    # Future: register_api_route, etc.

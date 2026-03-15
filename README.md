@@ -27,6 +27,7 @@ It runs as `asky` or `ask`. You give it a query, it gives you an answer.
 - **User memory** - save facts across sessions. asky injects relevant memories into future queries automatically.
 - **Custom tools** - expose any local CLI command as a tool the model can call.
 - **XMPP daemon mode** - run `asky --daemon` to log into an XMPP account and accept queries over chat from any XMPP client app (phone, desktop, etc.). Includes voice transcription on macOS.
+- **Web Admin Console** - authenticated browser interface for persona management, web collection review, and background job monitoring.
 - **macOS menu bar** - with `rumps` installed, daemon mode adds a menu bar icon for start/stop control and run-at-login.
 - **Playwright browser plugin** - fetches pages using a real browser, useful for sites that block standard HTTP clients.
 - **File prompts** - load a prompt from a file with `file://path/to/prompt.txt`.

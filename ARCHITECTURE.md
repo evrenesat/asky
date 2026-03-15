@@ -40,6 +40,11 @@ graph TD
         browser["playwright_browser"]
     end
 
+    subgraph DaemonCore["Daemon Core"]
+        service["DaemonService"]
+        queue["JobQueue (SQLite)"]
+    end
+
     subgraph DataAndConfig["Data + Config"]
         sqlite["SQLite storage"]
         research["Research cache/vector store"]
@@ -54,8 +59,9 @@ graph TD
 
     user --> cli
     cli --> api
-    remote_user --> xmpp_net --> xmpp --> daemon
-    daemon --> api
+    remote_user --> xmpp_net --> xmpp --> service
+    service --> api
+    service --> queue
 
     api --> preload --> engine
     engine --> registry
@@ -97,19 +103,23 @@ graph TD
     other_plugins["Other built-in plugins"]
     book_service["plugins/manual_persona_creator/book_service.py"]
     config["config/loader.py + constants"]
+main --> chat --> api
+main --> daemon
+main --> plugin_rt
 
-    main --> chat --> api
-    main --> daemon
-    main --> plugin_rt
+daemon --> queue
+daemon --> plugin_rt
+plugin_rt --> xmpp
+plugin_rt --> transcribers
+plugin_rt --> gui
+plugin_rt --> persona
 
-    daemon --> plugin_rt
-    plugin_rt --> xmpp
-    plugin_rt --> transcribers
-    plugin_rt --> other_plugins
-    xmpp --> api
-    
-    other_plugins -. persona plugins .-> book_service
-    book_service --> storage
+gui -. registered pages/jobs .-> persona
+persona -. service adapters .-> book_service
+persona -. service adapters .-> web_service
+
+api --> preload
+
 
     api --> preload
     api --> core
@@ -184,6 +194,25 @@ sequenceDiagram
     end
     XS-->>XU: chunked XMPP reply
 ```
+
+---
+
+## Web Admin Console and Workflow Queue
+
+Milestone 6 introduces a daemon-backed web admin console and a centralized job queue for long-running workflows.
+
+### Components
+
+- **GUI Server Plugin (`gui_server`)**: A NiceGUI-based authenticated web server that hosts the admin console. It provides a shared layout shell and supports extension via hooks.
+- **Job Queue (`daemon/job_queue.py`)**: A single-process SQLite-backed queue with a dedicated worker thread. It handles long-running tasks like book ingestion and web collection.
+- **GUI Service Adapters**: Domain-specific service layers in persona plugins that translate browser-facing requests into durable service operations.
+
+### Extension Hook: `GUI_EXTENSION_REGISTER`
+
+Plugins can register their own admin pages and background job handlers through this hook:
+- **Pages**: Defined via `GUIPageSpec`. The host handles the `@ui.page` decorator and shared layout wrapper. Extensions only provide a `render(ui, **kwargs)` function. This maintains visual consistency and prevents runtime registration collisions.
+- **Dynamic Routes**: `GUIPageSpec` supports routes with parameters (e.g., `/personas/{name}`). These are passed to the `render` function as keyword arguments.
+- **Job Handlers**: Functional mappings for the `JobQueue` to execute background tasks.
 
 ---
 

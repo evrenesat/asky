@@ -125,11 +125,42 @@ Core layout:
 ### 4.1 Ingestion and Deduplication
 Manual source ingestion (`add-sources`) uses deterministic content fingerprints. If you attempt to add a file that already exists in the persona's catalog, it will be skipped automatically to prevent duplicate knowledge and unnecessary embedding costs.
 
-## 5. GUI Server Entry Points
+## 5. GUI Server and Web Admin Console
 
-The GUI sidecar is started only from daemon service lifecycle. Default URL: [http://127.0.0.1:8766/settings/general](http://127.0.0.1:8766/settings/general).
+The GUI sidecar provides a browser-based authenticated admin console. It is started only during the daemon service lifecycle.
 
-## 6. Current Limitations
+Default URL: [http://127.0.0.1:8766/](http://127.0.0.1:8766/)
 
-- No dedicated persona GUI page yet.
-- GUI server startup visibility is minimal right now.
+### 5.1 Features
+- **Persona Management**: List, detail, and review knowledge sources.
+- **Workflow Queue**: Monitor background tasks like book ingestion and web collection.
+- **Session Binding**: Manage persistent persona-to-session mappings.
+- **General Settings**: Edit daemon-wide configuration.
+
+### 5.2 Extension Hook: `GUI_EXTENSION_REGISTER`
+
+Plugins can extend the admin console by registering their own pages and job handlers.
+
+```python
+from asky.plugins.hook_types import GUI_EXTENSION_REGISTER, GUIExtensionRegisterContext, GUIPageSpec
+
+def _on_gui_extension_register(payload: GUIExtensionRegisterContext) -> None:
+    # Register a new page
+    payload.register_page(GUIPageSpec(
+        route="/my-plugin",
+        title="My Plugin Admin",
+        render=lambda ui: ui.label("Hello from plugin!"),
+        nav_title="My Plugin"
+    ))
+    
+    # Register a background job handler
+    payload.register_job_handler("my_task", my_handler_func)
+```
+
+## 6. Background Workflow Queue
+
+Long-running tasks (ingestion, collection) are managed via a daemon-core SQLite queue. This ensures the GUI remains responsive while work happens in the background.
+
+- **Storage**: `~/.config/asky/data/plugins/gui_server/jobs.db`
+- **Worker**: A single worker thread executes jobs sequentially.
+- **Visibility**: Status and errors are visible on the "/jobs" page in the Web Admin Console.

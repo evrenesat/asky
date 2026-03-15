@@ -96,15 +96,16 @@ url = "https://example.com"
 
 
 def test_plugin_page_registry_isolation_for_bad_page():
+    from asky.plugins.hook_types import GUIPageSpec
     registry = PluginPageRegistry()
     ui = _FakeUI()
 
-    registry.register_page(route="/good", title="Good", render=lambda ui_obj: ui_obj.label("ok"))
+    registry.register_page(GUIPageSpec(route="/good", title="Good", render=lambda ui_obj: ui_obj.label("ok")))
 
     def _bad(_ui):
         raise RuntimeError("boom")
 
-    registry.register_page(route="/bad", title="Bad", render=_bad)
+    registry.register_page(GUIPageSpec(route="/bad", title="Bad", render=_bad))
 
     registry.mount_pages(ui)
     assert "/good" in ui.routes
@@ -114,7 +115,7 @@ def test_nicegui_server_lifecycle_non_blocking():
     started = threading.Event()
     stopped = threading.Event()
 
-    def _runner(_host, _port, _config_dir, _registry):
+    def _runner(_host, _port, _config_dir, _registry, _password, _queue):
         started.set()
         stopped.wait(timeout=2)
 
@@ -124,6 +125,8 @@ def test_nicegui_server_lifecycle_non_blocking():
     server = NiceGUIServer(
         config_dir=Path("."),
         page_registry=PluginPageRegistry(),
+        password="test-password",
+        job_queue=None,
         runner=_runner,
         shutdown=_shutdown,
     )
@@ -144,11 +147,13 @@ def test_nicegui_server_restart_resets_middleware_and_skips_remount():
     server_mod._nicegui_pages_mounted = False
 
     mount_calls = []
-    middleware_resets = []
 
     class _FakeApp:
         middleware_stack = object()  # non-None to simulate "started" state
         middleware = ["existing"]
+        storage = type("storage", (), {"user": {}})
+        def middleware(self, *a, **kw):
+            return lambda fn: fn
 
     class _FakeCore:
         app = _FakeApp()
@@ -158,6 +163,15 @@ def test_nicegui_server_restart_resets_middleware_and_skips_remount():
             def dec(fn):
                 return fn
             return dec
+        def row(self):
+            return type("row", (), {"__enter__": lambda s: s, "__exit__": lambda s, *a: None})()
+        def card(self):
+            return type("card", (), {"__enter__": lambda s: s, "__exit__": lambda s, *a: None})()
+        def column(self):
+            return type("column", (), {"__enter__": lambda s: s, "__exit__": lambda s, *a: None})()
+        def label(self, *a, **kw): pass
+        def button(self, *a, **kw): pass
+        def navigate(self): pass
 
     fake_ui = _FakeUI()
     fake_core = _FakeCore()
@@ -165,10 +179,12 @@ def test_nicegui_server_restart_resets_middleware_and_skips_remount():
     import sys
     sys.modules["nicegui"] = type(sys)("nicegui")
     sys.modules["nicegui"].ui = fake_ui
+    sys.modules["nicegui"].app = _FakeApp()
     sys.modules["nicegui.core"] = fake_core
 
     original_mount_general = server_mod.mount_general_settings_page
     original_mount_registry = server_mod.mount_plugin_registry_page
+    original_mount_jobs = server_mod.mount_jobs_page
 
     def _fake_mount_general(ui, *, config_dir):
         mount_calls.append("general")
@@ -176,8 +192,12 @@ def test_nicegui_server_restart_resets_middleware_and_skips_remount():
     def _fake_mount_registry(ui, registry):
         mount_calls.append("registry")
 
+    def _fake_mount_jobs(ui, queue):
+        mount_calls.append("jobs")
+
     server_mod.mount_general_settings_page = _fake_mount_general
     server_mod.mount_plugin_registry_page = _fake_mount_registry
+    server_mod.mount_jobs_page = _fake_mount_jobs
 
     try:
         registry = PluginPageRegistry()
@@ -189,10 +209,11 @@ def test_nicegui_server_restart_resets_middleware_and_skips_remount():
         fake_ui.run = lambda **kw: None
 
         server_mod._nicegui_pages_mounted = False
-        server_mod._default_runner("127.0.0.1", 9900, Path("."), registry)
+        server_mod._default_runner("127.0.0.1", 9900, Path("."), registry, "pwd", None)
 
         assert "general" in mount_calls
         assert "registry" in mount_calls
+        assert "jobs" in mount_calls
         assert server_mod._nicegui_pages_mounted is True
         first_mount_count = len(mount_calls)
 
@@ -200,7 +221,7 @@ def test_nicegui_server_restart_resets_middleware_and_skips_remount():
         fake_core.app.middleware_stack = object()  # simulate re-started state
         fake_core.app.middleware = ["gzip"]
 
-        server_mod._default_runner("127.0.0.1", 9900, Path("."), registry)
+        server_mod._default_runner("127.0.0.1", 9900, Path("."), registry, "pwd", None)
 
         assert len(mount_calls) == first_mount_count, "pages must not be remounted on restart"
         assert fake_core.app.middleware_stack is None, "middleware_stack must be reset on restart"
@@ -209,12 +230,13 @@ def test_nicegui_server_restart_resets_middleware_and_skips_remount():
         server_mod._nicegui_pages_mounted = original_flag
         server_mod.mount_general_settings_page = original_mount_general
         server_mod.mount_plugin_registry_page = original_mount_registry
+        server_mod.mount_jobs_page = original_mount_jobs
         for mod in ("nicegui", "nicegui.core"):
             sys.modules.pop(mod, None)
 
 
 def test_gui_plugin_registers_tray_menu_entries(tmp_path: Path):
-    """GUIServerPlugin contributes Start/Stop Web GUI and Open Settings tray entries."""
+    """GUIServerPlugin contributes Start/Stop Web GUI and Open Web Console tray entries."""
     hooks = HookRegistry()
     plugin = GUIServerPlugin()
     plugin.activate(_plugin_context(tmp_path, hooks))
@@ -236,20 +258,32 @@ def test_gui_plugin_registers_tray_menu_entries(tmp_path: Path):
     assert len(action_entries) == 2
     labels = [e.get_label() for e in action_entries]
     assert "Start Web GUI" in labels
-    assert "Open Settings" in labels
+    assert "Open Web Console" in labels
 
 
-def test_gui_plugin_tray_toggle_requires_service_running(tmp_path: Path):
-    """Clicking Start Web GUI when service is stopped shows an error."""
+def test_gui_plugin_tray_toggle_no_longer_requires_xmpp(tmp_path: Path):
+    """Clicking Start Web GUI when XMPP is stopped no longer shows an error if password exists."""
     hooks = HookRegistry()
     plugin = GUIServerPlugin()
-    plugin.activate(_plugin_context(tmp_path, hooks))
+    
+    config_dir = tmp_path / "config"
+    config_dir.mkdir(parents=True, exist_ok=True)
+    
+    ctx = PluginContext(
+        plugin_name="gui_server",
+        config_dir=config_dir,
+        data_dir=tmp_path / "data",
+        config={"host": "127.0.0.1", "port": 9900, "password": "pwd"},
+        hook_registry=hooks,
+        logger=logging.getLogger("test.gui_server"),
+    )
+    plugin.activate(ctx)
 
     from asky.plugins.hook_types import TRAY_MENU_REGISTER, TrayMenuRegisterContext
 
     errors = []
     action_entries = []
-    ctx = TrayMenuRegisterContext(
+    tray_ctx = TrayMenuRegisterContext(
         status_entries=[],
         action_entries=action_entries,
         start_service=lambda: None,
@@ -257,21 +291,34 @@ def test_gui_plugin_tray_toggle_requires_service_running(tmp_path: Path):
         is_service_running=lambda: False,
         on_error=lambda msg: errors.append(msg),
     )
-    hooks.invoke(TRAY_MENU_REGISTER, ctx)
+    hooks.invoke(TRAY_MENU_REGISTER, tray_ctx)
 
     toggle_entry = action_entries[0]
+    # This should now try to start the server instead of showing an XMPP error
     toggle_entry.on_action()
-    assert errors
-    assert "xmpp" in errors[0].lower() or "start" in errors[0].lower()
+    assert not errors
+
+
+def test_nicegui_server_fails_without_password():
+    server = NiceGUIServer(
+        config_dir=Path("."),
+        page_registry=PluginPageRegistry(),
+        password=None, # No password
+    )
+    import pytest
+    with pytest.raises(RuntimeError, match="password"):
+        server.start()
 
 
 def test_nicegui_server_port_conflict_sets_health_error():
-    def _runner(_host, _port, _config_dir, _registry):
+    def _runner(_host, _port, _config_dir, _registry, _password, _queue):
         raise OSError("Address already in use")
 
     server = NiceGUIServer(
         config_dir=Path("."),
         page_registry=PluginPageRegistry(),
+        password="pwd",
+        job_queue=None,
         runner=_runner,
         shutdown=lambda: None,
     )

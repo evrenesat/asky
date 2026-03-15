@@ -8,6 +8,7 @@ from typing import Any, Dict, Optional
 
 from asky.plugins.base import AskyPlugin, PluginContext
 from asky.plugins.hook_types import (
+    GUI_EXTENSION_REGISTER,
     POST_LLM_RESPONSE,
     POST_TOOL_EXECUTE,
     PRE_PRELOAD,
@@ -15,6 +16,7 @@ from asky.plugins.hook_types import (
     SYSTEM_PROMPT_EXTEND,
     TOOL_REGISTRY_BUILD,
     TURN_COMPLETED,
+    GUIExtensionRegisterContext,
     PostLLMResponseContext,
     PostToolExecuteContext,
     PrePreloadContext,
@@ -71,6 +73,11 @@ class PersonaManagerPlugin(AskyPlugin):
             priority=SESSION_HOOK_PRIORITY,
         )
         context.hook_registry.register(
+            GUI_EXTENSION_REGISTER,
+            self._on_gui_extension_register,
+            plugin_name=context.plugin_name,
+        )
+        context.hook_registry.register(
             PRE_PRELOAD,
             self._on_pre_preload,
             plugin_name=context.plugin_name,
@@ -108,6 +115,15 @@ class PersonaManagerPlugin(AskyPlugin):
             delattr(self._thread_local, "current_packets")
         if hasattr(self._thread_local, "live_sources"):
             delattr(self._thread_local, "live_sources")
+
+    def _on_gui_extension_register(self, payload: GUIExtensionRegisterContext) -> None:
+        context = self._context
+        if context is None:
+            return
+
+        from asky.plugins.gui_server.pages.sessions import register_session_pages
+
+        register_session_pages(payload.register_page, context.data_dir)
 
     def _on_tool_registry_build(self, payload: ToolRegistryBuildContext) -> None:
         """

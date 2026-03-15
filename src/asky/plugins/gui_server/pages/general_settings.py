@@ -86,47 +86,64 @@ def save_general_settings(config_dir: Path, updates: Dict[str, Any]) -> None:
     temp_path.replace(config_path)
 
 
+from asky.plugins.gui_server.pages.layout import page_layout
+
+
 def mount_general_settings_page(ui: Any, *, config_dir: Path) -> None:
     """Mount editable general settings page."""
 
     @ui.page("/settings/general")
     def _general_settings_page() -> None:
-        ui.label("General Settings")
-        current_settings = load_general_settings(config_dir)
+        with page_layout("General Settings"):
+            current_settings = load_general_settings(config_dir)
 
-        default_model = ui.input(
-            "Default model",
-            value=str(current_settings.get("default_model", "")),
-        )
-        summarization_model = ui.input(
-            "Summarization model",
-            value=str(current_settings.get("summarization_model", "")),
-        )
-        max_turns = ui.number(
-            "Max turns",
-            value=int(current_settings.get("max_turns", 10) or 10),
-            precision=0,
-        )
-        log_level = ui.select(
-            sorted(VALID_LOG_LEVELS),
-            value=str(current_settings.get("log_level", "INFO")).upper() or "INFO",
-            label="Log level",
-        )
-        status = ui.label("")
+            with ui.card().classes("w-full asky-card"):
+                with ui.column().classes("w-full gap-4"):
+                    default_model = ui.input(
+                        "Default model",
+                        value=str(current_settings.get("default_model", "")),
+                    ).classes("w-full")
+                    summarization_model = ui.input(
+                        "Summarization model",
+                        value=str(current_settings.get("summarization_model", "")),
+                    ).classes("w-full")
+                    max_turns = ui.number(
+                        "Max turns",
+                        value=int(current_settings.get("max_turns", 10) or 10),
+                        precision=0,
+                    ).classes("w-full")
+                    log_level = ui.select(
+                        sorted(VALID_LOG_LEVELS),
+                        value=str(current_settings.get("log_level", "INFO")).upper()
+                        or "INFO",
+                        label="Log level",
+                    ).classes("w-full")
 
-        def _save() -> None:
-            updates = {
-                "default_model": str(default_model.value or "").strip(),
-                "summarization_model": str(summarization_model.value or "").strip(),
-                "max_turns": int(max_turns.value or 0),
-                "log_level": str(log_level.value or "").upper(),
-            }
-            errors = validate_general_updates(updates)
-            if errors:
-                status.text = "Validation error: " + "; ".join(errors)
-                return
+                    ui.separator().classes("my-2")
 
-            save_general_settings(config_dir, updates)
-            status.text = "Saved general.toml"
+                    status = ui.label("").classes("text-sm font-medium")
 
-        ui.button("Save", on_click=lambda: _save())
+                    def _save() -> None:
+                        updates = {
+                            "default_model": str(default_model.value or "").strip(),
+                            "summarization_model": str(
+                                summarization_model.value or ""
+                            ).strip(),
+                            "max_turns": int(max_turns.value or 0),
+                            "log_level": str(log_level.value or "").upper(),
+                        }
+                        errors = validate_general_updates(updates)
+                        if errors:
+                            status.text = "Validation error: " + "; ".join(errors)
+                            status.classes("text-red-600", remove="text-green-600")
+                            return
+
+                        try:
+                            save_general_settings(config_dir, updates)
+                            status.text = "Saved general.toml"
+                            status.classes("text-green-600", remove="text-red-600")
+                        except Exception as exc:
+                            status.text = f"Error: {exc}"
+                            status.classes("text-red-600", remove="text-green-600")
+
+                    ui.button("Save Changes", on_click=lambda: _save()).classes("w-fit")

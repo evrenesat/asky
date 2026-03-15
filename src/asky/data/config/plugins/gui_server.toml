@@ -1,0 +1,8 @@
+# GUI server configuration
+host = "127.0.0.1"
+port = 8766
+
+# Password for authenticated access.
+# Can be overridden by the ASKY_GUI_PASSWORD environment variable.
+# If both are empty, the GUI server will refuse to start.
+password = ""
