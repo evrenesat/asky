@@ -2,6 +2,25 @@
 
 For full detailed entries, see [DEVLOG_ARCHIVE.md](DEVLOG_ARCHIVE.md).
 
+## 2026-03-15: Persona Milestone 4 Guided Web Scraping and Review
+
+- **Summary**: Finalized persona milestone 4 as a review-first web collection pipeline for personas, including the follow-up hardening needed for stable source identity, shared-retrieval provenance, and parity with generic source-management commands.
+- **Changes**:
+  - Added the `web-*` persona CLI family for batched web collection, review, approval, rejection, continuation, and detailed page reporting.
+  - Added durable `web_collections/<collection_id>/...` storage for collection manifests, frontier state, staged page artifacts, previews, and reports.
+  - Implemented bounded seed-domain collection with explicit apex/`www` host alias handling, plus broad expansion with exact `ceil(target_results * 1.3)` overcollection and duplicate filtering before review.
+  - Routed web fetching through shared retrieval and persisted retrieval provenance so `web-page-report` can show provider, fallback, extraction source, warnings, and errors.
+  - Materialized approved web pages as ordinary `ingested_sources/<source_id>/...` bundles with stable URL-based web source IDs, bundle-local `content.md`, and bundle-local `report.json`.
+  - Canonicalized web source bundle directories to use raw `source_id` names, with compatibility for legacy slugged directories.
+  - Added generic `retract-source` plus aligned `web-retract-page` so approved web sources can be unprojected cleanly while keeping review artifacts for later re-approval.
+  - Updated exporter/importer, runtime rebuild paths, `ARCHITECTURE.md`, `docs/plugins.md`, and affected `AGENTS.md` files to match the shipped milestone-4 behavior.
+- **Gotchas**:
+  - Web review artifacts store normalized content snapshots and preview data, not raw HTML.
+  - `uncertain` pages remain pending until explicitly approved with `--as authored|about`, but they do not block continuation or collection completion.
+- **Verification**:
+  - Focused regression: `uv run pytest tests/asky/plugins/manual_persona_creator/test_web_approval.py tests/asky/plugins/manual_persona_creator/test_web_fixups_storage.py tests/asky/cli/test_persona_source_commands.py tests/asky/plugins/persona_manager/test_source_runtime.py -q -n0` -> `16 passed in 4.00s`
+  - Full suite: `uv run pytest -q` -> `1587 passed in 19.20s`
+
 ## 2026-03-14: Persona Milestone 3 Source-Aware Ingestion and Review
 
 - **Summary**: Implemented persona milestone 3, expanding personas beyond authored books with a source-aware ingestion layer, explicit review boundaries for third-party content, preserved conflict groups, and follow-up fixes for bundle inputs, approval idempotence, query filtering, and CLI surface parity.

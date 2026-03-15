@@ -26,6 +26,7 @@ from asky.plugins.manual_persona_creator.storage import (
     get_source_bundle_paths,
     get_source_id,
     get_source_job_paths,
+    ensure_canonical_source_bundle,
     read_job_manifest,
     write_chunks,
     write_job_manifest,
@@ -211,7 +212,7 @@ class SourceIngestionJob:
 
     def _stage_materialize_bundle(self, content: str, extracted_data: Dict[str, Any]) -> PersonaSourceReportRecord:
         source_id = get_source_id(self.manifest.kind, content)
-        bundle_paths = get_source_bundle_paths(self.paths.root_dir, source_id)
+        bundle_paths = ensure_canonical_source_bundle(self.paths.root_dir, source_id)
         bundle_paths.source_dir.mkdir(parents=True, exist_ok=True)
         
         # Write extracted files

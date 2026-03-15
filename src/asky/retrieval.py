@@ -83,6 +83,15 @@ def fetch_url_document(
             "links": [],
         }
 
+    override_attempt_trace = {
+        "kind": "override_attempt",
+        "operation": "fetch_url_document",
+        "url": requested_url,
+    }
+    if trace_context:
+        override_attempt_trace.update(trace_context)
+    _emit_trace_event(trace_callback, override_attempt_trace)
+
     _plugin_override = _try_fetch_url_plugin_override(
         url=requested_url,
         output_format=output_format,
@@ -92,6 +101,15 @@ def fetch_url_document(
         trace_context=trace_context,
     )
     if _plugin_override is not None:
+        override_success_trace = {
+            "kind": "override_success",
+            "operation": "fetch_url_document",
+            "url": requested_url,
+            "source": _plugin_override.get("source", "unknown"),
+        }
+        if trace_context:
+            override_success_trace.update(trace_context)
+        _emit_trace_event(trace_callback, override_success_trace)
         return _plugin_override
 
     started = time.perf_counter()

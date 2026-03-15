@@ -253,6 +253,31 @@ To preserve the trust boundary, certain source kinds (biography, interview) are 
 1.  **Pending State**: Ingested sources are stored as durable bundles but do not influence persona answering.
 2.  **Review**: Users can inspect extracted knowledge via `source-report`.
 3.  **Promotion**: Explicit approval projects the knowledge into the canonical catalog and rebuilds the runtime index.
+
+---
+
+## Guided Web Scraping and Review (Milestone 4)
+
+Milestone 4 extends persona knowledge acquisition to the public web with a review-first collection system.
+
+### Key Architectural Components
+
+- **Web Service Layer (`web_service.py`)**: UI-agnostic orchestration for starting, continuing, approving, and retracting web collections.
+- **Web Collection Job (`web_job.py`)**: A bounded background job that fetches pages, manages a per-collection frontier, and filters for distinctness (including embedding similarity).
+- **Review Boundary**: Scraped pages are staged in a `review_ready` state. They do not affect canonical persona knowledge until explicitly approved by the user.
+- **Preview Extraction**: Uses LLM-driven classification and metadata extraction (viewpoints, facts, timeline) before review to assist the user.
+- **Bundle Materialization**: Approved web pages materialize a real Milestone-3 source bundle (`ingested_sources/<source_id>/`) with local content, ensuring they join the same durable runtime and query surfaces as manual sources.
+- **Stable Identity**: Web source IDs (`source:web:<hash>`) are derived from the normalized final URL, ensuring they stay stable even if content is updated.
+- **Generic Retraction**: The persona service supports unprojecting knowledge and resetting source status back to pending/review_ready, with automatic index rebuilding.
+
+### Data Layout
+
+- `web_collections/<collection_id>/collection.toml`: Collection-level manifest and status.
+- `web_collections/<collection_id>/frontier.json`: Current crawl frontier state (queue, seen, fetched).
+- `web_collections/<collection_id>/pages/<page_id>/page.toml`: Page-level manifest and classification.
+- `web_collections/<collection_id>/pages/<page_id>/content.md`: Normalized page content.
+- `web_collections/<collection_id>/pages/<page_id>/preview.json`: LLM-extracted preview metadata.
+- `web_collections/<collection_id>/pages/<page_id>/report.json`: Detailed fetch report with retrieval provenance.
 4.  **Auto-Approval**: Authored primary short-form sources are automatically approved and projected on ingestion.
 
 ### Conflict Preservation

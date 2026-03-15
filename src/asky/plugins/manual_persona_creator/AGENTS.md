@@ -16,6 +16,10 @@ Creates and maintains local persona packages using **Schema v3** foundation.
 | `exporter.py`  | ZIP export with full v3 catalog and artifacts |
 | `source_job.py` | Resumable job orchestration for milestone-3 structured extraction |
 | `source_prompts.py`| Kind-aware extraction prompts and validation logic |
+| `web_service.py`| Orchestration for web collection and review |
+| `web_job.py`   | Background collection job logic (seed-domain and broad expansion) |
+| `web_types.py` | Typed models for web collection and review state |
+| `web_prompts.py`| Web page classification and preview extraction prompts |
 
 ## Schema v3 Foundation
 
@@ -31,6 +35,18 @@ Introduces a review boundary for third-party or mixed-attribution sources:
 - **Auto-Approval**: Authored primary short-form (articles, posts) projects immediately.
 - **Review Boundary**: Biographies and interviews remain `pending` until explicit approval.
 - **Structured Extraction**: Kind-aware strategies for viewpoints, facts, and timeline events.
+
+## Milestone 4: Guided Web Scraping and Review
+
+Extends persona knowledge acquisition to the public web with a review-first contract:
+- **Bounded Collection**: `web-collect` stays within seed hosts (including apex/www aliases) to ensure relevance.
+- **Broad Expansion**: `web-expand` uses search queries or cross-domain link discovery with a `1.3x` overcollection cap.
+- **Review Staging**: Scraped pages are staged under `web_collections/<collection_id>/pages/<page_id>/` before approval.
+- **Preview Extraction**: LLM-driven classification and metadata extraction (viewpoints, facts, timeline) before review.
+- **Bundle Materialization**: Approved pages materialize a real Milestone-3 source bundle (`ingested_sources/<source_id>/`) with local content.
+- **Stable Identity**: Web source IDs (`source:web:<hash>`) are derived from the normalized final URL only.
+- **Retraction**: Approved sources and pages can be retracted back to pending/review_ready, unprojecting their knowledge and rebuilding the runtime index.
+- **Retrieval Provenance**: Detailed page reports explain how content was fetched (Playwright vs Default) and any extraction warnings.
 
 ### Ingestion and Deduplication
 - `add-sources` uses deterministic content fingerprints.

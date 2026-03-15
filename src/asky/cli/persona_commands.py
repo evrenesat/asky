@@ -17,8 +17,9 @@ from rich.table import Table
 from asky.config.loader import _get_config_dir
 from asky.core import get_shell_session_id
 from asky.plugins.kvstore import PluginKVStore
-from asky.plugins.manual_persona_creator import book_service, source_service
+from asky.plugins.manual_persona_creator import book_service, source_service, web_service
 from asky.plugins.manual_persona_creator.book_ingestion import BookIngestionJob
+from asky.plugins.manual_persona_creator.web_types import WebPageStatus
 from asky.plugins.manual_persona_creator.book_types import (
     BookMetadata,
     ExtractionTargets,
@@ -554,6 +555,22 @@ def handle_persona_approve_source(args: argparse.Namespace) -> None:
         console.print(f"[red]Error: {e}[/red]")
 
 
+def handle_persona_retract_source(args: argparse.Namespace) -> None:
+    """Retract an approved source bundle."""
+    persona_name = str(args.name).strip()
+    source_id = str(args.source_id).strip()
+    data_dir = _get_data_dir()
+
+    if not Confirm.ask(f"Retract source '{source_id}' and remove from '{persona_name}' knowledge? (Bundle files will be kept)"):
+        return
+
+    try:
+        source_service.retract_source_bundle(data_dir, persona_name, source_id)
+        console.print(f"[green]✓ Source '{source_id}' retracted successfully.[/green]")
+    except Exception as e:
+        console.print(f"[red]Error: {e}[/red]")
+
+
 def handle_persona_reject_source(args: argparse.Namespace) -> None:
     """Reject a source bundle."""
     persona_name = str(args.name).strip()
@@ -1072,3 +1089,299 @@ def handle_persona_aliases(args: argparse.Namespace) -> None:
             table.add_row(alias, "→", target_persona)
         
         console.print(table)
+
+
+# --- Web Collection Handlers ---
+
+def handle_persona_web_collect(args: argparse.Namespace) -> None:
+    """Start a bounded seed-domain web collection."""
+    persona_name = str(args.name).strip()
+    target_results = int(args.target_results)
+    urls = args.url or []
+    url_file = Path(args.url_file) if args.url_file else None
+    data_dir = _get_data_dir()
+
+    if not persona_exists(data_dir, persona_name):
+        console.print(f"[red]Error: Persona '{persona_name}' does not exist.[/red]")
+        return
+
+    try:
+        with console.status(f"[cyan]Starting web collection for '{persona_name}'...[/cyan]"):
+            collection_id = web_service.start_seed_domain_collection(
+                data_dir=data_dir,
+                persona_name=persona_name,
+                target_results=target_results,
+                urls=urls,
+                url_file=url_file,
+            )
+        console.print(f"[green]✓ Web collection '{collection_id}' started successfully.[/green]")
+        console.print(f"Use 'asky persona web-review {persona_name} {collection_id}' to check progress.")
+    except Exception as e:
+        console.print(f"[red]Error: {e}[/red]")
+
+
+def handle_persona_web_expand(args: argparse.Namespace) -> None:
+    """Start a broad public-web expansion."""
+    persona_name = str(args.name).strip()
+    target_results = int(args.target_results)
+    query = args.query
+    urls = args.url or []
+    url_file = Path(args.url_file) if args.url_file else None
+    data_dir = _get_data_dir()
+
+    if not persona_exists(data_dir, persona_name):
+        console.print(f"[red]Error: Persona '{persona_name}' does not exist.[/red]")
+        return
+
+    try:
+        with console.status(f"[cyan]Starting broad web expansion for '{persona_name}'...[/cyan]"):
+            collection_id = web_service.start_broad_web_expansion(
+                data_dir=data_dir,
+                persona_name=persona_name,
+                target_results=target_results,
+                query=query,
+                urls=urls,
+                url_file=url_file,
+            )
+        console.print(f"[green]✓ Broad web expansion '{collection_id}' started successfully.[/green]")
+        console.print(f"Use 'asky persona web-review {persona_name} {collection_id}' to check progress.")
+    except Exception as e:
+        console.print(f"[red]Error: {e}[/red]")
+
+
+def handle_persona_web_collections(args: argparse.Namespace) -> None:
+    """List web collections for a persona."""
+    persona_name = str(args.name).strip()
+    status_filter = args.status
+    limit = int(args.limit)
+    data_dir = _get_data_dir()
+
+    paths = get_persona_paths(data_dir, persona_name)
+    from asky.plugins.manual_persona_creator.storage import list_web_collections, get_web_collection_paths
+    import tomllib
+
+    collection_ids = list_web_collections(paths.root_dir)
+    collection_ids = collection_ids[-limit:]
+
+    if not collection_ids:
+        console.print("[yellow]No web collections found.[/yellow]")
+        return
+
+    table = Table(title=f"Web Collections for '{persona_name}'")
+    table.add_column("Collection ID", style="cyan")
+    table.add_column("Mode", style="magenta")
+    table.add_column("Status", style="green")
+    table.add_column("Target", justify="right")
+    table.add_column("Created At", style="dim")
+
+    for cid in reversed(collection_ids):
+        c_paths = get_web_collection_paths(paths.root_dir, cid)
+        if c_paths.manifest_path.exists():
+            with c_paths.manifest_path.open("rb") as f:
+                m = tomllib.load(f)
+                if status_filter and m.get("status") != status_filter:
+                    continue
+                table.add_row(
+                    cid,
+                    m.get("mode", "unknown"),
+                    m.get("status", "unknown"),
+                    str(m.get("target_results", 0)),
+                    m.get("created_at", "unknown")[:16],
+                )
+
+    console.print(table)
+
+
+def handle_persona_web_review(args: argparse.Namespace) -> None:
+    """Review pages in a web collection."""
+    persona_name = str(args.name).strip()
+    collection_id = str(args.collection_id).strip()
+    status_filter = args.status
+    limit = int(args.limit)
+    data_dir = _get_data_dir()
+
+    pages = web_service.get_collection_review_pages(
+        data_dir=data_dir,
+        persona_name=persona_name,
+        collection_id=collection_id,
+        status=status_filter,
+    )
+    pages = pages[:limit]
+
+    if not pages:
+        console.print(f"[yellow]No pages found for collection '{collection_id}'.[/yellow]")
+        return
+
+    table = Table(title=f"Web Pages for Collection '{collection_id}'")
+    table.add_column("Page ID", style="cyan")
+    table.add_column("Title", style="bold")
+    table.add_column("Status", style="green")
+    table.add_column("Classification", style="magenta")
+    table.add_column("Final URL", style="dim")
+
+    for p in pages:
+        table.add_row(
+            p.get("page_id", "unknown"),
+            p.get("title", "No Title")[:50],
+            p.get("status", "unknown"),
+            p.get("classification", "unknown"),
+            p.get("final_url", "unknown")[:40],
+        )
+
+    console.print(table)
+
+
+def handle_persona_web_page_report(args: argparse.Namespace) -> None:
+    """Show detailed report for a scraped page."""
+    persona_name = str(args.name).strip()
+    collection_id = str(args.collection_id).strip()
+    page_id = str(args.page_id).strip()
+    data_dir = _get_data_dir()
+
+    paths = get_persona_paths(data_dir, persona_name)
+    from asky.plugins.manual_persona_creator.storage import (
+        get_web_collection_paths, 
+        get_web_page_paths,
+        read_web_page_report
+    )
+    import tomllib
+
+    c_paths = get_web_collection_paths(paths.root_dir, collection_id)
+    p_paths = get_web_page_paths(c_paths.collection_dir, page_id)
+
+    if not p_paths.manifest_path.exists():
+        console.print(f"[red]Error: Page '{page_id}' not found in collection '{collection_id}'.[/red]")
+        return
+
+    with p_paths.manifest_path.open("rb") as f:
+        m = tomllib.load(f)
+    
+    report = read_web_page_report(p_paths.report_path)
+    
+    console.print(f"\n[bold cyan]Web Page Report: {page_id}[/bold cyan]")
+    console.print(f"Title: {m.get('title')}")
+    console.print(f"Status: {m.get('status')}")
+    console.print(f"Final URL: {m.get('final_url')}")
+    console.print(f"Classification: {m.get('classification')}")
+    
+    if report.get("retrieval"):
+        ret = report["retrieval"]
+        console.print(f"\n[bold]Retrieval Provenance:[/bold]")
+        console.print(f"  Provider: {ret.get('provider')}")
+        console.print(f"  Source:   {ret.get('source')}")
+        if ret.get("fallback_reason"):
+            console.print(f"  Fallback: [yellow]{ret.get('fallback_reason')}[/yellow]")
+        if ret.get("error"):
+            console.print(f"  Error:    [red]{ret.get('error')}[/red]")
+
+    if p_paths.preview_path.exists():
+        preview = json.loads(p_paths.preview_path.read_text(encoding="utf-8"))
+        console.print(f"\n[bold]Summary:[/bold] {preview.get('short_summary')}")
+        
+        if preview.get("candidate_viewpoints"):
+            console.print("\n[bold]Candidate Viewpoints:[/bold]")
+            for vp in preview["candidate_viewpoints"]:
+                console.print(f"  • {vp.get('viewpoint')}")
+        
+        if preview.get("candidate_facts"):
+            console.print("\n[bold]Candidate Facts:[/bold]")
+            for f in preview["candidate_facts"]:
+                console.print(f"  • {f.get('fact')}")
+
+        if preview.get("candidate_timeline_events"):
+            console.print("\n[bold]Candidate Timeline Events:[/bold]")
+            for ev in preview["candidate_timeline_events"]:
+                console.print(f"  • {ev.get('event')}")
+
+        if preview.get("conflict_candidates"):
+            console.print("\n[bold]Conflict Candidates:[/bold]")
+            for c in preview["conflict_candidates"]:
+                console.print(f"  • {c.get('description')}")
+
+    if p_paths.content_path.exists():
+        content = p_paths.content_path.read_text(encoding="utf-8")
+        console.print(f"\n[bold]Content Preview (First 500 chars):[/bold]")
+        console.print(content[:500] + "...")
+
+
+def handle_persona_web_continue(args: argparse.Namespace) -> None:
+    """Continue an existing web collection."""
+    persona_name = str(args.name).strip()
+    collection_id = str(args.collection_id).strip()
+    data_dir = _get_data_dir()
+
+    try:
+        with console.status(f"[cyan]Continuing web collection '{collection_id}'...[/cyan]"):
+            web_service.continue_collection(
+                data_dir=data_dir,
+                persona_name=persona_name,
+                collection_id=collection_id,
+            )
+        console.print(f"[green]✓ Web collection '{collection_id}' resumed and finished batch.[/green]")
+    except Exception as e:
+        console.print(f"[red]Error: {e}[/red]")
+
+
+def handle_persona_web_approve_page(args: argparse.Namespace) -> None:
+    """Approve a scraped page and project into persona knowledge."""
+    persona_name = str(args.name).strip()
+    collection_id = str(args.collection_id).strip()
+    page_id = str(args.page_id).strip()
+    trust_as = args.trust_as
+    data_dir = _get_data_dir()
+
+    if not Confirm.ask(f"Approve page '{page_id}' and project into '{persona_name}'?"):
+        return
+
+    try:
+        from asky.plugins.manual_persona_creator.web_service import approve_web_page
+        approve_web_page(
+            data_dir=data_dir,
+            persona_name=persona_name,
+            collection_id=collection_id,
+            page_id=page_id,
+            trust_as=trust_as,
+        )
+        console.print(f"[green]✓ Page '{page_id}' approved and projected successfully.[/green]")
+    except Exception as e:
+        console.print(f"[red]Error: {e}[/red]")
+
+
+def handle_persona_web_retract_page(args: argparse.Namespace) -> None:
+    """Retract an approved scraped page."""
+    persona_name = str(args.name).strip()
+    collection_id = str(args.collection_id).strip()
+    page_id = str(args.page_id).strip()
+    data_dir = _get_data_dir()
+
+    try:
+        from asky.plugins.manual_persona_creator.web_service import retract_web_page
+        retract_web_page(
+            data_dir=data_dir,
+            persona_name=persona_name,
+            collection_id=collection_id,
+            page_id=page_id,
+        )
+        console.print(f"[green]✓ Page '{page_id}' retracted back to review_ready.[/green]")
+    except Exception as e:
+        console.print(f"[red]Error: {e}[/red]")
+
+
+def handle_persona_web_reject_page(args: argparse.Namespace) -> None:
+    """Reject a scraped page."""
+    persona_name = str(args.name).strip()
+    collection_id = str(args.collection_id).strip()
+    page_id = str(args.page_id).strip()
+    data_dir = _get_data_dir()
+
+    try:
+        from asky.plugins.manual_persona_creator.web_service import reject_web_page
+        reject_web_page(
+            data_dir=data_dir,
+            persona_name=persona_name,
+            collection_id=collection_id,
+            page_id=page_id,
+        )
+        console.print(f"[green]✓ Page '{page_id}' rejected.[/green]")
+    except Exception as e:
+        console.print(f"[red]Error: {e}[/red]")

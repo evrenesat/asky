@@ -75,3 +75,33 @@ def test_handle_persona_facts_query_with_topic(tmp_path):
         persona_commands.handle_persona_facts(args)
         
         mock_query.assert_called_with(tmp_path, "arendt", "s1", topic="politics")
+
+
+def test_handle_persona_retract_source(tmp_path):
+    """Verify retract-source confirmation and service call."""
+    with patch("asky.cli.persona_commands._get_data_dir", return_value=tmp_path), \
+         patch("asky.cli.persona_commands.Confirm.ask", return_value=True), \
+         patch("asky.cli.persona_commands.source_service.retract_source_bundle") as mock_retract:
+        
+        args = argparse.Namespace(name="arendt", source_id="source:web:123")
+        persona_commands.handle_persona_retract_source(args)
+        
+        mock_retract.assert_called_with(tmp_path, "arendt", "source:web:123")
+
+def test_handle_persona_source_report_web(tmp_path):
+    """Verify source-report for a web source."""
+    with patch("asky.cli.persona_commands._get_data_dir", return_value=tmp_path), \
+         patch("asky.cli.persona_commands.source_service.get_source_report") as mock_report:
+        
+        mock_report.return_value = {
+            "source_id": "source:web:123",
+            "kind": "web_page",
+            "status": "success",
+            "extracted_counts": {"viewpoints": 2, "facts": 3},
+            "metadata": {"final_url": "https://example.com"}
+        }
+        
+        args = argparse.Namespace(name="arendt", source_id="source:web:123")
+        persona_commands.handle_persona_source_report(args)
+        
+        mock_report.assert_called_with(tmp_path, "arendt", "source:web:123")

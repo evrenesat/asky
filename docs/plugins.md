@@ -60,10 +60,22 @@ Source-Aware Ingestion and Review (Milestone 3):
 - `asky persona sources <persona> [--status <filter>] [--kind <filter>]` - List ingested source bundles.
 - `asky persona source-report <persona> <source_id>` - View extraction report for a specific source bundle.
 - `asky persona approve-source <persona> <source_id>` - Approve and project knowledge from a pending source.
+- `asky persona retract-source <persona> <source_id>` - Retract an approved source (back to pending).
 - `asky persona reject-source <persona> <source_id>` - Reject a source bundle.
 - `asky persona facts <persona> [--source <id>] [--topic <query>]` - Query approved biographical facts.
 - `asky persona timeline <persona> [--source <id>] [--year <n>]` - Query approved chronological events.
 - `asky persona conflicts <persona> [--topic <query>]` - Query preserved contradictions between sources.
+
+Guided Web Scraping and Review (Milestone 4):
+- `asky persona web-collect <persona> --target-results N (--url URL ... | --url-file FILE)` - Start a bounded seed-domain web collection.
+- `asky persona web-expand <persona> --target-results N (--query QUERY | --url URL ... | --url-file FILE)` - Start a broad public-web expansion.
+- `asky persona web-collections <persona> [--status <filter>]` - List web collections.
+- `asky persona web-review <persona> <collection_id> [--status <filter>]` - Review pages in a web collection.
+- `asky persona web-page-report <persona> <collection_id> <page_id>` - Show detailed report for a scraped page.
+- `asky persona web-continue <persona> <collection_id>` - Continue an existing collection.
+- `asky persona web-approve-page <persona> <collection_id> <page_id> [--as authored|about]` - Approve and project page knowledge.
+- `asky persona web-retract-page <persona> <collection_id> <page_id>` - Retract an approved web page.
+- `asky persona web-reject-page <persona> <collection_id> <page_id>` - Reject a scraped page.
 
 ### 3.2 Mentions and Auto-loading
 

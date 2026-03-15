@@ -37,6 +37,15 @@ SOURCE_CONFLICTS_FILENAME = "conflicts.json"
 
 SOURCE_INGESTION_JOBS_DIR_NAME = "source_ingestion_jobs"
 
+WEB_COLLECTIONS_DIR_NAME = "web_collections"
+COLLECTION_MANIFEST_FILENAME = "collection.toml"
+FRONTIER_FILENAME = "frontier.json"
+PAGES_DIR_NAME = "pages"
+PAGE_MANIFEST_FILENAME = "page.toml"
+PAGE_CONTENT_FILENAME = "content.md"
+PAGE_LINKS_FILENAME = "links.json"
+PAGE_PREVIEW_FILENAME = "preview.json"
+
 PERSONA_NAME_PATTERN = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9_-]{1,63}$")
 
 
@@ -71,6 +80,7 @@ class SourceBundlePaths:
     facts_path: Path
     timeline_path: Path
     conflicts_path: Path
+    content_path: Path
 
 
 @dataclass(frozen=True)
@@ -87,6 +97,27 @@ class SourceIngestionJobPaths:
 
     job_dir: Path
     manifest_path: Path
+
+
+@dataclass(frozen=True)
+class WebCollectionPaths:
+    """Filesystem layout for one web collection."""
+
+    collection_dir: Path
+    manifest_path: Path
+    frontier_path: Path
+
+
+@dataclass(frozen=True)
+class WebPagePaths:
+    """Filesystem layout for one scraped web page inside a collection."""
+
+    page_dir: Path
+    manifest_path: Path
+    content_path: Path
+    links_path: Path
+    preview_path: Path
+    report_path: Path
 
 
 def validate_persona_name(name: str) -> str:
@@ -122,6 +153,26 @@ def get_source_id(kind: str, bundle_text: str) -> str:
     """Generate a deterministic milestone-3 source ID."""
     fingerprint = hashlib.sha256(bundle_text.encode("utf-8")).hexdigest()[:16]
     return f"source:{kind}:{fingerprint}"
+
+
+def get_web_collection_id() -> str:
+    """Generate a durable web collection ID."""
+    from uuid import uuid4
+    utc_stamp = datetime.now(UTC).strftime("%Y%m%d%H%M%S")
+    uuid8 = str(uuid4())[:8]
+    return f"web_{utc_stamp}_{uuid8}"
+
+
+def get_web_page_id(normalized_final_url: str) -> str:
+    """Generate a deterministic web page ID."""
+    fingerprint = hashlib.sha256(normalized_final_url.encode("utf-8")).hexdigest()[:16]
+    return f"page:{fingerprint}"
+
+
+def get_promoted_web_source_id(normalized_final_url: str) -> str:
+    """Generate a deterministic source ID for a promoted web page."""
+    fingerprint = hashlib.sha256(normalized_final_url.encode("utf-8")).hexdigest()[:16]
+    return f"source:web:{fingerprint}"
 
 
 def get_personas_root(data_dir: Path) -> Path:
@@ -161,9 +212,18 @@ def get_job_paths(persona_root: Path, job_id: str) -> IngestionJobPaths:
     )
 
 
-def get_source_bundle_paths(persona_root: Path, source_id_slug: str) -> SourceBundlePaths:
+def get_source_bundle_paths(persona_root: Path, source_id: str) -> SourceBundlePaths:
     """Resolve canonical files for one milestone-3 source bundle."""
-    source_dir = persona_root / INGESTED_SOURCES_DIR_NAME / source_id_slug
+    # Canonical path uses the raw source_id
+    source_dir = persona_root / INGESTED_SOURCES_DIR_NAME / source_id
+
+    # Legacy compatibility: if canonical doesn't exist but slugged does, fallback to slugged
+    if not source_dir.exists():
+        slugged_id = source_id.replace(":", "_")
+        slugged_dir = persona_root / INGESTED_SOURCES_DIR_NAME / slugged_id
+        if slugged_dir.exists():
+            source_dir = slugged_dir
+
     return SourceBundlePaths(
         source_dir=source_dir,
         metadata_path=source_dir / SOURCE_METADATA_FILENAME,
@@ -172,7 +232,31 @@ def get_source_bundle_paths(persona_root: Path, source_id_slug: str) -> SourceBu
         facts_path=source_dir / SOURCE_FACTS_FILENAME,
         timeline_path=source_dir / SOURCE_TIMELINE_FILENAME,
         conflicts_path=source_dir / SOURCE_CONFLICTS_FILENAME,
+        content_path=source_dir / PAGE_CONTENT_FILENAME,
     )
+
+
+def ensure_canonical_source_bundle(persona_root: Path, source_id: str) -> SourceBundlePaths:
+    """
+    Ensure the source bundle uses the canonical directory name.
+    Migrates legacy slugged directory if it exists.
+    """
+    canonical_dir = persona_root / INGESTED_SOURCES_DIR_NAME / source_id
+    slugged_id = source_id.replace(":", "_")
+    slugged_dir = persona_root / INGESTED_SOURCES_DIR_NAME / slugged_id
+
+    if not canonical_dir.exists() and slugged_dir.exists():
+        import shutil
+        # Migrate legacy to canonical
+        # We use a temporary name to avoid partial moves
+        temp_dir = canonical_dir.with_suffix(".migrate_tmp")
+        if temp_dir.exists():
+            shutil.rmtree(temp_dir, ignore_errors=True)
+        shutil.copytree(slugged_dir, temp_dir)
+        temp_dir.rename(canonical_dir)
+        shutil.rmtree(slugged_dir, ignore_errors=True)
+
+    return get_source_bundle_paths(persona_root, source_id)
 
 
 def get_source_job_paths(persona_root: Path, job_id: str) -> SourceIngestionJobPaths:
@@ -181,6 +265,29 @@ def get_source_job_paths(persona_root: Path, job_id: str) -> SourceIngestionJobP
     return SourceIngestionJobPaths(
         job_dir=job_dir,
         manifest_path=job_dir / JOB_MANIFEST_FILENAME,
+    )
+
+
+def get_web_collection_paths(persona_root: Path, collection_id: str) -> WebCollectionPaths:
+    """Resolve canonical files for one web collection."""
+    collection_dir = persona_root / WEB_COLLECTIONS_DIR_NAME / collection_id
+    return WebCollectionPaths(
+        collection_dir=collection_dir,
+        manifest_path=collection_dir / COLLECTION_MANIFEST_FILENAME,
+        frontier_path=collection_dir / FRONTIER_FILENAME,
+    )
+
+
+def get_web_page_paths(collection_dir: Path, page_id_slug: str) -> WebPagePaths:
+    """Resolve canonical files for one scraped web page."""
+    page_dir = collection_dir / PAGES_DIR_NAME / page_id_slug
+    return WebPagePaths(
+        page_dir=page_dir,
+        manifest_path=page_dir / PAGE_MANIFEST_FILENAME,
+        content_path=page_dir / PAGE_CONTENT_FILENAME,
+        links_path=page_dir / PAGE_LINKS_FILENAME,
+        preview_path=page_dir / PAGE_PREVIEW_FILENAME,
+        report_path=page_dir / REPORT_FILENAME,
     )
 
 
@@ -214,6 +321,22 @@ def list_source_jobs(persona_root: Path) -> List[str]:
     if not jobs_root.exists():
         return []
     return sorted([path.name for path in jobs_root.iterdir() if path.is_dir()])
+
+
+def list_web_collections(persona_root: Path) -> List[str]:
+    """List web collection IDs for a persona."""
+    web_root = persona_root / WEB_COLLECTIONS_DIR_NAME
+    if not web_root.exists():
+        return []
+    return sorted([path.name for path in web_root.iterdir() if path.is_dir()])
+
+
+def list_web_pages(collection_dir: Path) -> List[str]:
+    """List web page IDs for a collection."""
+    pages_root = collection_dir / PAGES_DIR_NAME
+    if not pages_root.exists():
+        return []
+    return sorted([path.name for path in pages_root.iterdir() if path.is_dir()])
 
 
 def list_persona_names(data_dir: Path) -> List[str]:
@@ -378,6 +501,25 @@ def write_chunks(chunks_path: Path, chunks: List[Dict[str, Any]]) -> None:
     _write_text_atomic(chunks_path, rendered)
 
 
+def read_web_frontier(frontier_path: Path) -> Dict[str, Any]:
+    """Read and validate web frontier state JSON."""
+    if not frontier_path.exists():
+        return {}
+    payload = json.loads(frontier_path.read_text(encoding="utf-8"))
+    if not isinstance(payload, dict):
+        # Legacy frontier was a list of URLs
+        if isinstance(payload, list):
+            return {"queue": payload}
+        return {}
+    return payload
+
+
+def write_web_frontier(frontier_path: Path, state: Dict[str, Any]) -> None:
+    """Write web frontier state JSON atomically."""
+    rendered = json.dumps(state, ensure_ascii=True, indent=2)
+    _write_text_atomic(frontier_path, rendered)
+
+
 def read_job_manifest(manifest_path: Path) -> Dict[str, Any]:
     """Read and validate job manifest file."""
     with manifest_path.open("rb") as file_obj:
@@ -392,6 +534,54 @@ def write_job_manifest(manifest_path: Path, manifest: Dict[str, Any]) -> None:
             document[key] = _clean_toml_value(value)
     rendered = tomlkit.dumps(document)
     _write_text_atomic(manifest_path, rendered)
+
+
+def read_web_collection_manifest(manifest_path: Path) -> Dict[str, Any]:
+    """Read and validate web collection manifest file."""
+    with manifest_path.open("rb") as file_obj:
+        return tomllib.load(file_obj)
+
+
+def write_web_collection_manifest(manifest_path: Path, manifest: Dict[str, Any]) -> None:
+    """Persist web collection manifest atomically."""
+    document = tomlkit.document()
+    for key, value in manifest.items():
+        if value is not None:
+            document[key] = _clean_toml_value(value)
+    rendered = tomlkit.dumps(document)
+    _write_text_atomic(manifest_path, rendered)
+
+
+def read_web_page_manifest(manifest_path: Path) -> Dict[str, Any]:
+    """Read and validate web page manifest file."""
+    with manifest_path.open("rb") as file_obj:
+        return tomllib.load(file_obj)
+
+
+def write_web_page_manifest(manifest_path: Path, manifest: Dict[str, Any]) -> None:
+    """Persist web page manifest atomically."""
+    document = tomlkit.document()
+    for key, value in manifest.items():
+        if value is not None:
+            document[key] = _clean_toml_value(value)
+    rendered = tomlkit.dumps(document)
+    _write_text_atomic(manifest_path, rendered)
+
+
+def read_web_page_report(report_path: Path) -> Dict[str, Any]:
+    """Read and validate web page report JSON."""
+    if not report_path.exists():
+        return {}
+    payload = json.loads(report_path.read_text(encoding="utf-8"))
+    if not isinstance(payload, dict):
+        return {}
+    return payload
+
+
+def write_web_page_report(report_path: Path, report: Dict[str, Any]) -> None:
+    """Write web page report JSON atomically."""
+    rendered = json.dumps(report, ensure_ascii=True, indent=2)
+    _write_text_atomic(report_path, rendered)
 
 
 def read_book_metadata(metadata_path: Path) -> Dict[str, Any]:

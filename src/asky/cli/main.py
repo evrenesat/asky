@@ -1702,6 +1702,12 @@ def main() -> None:
         reject_source_parser.add_argument("name", help="Persona name")
         reject_source_parser.add_argument("source_id", help="Source ID")
 
+        retract_source_parser = subparsers.add_parser(
+            "retract-source", help="Retract an approved source bundle"
+        )
+        retract_source_parser.add_argument("name", help="Persona name")
+        retract_source_parser.add_argument("source_id", help="Source ID")
+
         facts_parser = subparsers.add_parser(
             "facts", help="Query approved fact entries"
         )
@@ -1726,6 +1732,103 @@ def main() -> None:
         conflicts_parser.add_argument("--source", help="Filter by source ID")
         conflicts_parser.add_argument("--topic", help="Filter by topic")
         conflicts_parser.add_argument("--limit", type=int, default=20, help="Max results")
+
+        # Web collection family
+        web_collect_parser = subparsers.add_parser(
+            "web-collect", help="Start a bounded seed-domain web collection"
+        )
+        web_collect_parser.add_argument("name", help="Persona name")
+        web_collect_parser.add_argument(
+            "--target-results",
+            type=int,
+            required=True,
+            help="Number of distinct review-ready pages to accumulate",
+        )
+        web_collect_parser.add_argument(
+            "--url", action="append", help="Seed URL (can be repeated)"
+        )
+        web_collect_parser.add_argument(
+            "--url-file", help="Path to a UTF-8 file containing seed URLs"
+        )
+
+        web_expand_parser = subparsers.add_parser(
+            "web-expand", help="Start a broad public-web expansion"
+        )
+        web_expand_parser.add_argument("name", help="Persona name")
+        web_expand_parser.add_argument(
+            "--target-results",
+            type=int,
+            required=True,
+            help="Number of distinct review-ready pages to accumulate",
+        )
+        web_expand_group = web_expand_parser.add_mutually_exclusive_group()
+        web_expand_group.add_argument("--query", help="Search query for expansion")
+        web_expand_group.add_argument(
+            "--url", action="append", help="Seed URL (can be repeated)"
+        )
+        web_expand_group.add_argument(
+            "--url-file", help="Path to a UTF-8 file containing seed URLs"
+        )
+
+        web_collections_parser = subparsers.add_parser(
+            "web-collections", help="List web collections for a persona"
+        )
+        web_collections_parser.add_argument("name", help="Persona name")
+        web_collections_parser.add_argument("--status", help="Filter by status")
+        web_collections_parser.add_argument(
+            "--limit", type=int, default=20, help="Max results"
+        )
+
+        web_review_parser = subparsers.add_parser(
+            "web-review", help="Review pages in a web collection"
+        )
+        web_review_parser.add_argument("name", help="Persona name")
+        web_review_parser.add_argument("collection_id", help="Web collection ID")
+        web_review_parser.add_argument("--status", help="Filter by status")
+        web_review_parser.add_argument(
+            "--limit", type=int, default=20, help="Max results"
+        )
+
+        web_page_report_parser = subparsers.add_parser(
+            "web-page-report", help="Show detailed report for a scraped page"
+        )
+        web_page_report_parser.add_argument("name", help="Persona name")
+        web_page_report_parser.add_argument("collection_id", help="Web collection ID")
+        web_page_report_parser.add_argument("page_id", help="Web page ID")
+
+        web_continue_parser = subparsers.add_parser(
+            "web-continue", help="Continue an existing web collection"
+        )
+        web_continue_parser.add_argument("name", help="Persona name")
+        web_continue_parser.add_argument("collection_id", help="Web collection ID")
+
+        web_approve_page_parser = subparsers.add_parser(
+            "web-approve-page",
+            help="Approve a scraped page and project into persona knowledge",
+        )
+        web_approve_page_parser.add_argument("name", help="Persona name")
+        web_approve_page_parser.add_argument("collection_id", help="Web collection ID")
+        web_approve_page_parser.add_argument("page_id", help="Web page ID")
+        web_approve_page_parser.add_argument(
+            "--as",
+            dest="trust_as",
+            choices=["authored", "about"],
+            help="Override trust classification",
+        )
+
+        web_reject_page_parser = subparsers.add_parser(
+            "web-reject-page", help="Reject a scraped page"
+        )
+        web_reject_page_parser.add_argument("name", help="Persona name")
+        web_reject_page_parser.add_argument("collection_id", help="Web collection ID")
+        web_reject_page_parser.add_argument("page_id", help="Web page ID")
+
+        web_retract_page_parser = subparsers.add_parser(
+            "web-retract-page", help="Retract an approved scraped page"
+        )
+        web_retract_page_parser.add_argument("name", help="Persona name")
+        web_retract_page_parser.add_argument("collection_id", help="Web collection ID")
+        web_retract_page_parser.add_argument("page_id", help="Web page ID")
 
         current_parser = subparsers.add_parser(
             "current", help="Show the currently loaded persona"
@@ -1807,12 +1910,32 @@ def main() -> None:
             persona_commands.handle_persona_approve_source(persona_args)
         elif persona_cmd == "reject-source":
             persona_commands.handle_persona_reject_source(persona_args)
+        elif persona_cmd == "retract-source":
+            persona_commands.handle_persona_retract_source(persona_args)
         elif persona_cmd == "facts":
             persona_commands.handle_persona_facts(persona_args)
         elif persona_cmd == "timeline":
             persona_commands.handle_persona_timeline(persona_args)
         elif persona_cmd == "conflicts":
             persona_commands.handle_persona_conflicts(persona_args)
+        elif persona_cmd == "web-collect":
+            persona_commands.handle_persona_web_collect(persona_args)
+        elif persona_cmd == "web-expand":
+            persona_commands.handle_persona_web_expand(persona_args)
+        elif persona_cmd == "web-collections":
+            persona_commands.handle_persona_web_collections(persona_args)
+        elif persona_cmd == "web-review":
+            persona_commands.handle_persona_web_review(persona_args)
+        elif persona_cmd == "web-page-report":
+            persona_commands.handle_persona_web_page_report(persona_args)
+        elif persona_cmd == "web-continue":
+            persona_commands.handle_persona_web_continue(persona_args)
+        elif persona_cmd == "web-approve-page":
+            persona_commands.handle_persona_web_approve_page(persona_args)
+        elif persona_cmd == "web-reject-page":
+            persona_commands.handle_persona_web_reject_page(persona_args)
+        elif persona_cmd == "web-retract-page":
+            persona_commands.handle_persona_web_retract_page(persona_args)
         elif persona_cmd == "current":
             persona_commands.handle_persona_current(persona_args)
         elif persona_cmd == "list":

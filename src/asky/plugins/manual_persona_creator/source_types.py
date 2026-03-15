@@ -18,6 +18,7 @@ class PersonaSourceKind(StrEnum):
     SPEECH = "speech"
     NOTES = "notes"
     POSTS = "posts"
+    WEB_PAGE = "web_page"
 
 
 class PersonaReviewStatus(StrEnum):

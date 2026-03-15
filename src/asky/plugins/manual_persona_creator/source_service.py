@@ -38,6 +38,7 @@ from asky.plugins.manual_persona_creator.storage import (
     get_source_bundle_paths,
     get_source_id,
     get_source_job_paths,
+    ensure_canonical_source_bundle,
     list_source_bundles,
     read_chunks,
     touch_updated_at,
@@ -251,7 +252,7 @@ def list_source_bundles_for_persona(data_dir: Path, persona_name: str) -> List[D
 def approve_source_bundle(data_dir: Path, persona_name: str, source_id: str):
     """Promote approved knowledge into canonical persona artifacts."""
     paths = get_persona_paths(data_dir, persona_name)
-    bundle_paths = get_source_bundle_paths(paths.root_dir, source_id)
+    bundle_paths = ensure_canonical_source_bundle(paths.root_dir, source_id)
     
     if not bundle_paths.metadata_path.exists():
         raise ValueError(f"Source bundle {source_id} not found")
@@ -265,14 +266,44 @@ def approve_source_bundle(data_dir: Path, persona_name: str, source_id: str):
     metadata["updated_at"] = _utc_now_iso()
     write_source_metadata(bundle_paths.metadata_path, metadata)
     
-    # Projection logic
-    catalog = read_catalog(paths.root_dir)
+    project_source_knowledge(
+        persona_root=paths.root_dir,
+        source_id=source_id,
+        source_class=metadata["source_class"],
+        trust_class=metadata["trust_class"],
+        label=metadata["label"],
+        source_kind=metadata.get("kind"),
+        viewpoints_path=bundle_paths.viewpoints_path if bundle_paths.viewpoints_path.exists() else None,
+        facts_path=bundle_paths.facts_path if bundle_paths.facts_path.exists() else None,
+        timeline_path=bundle_paths.timeline_path if bundle_paths.timeline_path.exists() else None,
+        conflicts_path=bundle_paths.conflicts_path if bundle_paths.conflicts_path.exists() else None,
+        metadata=metadata.get("metadata", {}),
+    )
+
+
+def project_source_knowledge(
+    *,
+    persona_root: Path,
+    source_id: str,
+    source_class: PersonaSourceClass,
+    trust_class: PersonaTrustClass,
+    label: str,
+    source_kind: Optional[str] = None,
+    viewpoints_path: Optional[Path] = None,
+    facts_path: Optional[Path] = None,
+    timeline_path: Optional[Path] = None,
+    conflicts_path: Optional[Path] = None,
+    content_path: Optional[Path] = None,
+    metadata: Optional[Dict[str, Any]] = None,
+):
+    """Shared projection logic for any milestone-3 knowledge source (book, source bundle, web page)."""
+    catalog = read_catalog(persona_root)
     if catalog is None:
         from asky.plugins.manual_persona_creator.knowledge_catalog import (
             rebuild_catalog_from_legacy,
         )
-        rebuild_catalog_from_legacy(paths.root_dir)
-        catalog = read_catalog(paths.root_dir)
+        rebuild_catalog_from_legacy(persona_root)
+        catalog = read_catalog(persona_root)
         
     if catalog is None:
         raise ValueError("Catalog not found and could not be rebuilt")
@@ -284,50 +315,50 @@ def approve_source_bundle(data_dir: Path, persona_name: str, source_id: str):
     # 1. Add Source Record
     source_record = PersonaSourceRecord(
         source_id=source_id,
-        source_class=metadata["source_class"],
-        trust_class=metadata["trust_class"],
-        label=metadata["label"],
-        metadata=metadata.get("metadata", {}),
+        source_class=source_class,
+        trust_class=trust_class,
+        label=label,
+        metadata=metadata or {},
     )
     sources.append(source_record)
         
     # 2. Project Viewpoints
-    if bundle_paths.viewpoints_path.exists():
-        viewpoints = json.loads(bundle_paths.viewpoints_path.read_text(encoding="utf-8"))
+    if viewpoints_path and viewpoints_path.exists():
+        viewpoints = json.loads(viewpoints_path.read_text(encoding="utf-8"))
         for vp in viewpoints:
             entry_id = f"viewpoint:{source_id}:{uuid.uuid4().hex[:8]}"
             entries.append(PersonaKnowledgeEntry(
                 entry_id=entry_id,
                 entry_kind=PersonaEntryKind.VIEWPOINT,
                 source_id=source_id,
-                text=vp["claim"],
+                text=vp.get("claim") or vp.get("viewpoint", ""),
                 metadata={
-                    "topic": vp["topic"],
-                    "confidence": vp["confidence"],
-                    "source_kind": metadata["kind"],
+                    "topic": vp.get("topic"),
+                    "confidence": vp.get("confidence"),
+                    "source_kind": source_kind,
                 },
             ))
             
     # 3. Project Facts
-    if bundle_paths.facts_path.exists():
-        facts = json.loads(bundle_paths.facts_path.read_text(encoding="utf-8"))
+    if facts_path and facts_path.exists():
+        facts = json.loads(facts_path.read_text(encoding="utf-8"))
         for fact in facts:
             entry_id = f"fact:{source_id}:{uuid.uuid4().hex[:8]}"
             entries.append(PersonaKnowledgeEntry(
                 entry_id=entry_id,
                 entry_kind=PersonaEntryKind.PERSONA_FACT,
                 source_id=source_id,
-                text=fact["text"],
+                text=fact["text"] if "text" in fact else fact.get("fact", ""),
                 metadata={
                     "topic": fact.get("topic"),
                     "attribution": fact.get("attribution"),
-                    "source_kind": metadata["kind"],
+                    "source_kind": source_kind,
                 },
             ))
 
     # 4. Project Timeline
-    if bundle_paths.timeline_path.exists():
-        events = json.loads(bundle_paths.timeline_path.read_text(encoding="utf-8"))
+    if timeline_path and timeline_path.exists():
+        events = json.loads(timeline_path.read_text(encoding="utf-8"))
         for event in events:
             entry_id = f"event:{source_id}:{uuid.uuid4().hex[:8]}"
             entries.append(PersonaKnowledgeEntry(
@@ -338,12 +369,26 @@ def approve_source_bundle(data_dir: Path, persona_name: str, source_id: str):
                 metadata={
                     "year": event.get("year"),
                     "topic": event.get("topic"),
-                    "source_kind": metadata["kind"],
+                    "source_kind": source_kind,
                 },
             ))
 
-    # 5. Project Conflicts
-    k_paths = get_knowledge_paths(paths.root_dir)
+    # 5. Project Content/RAW_CHUNK
+    if content_path and content_path.exists():
+        text = content_path.read_text(encoding="utf-8")
+        entry_id = f"raw:{source_id}:{uuid.uuid4().hex[:8]}"
+        entries.append(PersonaKnowledgeEntry(
+            entry_id=entry_id,
+            entry_kind=PersonaEntryKind.RAW_CHUNK,
+            source_id=source_id,
+            text=text,
+            metadata={
+                "source_kind": source_kind,
+            },
+        ))
+
+    # 6. Project Conflicts
+    k_paths = get_knowledge_paths(persona_root)
     existing_conflicts = []
     if k_paths["conflicts"].exists():
         existing_conflicts = json.loads(k_paths["conflicts"].read_text(encoding="utf-8"))
@@ -351,8 +396,8 @@ def approve_source_bundle(data_dir: Path, persona_name: str, source_id: str):
     # Idempotence: Remove existing conflicts for this source
     existing_conflicts = [c for c in existing_conflicts if c.get("source_id") != source_id]
 
-    if bundle_paths.conflicts_path.exists():
-        conflicts = json.loads(bundle_paths.conflicts_path.read_text(encoding="utf-8"))
+    if conflicts_path and conflicts_path.exists():
+        conflicts = json.loads(conflicts_path.read_text(encoding="utf-8"))
         for conflict in conflicts:
             conflict["conflict_id"] = f"conflict:{uuid.uuid4().hex[:8]}"
             conflict["source_id"] = source_id
@@ -361,20 +406,77 @@ def approve_source_bundle(data_dir: Path, persona_name: str, source_id: str):
     k_paths["conflicts"].write_text(json.dumps(existing_conflicts, indent=2), encoding="utf-8")
 
     # Write Catalog
-    write_catalog(paths.root_dir, sources, entries)
+    write_catalog(persona_root, sources, entries)
     
     # Rebuild Chunks
-    _rebuild_chunks_from_catalog(paths.root_dir, sources, entries)
+    _rebuild_chunks_from_catalog(persona_root, sources, entries)
     
     # Rebuild runtime artifacts
-    rebuild_runtime_index(persona_dir=paths.root_dir)
-    touch_updated_at(paths.metadata_path)
+    rebuild_runtime_index(persona_dir=persona_root)
+    from asky.plugins.manual_persona_creator.storage import get_persona_paths, touch_updated_at
+    touch_updated_at(persona_root / "metadata.toml")
+
+
+def unproject_source_knowledge(
+    *,
+    persona_root: Path,
+    source_id: str,
+):
+    """Remove a source and all its entries from persona knowledge."""
+    catalog = read_catalog(persona_root)
+    if not catalog:
+        return
+
+    # 1. Remove Source Record
+    sources = [s for s in catalog["sources"] if s.source_id != source_id]
+    
+    # 2. Remove Entries
+    entries = [e for e in catalog["entries"] if e.source_id != source_id]
+    
+    # 3. Remove Conflicts
+    k_paths = get_knowledge_paths(persona_root)
+    if k_paths["conflicts"].exists():
+        conflicts = json.loads(k_paths["conflicts"].read_text(encoding="utf-8"))
+        conflicts = [c for c in conflicts if c.get("source_id") != source_id]
+        k_paths["conflicts"].write_text(json.dumps(conflicts, indent=2), encoding="utf-8")
+
+    # Write Catalog
+    write_catalog(persona_root, sources, entries)
+    
+    # Rebuild Chunks and embeddings
+    _rebuild_chunks_from_catalog(persona_root, sources, entries)
+    
+    # Rebuild runtime index
+    rebuild_runtime_index(persona_dir=persona_root)
+    
+    from asky.plugins.manual_persona_creator.storage import touch_updated_at
+    touch_updated_at(persona_root / "metadata.toml")
+
+
+def retract_source_bundle(data_dir: Path, persona_name: str, source_id: str):
+    """Retract an approved source bundle back to pending status."""
+    paths = get_persona_paths(data_dir, persona_name)
+    bundle_paths = ensure_canonical_source_bundle(paths.root_dir, source_id)
+    
+    if not bundle_paths.metadata_path.exists():
+        raise ValueError(f"Source bundle {source_id} not found")
+        
+    from asky.plugins.manual_persona_creator.storage import (
+        read_source_metadata,
+        write_source_metadata,
+    )
+    metadata = read_source_metadata(bundle_paths.metadata_path)
+    metadata["review_status"] = PersonaReviewStatus.PENDING
+    metadata["updated_at"] = _utc_now_iso()
+    write_source_metadata(bundle_paths.metadata_path, metadata)
+    
+    unproject_source_knowledge(persona_root=paths.root_dir, source_id=source_id)
 
 
 def reject_source_bundle(data_dir: Path, persona_name: str, source_id: str):
     """Mark a source bundle as rejected."""
     paths = get_persona_paths(data_dir, persona_name)
-    bundle_paths = get_source_bundle_paths(paths.root_dir, source_id)
+    bundle_paths = ensure_canonical_source_bundle(paths.root_dir, source_id)
     
     if not bundle_paths.metadata_path.exists():
         raise ValueError(f"Source bundle {source_id} not found")
@@ -387,6 +489,8 @@ def reject_source_bundle(data_dir: Path, persona_name: str, source_id: str):
     metadata["review_status"] = PersonaReviewStatus.REJECTED
     metadata["updated_at"] = _utc_now_iso()
     write_source_metadata(bundle_paths.metadata_path, metadata)
+    
+    unproject_source_knowledge(persona_root=paths.root_dir, source_id=source_id)
 
 
 

@@ -72,6 +72,7 @@ class PlaywrightBrowserPlugin(AskyPlugin):
             _extract_and_normalize_links,
             _extract_main_content,
             _derive_title,
+            _emit_trace_event,
         )
 
         tc = ctx.trace_context or {}
@@ -84,37 +85,65 @@ class PlaywrightBrowserPlugin(AskyPlugin):
             "Playwright intercepting fetch for URL: %s (site=%s)", ctx.url, site
         )
 
+        _emit_trace_event(
+            ctx.trace_callback,
+            {
+                "kind": "playwright_attempt",
+                "source": "playwright_browser",
+                "url": ctx.url,
+            },
+        )
+
         try:
             html, final_url = self._browser_manager.fetch_page(ctx.url)
-        except ImportError as e:
-            if not getattr(self, "_has_warned_missing_dep", False):
-                try:
-                    from rich.console import Console
+            _emit_trace_event(
+                ctx.trace_callback,
+                {
+                    "kind": "playwright_success",
+                    "source": "playwright_browser",
+                    "url": ctx.url,
+                    "final_url": final_url,
+                },
+            )
+        except Exception as e:
+            _emit_trace_event(
+                ctx.trace_callback,
+                {
+                    "kind": "playwright_failed",
+                    "source": "playwright_browser",
+                    "url": ctx.url,
+                    "error": str(e),
+                },
+            )
+            if isinstance(e, ImportError):
+                if not getattr(self, "_has_warned_missing_dep", False):
+                    try:
+                        from rich.console import Console
 
-                    console = Console()
-                    console.print()
-                    console.print(
-                        "[bold yellow]Playwright Plugin:[/bold yellow] [red]Playwright is not installed.[/red]"
-                    )
-                    console.print(
-                        "To use browser-based retrieval, please run: [cyan]uv pip install 'asky-cli[playwright]'[/cyan]"
-                    )
-                    console.print("Falling back to default retrieval pipeline.\n")
-                except ImportError:
-                    import sys
+                        console = Console()
+                        console.print()
+                        console.print(
+                            "[bold yellow]Playwright Plugin:[/bold yellow] [red]Playwright is not installed.[/red]"
+                        )
+                        console.print(
+                            "To use browser-based retrieval, please run: [cyan]uv pip install 'asky-cli[playwright]'[/cyan]"
+                        )
+                        console.print("Falling back to default retrieval pipeline.\n")
+                    except ImportError:
+                        import sys
 
-                    print(
-                        "\n[Playwright Plugin] Playwright is not installed.",
-                        file=sys.stderr,
-                    )
-                    print(
-                        "[Playwright Plugin] To use browser-based retrieval, please run: uv pip install 'asky-cli[playwright]'",
-                        file=sys.stderr,
-                    )
-                    print(
-                        "[Playwright Plugin] Falling back to default retrieval pipeline.\n",
-                        file=sys.stderr,
-                    )
+                        print(
+                            "\n[Playwright Plugin] Playwright is not installed.",
+                            file=sys.stderr,
+                        )
+                        print(
+                            "[Playwright Plugin] To use browser-based retrieval, please run: uv pip install 'asky-cli[playwright]'",
+                            file=sys.stderr,
+                        )
+                        print(
+                            "[Playwright Plugin] Falling back to default retrieval pipeline.\n",
+                            file=sys.stderr,
+                        )
                 self._has_warned_missing_dep = True
             logger.warning(
                 "Playwright fetch failed: %s. Falling back to default pipeline.", e
