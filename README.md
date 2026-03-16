@@ -155,3 +155,5 @@ Run `asky --help` for the full list of commands and flags.
 - [Library Usage Guide](./docs/library_usage.md) - programmatic usage via `asky.api`
 - [Development Guide](./docs/development.md) - project setup, auto-reload, contributing
 - [Research Evaluation](./docs/research_eval.md) - evaluating retrieval quality across models
+
+Maintainer release flow: bump `[project].version` in `pyproject.toml`, push to `main`, and let the `Publish package` GitHub Actions workflow run the tests, upload `dist/*` to a GitHub Release, and publish the same artifacts to PyPI.

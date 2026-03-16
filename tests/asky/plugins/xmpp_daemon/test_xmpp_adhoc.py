@@ -123,7 +123,11 @@ def _make_handler(authorized: bool = True, voice_enabled: bool = False, image_en
 
 
 def _run(coro):
-    return asyncio.run(coro)
+    loop = asyncio.new_event_loop()
+    try:
+        return loop.run_until_complete(coro)
+    finally:
+        loop.close()
 
 
 # ---------------------------------------------------------------------------

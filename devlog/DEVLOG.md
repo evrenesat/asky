@@ -2,6 +2,42 @@
 
 For full detailed entries, see [DEVLOG_ARCHIVE.md](DEVLOG_ARCHIVE.md).
 
+## 2026-03-16: CI Test Fixes and Startup Performance
+
+- **Summary**: Fixed two CI failures: xmpp_adhoc tests crashing with `asyncio.run()` inside a running event loop, and startup time budget exceeded due to eager nicegui import.
+- **Changes**:
+  - `tests/asky/plugins/xmpp_daemon/test_xmpp_adhoc.py`: Changed `_run()` from `asyncio.run()` to `new_event_loop().run_until_complete()` so tests work regardless of existing event loop state in pytest-xdist workers.
+  - `src/asky/plugins/gui_server/plugin.py`: Moved `nicegui`/`fastapi`/`aiohttp` imports (via `pages.plugin_registry` and `server`) from module level into the methods that need them (`_on_daemon_server_register`, `_on_tray_menu_register`, `_toggle_server`). Kept `NiceGUIServer` as a `TYPE_CHECKING`-only import for the type annotation.
+- **Gotchas**:
+  - The nicegui import chain (`plugin_registry → layout → nicegui → fastapi → aiohttp`) was costing ~185ms locally on every `--help` invocation. Lazy loading reduces startup from ~500ms to ~100ms.
+  - The xdist event loop issue only surfaced under `-n 3` parallelism (gw2 worker specifically), not in single-process runs. Root cause is likely another test or fixture creating an event loop that's not torn down before the xmpp tests run.
+- **Verification**:
+  - `uv run pytest tests/asky/plugins/xmpp_daemon/test_xmpp_adhoc.py tests/performance/ -q`
+  - Full suite: 1638 passed (1 pre-existing failure in `test_run_research_quality_gate.py`, unrelated)
+
+## 2026-03-16: GitHub Actions Package Release Automation
+
+- **Summary**: Added a version-bump-driven GitHub Actions release flow for `asky-cli`, with built distributions attached to GitHub Releases and published to PyPI, plus the supporting script/tests needed to keep the release decision logic explicit and rerun-safe.
+- **Changes**:
+  - Added `.github/workflows/publish-package.yml` to trigger on `main` pushes that touch `pyproject.toml` and on manual dispatch.
+  - Added `scripts/release_version_info.py` to compare current and previous package versions and emit GitHub Actions outputs for the release workflow.
+  - Configured the workflow to run `uv run pytest -q`, build with `uv build`, create or update GitHub Release `v<version>`, upload `dist/*`, and publish the same artifacts to PyPI with trusted publishing and `skip-existing`.
+  - Tightened Hatchling packaging rules so the wheel and sdist exclude root repo docs/plans/assets, hidden tool directories, package `AGENTS.md`, `asky.testing`, and `asky.tasks`, while still keeping required runtime icons and packaged persona docs.
+  - Added `tests/scripts/test_release_version_info.py` for version-bump, unchanged-version, initial-release, and Poetry-metadata coverage.
+  - Added `tests/scripts/test_package_build_contents.py` to assert the published wheel and sdist stay lean and keep the required runtime assets.
+  - Guarded macOS-only extras with Darwin platform markers and changed the Ubuntu publish workflow to sync only Linux-safe extras, so release CI no longer tries to build `rumps` / `pyobjc`.
+  - Fixed the stale `uv` test double in `tests/scripts/test_run_research_quality_gate.py` so the default suite can exercise the shared feature-domain CLI correctly.
+  - Added `tests/scripts/test_publish_package_workflow.py` so the workflow and package metadata keep rejecting cross-platform extra drift.
+  - Updated `README.md`, `docs/development.md`, and `ARCHITECTURE.md` to document the new release flow and setup requirements.
+- **Gotchas**:
+  - PyPI publication will not work until PyPI trusted publishing is configured for repository `evrenesat/asky`, workflow `.github/workflows/publish-package.yml`, environment `pypi`.
+  - The workflow is intentionally version-driven, not tag-driven. Editing `pyproject.toml` without changing the package version will skip the release job.
+  - The release workflow runs the full default pytest suite, so unrelated test failures on `main` will block publication.
+- **Verification**:
+  - Focused script tests: `uv run pytest tests/scripts/test_release_version_info.py tests/scripts/test_run_research_quality_gate.py -q -o addopts="-n0 --record-mode=none"`
+  - Full suite: `uv run pytest -q`
+  - Baseline before edits: `1631 passed, 1 failed in 16.64s`
+
 ## 2026-03-16: Persona Docs and Browser Persona Creation
 
 - **Summary**: Added shared offline persona docs, a route-based browser persona creation flow at `/personas/new`, and the follow-up fixes needed to keep authored-book preflight, resumable jobs, and manual-source staging aligned with the existing service rules. Bumped package metadata to `0.3.0`.

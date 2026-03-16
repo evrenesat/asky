@@ -47,8 +47,8 @@ def _run_gate_with_changed_files(tmp_path: Path, changed_files: list[str]) -> su
         "#!/usr/bin/env bash\n"
         "if [[ \"$1\" == \"run\" && \"$2\" == \"python\" && \"$3\" == \"-m\" && \"$4\" == \"asky.testing.feature_domains\" ]]; then\n"
         f"  printf '%s\\n' \"$*\" >> '{log_path}'\n"
-        "  shift 2\n"
-        "  exec python \"$@\"\n"
+        "  shift 1\n"
+        "  exec \"$@\"\n"
         "fi\n"
         f"printf '%s\\n' \"$*\" >> '{log_path}'\n"
         "exit 0\n",

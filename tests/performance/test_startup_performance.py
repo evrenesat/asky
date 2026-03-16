@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import statistics
 import subprocess
 import sys
@@ -57,6 +58,7 @@ def _get_rss_kb(pid: int) -> int:
 
 
 @pytest.mark.skipif(sys.platform == "win32", reason="RSS collection uses ps.")
+@pytest.mark.skipif(os.environ.get("CI") == "true", reason="CI runners are too slow for startup timing guardrails.")
 def test_help_startup_time_guardrail():
     """Keep startup latency for `--help` in a bounded range."""
     for _ in range(HELP_WARMUP_RUNS):

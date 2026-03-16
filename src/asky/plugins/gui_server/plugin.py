@@ -2,12 +2,10 @@
 
 from __future__ import annotations
 
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
 
 from asky.daemon.job_queue import JobQueue
 from asky.plugins.base import AskyPlugin, PluginContext
-from asky.plugins.gui_server.pages.plugin_registry import get_plugin_page_registry
-from asky.plugins.gui_server.server import DEFAULT_GUI_HOST, DEFAULT_GUI_PORT, NiceGUIServer
 from asky.plugins.hook_types import (
     DAEMON_SERVER_REGISTER,
     GUI_EXTENSION_REGISTER,
@@ -17,6 +15,9 @@ from asky.plugins.hook_types import (
     GUIExtensionRegisterContext,
     TrayMenuRegisterContext,
 )
+
+if TYPE_CHECKING:
+    from asky.plugins.gui_server.server import NiceGUIServer
 
 DAEMON_SERVER_PRIORITY = 100
 GUI_SERVER_NAME = "nicegui_server"
@@ -59,6 +60,9 @@ class GUIServerPlugin(AskyPlugin):
         self._context = None
 
     def _on_daemon_server_register(self, payload: DaemonServerRegisterContext) -> None:
+        from asky.plugins.gui_server.pages.plugin_registry import get_plugin_page_registry
+        from asky.plugins.gui_server.server import DEFAULT_GUI_HOST, DEFAULT_GUI_PORT, NiceGUIServer
+
         context = self._context
         if context is None or self._queue is None:
             return
@@ -107,6 +111,7 @@ class GUIServerPlugin(AskyPlugin):
         import webbrowser
 
         from asky.daemon.tray_protocol import TrayPluginEntry
+        from asky.plugins.gui_server.server import DEFAULT_GUI_HOST, DEFAULT_GUI_PORT
 
         context = self._context
         if context is None:
@@ -131,6 +136,9 @@ class GUIServerPlugin(AskyPlugin):
         )
 
     def _toggle_server(self, ctx: TrayMenuRegisterContext) -> None:
+        from asky.plugins.gui_server.pages.plugin_registry import get_plugin_page_registry
+        from asky.plugins.gui_server.server import DEFAULT_GUI_HOST, DEFAULT_GUI_PORT, NiceGUIServer
+
         context = self._context
         if context is None:
             return
