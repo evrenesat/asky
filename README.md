@@ -99,8 +99,11 @@ asky -cc "Write a regex to match email addresses"
 # Pro-tip: Create a clipboard-first alias for command-only terminal assistance:
 # alias al='asky -L -cc -sp "You are a CLI assistant. Answer briefly. When the user asks for a shell command, return only the command text. No markdown, no code fences, no explanation."'
 
-# Run XMPP daemon (menu bar on macOS, foreground otherwise)
+# Run XMPP daemon in the background (menu bar on macOS if supported)
 asky --daemon
+
+# Run daemon attached to the terminal
+asky --daemon --foreground
 
 # Edit daemon settings interactively
 asky --config daemon edit

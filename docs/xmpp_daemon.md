@@ -17,7 +17,7 @@ XMPP (also called Jabber) is an open messaging protocol. It works like email: ad
 
 For file attachments (sending documents to asky for analysis), your client app needs to support XEP-0363 HTTP file upload. Conversations, Cheogram, Monal, and Gajim all support this.
 
-**macOS:** With `rumps` installed, daemon mode adds a menu bar icon for controlling start/stop and voice on/off. On other platforms, the daemon runs in the foreground.
+**Cross-Platform Backgrounding:** By default, `asky --daemon` runs in the background on all platforms. On macOS with `rumps` installed, it adds a menu bar icon for controlling start/stop and voice on/off. On other platforms, or if run with `--no-tray`, it runs as a headless background process. Use `--foreground` to keep the daemon attached to your terminal.
 
 ![Daemon starting](../assets/shots/daemon-start.gif)
 <!-- vhs assets/shots/daemon-start.tape -->
@@ -112,8 +112,10 @@ Other constraints:
 asky --daemon
 ```
 
-- macOS + `rumps`: launches menubar app.
-- non-macOS, or macOS without `rumps`: uses foreground daemon mode.
+- Backgrounds a detached child process on all platforms. Prints a short startup summary (PID, log location, and Web Admin URL if enabled).
+- On macOS with `rumps` installed, uses the menu bar runtime unless `--no-tray` is passed.
+- non-macOS, or macOS without `rumps`, or with `--no-tray`: uses a headless background process.
+- To keep the daemon attached to the terminal, use `asky --daemon --foreground`.
 - `asky --config daemon edit` works on all platforms and edits `xmpp.toml` + startup registration.
 - macOS menubar runtime is single-instance. If already running, `asky --daemon` prints `Error: asky menubar daemon is already running.` and exits with status `1`.
 - Menubar does not edit XMPP credentials/allowlist. Configure those only via `asky --config daemon edit`.

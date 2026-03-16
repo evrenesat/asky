@@ -70,7 +70,7 @@ Command-line interface layer handling argument parsing, command routing, and use
 | `--session <query...>`                               | Create session named from query text and run query                                         |
 | `--tools`                                            | Tool controls (`list`, `off`, `reset`)                                                     |
 | `--shortlist on\|off\|reset`                         | Session shortlist override (`on/off`) or clear (`reset`)                                   |
-| `--daemon`                                           | macOS menubar daemon (`daemon/menubar.py`) or foreground fallback (`daemon/service.py`)    |
+| `--daemon`                                           | Background child spawn (`daemon/launcher.py`) or macOS menubar/foreground fallback    |
 | `--browser <url>`                                    | Browser session flow (Playwright plugin login/session capture path)                        |
 | `persona <subcommand>`                               | Persona management (create, load, unload, import, export, alias, ingest-book, books, viewpoints, ingest-source, sources, approve-source, reject-source, facts, timeline, conflicts, web-collect, web-expand, web-collections, web-review, web-page-report, web-continue, web-approve-page, web-reject-page) |
 | `-cc` / `--copy-clipboard`                          | Copy final answer to system clipboard (post-render CLI-side)                              |

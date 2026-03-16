@@ -31,21 +31,30 @@ def mount_jobs_page(ui: Any, queue: JobQueue) -> None:
                 with ui.element("table").classes("asky-table"):
                     with ui.element("thead"):
                         with ui.element("tr"):
-                            ui.element("th").set_text("ID")
-                            ui.element("th").set_text("Job Type")
-                            ui.element("th").set_text("Status")
-                            ui.element("th").set_text("Created At")
-                            ui.element("th").set_text("Attempts")
+                            with ui.element("th"):
+                                ui.label("ID")
+                            with ui.element("th"):
+                                ui.label("Job Type")
+                            with ui.element("th"):
+                                ui.label("Status")
+                            with ui.element("th"):
+                                ui.label("Created At")
+                            with ui.element("th"):
+                                ui.label("Attempts")
 
                     with ui.element("tbody"):
                         for job in jobs:
                             with ui.element("tr"):
-                                ui.element("td").set_text(job.id[:8] + "...")
-                                ui.element("td").set_text(job.func_name)
+                                with ui.element("td"):
+                                    ui.label(job.id[:8] + "...")
+                                with ui.element("td"):
+                                    ui.label(job.func_name)
                                 with ui.element("td"):
                                     ui.label(job.status.value).classes(f"asky-status-badge {get_status_class(job.status)}")
-                                ui.element("td").set_text(time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(job.created_at)))
-                                ui.element("td").set_text(str(job.attempts))
+                                with ui.element("td"):
+                                    ui.label(time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(job.created_at)))
+                                with ui.element("td"):
+                                    ui.label(str(job.attempts))
                                 
                             if job.error:
                                 with ui.element("tr").classes("bg-red-50"):

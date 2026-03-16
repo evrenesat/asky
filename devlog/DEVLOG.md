@@ -2,6 +2,27 @@
 
 For full detailed entries, see [DEVLOG_ARCHIVE.md](DEVLOG_ARCHIVE.md).
 
+## 2026-03-16: Daemon Backgrounding, Optional Tray, and GUI Startup Hardening
+
+- **Summary**: Refactored daemon startup to use cross-platform backgrounding by default, introduced explicit foreground/no-tray flags, and fixed NiceGUI startup persistence, auth redirects, plugin-page route registration, and data-backed table rendering.
+- **Changes**:
+  - `asky --daemon` now spawns a detached background child on all platforms by default.
+  - Added `--foreground` to run interactively, and `--no-tray` to explicitly bypass macOS menubar behavior.
+  - Extracted backgrounding spawn logic to a shared `daemon/launcher.py` resolver.
+  - Added a unified `DaemonLaunchNotice` printed by the parent process before exit, showing PID, log location, and the Web Admin URL if `gui_server` is enabled.
+  - Fixed NiceGUI startup: persistence (`NICEGUI_STORAGE_PATH`) is now explicitly mapped to the plugin `data_dir` to prevent creating `.nicegui` folders in the current working directory.
+  - Fixed unauthenticated WebGUI requests to return an HTTP redirect to `/login` from middleware instead of calling `ui.navigate.to()` outside a NiceGUI slot context.
+  - Reworked plugin-mounted NiceGUI page handlers so static routes like `/sessions` and `/personas` no longer expose phantom `args`/`kwargs` query parameters, while dynamic routes such as `/personas/{name}` still receive path variables.
+  - Replaced unsupported `Element.set_text()` calls in the sessions, jobs, persona detail, and web-review tables with supported nested label rendering.
+- **Gotchas**:
+  - Foreground mode is now opt-in via `--foreground` unless run interactively by the macOS `rumps` menubar wrapper itself.
+  - Legacy `-vv` implies foreground to keep debugging simple.
+  - The plugin-page route bug only affected routes mounted through the shared extension registry. The table rendering bug only showed up once a page hit a data-backed table branch.
+- **Verification**:
+  - Focused GUI regression: `uv run pytest tests/asky/plugins/gui_server/test_gui_server_plugin.py tests/asky/plugins/gui_server/test_gui_extension_registration.py tests/asky/plugins/gui_server/test_gui_server_auth.py -q -o addopts="-n0 --record-mode=none"` -> `17 passed in 2.45s`
+  - Live route smoke: fresh temporary GUI server on `127.0.0.1:8877` returned `200 text/html` for both `/sessions` and `/personas`
+  - Full suite: `uv run pytest -q` -> `1607 passed in 17.59s` (`real 17.785s`)
+
 ## 2026-03-15: Persona Milestone 6 Review Console and Web Workflow
 
 - **Summary**: Finalized milestone 6 as a daemon-hosted authenticated review console for persona workflows, with plugin-owned GUI pages, a daemon-core SQLite queue, authenticated intake endpoints, and follow-up fixes for resumable authored-book jobs and browser-side validation.

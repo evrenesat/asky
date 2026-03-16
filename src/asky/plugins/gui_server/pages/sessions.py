@@ -28,17 +28,24 @@ def register_session_pages(register_page: Any, data_dir: Any) -> None:
             with ui.element("table").classes("asky-table"):
                 with ui.element("thead"):
                     with ui.element("tr"):
-                        ui.element("th").set_text("ID")
-                        ui.element("th").set_text("Name")
-                        ui.element("th").set_text("Model")
-                        ui.element("th").set_text("Persona Binding")
+                        with ui.element("th"):
+                            ui.label("ID")
+                        with ui.element("th"):
+                            ui.label("Name")
+                        with ui.element("th"):
+                            ui.label("Model")
+                        with ui.element("th"):
+                            ui.label("Persona Binding")
 
                 with ui.element("tbody"):
                     for s in sessions:
                         with ui.element("tr"):
-                            ui.element("td").set_text(str(s["id"]))
-                            ui.element("td").set_text(s["name"] or "Untitled")
-                            ui.element("td").set_text(s["model"])
+                            with ui.element("td"):
+                                ui.label(str(s["id"]))
+                            with ui.element("td"):
+                                ui.label(s["name"] or "Untitled")
+                            with ui.element("td"):
+                                ui.label(s["model"])
                             with ui.element("td"):
                                 options = ["(None)"] + personas
                                 current = s["persona_binding"] or "(None)"

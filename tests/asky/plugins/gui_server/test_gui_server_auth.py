@@ -14,6 +14,7 @@ def test_gui_server_fails_without_password(tmp_path: Path):
     registry = PluginPageRegistry()
     server = NiceGUIServer(
         config_dir=tmp_path,
+        data_dir=tmp_path,
         page_registry=registry,
         password=None,
     )
@@ -29,12 +30,13 @@ def test_gui_server_starts_with_password(tmp_path: Path):
     import threading
     started = threading.Event()
     stop = threading.Event()
-    def _runner(host, port, config_dir, page_registry, password, job_queue):
+    def _runner(host, port, config_dir, data_dir, page_registry, password, job_queue):
         started.set()
         stop.wait(timeout=2)
 
     server = NiceGUIServer(
         config_dir=tmp_path,
+        data_dir=tmp_path,
         page_registry=registry,
         password="test-password",
         runner=_runner,

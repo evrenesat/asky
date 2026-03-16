@@ -1066,6 +1066,8 @@ def parse_args(
     )
     # Internal process-spawning flags: always registered regardless of plugin state.
     parser.add_argument("--xmpp-daemon", action="store_true", help=argparse.SUPPRESS)
+    parser.add_argument("--foreground", action="store_true", help="Keep the daemon attached to the terminal instead of backgrounding.")
+    parser.add_argument("--no-tray", action="store_true", help="Bypass the tray/menubar when starting the background daemon.")
     parser.add_argument("--edit-daemon", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument(
         "--xmpp-menubar-child", action="store_true", help=argparse.SUPPRESS
@@ -2150,83 +2152,57 @@ def main() -> None:
 
     if getattr(args, "xmpp_daemon", False) is True:
         from asky.daemon.errors import DaemonUserError
+        from asky.daemon.launcher import LaunchMode, resolve_launch_mode, spawn_background_child
 
         logger.info("dispatching xmpp daemon mode")
-        is_macos = platform.system().lower() == "darwin"
-        logger.debug("xmpp daemon platform gate is_macos=%s", is_macos)
-        if is_macos:
+        
+        is_foreground = getattr(args, "foreground", False)
+        is_no_tray = getattr(args, "no_tray", False)
+        is_double_verbose = getattr(args, "double_verbose", False)
+        is_verbose = getattr(args, "verbose", False)
+
+        if getattr(args, "xmpp_menubar_child", False):
+            # Inline execution of menubar app for tray background mode child process
             try:
-                from asky.daemon.menubar import (
-                    MENUBAR_ALREADY_RUNNING_MESSAGE,
-                    has_rumps,
-                    is_menubar_instance_running,
-                    run_menubar_app,
-                )
-
-                # In double-verbose mode, skip menubar and stay in foreground
-                if has_rumps() and not getattr(args, "double_verbose", False):
-                    logger.info("rumps detected; using menubar bootstrap flow")
-
-                    # Auto-create the .app bundle so users can launch from Spotlight
-                    try:
-                        _slixmpp_available = True
-                        import slixmpp  # noqa: F401
-                    except ImportError:
-                        _slixmpp_available = False
-
-                    if _slixmpp_available:
-                        try:
-                            from asky.daemon.app_bundle_macos import (
-                                ensure_bundle_exists,
-                            )
-
-                            ensure_bundle_exists()
-                        except Exception:
-                            logger.debug("app bundle creation skipped", exc_info=True)
-
-                    if is_menubar_instance_running():
-                        logger.warning(
-                            "menubar daemon launch rejected: already running"
-                        )
-                        print(f"Error: {MENUBAR_ALREADY_RUNNING_MESSAGE}")
-                        raise SystemExit(1)
-                    if getattr(args, "xmpp_menubar_child", False):
-                        logger.info("running menubar app inline (child invocation)")
-                        run_menubar_app()
-                    else:
-                        log_path = Path(MENUBAR_BOOTSTRAP_LOG_FILE).expanduser()
-                        log_path.parent.mkdir(parents=True, exist_ok=True)
-                        log_file = log_path.open("a")
-                        command = [
-                            sys.executable,
-                            "-m",
-                            "asky",
-                            "--xmpp-daemon",
-                            "--xmpp-menubar-child",
-                        ]
-                        if getattr(args, "double_verbose", False):
-                            command.append("-vv")
-                        elif getattr(args, "verbose", False):
-                            command.append("-v")
-
-                        logger.debug(
-                            "spawning menubar child command=%s log_path=%s",
-                            command,
-                            log_path,
-                        )
-                        subprocess.Popen(
-                            command,
-                            stdout=log_file,
-                            stderr=log_file,
-                            start_new_session=True,
-                        )
-                        logger.info("xmpp menubar child spawned")
-                    return
+                from asky.daemon.menubar import run_menubar_app
+                logger.info("running menubar app inline (child invocation)")
+                run_menubar_app()
+                return
             except Exception:
-                # Fallback to foreground daemon mode when menubar flow cannot start.
-                logger.exception(
-                    "menubar bootstrap failed; falling back to foreground daemon"
-                )
+                logger.exception("menubar inline run failed")
+                raise SystemExit(1)
+
+        mode = resolve_launch_mode(
+            is_foreground=is_foreground,
+            is_no_tray=is_no_tray,
+            is_legacy_double_verbose=is_double_verbose,
+        )
+        
+        if mode != LaunchMode.FOREGROUND:
+            # We are backgrounding. If TRAY, check app bundle and already running.
+            if mode == LaunchMode.BACKGROUND_TRAY:
+                from asky.daemon.menubar import MENUBAR_ALREADY_RUNNING_MESSAGE, is_menubar_instance_running
+                try:
+                    _slixmpp_available = True
+                    import slixmpp  # noqa: F401
+                except ImportError:
+                    _slixmpp_available = False
+
+                if _slixmpp_available:
+                    try:
+                        from asky.daemon.app_bundle_macos import ensure_bundle_exists
+                        ensure_bundle_exists()
+                    except Exception:
+                        logger.debug("app bundle creation skipped", exc_info=True)
+
+                if is_menubar_instance_running():
+                    logger.warning("menubar daemon launch rejected: already running")
+                    print(f"Error: {MENUBAR_ALREADY_RUNNING_MESSAGE}")
+                    raise SystemExit(1)
+            
+            spawn_background_child(mode=mode, verbose=is_verbose, double_verbose=is_double_verbose)
+            return
+
         logger.info("running foreground xmpp daemon fallback")
         from asky.daemon.launch_context import LaunchContext, set_launch_context
         from asky.daemon.service import run_daemon_foreground
@@ -2236,7 +2212,7 @@ def main() -> None:
         try:
             plugin_runtime = get_or_create_plugin_runtime()
             run_daemon_foreground(
-                double_verbose=bool(getattr(args, "double_verbose", False)),
+                double_verbose=is_double_verbose,
                 plugin_runtime=plugin_runtime,
             )
         except DaemonUserError as exc:

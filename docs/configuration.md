@@ -185,7 +185,7 @@ Expansion behavior:
 
 ## 8. XMPP Daemon Settings (`xmpp.toml`)
 
-Daemon mode is configured through `xmpp.toml` and started with `asky --daemon`.
+Daemon mode is configured through `xmpp.toml` and started with `asky --daemon` (which backgrounds by default).
 Use `asky --config daemon edit` for an interactive cross-platform editor for daemon settings.
 
 Key options:

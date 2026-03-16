@@ -228,7 +228,7 @@ def render_top_level_help(plugin_manager=None) -> str:
         CapabilityCategory.SESSION_CONTROL,
     ):
         contribs = contributions_by_category.get(category, [])
-        if contribs:
+        if contribs or category == CapabilityCategory.BACKGROUND_SERVICE:
             cat_title, _ = CATEGORY_LABELS[category]
             lines.extend(["", f"{cat_title}:"])
             for contrib in contribs:
@@ -237,6 +237,11 @@ def render_top_level_help(plugin_manager=None) -> str:
                     lines.append(f"  {flags_str}")
                 if contrib.kwargs.get("help"):
                     lines.append(f"      {contrib.kwargs['help']}")
+            if category == CapabilityCategory.BACKGROUND_SERVICE:
+                lines.append("  --foreground")
+                lines.append("      Keep the daemon attached to the terminal instead of backgrounding.")
+                lines.append("  --no-tray")
+                lines.append("      Bypass the tray/menubar when starting the background daemon.")
 
     lines.extend([
         "",

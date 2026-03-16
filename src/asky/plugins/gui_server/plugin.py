@@ -82,6 +82,7 @@ class GUIServerPlugin(AskyPlugin):
         if self._server is None:
             self._server = NiceGUIServer(
                 config_dir=context.config_dir,
+                data_dir=context.data_dir,
                 page_registry=registry,
                 host=host,
                 port=port,
@@ -146,6 +147,7 @@ class GUIServerPlugin(AskyPlugin):
                 password = context.config.get("password")
                 self._server = NiceGUIServer(
                     config_dir=context.config_dir,
+                    data_dir=context.data_dir,
                     page_registry=get_plugin_page_registry(),
                     host=host,
                     port=port,

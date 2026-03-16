@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import re
 from typing import Any, Callable, List
 
 from asky.plugins.gui_server.pages.layout import page_layout
@@ -38,24 +39,8 @@ class PluginPageRegistry:
         for page in self._pages:
             try:
                 route = page.route
-                title = page.title
-                render_fn = page.render
-
-                @ui.page(route)
-                def _mounted_page(
-                    *args: Any,
-                    title: str = title,
-                    render_fn: Callable[..., None] = render_fn,
-                    **kwargs: Any,
-                ) -> None:
-                    # Allow dynamic titles using route parameters
-                    try:
-                        display_title = title.format(*args, **kwargs)
-                    except (KeyError, IndexError):
-                        display_title = title
-
-                    with page_layout(display_title):
-                        render_fn(ui, *args, **kwargs)
+                mounted_page = _build_page_handler(ui, page.title, page.render, route)
+                ui.page(route)(mounted_page)
 
             except Exception:
                 logger.exception(
@@ -95,6 +80,48 @@ def _normalize_route(route: str) -> str:
     if not normalized.startswith("/"):
         return "/" + normalized
     return normalized
+
+
+def _path_parameter_names(route: str) -> list[str]:
+    return [match.group(1).split(":", 1)[0] for match in re.finditer(r"{([^}]+)}", route)]
+
+
+def _build_page_handler(
+    ui: Any,
+    title: str,
+    render_fn: Callable[..., None],
+    route: str,
+) -> Callable[..., None]:
+    path_parameter_names = _path_parameter_names(route)
+    namespace: dict[str, Any] = {
+        "page_layout": page_layout,
+        "render_fn": render_fn,
+        "title": title,
+        "ui": ui,
+    }
+    parameters = ", ".join(f"{name}: str" for name in path_parameter_names)
+    title_kwargs = ", ".join(f"{name}={name}" for name in path_parameter_names)
+    render_kwargs = ", ".join(f"{name}={name}" for name in path_parameter_names)
+
+    if path_parameter_names:
+        source = f"""
+def _mounted_page({parameters}) -> None:
+    try:
+        display_title = title.format({title_kwargs})
+    except KeyError:
+        display_title = title
+    with page_layout(display_title):
+        render_fn(ui, {render_kwargs})
+"""
+    else:
+        source = """
+def _mounted_page() -> None:
+    with page_layout(title):
+        render_fn(ui)
+"""
+
+    exec(source, namespace)
+    return namespace["_mounted_page"]
 
 
 _GLOBAL_PAGE_REGISTRY = PluginPageRegistry()

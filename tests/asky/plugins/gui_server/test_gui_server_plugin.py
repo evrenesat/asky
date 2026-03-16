@@ -1,9 +1,13 @@
 from __future__ import annotations
 
+import asyncio
+import inspect
 import threading
 import time
 import logging
 from pathlib import Path
+from types import SimpleNamespace
+from uuid import uuid4
 
 from asky.plugins.base import PluginContext
 from asky.plugins.gui_server.pages.general_settings import (
@@ -111,11 +115,48 @@ def test_plugin_page_registry_isolation_for_bad_page():
     assert "/good" in ui.routes
 
 
+def test_plugin_page_registry_mounts_signatures_without_phantom_query_params():
+    from asky.plugins.hook_types import GUIPageSpec
+    from nicegui import app, ui
+
+    registry = PluginPageRegistry()
+    route_suffix = uuid4().hex
+    static_route = f"/sessions-signature-{route_suffix}"
+    dynamic_route = f"/personas-signature-{route_suffix}" + "/{name}"
+    original_routes = list(app.routes)
+
+    registry.register_page(
+        GUIPageSpec(route=static_route, title="Sessions", render=lambda ui_obj: None)
+    )
+    registry.register_page(
+        GUIPageSpec(
+            route=dynamic_route,
+            title="Persona: {name}",
+            render=lambda ui_obj, name: None,
+        )
+    )
+
+    try:
+        registry.mount_pages(ui)
+        mounted_routes = {
+            route.path: route for route in app.routes if getattr(route, "path", None) in {static_route, dynamic_route}
+        }
+    finally:
+        app.routes[:] = original_routes
+
+    static_signature = inspect.signature(mounted_routes[static_route].endpoint)
+    assert list(static_signature.parameters) == ["request"]
+
+    dynamic_signature = inspect.signature(mounted_routes[dynamic_route].endpoint)
+    assert list(dynamic_signature.parameters) == ["request", "name"]
+    assert dynamic_signature.parameters["name"].annotation == "str"
+
+
 def test_nicegui_server_lifecycle_non_blocking():
     started = threading.Event()
     stopped = threading.Event()
 
-    def _runner(_host, _port, _config_dir, _registry, _password, _queue):
+    def _runner(_host, _port, _config_dir, _data_dir, _registry, _password, _queue):
         started.set()
         stopped.wait(timeout=2)
 
@@ -124,6 +165,7 @@ def test_nicegui_server_lifecycle_non_blocking():
 
     server = NiceGUIServer(
         config_dir=Path("."),
+        data_dir=Path("."),
         page_registry=PluginPageRegistry(),
         password="test-password",
         job_queue=None,
@@ -209,7 +251,7 @@ def test_nicegui_server_restart_resets_middleware_and_skips_remount():
         fake_ui.run = lambda **kw: None
 
         server_mod._nicegui_pages_mounted = False
-        server_mod._default_runner("127.0.0.1", 9900, Path("."), registry, "pwd", None)
+        server_mod._default_runner("127.0.0.1", 9900, Path("."), Path("."), registry, "pwd", None)
 
         assert "general" in mount_calls
         assert "registry" in mount_calls
@@ -221,7 +263,7 @@ def test_nicegui_server_restart_resets_middleware_and_skips_remount():
         fake_core.app.middleware_stack = object()  # simulate re-started state
         fake_core.app.middleware = ["gzip"]
 
-        server_mod._default_runner("127.0.0.1", 9900, Path("."), registry, "pwd", None)
+        server_mod._default_runner("127.0.0.1", 9900, Path("."), Path("."), registry, "pwd", None)
 
         assert len(mount_calls) == first_mount_count, "pages must not be remounted on restart"
         assert fake_core.app.middleware_stack is None, "middleware_stack must be reset on restart"
@@ -233,6 +275,277 @@ def test_nicegui_server_restart_resets_middleware_and_skips_remount():
         server_mod.mount_jobs_page = original_mount_jobs
         for mod in ("nicegui", "nicegui.core"):
             sys.modules.pop(mod, None)
+
+
+def test_default_runner_auth_middleware_redirects_with_http_response():
+    """Protected requests redirect with RedirectResponse instead of ui.navigate.to()."""
+    import asky.plugins.gui_server.server as server_mod
+
+    original_flag = server_mod._nicegui_pages_mounted
+    server_mod._nicegui_pages_mounted = False
+    middleware_holder = {}
+
+    class _FakeCoreApp:
+        def __init__(self):
+            self.middleware_stack = None
+            self.middleware = []
+
+    class _FakeNiceGUIApp:
+        def __init__(self):
+            self.storage = SimpleNamespace(user={})
+
+        def middleware(self, *_args, **_kwargs):
+            def decorator(fn):
+                middleware_holder["middleware"] = fn
+                return fn
+
+            return decorator
+
+    class _FakeElement:
+        def classes(self, *_args, **_kwargs):
+            return self
+
+        def on(self, *_args, **_kwargs):
+            return self
+
+        def props(self, *_args, **_kwargs):
+            return self
+
+    class _FakeContainer:
+        def classes(self, *_args, **_kwargs):
+            return self
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return None
+
+    class _FakeUI:
+        navigate = SimpleNamespace(to=lambda *_args, **_kwargs: None)
+
+        def page(self, _route):
+            def decorator(fn):
+                return fn
+
+            return decorator
+
+        def card(self):
+            return _FakeContainer()
+
+        def row(self):
+            return _FakeContainer()
+
+        def label(self, *_args, **_kwargs):
+            return _FakeElement()
+
+        def input(self, *_args, **_kwargs):
+            element = _FakeElement()
+            element.value = ""
+            return element
+
+        def button(self, *_args, **_kwargs):
+            return _FakeElement()
+
+        def notify(self, *_args, **_kwargs):
+            return None
+
+        def run(self, **_kwargs):
+            return None
+
+    import sys
+
+    fake_app = _FakeNiceGUIApp()
+    fake_core = type("core", (), {"app": _FakeCoreApp()})()
+    fake_ui = _FakeUI()
+
+    sys.modules["nicegui"] = type(sys)("nicegui")
+    sys.modules["nicegui"].app = fake_app
+    sys.modules["nicegui"].ui = fake_ui
+    sys.modules["nicegui.core"] = fake_core
+
+    original_mount_general = server_mod.mount_general_settings_page
+    original_mount_registry = server_mod.mount_plugin_registry_page
+    original_mount_jobs = server_mod.mount_jobs_page
+
+    server_mod.mount_general_settings_page = lambda *_args, **_kwargs: None
+    server_mod.mount_plugin_registry_page = lambda *_args, **_kwargs: None
+    server_mod.mount_jobs_page = lambda *_args, **_kwargs: None
+
+    try:
+        registry = PluginPageRegistry()
+        server_mod._default_runner(
+            "127.0.0.1",
+            9900,
+            Path("."),
+            Path("."),
+            registry,
+            "pwd",
+            None,
+        )
+
+        async def _call_next(_request):
+            raise AssertionError("auth middleware should short-circuit unauthenticated requests")
+
+        request = SimpleNamespace(url=SimpleNamespace(path="/plugins"))
+        response = asyncio.run(middleware_holder["middleware"](request, _call_next))
+
+        assert response.status_code == 307
+        assert response.headers["location"] == "/login"
+        assert fake_app.storage.user["referrer"] == "/plugins"
+    finally:
+        server_mod._nicegui_pages_mounted = original_flag
+        server_mod.mount_general_settings_page = original_mount_general
+        server_mod.mount_plugin_registry_page = original_mount_registry
+        server_mod.mount_jobs_page = original_mount_jobs
+        for mod in ("nicegui", "nicegui.core"):
+            sys.modules.pop(mod, None)
+
+
+class _RenderElement:
+    def classes(self, *_args, **_kwargs):
+        return self
+
+    def props(self, *_args, **_kwargs):
+        return self
+
+    def on(self, *_args, **_kwargs):
+        return self
+
+    def hide(self):
+        return self
+
+    def show(self):
+        return self
+
+    def clear(self):
+        return self
+
+
+class _RenderContext(_RenderElement):
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_args):
+        return None
+
+
+class _RenderUI:
+    def label(self, *_args, **_kwargs):
+        return _RenderElement()
+
+    def markdown(self, *_args, **_kwargs):
+        return _RenderElement()
+
+    def button(self, *_args, **_kwargs):
+        return _RenderElement()
+
+    def input(self, *_args, **_kwargs):
+        element = _RenderElement()
+        element.value = ""
+        return element
+
+    def select(self, *_args, **_kwargs):
+        return _RenderElement()
+
+    def notify(self, *_args, **_kwargs):
+        return None
+
+    def link(self, *_args, **_kwargs):
+        return _RenderElement()
+
+    def separator(self):
+        return _RenderElement()
+
+    def row(self):
+        return _RenderContext()
+
+    def column(self):
+        return _RenderContext()
+
+    def card(self):
+        return _RenderContext()
+
+    def tabs(self):
+        return _RenderContext()
+
+    def tab(self, *_args, **_kwargs):
+        return object()
+
+    def tab_panels(self, *_args, **_kwargs):
+        return _RenderContext()
+
+    def tab_panel(self, *_args, **_kwargs):
+        return _RenderContext()
+
+    def dialog(self):
+        return _RenderContext()
+
+    def element(self, *_args, **_kwargs):
+        return _RenderContext()
+
+    @property
+    def navigate(self):
+        return SimpleNamespace(to=lambda *_args, **_kwargs: None, reload=lambda: None)
+
+
+def test_session_page_render_with_rows_uses_supported_ui_api(tmp_path: Path):
+    import asky.plugins.gui_server.pages.sessions as sessions_pages
+
+    captured = {}
+    original_list_sessions = sessions_pages.list_sessions_with_bindings
+    original_list_persona_names = sessions_pages.list_persona_names
+
+    sessions_pages.list_sessions_with_bindings = lambda _data_dir, limit=100: [
+        {"id": 1, "name": "UI Route Smoke", "model": "gpt-4o", "persona_binding": None}
+    ]
+    sessions_pages.list_persona_names = lambda _data_dir: []
+
+    try:
+        sessions_pages.register_session_pages(
+            lambda spec: captured.setdefault(spec.route, spec),
+            tmp_path,
+        )
+        captured["/sessions"].render(_RenderUI())
+    finally:
+        sessions_pages.list_sessions_with_bindings = original_list_sessions
+        sessions_pages.list_persona_names = original_list_persona_names
+
+
+def test_persona_detail_page_render_with_tables_uses_supported_ui_api(tmp_path: Path):
+    import asky.plugins.gui_server.pages.personas as personas_pages
+
+    captured = {}
+    original_get_persona_detail = personas_pages.get_persona_detail
+    personas_pages.get_persona_detail = lambda _data_dir, _name: {
+        "metadata": {
+            "persona": {"description": "desc"},
+            "behavior_prompt": "prompt",
+        },
+        "books": [
+            {
+                "title": "Book",
+                "authors": ["Author"],
+                "publication_year": 2024,
+                "viewpoint_count": 2,
+            }
+        ],
+        "approved_sources": [
+            {"label": "Source", "kind": "manual", "review_status": "approved"}
+        ],
+        "pending_sources": [],
+        "web_collections": [],
+    }
+
+    try:
+        personas_pages.register_persona_pages(
+            lambda spec: captured.setdefault(spec.route, spec),
+            tmp_path,
+            queue=SimpleNamespace(),
+        )
+        captured["/personas/{name}"].render(_RenderUI(), name="test-persona")
+    finally:
+        personas_pages.get_persona_detail = original_get_persona_detail
 
 
 def test_gui_plugin_registers_tray_menu_entries(tmp_path: Path):
@@ -302,20 +615,21 @@ def test_gui_plugin_tray_toggle_no_longer_requires_xmpp(tmp_path: Path):
 def test_nicegui_server_fails_without_password():
     server = NiceGUIServer(
         config_dir=Path("."),
+        data_dir=Path("."),
         page_registry=PluginPageRegistry(),
         password=None, # No password
     )
     import pytest
-    with pytest.raises(RuntimeError, match="password"):
+    with pytest.raises(RuntimeError, match="GUI password is not configured"):
         server.start()
 
-
 def test_nicegui_server_port_conflict_sets_health_error():
-    def _runner(_host, _port, _config_dir, _registry, _password, _queue):
+    def _runner(_host, _port, _config_dir, _data_dir, _registry, _password, _queue):
         raise OSError("Address already in use")
 
     server = NiceGUIServer(
         config_dir=Path("."),
+        data_dir=Path("."),
         page_registry=PluginPageRegistry(),
         password="pwd",
         job_queue=None,

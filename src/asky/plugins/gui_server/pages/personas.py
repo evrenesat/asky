@@ -90,17 +90,25 @@ def register_persona_pages(register_page: Any, data_dir: Any, queue: JobQueue) -
                     with ui.element("table").classes("asky-table"):
                         with ui.element("thead"):
                             with ui.element("tr"):
-                                ui.element("th").set_text("Title")
-                                ui.element("th").set_text("Author")
-                                ui.element("th").set_text("Year")
-                                ui.element("th").set_text("Viewpoints")
+                                with ui.element("th"):
+                                    ui.label("Title")
+                                with ui.element("th"):
+                                    ui.label("Author")
+                                with ui.element("th"):
+                                    ui.label("Year")
+                                with ui.element("th"):
+                                    ui.label("Viewpoints")
                         with ui.element("tbody"):
                             for b in books:
                                 with ui.element("tr"):
-                                    ui.element("td").set_text(b["title"])
-                                    ui.element("td").set_text(", ".join(b["authors"]))
-                                    ui.element("td").set_text(str(b["publication_year"]))
-                                    ui.element("td").set_text(str(b["viewpoint_count"]))
+                                    with ui.element("td"):
+                                        ui.label(b["title"])
+                                    with ui.element("td"):
+                                        ui.label(", ".join(b["authors"]))
+                                    with ui.element("td"):
+                                        ui.label(str(b["publication_year"]))
+                                    with ui.element("td"):
+                                        ui.label(str(b["viewpoint_count"]))
 
             with ui.tab_panel(three):
                 with ui.row().classes("w-full justify-end mb-4"):
@@ -117,14 +125,19 @@ def register_persona_pages(register_page: Any, data_dir: Any, queue: JobQueue) -
                     with ui.element("table").classes("asky-table"):
                         with ui.element("thead"):
                             with ui.element("tr"):
-                                ui.element("th").set_text("Label")
-                                ui.element("th").set_text("Kind")
-                                ui.element("th").set_text("Status")
+                                with ui.element("th"):
+                                    ui.label("Label")
+                                with ui.element("th"):
+                                    ui.label("Kind")
+                                with ui.element("th"):
+                                    ui.label("Status")
                         with ui.element("tbody"):
                             for s in sources:
                                 with ui.element("tr"):
-                                    ui.element("td").set_text(s["label"])
-                                    ui.element("td").set_text(s["kind"])
+                                    with ui.element("td"):
+                                        ui.label(s["label"])
+                                    with ui.element("td"):
+                                        ui.label(s["kind"])
                                     with ui.element("td"):
                                         cls = (
                                             "asky-status-success"

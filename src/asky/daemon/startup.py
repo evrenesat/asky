@@ -35,6 +35,8 @@ def build_command(*, macos_menubar_child: bool) -> list[str]:
     command = [sys.executable, "-m", "asky", "--xmpp-daemon"]
     if _normalized_platform() == PLATFORM_DARWIN and macos_menubar_child:
         command.append("--xmpp-menubar-child")
+    else:
+        command.append("--foreground")
     logger.debug("startup build_command platform=%s command=%s", _normalized_platform(), command)
     return command
 

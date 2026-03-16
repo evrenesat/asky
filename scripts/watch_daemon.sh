@@ -26,5 +26,5 @@ fi
   {
     git ls-files
     ls ~/.config/asky/*.toml 2>/dev/null || true
-  } | entr -r -d -- asky --daemon "$@"
+  } | entr -r -d -- asky --daemon --foreground "$@"
 )

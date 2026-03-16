@@ -16,6 +16,7 @@ from asky.plugins.gui_server.pages.plugin_registry import (
     PluginPageRegistry,
     mount_plugin_registry_page,
 )
+from starlette.responses import RedirectResponse
 
 logger = logging.getLogger(__name__)
 
@@ -23,10 +24,11 @@ DEFAULT_GUI_HOST = "127.0.0.1"
 DEFAULT_GUI_PORT = 8766
 SERVER_STOP_JOIN_TIMEOUT_SECONDS = 2.0
 ASKY_GUI_PASSWORD_ENV = "ASKY_GUI_PASSWORD"
+AUTH_EXEMPT_PATHS = frozenset({"/login", "/logout"})
 
 _nicegui_pages_mounted = False
 
-Runner = Callable[[str, int, Path, PluginPageRegistry, str, JobQueue], None]
+Runner = Callable[[str, int, Path, Path, PluginPageRegistry, str, JobQueue], None]
 Shutdown = Callable[[], None]
 
 
@@ -37,6 +39,7 @@ class NiceGUIServer:
         self,
         *,
         config_dir: Path,
+        data_dir: Path,
         page_registry: PluginPageRegistry,
         host: str = DEFAULT_GUI_HOST,
         port: int = DEFAULT_GUI_PORT,
@@ -46,6 +49,7 @@ class NiceGUIServer:
         shutdown: Optional[Shutdown] = None,
     ) -> None:
         self.config_dir = config_dir
+        self.data_dir = data_dir
         self.page_registry = page_registry
         self.host = str(host or DEFAULT_GUI_HOST)
         self.port = int(port)
@@ -113,6 +117,7 @@ class NiceGUIServer:
                 self.host,
                 self.port,
                 self.config_dir,
+                self.data_dir,
                 self.page_registry,
                 self._password,
                 self._job_queue,
@@ -129,11 +134,14 @@ def _default_runner(
     host: str,
     port: int,
     config_dir: Path,
+    data_dir: Path,
     page_registry: PluginPageRegistry,
     password: str,
     job_queue: JobQueue,
 ) -> None:
     global _nicegui_pages_mounted
+    import os
+    os.environ["NICEGUI_STORAGE_PATH"] = str((data_dir / ".nicegui").absolute())
     from nicegui import app, ui
     import nicegui.core as core
 
@@ -212,9 +220,9 @@ def _default_runner(
         @app.middleware("http")
         async def auth_middleware(request, call_next):
             if not app.storage.user.get("authenticated", False):
-                if request.url.path not in ["/login", "/logout"] and not request.url.path.startswith("/_nicegui"):
+                if request.url.path not in AUTH_EXEMPT_PATHS and not request.url.path.startswith("/_nicegui"):
                     app.storage.user["referrer"] = request.url.path
-                    return ui.navigate.to("/login")
+                    return RedirectResponse("/login")
             return await call_next(request)
         app._auth_middleware_added = True
 

@@ -23,7 +23,7 @@ Run the script from the repository root:
 ./scripts/watch_daemon.sh
 ```
 
-Any extra arguments passed to the script will be forwarded to the `asky --daemon` command. For example, to run the daemon with a specific model:
+Any extra arguments passed to the script will be forwarded to the daemon command. For example, to run the daemon with a specific model:
 
 ```bash
 ./scripts/watch_daemon.sh -m gf
@@ -34,7 +34,7 @@ The script monitors:
 - All tracked files in the repository (using `git ls-files`).
 - All configuration files in `~/.config/asky/*.toml`.
 
-When any of these files are modified, `entr` will gracefully restart `asky --daemon`.
+When any of these files are modified, `entr` will gracefully restart the daemon in foreground mode (`asky --daemon --foreground`).
 
 ## Running Tests
 

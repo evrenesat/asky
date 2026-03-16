@@ -6,6 +6,7 @@ Core daemon lifecycle infrastructure. This package owns the foreground daemon en
 
 | Module                | Purpose                                                                     |
 | --------------------- | --------------------------------------------------------------------------- |
+| `launcher.py`         | Background vs foreground mode resolver + spawn logic                        |
 | `service.py`          | `DaemonService` — transport-agnostic lifecycle: fires hooks, runs transport |
 | `menubar.py`          | macOS singleton lock and thin `run_menubar_app()` launcher                  |
 | `launch_context.py`   | `LaunchContext` enum + get/set/is_interactive helpers                       |

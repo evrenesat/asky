@@ -962,9 +962,10 @@ def test_main_xmpp_daemon_early_exit(mock_run_daemon, mock_parse):
         session_from_message=None,
         completion_script=None,
         xmpp_daemon=True,
+        foreground=True,
+        no_tray=False,
         edit_daemon=False,
-        xmpp_menubar_child=False,
-    )
+        xmpp_menubar_child=False,    )
 
     with patch("asky.daemon.menubar.has_rumps", return_value=False):
         main()
@@ -972,7 +973,7 @@ def test_main_xmpp_daemon_early_exit(mock_run_daemon, mock_parse):
 
 
 @patch("asky.cli.main.parse_args")
-@patch("asky.cli.main.subprocess.Popen")
+@patch("asky.daemon.launcher.subprocess.Popen")
 def test_main_xmpp_daemon_already_running_exits_nonzero(
     mock_popen,
     mock_parse,
@@ -1005,9 +1006,10 @@ def test_main_xmpp_daemon_already_running_exits_nonzero(
         session_from_message=None,
         completion_script=None,
         xmpp_daemon=True,
+        foreground=False,
+        no_tray=False,
         edit_daemon=False,
-        xmpp_menubar_child=False,
-    )
+        xmpp_menubar_child=False,    )
     with (
         patch("asky.cli.main.platform.system", return_value="Darwin"),
         patch("asky.daemon.menubar.has_rumps", return_value=True),
@@ -1050,7 +1052,7 @@ def test_main_xmpp_menubar_child_error_exits_nonzero(mock_parse, capsys):
         reply=False,
         session_from_message=None,
         completion_script=None,
-        xmpp_daemon=False,
+        xmpp_daemon=True,
         edit_daemon=False,
         xmpp_menubar_child=True,
     )
@@ -1093,7 +1095,7 @@ def test_main_xmpp_menubar_child_unexpected_error_exits_nonzero(mock_parse, caps
         reply=False,
         session_from_message=None,
         completion_script=None,
-        xmpp_daemon=False,
+        xmpp_daemon=True,
         edit_daemon=False,
         xmpp_menubar_child=True,
     )
@@ -1135,9 +1137,10 @@ def test_main_xmpp_daemon_surfaces_user_error(mock_run_daemon, mock_parse, capsy
         session_from_message=None,
         completion_script=None,
         xmpp_daemon=True,
+        foreground=True,
+        no_tray=False,
         edit_daemon=False,
-        xmpp_menubar_child=False,
-    )
+        xmpp_menubar_child=False,    )
     mock_run_daemon.side_effect = DaemonUserError(
         "dependency missing", hint="install xmpp"
     )

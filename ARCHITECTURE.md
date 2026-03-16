@@ -4,7 +4,7 @@ This document provides a high-level overview of the **asky** codebase architectu
 
 ## Overview
 
-asky is an AI-powered CLI tool that combines LLM capabilities with web search and tool-calling to provide intelligent, research-backed answers to queries. It also includes an optional XMPP foreground daemon mode for remote command/query handling.
+asky is an AI-powered CLI tool that combines LLM capabilities with web search and tool-calling to provide intelligent, research-backed answers to queries. It also includes an optional XMPP daemon mode (background by default) for remote command/query handling.
 
 Current CLI routing supports a grouped command surface (`history/session/memory/corpus/prompts`) and a single config mutation entrypoint (`--config <domain> <action>`). `main.py` normalizes that surface into internal flags before dispatch.
 Grouped domains use strict routing: recognized domain commands with missing/invalid subcommands no longer fall back to free-text queries. `session` with no subcommand shows session help plus active-shell session status, and `session show` without a selector targets the currently active shell session.
@@ -569,20 +569,13 @@ turn to enforce single-pass answering from preloaded seed content.
 ```
 asky --daemon
     ↓
-macOS + rumps available:
-  cli/main.py
-    -> singleton probe (`menubar.lock`) before spawn
-    -> if running: print clear error, exit code 1
-    -> if not running: spawn `--menubar-child`
-  daemon/menubar.py → MacosTrayApp (status bar app)
-    -> child acquires singleton lock before creating `rumps.App`
-    -> tray startup initializes dedicated XMPP logging (`~/.config/asky/logs/xmpp.log`)
-  menubar controls daemon/service.py lifecycle
-otherwise:
-  daemon/service.py (DaemonService, foreground)
-    -> fires DAEMON_TRANSPORT_REGISTER → xmpp_daemon plugin registers XMPPService
-    -> fires DAEMON_SERVER_REGISTER → gui_server etc. register sidecar servers
-    -> calls XMPPService.run() (blocking)
+cli/main.py
+  -> daemon/launcher.py (resolve launch mode)
+    -> Background (Headless or Tray) -> spawns detached child process -> parent exits
+    -> Foreground (or background child) -> daemon/service.py (DaemonService)
+          -> fires DAEMON_TRANSPORT_REGISTER → xmpp_daemon plugin registers XMPPService
+          -> fires DAEMON_SERVER_REGISTER → gui_server etc. register sidecar servers
+          -> calls XMPPService.run() (blocking)
     ↓
 xmpp_service.py message callback payload
     ↓

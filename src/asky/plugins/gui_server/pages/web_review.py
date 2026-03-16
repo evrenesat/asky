@@ -50,16 +50,22 @@ def register_web_review_pages(register_page: Any, data_dir: Any) -> None:
             with ui.element("table").classes("asky-table"):
                 with ui.element("thead"):
                     with ui.element("tr"):
-                        ui.element("th").set_text("Title")
-                        ui.element("th").set_text("URL")
-                        ui.element("th").set_text("Status")
-                        ui.element("th").set_text("Actions")
+                        with ui.element("th"):
+                            ui.label("Title")
+                        with ui.element("th"):
+                            ui.label("URL")
+                        with ui.element("th"):
+                            ui.label("Status")
+                        with ui.element("th"):
+                            ui.label("Actions")
 
                 with ui.element("tbody"):
                     for p in pages:
                         with ui.element("tr"):
-                            ui.element("td").set_text(p.get("title") or "No title")
-                            ui.element("td").set_text(p["final_url"])
+                            with ui.element("td"):
+                                ui.label(p.get("title") or "No title")
+                            with ui.element("td"):
+                                ui.label(p["final_url"])
                             with ui.element("td"):
                                 status = p["status"]
                                 cls = (

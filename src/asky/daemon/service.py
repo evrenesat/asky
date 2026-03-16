@@ -158,6 +158,17 @@ def run_daemon_foreground(
 ) -> None:
     """Entry point used by CLI flag and menubar child process."""
     setup_xmpp_logging()
+    
+    from asky.daemon.launcher import LaunchMode, build_launch_notice, print_launch_notice, DAEMON_BACKGROUND_LOG_FILE
+    from pathlib import Path
+    
+    notice = build_launch_notice(
+        mode=LaunchMode.FOREGROUND,
+        pid=None,
+        log_path=Path(DAEMON_BACKGROUND_LOG_FILE).expanduser().parent
+    )
+    print_launch_notice(notice)
+    
     service = DaemonService(
         double_verbose=double_verbose,
         plugin_runtime=plugin_runtime,

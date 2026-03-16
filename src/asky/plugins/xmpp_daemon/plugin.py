@@ -34,7 +34,7 @@ class XMPPDaemonPlugin(AskyPlugin):
                 flags=("--daemon",),
                 kwargs=dict(
                     action="store_true",
-                    help="Run the XMPP daemon in the foreground.",
+                    help="Start the daemon process in the background.",
                 ),
             ),
         ]
