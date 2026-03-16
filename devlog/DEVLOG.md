@@ -2,6 +2,24 @@
 
 For full detailed entries, see [DEVLOG_ARCHIVE.md](DEVLOG_ARCHIVE.md).
 
+## 2026-03-16: GUI AGENTS Guidance Hardening For NiceGUI Admin Flows
+
+- **Summary**: Rewrote the GUI-related `AGENTS.md` files so they act as the implementation guide for asky's browser admin console, with repo-specific NiceGUI rules, extension boundaries, and queue/service usage patterns aimed at weaker implementer agents.
+- **Changes**:
+  - Expanded `src/asky/plugins/AGENTS.md` with the plugin-wide GUI extension contract, making `gui_server` the only NiceGUI host and documenting the split between host responsibilities and owning-plugin responsibilities.
+  - Rewrote `src/asky/plugins/gui_server/AGENTS.md` into the main host guide covering daemon lifecycle, auth middleware, `app.storage.user`, signed storage requirements, explicit `.nicegui` persistence under plugin data, extension-page mounting, and when to use direct handlers versus NiceGUI async helpers versus durable `JobQueue` jobs.
+  - Rewrote `src/asky/plugins/gui_server/pages/AGENTS.md` into a page-authoring cookbook covering `GUIPageSpec` registration, `render(ui, **kwargs)` shape, `page_layout`, forms, dialogs, tabs, `ui.refreshable`, `ui.state`, table guidance, navigation rules, and browser-admin anti-patterns.
+  - Extended `src/asky/plugins/manual_persona_creator/AGENTS.md` with GUI-specific rules so authored-book, source-ingest, and web-review flows are documented as service-first and queue-backed where appropriate.
+  - Extended `src/asky/plugins/persona_manager/AGENTS.md` with the current GUI scope, limited to session/persona binding, and documented that browser chat/query surfaces remain out of scope.
+  - Grounded the rewritten guidance in the shipped `GUIServerPlugin` / `GUI_EXTENSION_REGISTER` implementation plus the relevant official NiceGUI docs for pages, storage, refreshable UI, forms, dialogs, tables, tabs, and event handling.
+- **Gotchas**:
+  - `nav_title` is documented as metadata only. The current shared header links remain hardcoded and do not auto-populate from extension page specs.
+  - Browser persona intake remains server-local-path based. The docs explicitly avoid inventing upload support or a second browser chat app.
+  - The docs distinguish between short-lived NiceGUI async helpers and durable daemon jobs so future UI work does not accidentally bypass the queue.
+- **Verification**:
+  - Doc sanity search: `rg -n 'GUI_EXTENSION_REGISTER|GUIPageSpec|JobQueue|app.storage.user|storage_secret|\\.nicegui|ui.refreshable|ui.state|run.io_bound|run.cpu_bound|nav_title' src/asky/plugins/AGENTS.md src/asky/plugins/gui_server/AGENTS.md src/asky/plugins/gui_server/pages/AGENTS.md src/asky/plugins/manual_persona_creator/AGENTS.md src/asky/plugins/persona_manager/AGENTS.md`
+  - Full suite baseline before edits: `uv run pytest -q` -> `1607 passed in 17.93s` (`real 18.16`)
+
 ## 2026-03-16: Daemon Backgrounding, Optional Tray, and GUI Startup Hardening
 
 - **Summary**: Refactored daemon startup to use cross-platform backgrounding by default, introduced explicit foreground/no-tray flags, and fixed NiceGUI startup persistence, auth redirects, plugin-page route registration, and data-backed table rendering.

@@ -1,76 +1,156 @@
 # Manual Persona Creator Plugin (`plugins/manual_persona_creator/`)
 
-Creates and maintains local persona packages using **Schema v3** foundation.
+Creates and maintains local persona packages using Schema v3.
 
 ## Module Overview
 
 | Module | Purpose |
 | --- | --- |
 | `plugin.py` | Plugin entrypoint and hook registration |
-| `storage.py`   | Persona file layout, metadata, atomic writes, versioning (v3) |
-| `knowledge_types.py`| Canonical catalog data structures and locked enums |
-| `knowledge_catalog.py`| Persistence and rebuild logic for v3 knowledge catalog |
-| `source_service.py`| Orchestration for manual source ingestion and deduplication |
-| `book_service.py`| Orchestration layer for authored-book ingestion |
-| `runtime_index.py`| Rebuildable runtime index with embeddings and structured metadata |
-| `exporter.py`  | ZIP export with full v3 catalog and artifacts |
-| `source_job.py` | Resumable job orchestration for milestone-3 structured extraction |
-| `source_prompts.py`| Kind-aware extraction prompts and validation logic |
-| `web_service.py`| Orchestration for web collection and review |
-| `web_job.py`   | Background collection job logic (seed-domain and broad expansion) |
+| `storage.py` | Persona file layout, metadata, atomic writes, versioning |
+| `knowledge_types.py` | Canonical catalog data structures and enums |
+| `knowledge_catalog.py` | Persistence and rebuild logic for the v3 knowledge catalog |
+| `source_service.py` | Orchestration for manual source ingestion and deduplication |
+| `book_service.py` | Orchestration layer for authored-book ingestion |
+| `gui_service.py` | Browser-facing adapters for persona/admin pages |
+| `runtime_index.py` | Rebuildable runtime index with embeddings and structured metadata |
+| `exporter.py` | ZIP export with full v3 catalog and artifacts |
+| `source_job.py` | Resumable structured-extraction job orchestration |
+| `source_prompts.py` | Kind-aware extraction prompts and validation logic |
+| `web_service.py` | Orchestration for web collection and review |
+| `web_job.py` | Background collection job logic |
 | `web_types.py` | Typed models for web collection and review state |
-| `web_prompts.py`| Web page classification and preview extraction prompts |
+| `web_prompts.py` | Web page classification and preview extraction prompts |
 
 ## Schema v3 Foundation
 
-This version introduces a canonical knowledge catalog:
-- `persona_knowledge/sources.json`: Track original sources with content fingerprints.
-- `persona_knowledge/entries.json`: Maps knowledge entries (chunks, viewpoints, facts, timeline) to sources.
-- `persona_knowledge/conflict_groups.json`: Preserved contradictions between sources.
+Canonical knowledge state lives under `persona_knowledge/`:
 
-## Milestone 3: Source-Aware Ingestion and Review
+- `sources.json`
+- `entries.json`
+- `conflict_groups.json`
 
-Introduces a review boundary for third-party or mixed-attribution sources:
-- **Durable Bundles**: Ingested sources are stored under `ingested_sources/<source_id>/` before approval.
-- **Auto-Approval**: Authored primary short-form (articles, posts) projects immediately.
-- **Review Boundary**: Biographies and interviews remain `pending` until explicit approval.
-- **Structured Extraction**: Kind-aware strategies for viewpoints, facts, and timeline events.
+Persona root remains:
 
-## Milestone 4: Guided Web Scraping and Review
-
-Extends persona knowledge acquisition to the public web with a review-first contract:
-- **Bounded Collection**: `web-collect` stays within seed hosts (including apex/www aliases) to ensure relevance.
-- **Broad Expansion**: `web-expand` uses search queries or cross-domain link discovery with a `1.3x` overcollection cap.
-- **Review Staging**: Scraped pages are staged under `web_collections/<collection_id>/pages/<page_id>/` before approval.
-- **Preview Extraction**: LLM-driven classification and metadata extraction (viewpoints, facts, timeline) before review.
-- **Bundle Materialization**: Approved pages materialize a real Milestone-3 source bundle (`ingested_sources/<source_id>/`) with local content.
-- **Stable Identity**: Web source IDs (`source:web:<hash>`) are derived from the normalized final URL only.
-- **Retraction**: Approved sources and pages can be retracted back to pending/review_ready, unprojecting their knowledge and rebuilding the runtime index.
-- **Retrieval Provenance**: Detailed page reports explain how content was fetched (Playwright vs Default) and any extraction warnings.
-
-### Ingestion and Deduplication
-- `add-sources` uses deterministic content fingerprints.
-- Duplicate content is skipped automatically at the source level.
-- Re-ingesting existing sources returns a skipped count instead of appending duplicates.
-
-## Authored Books Contract
-
-Managed via `book_service.py`:
-- **Identity Guard**: Canonical `book_key` is the source of truth.
-- **Fidelity**: Viewpoints and evidence are projected into the canonical v3 catalog.
-- **Reports**: Detailed ingestion metrics and warnings.
-
-## Storage Contract
-
-Persona root: `<plugin_data>/personas/<persona_name>/`
+- `<plugin_data>/personas/<persona_name>/`
 
 Required files:
-- `metadata.toml` (schema_version = 3)
+
+- `metadata.toml`
 - `behavior_prompt.md`
-- `chunks.json` (compatibility)
-- `persona_knowledge/` (v3 catalog)
+- `chunks.json` for compatibility
+- `persona_knowledge/`
+
+## Ingestion And Review Contracts
+
+### Source-aware ingestion
+
+- durable source bundles live under `ingested_sources/<source_id>/`
+- biographies and interviews stay `pending` until approval
+- authored primary short-form content can auto-project immediately
+- duplicate content is skipped deterministically
+
+### Guided web review
+
+- scraped pages stage under `web_collections/<collection_id>/pages/<page_id>/`
+- previews are extracted before approval
+- approved pages materialize real source bundles
+- retraction moves knowledge back behind the review boundary
+
+### Authored books
+
+- `book_service.py` owns the business rules
+- canonical identity is the `book_key`
+- ingestion reports carry warnings and stage timings
+
+## GUI/Admin Boundaries
+
+Browser flows for this plugin are service-first.
+
+Use these layers:
+
+- `gui_service.py` for browser-facing DTOs and page helpers
+- `book_service.py` for authored-book business rules
+- `source_service.py` for manual-source business rules and jobs
+- `web_service.py` for intake, review, approval, rejection, and collection inspection
+
+Do not:
+
+- call CLI command handlers from browser pages
+- shell out to `asky persona ...` commands to reuse logic
+- bypass the review boundary in page code
+- perform heavy ingestion or extraction directly inside page callbacks
+
+Page code should:
+
+1. collect browser input
+2. validate and normalize it
+3. call a service helper or create a job
+4. enqueue durable work when needed
+5. notify and navigate
+
+## Current GUI Flows
+
+### Authored book flow
+
+Current browser flow is queue-backed:
+
+1. collect a server-local source path
+2. run authored-book preflight
+3. convert preflight results into editable browser DTO state
+4. let the user confirm or edit metadata and extraction targets
+5. validate
+6. submit through the service layer
+7. enqueue `authored_book_ingest`
+
+Rules to preserve:
+
+- browser intake uses server-local paths today
+- do not invent upload support in page code
+- resumable jobs must stay explicit and reuse the existing service contract
+- duplicate and identity-guard decisions belong in services, not in page heuristics
+
+### Source ingest flow
+
+Current browser flow:
+
+1. collect server-local file or directory path
+2. collect source kind
+3. create a source ingestion job through `source_service.py`
+4. enqueue `source_ingest`
+
+Rules to preserve:
+
+- browser code should not write bundles directly
+- kind semantics stay owned by `PersonaSourceKind` and the service layer
+
+### Web intake and review flow
+
+Current browser flow:
+
+1. intake a URL through `web_service.py`
+2. navigate to collection review
+3. inspect staged pages and previews
+4. approve or reject explicitly
+
+Rules to preserve:
+
+- staged content must not affect runtime knowledge until approval
+- page approval and rejection should call `web_service.py`
+- browser pages must not project pending content implicitly
+
+## Queue Contracts
+
+Current registered GUI job names:
+
+- `authored_book_ingest`
+- `source_ingest`
+
+Keep these explicit and documented when extending the plugin. Register new job names only when a workflow is meaningfully durable and should appear on `/jobs`.
 
 ## Behavior Notes
-- Writes are atomic (`.tmp` + replace).
-- Export payload excludes absolute path leakage and derived `runtime_index.json`.
-- Automatic catalog and runtime-index rebuild from v1/v2 artifacts on read/import.
+
+- writes are atomic via temp-file plus replace
+- export payload excludes absolute-path leakage
+- derived `runtime_index.json` is rebuildable and not the durable source of truth
+- automatic catalog and runtime-index rebuild from older schema artifacts remains supported
