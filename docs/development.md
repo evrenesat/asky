@@ -46,3 +46,28 @@ pytest
 ```
 
 Individual tests should be fast (under 1 second). If you add new features, please include corresponding unit tests in the `tests/` directory.
+
+## Releasing
+
+Package releases are handled by GitHub Actions instead of the old local `build` + `twine upload` shell flow.
+
+Release flow:
+
+1. Bump `[project].version` in `pyproject.toml`.
+2. Push that change to `main`.
+3. The `Publish package` workflow compares the current `pyproject.toml` version with `HEAD^`.
+4. If the version changed, the workflow runs `uv run pytest -q`, builds `dist/*` with `uv build`, creates or updates GitHub Release `v<version>`, uploads the wheel and sdist assets, and publishes the same files to PyPI.
+
+The workflow is rerun-safe:
+
+- GitHub Release assets are uploaded with `gh release upload --clobber`.
+- PyPI publishing uses `skip-existing: true`.
+- Build contents are explicitly trimmed in `pyproject.toml` so release artifacts do not carry root docs, plans, devlogs, hidden tool directories, tests, or package-internal `AGENTS.md` files.
+
+Before the first automated release, configure PyPI Trusted Publishing for this repository:
+
+1. In PyPI, add a trusted publisher for GitHub repository `evrenesat/asky`.
+2. Point it at workflow `.github/workflows/publish-package.yml`.
+3. Use environment name `pypi`.
+
+Once that is in place, you do not need a `PYPI_API_TOKEN` secret for the workflow.

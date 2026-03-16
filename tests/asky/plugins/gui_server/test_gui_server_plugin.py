@@ -22,6 +22,30 @@ from asky.plugins.hook_types import DaemonServerRegisterContext
 from asky.plugins.hooks import HookRegistry
 
 
+def _run_async(coro):
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        return asyncio.run(coro)
+
+    result: dict[str, object] = {}
+    error: list[BaseException] = []
+
+    def _target() -> None:
+        try:
+            result["value"] = asyncio.run(coro)
+        except BaseException as exc:
+            error.append(exc)
+
+    thread = threading.Thread(target=_target)
+    thread.start()
+    thread.join()
+
+    if error:
+        raise error[0]
+    return result["value"]
+
+
 class _FakeUI:
     def __init__(self):
         self.routes = []
@@ -388,7 +412,7 @@ def test_default_runner_auth_middleware_redirects_with_http_response():
             raise AssertionError("auth middleware should short-circuit unauthenticated requests")
 
         request = SimpleNamespace(url=SimpleNamespace(path="/plugins"))
-        response = asyncio.run(middleware_holder["middleware"](request, _call_next))
+        response = _run_async(middleware_holder["middleware"](request, _call_next))
 
         assert response.status_code == 307
         assert response.headers["location"] == "/login"

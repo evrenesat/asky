@@ -35,22 +35,12 @@ It runs as `asky` or `ask`. You give it a query, it gives you an answer.
 
 ## Installation
 
-Recommended:
+### As a CLI tool
+
+This is the typical way to install asky. It gets its own isolated environment managed by `uv`:
 
 ```bash
 uv tool install asky-cli
-```
-
-With pip:
-
-```bash
-pip install asky-cli
-```
-
-From source:
-
-```bash
-uv pip install -e .
 ```
 
 Optional extras:
@@ -60,19 +50,33 @@ Optional extras:
 uv tool install "asky-cli[iterm2]"
 
 # XMPP daemon (text only)
-uv pip install "asky-cli[xmpp]"
+uv tool install "asky-cli[xmpp]"
 
 # Voice transcription (macOS, mlx-whisper)
-uv pip install "asky-cli[mlx-whisper]"
+uv tool install "asky-cli[mlx-whisper]"
 
 # macOS full bundle: iterm2 + mlx-whisper + rumps + slixmpp
-uv pip install "asky-cli[mac]"
+uv tool install "asky-cli[mac]"
 
 # System tray icons (Linux/Windows)
-uv pip install "asky-cli[tray]"
+uv tool install "asky-cli[tray]"
 
 # Playwright browser plugin
-uv pip install "asky-cli[playwright]"
+uv tool install "asky-cli[playwright]"
+```
+
+From source:
+
+```bash
+uv tool install -e .
+```
+
+### As a library
+
+If you want to use asky programmatically in your own Python project (see [Library Usage Guide](./docs/library_usage.md)):
+
+```bash
+uv pip install asky-cli
 ```
 
 ## Basic Usage
@@ -155,3 +159,5 @@ Run `asky --help` for the full list of commands and flags.
 - [Library Usage Guide](./docs/library_usage.md) - programmatic usage via `asky.api`
 - [Development Guide](./docs/development.md) - project setup, auto-reload, contributing
 - [Research Evaluation](./docs/research_eval.md) - evaluating retrieval quality across models
+
+Maintainer release flow: bump `[project].version` in `pyproject.toml`, push to `main`, and let the `Publish package` GitHub Actions workflow run the tests, upload `dist/*` to a GitHub Release, and publish the same artifacts to PyPI.

@@ -916,6 +916,16 @@ A simplified "retrieval-only" system prompt guidance is injected in these cases 
 - **Storage**: SQLite (local file at `~/.config/asky/history.db`)
 - **Configuration**: TOML format
 
+## Release Automation
+
+- `.github/workflows/publish-package.yml` is the canonical package release path.
+- `scripts/release_version_info.py` reads the current and previous package metadata files, extracts the package version, and emits GitHub Actions outputs for `should_release`, `version`, `previous_version`, and `tag`.
+- On pushes to `main` that touch `pyproject.toml`, the workflow only proceeds when the package version actually changed.
+- The Ubuntu release runner syncs only Linux-safe extras (`tray`, `xmpp`, `playwright`) instead of `--all-extras`, and macOS-only extras are guarded with `sys_platform == 'darwin'` markers so Linux CI does not try to build `rumps` / `pyobjc`.
+- Hatchling packaging is explicitly constrained so published artifacts ship only runtime package files plus build metadata. Internal repo docs, plans, root assets, tests, hidden tool directories, `AGENTS.md`, `asky.testing`, and `asky.tasks` are excluded from the release artifacts.
+- The release workflow runs the full pytest suite, builds the wheel and sdist with `uv build`, creates or updates GitHub Release `v<version>` with the built assets, and then publishes the same `dist/*` artifacts to PyPI via Trusted Publishing.
+- Workflow reruns are idempotent by design: GitHub release assets are uploaded with `--clobber`, and PyPI publishing uses `skip-existing`.
+
 ### Decision 15: Pre-retrieval Query Expansion
 
 - **Context**: Complex research queries often cover multiple topics, making single-pass search retrieval suboptimal.

@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "asky-cli"
-version = "0.3.0"
+version = "0.4.15"
 description = "AI-powered web search CLI with LLM tool-calling capabilities"
 readme = "README.md"
 license = "MIT"
@@ -58,8 +58,7 @@ asky = "asky.cli:main"
 [project.optional-dependencies]
 tray = ["pystray>=0.19.5"]
 test = [
-
-    "iterm2>=2.13",
+    "iterm2>=2.13; sys_platform == 'darwin'",
 ]
 xmpp = [
     "slixmpp>=1.11.0",
@@ -68,17 +67,31 @@ playwright = [
     "playwright>=1.40.0",
 ]
 mlx-whisper = [
-    "mlx-whisper>=0.4.2",
+    "mlx-whisper>=0.4.2; sys_platform == 'darwin'",
 ]
 mac = [
-    "iterm2>=2.13",
-    "mlx-whisper>=0.4.2",
-    "rumps>=0.4.0",
+    "iterm2>=2.13; sys_platform == 'darwin'",
+    "mlx-whisper>=0.4.2; sys_platform == 'darwin'",
+    "rumps>=0.4.0; sys_platform == 'darwin'",
     "slixmpp>=1.11.0",
+]
+
+[tool.hatch.build]
+exclude = [
+    "**/AGENTS.md",
+    "src/asky/tasks/**",
+    "src/asky/testing/**",
 ]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/asky"]
+
+[tool.hatch.build.targets.sdist]
+only-include = [
+    "pyproject.toml",
+    "README.md",
+    "src/asky",
+]
 
 [dependency-groups]
 dev = [
