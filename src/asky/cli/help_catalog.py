@@ -238,6 +238,8 @@ def render_top_level_help(plugin_manager=None) -> str:
                 if contrib.kwargs.get("help"):
                     lines.append(f"      {contrib.kwargs['help']}")
             if category == CapabilityCategory.BACKGROUND_SERVICE:
+                lines.append("  --daemon")
+                lines.append("      Start the daemon process in the background.")
                 lines.append("  --foreground")
                 lines.append("      Keep the daemon attached to the terminal instead of backgrounding.")
                 lines.append("  --no-tray")

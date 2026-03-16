@@ -46,6 +46,7 @@ PUBLIC_TOP_LEVEL_FLAGS = {
     "-tl", "--terminal-lines",
     "-sp", "--system-prompt",
     "--completion-script",
+    "--daemon",
     "--foreground",
     "--no-tray",
 }
@@ -115,7 +116,6 @@ PERSONA_SUBCOMMANDS = {
 }
 
 PLUGIN_FLAGS = {
-    "--daemon",
     "--sendmail",
     "--subject",
     "--push-data",
@@ -133,9 +133,8 @@ HIDDEN_INTERNAL_FLAGS = {
     "-me": "--config model edit",
     "--from-message": "session from-message",
     "--tools-reset": "--tools reset",
-    "--xmpp-daemon": "--daemon",
     "--edit-daemon": "--config daemon edit",
-    "--xmpp-menubar-child": "--daemon",
+    "--tray-child": "--daemon",
 }
 
 COVERAGE_OWNERSHIP = {
@@ -266,9 +265,9 @@ COVERAGE_OWNERSHIP = {
     "persona @mention": "test_cli_persona_recorded.py",
     "persona alias mention": "test_cli_persona_recorded.py",
 
-    "--daemon": "test_cli_plugin_surface_recorded.py",
-    "--foreground": "test_cli_plugin_surface_recorded.py",
-    "--no-tray": "test_cli_plugin_surface_recorded.py",
+    "--daemon": "test_cli_daemon_surface_recorded.py",
+    "--foreground": "test_cli_daemon_surface_recorded.py",
+    "--no-tray": "test_cli_daemon_surface_recorded.py",
     "--sendmail": "test_cli_plugin_surface_recorded.py",
     "--subject": "test_cli_plugin_surface_recorded.py",
     "--push-data": "test_cli_plugin_surface_recorded.py",

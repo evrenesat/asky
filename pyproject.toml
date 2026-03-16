@@ -56,7 +56,9 @@ ask = "asky.cli:main"
 asky = "asky.cli:main"
 
 [project.optional-dependencies]
-iterm2 = [
+tray = ["pystray>=0.19.5"]
+test = [
+
     "iterm2>=2.13",
 ]
 xmpp = [

@@ -6,7 +6,7 @@ import logging
 import threading
 from typing import Callable, List, Optional
 
-from asky.daemon import startup
+from asky.daemon import startup_tray
 from asky.daemon.errors import DaemonUserError
 from asky.daemon.service import DaemonService
 from asky.daemon.tray_protocol import TrayPluginEntry, TrayStatus
@@ -70,15 +70,15 @@ class TrayController:
         return self._service_thread is not None and self._service_thread.is_alive()
 
     def get_state(self) -> TrayStatus:
-        startup_state = startup.get_status()
+        startup_state = startup_tray.get_status()
         startup_enabled = startup_state.supported and startup_state.enabled
 
         if not startup_state.supported:
-            action_startup_label = "Run at Login Unsupported"
+            action_startup_label = "Launch tray at Login Unsupported"
         elif startup_enabled:
-            action_startup_label = "Disable Run at Login"
+            action_startup_label = "Disable Launch tray at Login"
         else:
-            action_startup_label = "Enable Run at Login"
+            action_startup_label = "Enable Launch tray at Login"
 
         return TrayStatus(
             startup_enabled=startup_enabled,
@@ -87,7 +87,7 @@ class TrayController:
             warnings=list(self._startup_warnings),
             plugin_status_entries=list(self._plugin_status_entries),
             plugin_action_entries=list(self._plugin_action_entries),
-            status_startup_label=f"Run at login: {'on' if startup_enabled else 'off'}",
+            status_startup_label=f"Launch tray at login: {'on' if startup_enabled else 'off'}",
             action_startup_label=action_startup_label,
         )
 
@@ -183,38 +183,38 @@ class TrayController:
 
     def toggle_startup(self) -> None:
         logger.info("tray controller run-at-login toggle")
-        current = startup.get_status()
+        current = startup_tray.get_status()
         if not current.supported:
             logger.warning(
-                "run-at-login toggle unsupported platform=%s", current.platform_name
+                "launch-tray-at-login toggle unsupported platform=%s", current.platform_name
             )
-            self._on_error("Run at login is unsupported on this platform.")
+            self._on_error("Launch tray at login is unsupported on this platform.")
             self._on_state_change()
             return
         if current.enabled:
-            state = startup.disable_startup()
+            state = startup_tray.disable_startup()
             logger.debug(
-                "run-at-login disable result enabled=%s active=%s details=%s",
+                "launch-tray-at-login disable result enabled=%s active=%s details=%s",
                 state.enabled,
                 state.active,
                 state.details,
             )
             if state.enabled:
-                msg = f"Could not disable startup: {state.details}"
+                msg = f"Could not disable tray startup: {state.details}"
                 self._last_error = msg
                 self._on_error(msg)
                 self._on_state_change()
                 return
         else:
-            state = startup.enable_startup()
+            state = startup_tray.enable_startup()
             logger.debug(
-                "run-at-login enable result enabled=%s active=%s details=%s",
+                "launch-tray-at-login enable result enabled=%s active=%s details=%s",
                 state.enabled,
                 state.active,
                 state.details,
             )
             if not state.enabled:
-                msg = f"Could not enable startup: {state.details}"
+                msg = f"Could not enable tray startup: {state.details}"
                 self._last_error = msg
                 self._on_error(msg)
                 self._on_state_change()

@@ -713,10 +713,10 @@ def test_parse_args_completion_script():
         assert args.completion_script == "zsh"
 
 
-def test_parse_args_xmpp_daemon_flag():
-    with patch("sys.argv", ["asky", "--xmpp-daemon"]):
+def test_parse_args_daemon_flag():
+    with patch("sys.argv", ["asky", "--daemon"]):
         args = parse_args()
-        assert args.xmpp_daemon is True
+        assert args.daemon is True
 
 
 def test_parse_args_edit_daemon_flag():
@@ -887,9 +887,9 @@ def test_main_no_query_tools_off_persists_session_defaults(
         reply=False,
         session_from_message=None,
         completion_script=None,
-        xmpp_daemon=False,
+        daemon=False,
         edit_daemon=False,
-        xmpp_menubar_child=False,
+        tray_child=False,
         playwright_login=None,
         query_corpus=None,
         summarize_section=None,
@@ -926,15 +926,15 @@ def test_main_no_query_tools_off_persists_session_defaults(
     )
 
 
-def test_parse_args_xmpp_menubar_child_hidden_flag():
-    with patch("sys.argv", ["asky", "--xmpp-menubar-child"]):
+def test_parse_args_tray_child_hidden_flag():
+    with patch("sys.argv", ["asky", "--tray-child"]):
         args = parse_args()
-        assert args.xmpp_menubar_child is True
+        assert args.tray_child is True
 
 
 @patch("asky.cli.main.parse_args")
 @patch("asky.daemon.service.run_daemon_foreground")
-def test_main_xmpp_daemon_early_exit(mock_run_daemon, mock_parse):
+def test_main_daemon_early_exit(mock_run_daemon, mock_parse):
     mock_parse.return_value = argparse.Namespace(
         model="gf",
         history=None,
@@ -961,11 +961,11 @@ def test_main_xmpp_daemon_early_exit(mock_run_daemon, mock_parse):
         reply=False,
         session_from_message=None,
         completion_script=None,
-        xmpp_daemon=True,
+        daemon=True,
         foreground=True,
         no_tray=False,
         edit_daemon=False,
-        xmpp_menubar_child=False,    )
+        tray_child=False,    )
 
     with patch("asky.daemon.menubar.has_rumps", return_value=False):
         main()
@@ -974,7 +974,7 @@ def test_main_xmpp_daemon_early_exit(mock_run_daemon, mock_parse):
 
 @patch("asky.cli.main.parse_args")
 @patch("asky.daemon.launcher.subprocess.Popen")
-def test_main_xmpp_daemon_already_running_exits_nonzero(
+def test_main_daemon_already_running_exits_nonzero(
     mock_popen,
     mock_parse,
     capsys,
@@ -1005,17 +1005,20 @@ def test_main_xmpp_daemon_already_running_exits_nonzero(
         reply=False,
         session_from_message=None,
         completion_script=None,
-        xmpp_daemon=True,
+        daemon=True,
         foreground=False,
         no_tray=False,
         edit_daemon=False,
-        xmpp_menubar_child=False,    )
+        tray_child=False,    )
     with (
         patch("asky.cli.main.platform.system", return_value="Darwin"),
-        patch("asky.daemon.menubar.has_rumps", return_value=True),
-        patch("asky.daemon.menubar.is_menubar_instance_running", return_value=True),
+        patch("asky.daemon.tray.is_tray_supported", return_value=True),
+        patch("asky.daemon.runtime_owner.RuntimeOwnerLock.get_owner") as mock_get_owner,
+        patch("asky.daemon.runtime_owner.RuntimeOwnerLock._is_process_alive", return_value=True),
         patch("asky.daemon.app_bundle_macos.ensure_bundle_exists"),
     ):
+        from asky.daemon.runtime_owner import RuntimeOwnerMetadata
+        mock_get_owner.return_value = RuntimeOwnerMetadata(pid=9999, mode="tray", start_time=1.0)
         with pytest.raises(SystemExit) as excinfo:
             main()
     assert excinfo.value.code == 1
@@ -1025,7 +1028,7 @@ def test_main_xmpp_daemon_already_running_exits_nonzero(
 
 
 @patch("asky.cli.main.parse_args")
-def test_main_xmpp_menubar_child_error_exits_nonzero(mock_parse, capsys):
+def test_main_tray_child_error_exits_nonzero(mock_parse, capsys):
     mock_parse.return_value = argparse.Namespace(
         model="gf",
         history=None,
@@ -1052,12 +1055,12 @@ def test_main_xmpp_menubar_child_error_exits_nonzero(mock_parse, capsys):
         reply=False,
         session_from_message=None,
         completion_script=None,
-        xmpp_daemon=True,
+        daemon=True,
         edit_daemon=False,
-        xmpp_menubar_child=True,
+        tray_child=True,
     )
     with patch(
-        "asky.daemon.menubar.run_menubar_app",
+        "asky.daemon.tray.run_tray_app",
         side_effect=DaemonUserError("asky menubar daemon is already running."),
     ):
         with pytest.raises(SystemExit) as excinfo:
@@ -1068,7 +1071,7 @@ def test_main_xmpp_menubar_child_error_exits_nonzero(mock_parse, capsys):
 
 
 @patch("asky.cli.main.parse_args")
-def test_main_xmpp_menubar_child_unexpected_error_exits_nonzero(mock_parse, capsys):
+def test_main_tray_child_unexpected_error_exits_nonzero(mock_parse, capsys):
     mock_parse.return_value = argparse.Namespace(
         model="gf",
         history=None,
@@ -1095,11 +1098,11 @@ def test_main_xmpp_menubar_child_unexpected_error_exits_nonzero(mock_parse, caps
         reply=False,
         session_from_message=None,
         completion_script=None,
-        xmpp_daemon=True,
+        daemon=True,
         edit_daemon=False,
-        xmpp_menubar_child=True,
+        tray_child=True,
     )
-    with patch("asky.daemon.menubar.run_menubar_app", side_effect=RuntimeError("boom")):
+    with patch("asky.daemon.tray.run_tray_app", side_effect=RuntimeError("boom")):
         with pytest.raises(SystemExit) as excinfo:
             main()
     assert excinfo.value.code == 1
@@ -1109,7 +1112,7 @@ def test_main_xmpp_menubar_child_unexpected_error_exits_nonzero(mock_parse, caps
 
 @patch("asky.cli.main.parse_args")
 @patch("asky.daemon.service.run_daemon_foreground")
-def test_main_xmpp_daemon_surfaces_user_error(mock_run_daemon, mock_parse, capsys):
+def test_main_daemon_surfaces_user_error(mock_run_daemon, mock_parse, capsys):
     mock_parse.return_value = argparse.Namespace(
         model="gf",
         history=None,
@@ -1136,11 +1139,11 @@ def test_main_xmpp_daemon_surfaces_user_error(mock_run_daemon, mock_parse, capsy
         reply=False,
         session_from_message=None,
         completion_script=None,
-        xmpp_daemon=True,
+        daemon=True,
         foreground=True,
         no_tray=False,
         edit_daemon=False,
-        xmpp_menubar_child=False,    )
+        tray_child=False,    )
     mock_run_daemon.side_effect = DaemonUserError(
         "dependency missing", hint="install xmpp"
     )
@@ -1181,9 +1184,9 @@ def test_main_edit_daemon_early_exit(mock_edit_daemon, mock_parse):
         reply=False,
         session_from_message=None,
         completion_script=None,
-        xmpp_daemon=False,
+        daemon=False,
         edit_daemon=True,
-        xmpp_menubar_child=False,
+        tray_child=False,
     )
 
     main()
@@ -1220,7 +1223,7 @@ def test_main_preset_list_command_prints(mock_setup_logging, mock_parse, capsys)
             reply=False,
             session_from_message=None,
             completion_script=None,
-            xmpp_daemon=False,
+            daemon=False,
             research=False,
         ),
     ]

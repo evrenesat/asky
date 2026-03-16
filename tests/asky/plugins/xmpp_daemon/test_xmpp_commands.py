@@ -71,8 +71,8 @@ def _blocked_args():
         edit_model=None,
         clear_memories=False,
         delete_memory=None,
-        xmpp_daemon=False,
-        xmpp_menubar_child=False,
+        daemon=False,
+        tray_child=False,
         edit_daemon=False,
         completion_script=None,
     )

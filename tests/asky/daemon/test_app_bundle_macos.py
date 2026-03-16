@@ -87,8 +87,8 @@ def test_create_bundle_creates_all_paths(mock_bundle_path):
     # Verify launcher content
     launcher_content = launcher.read_text()
     assert python_path in launcher_content
-    assert "--xmpp-daemon" in launcher_content
-    assert "--xmpp-menubar-child" in launcher_content
+    assert "--daemon" in launcher_content
+    assert "--tray-child" in launcher_content
     assert ".zshrc" in launcher_content
     assert ".zprofile" in launcher_content
 

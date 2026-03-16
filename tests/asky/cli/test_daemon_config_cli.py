@@ -98,3 +98,30 @@ def test_edit_daemon_command_interactive_flow(tmp_path, monkeypatch):
     assert result.jid == "bot@example.com"
     assert result.allowed_jids == ["alice@example.com", "bob@example.com"]
     assert startup_enabled["value"] is True
+
+
+def test_edit_daemon_command_windows_skips_startup_prompt(tmp_path, monkeypatch):
+    monkeypatch.setattr("asky.cli.daemon_config._get_config_dir", lambda: tmp_path)
+    
+    # Mock startup to report windows
+    monkeypatch.setattr(
+        "asky.cli.daemon_config.startup.get_status",
+        lambda: daemon_config.startup.StartupStatus(
+            supported=False,
+            enabled=False,
+            active=False,
+            platform_name="windows",
+            details="not supported",
+        ),
+    )
+    
+    prompt_values = iter(["bot@example.com", "secret", "alice@example.com"])
+    # Only one confirm value needed (for Enable XMPP daemon)
+    # If the startup prompt was shown, it would crash or wait for another confirm.
+    confirm_values = iter([True]) 
+    
+    monkeypatch.setattr("asky.cli.daemon_config.Prompt.ask", lambda *args, **kwargs: next(prompt_values))
+    monkeypatch.setattr("asky.cli.daemon_config.Confirm.ask", lambda *args, **kwargs: next(confirm_values))
+    
+    # This should complete without calling next(confirm_values) a second time
+    daemon_config.edit_daemon_command()

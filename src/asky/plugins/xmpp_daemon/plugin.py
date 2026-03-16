@@ -26,19 +26,6 @@ class XMPPDaemonPlugin(AskyPlugin):
     def __init__(self) -> None:
         self._context: Optional[PluginContext] = None
 
-    @classmethod
-    def get_cli_contributions(cls) -> list[CLIContribution]:
-        return [
-            CLIContribution(
-                category=CapabilityCategory.BACKGROUND_SERVICE,
-                flags=("--daemon",),
-                kwargs=dict(
-                    action="store_true",
-                    help="Start the daemon process in the background.",
-                ),
-            ),
-        ]
-
     @property
     def declared_capabilities(self) -> tuple[str, ...]:
         return ("daemon_transport",)

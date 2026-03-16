@@ -2,6 +2,25 @@
 
 For full detailed entries, see [DEVLOG_ARCHIVE.md](DEVLOG_ARCHIVE.md).
 
+## 2026-03-16: Linux and Windows Tray Support via pystray
+
+- **Summary**: Added Linux and Windows tray support via `pystray`, moved public daemon ownership into core, split tray-login startup from headless startup, enforced tray-over-headless runtime precedence, and fixed the follow-up takeover and Windows startup-surface gaps found during review.
+- **Changes**:
+  - Added a cross-platform tray selection/runtime path for Linux and Windows via `pystray` while keeping macOS on the existing `rumps` menu bar backend.
+  - Moved public `--daemon` ownership and hidden tray-child spawning into core CLI code instead of the XMPP plugin.
+  - Split startup registration into headless service startup and tray-login startup, with separate helpers and platform-specific implementations.
+  - Added runtime ownership tracking so tray and headless daemon modes stay mutually exclusive, with tray takeover allowed when the existing owner is headless.
+  - Updated Windows behavior so console-managed headless startup is unsupported there and the daemon editor no longer offers that prompt.
+  - Added tray/runtime/startup regression coverage across CLI, daemon, and recorded surface tests.
+- **Gotchas**:
+  - Linux tray mode still requires `pystray`, a desktop session (`DISPLAY` or `WAYLAND_DISPLAY`), and a menu-capable backend.
+  - Tray-to-tray collisions are still rejected. Only tray takeover from a live headless daemon is allowed.
+  - Windows remains tray-login-only for startup in this handoff. Headless auto-start stays Linux/macOS-only.
+- **Verification**:
+  - Focused tests: `uv run pytest tests/asky/daemon/test_daemon_tray.py tests/asky/daemon/test_startup_registration.py tests/asky/cli/test_daemon_config_cli.py -q -o addopts="-n0 --record-mode=none"`
+  - Recorded CLI regression: `uv run pytest tests/integration/cli_recorded/test_cli_daemon_surface_recorded.py tests/integration/cli_recorded/test_cli_surface_manifest.py -q -o addopts="-n0 --record-mode=none"`
+  - Full suite: `uv run pytest -q`
+
 ## 2026-03-16: GUI AGENTS Guidance Hardening For NiceGUI Admin Flows
 
 - **Summary**: Rewrote the GUI-related `AGENTS.md` files so they act as the implementation guide for asky's browser admin console, with repo-specific NiceGUI rules, extension boundaries, and queue/service usage patterns aimed at weaker implementer agents.
@@ -1156,3 +1175,4 @@ Total tests: 1344 passed.
 4. Add proper validation for inputs
 5. Remove ISBN input field (not in BookMetadata)
 6. Update submit logic to use `submit_authored_book` helper
+

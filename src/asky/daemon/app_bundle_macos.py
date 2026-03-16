@@ -76,7 +76,7 @@ def create_bundle(python_path: str) -> Path:
         '[ -f "$HOME/.zshenv" ] && source "$HOME/.zshenv" 2>/dev/null\n'
         '[ -f "$HOME/.zprofile" ] && source "$HOME/.zprofile" 2>/dev/null\n'
         '[ -f "$HOME/.zshrc" ] && source "$HOME/.zshrc" 2>/dev/null\n'
-        f'exec "{python_path}" -m asky --xmpp-daemon --xmpp-menubar-child "$@"\n'
+        f'exec "{python_path}" -m asky --daemon --tray-child "$@"\n'
     )
     launcher.chmod(0o755)
 

@@ -372,7 +372,7 @@ and for direct `from asky.cli import parse_args` callers.
 src/asky/
 ├── api/                # Programmatic library API surface (run_turn orchestration)
 ├── cli/                # Command-line interface → see cli/AGENTS.md
-├── daemon/             # Daemon lifecycle core: DaemonService, menubar launcher, tray abstraction
+├── daemon/             # Daemon lifecycle: DaemonService, pystray/rumps tray apps, and dual startup paths
 ├── core/               # Conversation engine → see core/AGENTS.md
 ├── storage/            # Data persistence → see storage/AGENTS.md
 ├── research/           # Research mode RAG → see research/AGENTS.md
@@ -418,7 +418,7 @@ top-level `tests/` collection.
 | Package     | Documentation                                     | Key Components                                                              |
 | ----------- | ------------------------------------------------- | --------------------------------------------------------------------------- |
 | `cli/`      | [cli/AGENTS.md](src/asky/cli/AGENTS.md)           | Entry point, chat flow, commands                                            |
-| `daemon/`   | [daemon/AGENTS.md](src/asky/daemon/AGENTS.md)     | Transport-agnostic `DaemonService`, menubar launcher, `TrayApp` abstraction |
+| `daemon/`   | [daemon/AGENTS.md](src/asky/daemon/AGENTS.md)     | `DaemonService`, tray abstraction, and dual startup registration           |
 | `api/`      | [api/AGENTS.md](src/asky/api/AGENTS.md)           | `AskyClient`, turn orchestration services                                   |
 | `core/`     | [core/AGENTS.md](src/asky/core/AGENTS.md)         | ConversationEngine, ToolRegistry, API client                                |
 | `storage/`  | [storage/AGENTS.md](src/asky/storage/AGENTS.md)   | SQLite repository, data model                                               |
@@ -572,10 +572,12 @@ asky --daemon
 cli/main.py
   -> daemon/launcher.py (resolve launch mode)
     -> Background (Headless or Tray) -> spawns detached child process -> parent exits
-    -> Foreground (or background child) -> daemon/service.py (DaemonService)
-          -> fires DAEMON_TRANSPORT_REGISTER → xmpp_daemon plugin registers XMPPService
-          -> fires DAEMON_SERVER_REGISTER → gui_server etc. register sidecar servers
-          -> calls XMPPService.run() (blocking)
+    -> Foreground (or background child)
+          -> daemon/runtime_owner.py (claim ownership, potential takeover)
+          -> daemon/service.py (DaemonService)
+                -> fires DAEMON_TRANSPORT_REGISTER → xmpp_daemon plugin registers XMPPService
+                -> fires DAEMON_SERVER_REGISTER → gui_server etc. register sidecar servers
+                -> calls XMPPService.run() (blocking)
     ↓
 xmpp_service.py message callback payload
     ↓
@@ -639,7 +641,9 @@ Ad-hoc `Run Prompt` / `Run Query` / `Use Transcript` and `Run Preset` (only when
 XMPP query ingress applies the same recursive slash-expansion behavior as CLI (`/alias`, `/cp`) before model execution, and unresolved slash queries follow CLI prompt-list semantics (`/` lists all prompts, unknown `/prefix` returns filtered prompt listing). This shared query-prep path is used by direct text queries, interface-planned query actions, and `transcript use` query execution.
 Daemon query prep also supports session-scoped media pointers: `#aN`/`#atN` for audio file+transcript and `#iN`/`#itN` for image file+transcript.
 Room bindings and session override files are persisted in SQLite; on daemon startup/session-start, previously bound rooms are auto-rejoined and continue with their last active bound sessions.
-On macOS menubar builds, the menu is assembled dynamically from plugin-contributed entries (via `TRAY_MENU_REGISTER`). The XMPP plugin contributes: XMPP status, JID, Voice status rows + Start/Stop XMPP and Voice toggle action rows. The GUI server plugin contributes: Start/Stop Web GUI and Open Settings action rows. Core fixed items are: startup-at-login status/action and Quit. XMPP credential/allowlist editing is CLI-only via `--config daemon edit` (no menubar credential editor).
+On tray-capable builds (macOS via rumps, Linux/Windows via pystray), the menu is assembled dynamically from plugin-contributed entries (via `TRAY_MENU_REGISTER`). The XMPP plugin contributes: XMPP status, JID, Voice status rows + Start/Stop XMPP and Voice toggle action rows. The GUI server plugin contributes: Start/Stop Web GUI and Open Settings action rows. Core fixed items are: "Launch tray at login" status/action and Quit. XMPP credential/allowlist editing is CLI-only via `--config daemon edit` (no tray credential editor).
+
+The daemon enforces a strict runtime precedence policy: the tray runtime always takes precedence over the headless runtime. If a tray app starts while a headless daemon is running, it stops the headless process, disables its auto-start registration, and takes over daemon control. Conversely, if a headless daemon starts while a tray app is active, it exits with an "already running" message.
 
 ### Session Flow
 

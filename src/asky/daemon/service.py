@@ -157,20 +157,37 @@ def run_daemon_foreground(
     plugin_runtime: Optional[Any] = None,
 ) -> None:
     """Entry point used by CLI flag and menubar child process."""
-    setup_xmpp_logging()
+    from asky.daemon.launch_context import LaunchContext, get_launch_context
+    from asky.daemon.runtime_owner import RuntimeOwnerLock, RuntimeMode
     
-    from asky.daemon.launcher import LaunchMode, build_launch_notice, print_launch_notice, DAEMON_BACKGROUND_LOG_FILE
-    from pathlib import Path
-    
-    notice = build_launch_notice(
-        mode=LaunchMode.FOREGROUND,
-        pid=None,
-        log_path=Path(DAEMON_BACKGROUND_LOG_FILE).expanduser().parent
-    )
-    print_launch_notice(notice)
-    
-    service = DaemonService(
-        double_verbose=double_verbose,
-        plugin_runtime=plugin_runtime,
-    )
-    service.run_foreground()
+    # If we are in TRAY_APP context, the lock is already acquired by run_tray_app
+    is_tray = get_launch_context() == LaunchContext.TRAY_APP
+    lock = None
+    if not is_tray:
+        lock = RuntimeOwnerLock()
+        if not lock.acquire(RuntimeMode.HEADLESS):
+            from asky.daemon.menubar import MENUBAR_ALREADY_RUNNING_MESSAGE
+            print(f"Error: {MENUBAR_ALREADY_RUNNING_MESSAGE}")
+            raise SystemExit(1)
+
+    try:
+        setup_xmpp_logging()
+        
+        from asky.daemon.launcher import LaunchMode, build_launch_notice, print_launch_notice, DAEMON_BACKGROUND_LOG_FILE
+        from pathlib import Path
+        
+        notice = build_launch_notice(
+            mode=LaunchMode.FOREGROUND,
+            pid=None,
+            log_path=Path(DAEMON_BACKGROUND_LOG_FILE).expanduser().parent
+        )
+        print_launch_notice(notice)
+        
+        service = DaemonService(
+            double_verbose=double_verbose,
+            plugin_runtime=plugin_runtime,
+        )
+        service.run_foreground()
+    finally:
+        if lock:
+            lock.release()

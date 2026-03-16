@@ -28,7 +28,7 @@ It runs as `asky` or `ask`. You give it a query, it gives you an answer.
 - **Custom tools** - expose any local CLI command as a tool the model can call.
 - **XMPP daemon mode** - run `asky --daemon` to log into an XMPP account and accept queries over chat from any XMPP client app (phone, desktop, etc.). Includes voice transcription on macOS.
 - **Web Admin Console** - authenticated browser interface for persona management, web collection review, and background job monitoring.
-- **macOS menu bar** - with `rumps` installed, daemon mode adds a menu bar icon for start/stop control and run-at-login.
+- **Cross-platform system tray** - on macOS, Linux, and Windows, daemon mode adds a tray icon for start/stop control and auto-start at login.
 - **Playwright browser plugin** - fetches pages using a real browser, useful for sites that block standard HTTP clients.
 - **File prompts** - load a prompt from a file with `file://path/to/prompt.txt`.
 - **Smart context management** - summarizes old conversation turns in the background to stay within model context limits.
@@ -67,6 +67,9 @@ uv pip install "asky-cli[mlx-whisper]"
 
 # macOS full bundle: iterm2 + mlx-whisper + rumps + slixmpp
 uv pip install "asky-cli[mac]"
+
+# System tray icons (Linux/Windows)
+uv pip install "asky-cli[tray]"
 
 # Playwright browser plugin
 uv pip install "asky-cli[playwright]"

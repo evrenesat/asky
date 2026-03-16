@@ -2,98 +2,35 @@
 
 from __future__ import annotations
 
-import errno
 import logging
-import os
 import platform
 from pathlib import Path
-from typing import Optional, TextIO
+from typing import Optional
 
 from asky.daemon.errors import DaemonUserError
+from asky.daemon.runtime_owner import RuntimeOwnerLock, RuntimeMode
 
-try:
-    import fcntl
-except ImportError:  # pragma: no cover
-    fcntl = None  # type: ignore[assignment]
-
-MENUBAR_LOCK_PATH = Path.home() / ".config" / "asky" / "locks" / "menubar.lock"
 MENUBAR_ALREADY_RUNNING_MESSAGE = "asky menubar daemon is already running."
-LOCK_CONTENTION_ERRNOS = (errno.EACCES, errno.EAGAIN)
 logger = logging.getLogger(__name__)
 
 
-class MenubarSingletonLock:
-    """File-lock guard that keeps only one menubar process active."""
-
-    def __init__(self, lock_path: Path = MENUBAR_LOCK_PATH):
-        self._lock_path = Path(lock_path).expanduser()
-        self._handle: Optional[TextIO] = None
-
-    def acquire(self) -> None:
-        if fcntl is None:  # pragma: no cover
-            raise RuntimeError(
-                "fcntl is unavailable; menubar singleton lock cannot be enforced."
-            )
-        self._lock_path.parent.mkdir(parents=True, exist_ok=True)
-        handle = self._lock_path.open("a+")
-        try:
-            fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except OSError as exc:
-            handle.close()
-            if exc.errno in LOCK_CONTENTION_ERRNOS:
-                raise DaemonUserError(
-                    MENUBAR_ALREADY_RUNNING_MESSAGE,
-                    hint="Use the existing menu icon.",
-                ) from exc
-            raise
-        handle.seek(0)
-        handle.truncate()
-        handle.write(str(os.getpid()))
-        handle.flush()
-        self._handle = handle
-        logger.debug(
-            "menubar singleton lock acquired path=%s pid=%s",
-            self._lock_path,
-            os.getpid(),
+def acquire_menubar_singleton_lock() -> RuntimeOwnerLock:
+    """Acquire tray singleton lock and return holder object."""
+    lock = RuntimeOwnerLock()
+    if not lock.acquire(RuntimeMode.TRAY):
+        raise DaemonUserError(
+            MENUBAR_ALREADY_RUNNING_MESSAGE,
+            hint="Use the existing menu icon.",
         )
-
-    def release(self) -> None:
-        if self._handle is None:
-            return
-        if fcntl is not None:
-            try:
-                fcntl.flock(self._handle.fileno(), fcntl.LOCK_UN)
-            except OSError:
-                logger.debug("menubar singleton lock unlock failed", exc_info=True)
-        self._handle.close()
-        self._handle = None
-        logger.debug("menubar singleton lock released path=%s", self._lock_path)
-
-
-def acquire_menubar_singleton_lock(
-    lock_path: Path = MENUBAR_LOCK_PATH,
-) -> MenubarSingletonLock:
-    """Acquire menubar singleton lock and return holder object."""
-    lock = MenubarSingletonLock(lock_path)
-    lock.acquire()
     return lock
 
 
-def is_menubar_instance_running(lock_path: Path = MENUBAR_LOCK_PATH) -> bool:
-    """Return whether a menubar process currently holds the singleton lock."""
-    if fcntl is None:  # pragma: no cover
-        return False
-    probe = MenubarSingletonLock(lock_path)
-    try:
-        probe.acquire()
-    except DaemonUserError:
-        logger.debug("menubar singleton probe: existing instance is running")
+def is_menubar_instance_running() -> bool:
+    """Return whether a tray process currently holds the singleton lock."""
+    lock = RuntimeOwnerLock()
+    owner = lock.get_owner()
+    if owner and lock._is_process_alive(owner.pid):
         return True
-    except Exception:
-        logger.exception("menubar singleton probe failed")
-        return False
-    probe.release()
-    logger.debug("menubar singleton probe: no existing instance")
     return False
 
 

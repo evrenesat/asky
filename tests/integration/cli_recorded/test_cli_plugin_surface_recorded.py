@@ -54,20 +54,3 @@ def test_plugin_browser_dispatch(mock_login):
     result = run_cli_inprocess_with_status(["--browser", "https://example.com"])
     assert result.exit_code == 0
     assert mock_login.called
-
-
-@pytest.mark.with_plugins(["xmpp_daemon"])
-@patch("asky.daemon.launcher.spawn_background_child")
-def test_plugin_daemon_dispatch(mock_daemon_run):
-    """Test --daemon flag dispatches to background spawn by default."""
-    result = run_cli_inprocess(["--daemon"])
-    assert result.exit_code == 0
-    assert mock_daemon_run.called
-
-@pytest.mark.with_plugins(["xmpp_daemon"])
-@patch("asky.daemon.service.run_daemon_foreground")
-def test_plugin_daemon_foreground_dispatch(mock_daemon_run):
-    """Test --daemon --foreground flag dispatches to foreground service."""
-    result = run_cli_inprocess(["--daemon", "--foreground"])
-    assert result.exit_code == 0
-    assert mock_daemon_run.called

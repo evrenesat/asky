@@ -69,8 +69,8 @@ REMOTE_BLOCKED_FLAGS = (
     "--config",
     "--add-model",
     "--edit-model",
-    "--xmpp-daemon",
-    "--xmpp-menubar-child",
+    "--daemon",
+    "--tray-child",
     "--edit-daemon",
     "--completion-script",
 )

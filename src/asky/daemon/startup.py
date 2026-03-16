@@ -30,13 +30,9 @@ def _normalized_platform() -> str:
     return platform.system().strip().lower()
 
 
-def build_command(*, macos_menubar_child: bool) -> list[str]:
-    """Build command used by startup registration."""
-    command = [sys.executable, "-m", "asky", "--xmpp-daemon"]
-    if _normalized_platform() == PLATFORM_DARWIN and macos_menubar_child:
-        command.append("--xmpp-menubar-child")
-    else:
-        command.append("--foreground")
+def build_command() -> list[str]:
+    """Build command used by headless startup registration."""
+    command = [sys.executable, "-m", "asky", "--daemon", "--foreground", "--no-tray"]
     logger.debug("startup build_command platform=%s command=%s", _normalized_platform(), command)
     return command
 
@@ -64,13 +60,12 @@ def get_status() -> StartupStatus:
             details=state.details,
         )
     if normalized == PLATFORM_WINDOWS:
-        state = startup_windows.status()
         return StartupStatus(
-            supported=True,
-            enabled=state.enabled,
-            active=state.enabled,
+            supported=False,
+            enabled=False,
+            active=False,
             platform_name=normalized,
-            details=state.details,
+            details="Headless startup is not supported on Windows (use tray login instead).",
         )
     return StartupStatus(
         supported=False,
@@ -84,7 +79,7 @@ def get_status() -> StartupStatus:
 def enable_startup() -> StartupStatus:
     """Enable startup registration for current OS."""
     normalized = _normalized_platform()
-    command = build_command(macos_menubar_child=True)
+    command = build_command()
     logger.info("startup enable requested platform=%s", normalized)
     if normalized == PLATFORM_DARWIN:
         state = startup_macos.enable(command)
@@ -105,14 +100,7 @@ def enable_startup() -> StartupStatus:
             details=state.details,
         )
     if normalized == PLATFORM_WINDOWS:
-        state = startup_windows.enable(command)
-        return StartupStatus(
-            supported=True,
-            enabled=state.enabled,
-            active=state.enabled,
-            platform_name=normalized,
-            details=state.details,
-        )
+        return get_status()
     return get_status()
 
 
@@ -139,12 +127,5 @@ def disable_startup() -> StartupStatus:
             details=state.details,
         )
     if normalized == PLATFORM_WINDOWS:
-        state = startup_windows.disable()
-        return StartupStatus(
-            supported=True,
-            enabled=state.enabled,
-            active=state.enabled,
-            platform_name=normalized,
-            details=state.details,
-        )
+        return get_status()
     return get_status()

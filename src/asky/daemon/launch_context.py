@@ -12,7 +12,7 @@ from enum import Enum
 class LaunchContext(Enum):
     INTERACTIVE_CLI = "interactive_cli"
     DAEMON_FOREGROUND = "daemon_foreground"
-    MACOS_APP = "macos_app"
+    TRAY_APP = "tray_app"
 
 
 _current: LaunchContext = LaunchContext.INTERACTIVE_CLI

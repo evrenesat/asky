@@ -538,10 +538,6 @@ def _translate_process_tokens(tokens: list[str]) -> list[str]:
     index = 0
     while index < len(tokens):
         token = str(tokens[index])
-        if token == "--daemon":
-            translated.append("--xmpp-daemon")
-            index += 1
-            continue
         translated.append(token)
         index += 1
     return translated
@@ -1065,13 +1061,23 @@ def parse_args(
         help=argparse.SUPPRESS,
     )
     # Internal process-spawning flags: always registered regardless of plugin state.
-    parser.add_argument("--xmpp-daemon", action="store_true", help=argparse.SUPPRESS)
-    parser.add_argument("--foreground", action="store_true", help="Keep the daemon attached to the terminal instead of backgrounding.")
-    parser.add_argument("--no-tray", action="store_true", help="Bypass the tray/menubar when starting the background daemon.")
-    parser.add_argument("--edit-daemon", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument(
-        "--xmpp-menubar-child", action="store_true", help=argparse.SUPPRESS
+        "--daemon",
+        action="store_true",
+        help="Start the daemon process in the background.",
     )
+    parser.add_argument(
+        "--foreground",
+        action="store_true",
+        help="Keep the daemon attached to the terminal instead of backgrounding.",
+    )
+    parser.add_argument(
+        "--no-tray",
+        action="store_true",
+        help="Bypass the tray/menubar when starting the background daemon.",
+    )
+    parser.add_argument("--edit-daemon", action="store_true", help=argparse.SUPPRESS)
+    parser.add_argument("--tray-child", action="store_true", help=argparse.SUPPRESS)
     if plugin_manager is not None:
         _add_plugin_contributions_to_parser(
             parser,
@@ -1119,11 +1125,6 @@ def parse_args(
         raw_tokens, "-tl", "--terminal-lines"
     )
     parsed_args._provided_session_query = _flag_present(raw_tokens, "--session")
-
-    if bool(getattr(parsed_args, "daemon", False)) and not bool(
-        getattr(parsed_args, "xmpp_daemon", False)
-    ):
-        parsed_args.xmpp_daemon = True
 
     parsed_args.verbose_level = int(getattr(parsed_args, "verbose_level", 0) or 0)
     parsed_args.verbose = parsed_args.verbose_level >= 1
@@ -1518,7 +1519,7 @@ def _needs_defaults_only_session(args: argparse.Namespace) -> bool:
         return False
     if bool(getattr(args, "browser_login", None)):
         return False
-    if bool(getattr(args, "xmpp_daemon", False)):
+    if bool(getattr(args, "daemon", False)):
         return False
     if bool(getattr(args, "edit_daemon", False)):
         return False
@@ -2011,8 +2012,8 @@ def main() -> None:
 
     # Check if this is an internal spawn or silent command where hints should be suppressed
     _is_internal_spawn = any([
-        getattr(args, "xmpp_daemon", False),
-        getattr(args, "xmpp_menubar_child", False),
+        getattr(args, "daemon", False),
+        getattr(args, "tray_child", False),
         getattr(args, "completion_script", False),
         getattr(args, "edit_daemon", False),
         getattr(args, "list_tools", False),
@@ -2130,46 +2131,46 @@ def main() -> None:
         edit_daemon_command()
         return
 
-    if getattr(args, "xmpp_menubar_child", False) is True:
+    if getattr(args, "tray_child", False) is True:
         from asky.daemon.errors import DaemonUserError
         from asky.daemon.launch_context import LaunchContext, set_launch_context
 
-        set_launch_context(LaunchContext.MACOS_APP)
-        logger.info("dispatching xmpp menubar child mode")
-        from asky.daemon.menubar import run_menubar_app
+        set_launch_context(LaunchContext.TRAY_APP)
+        logger.info("dispatching tray child mode")
+        from asky.daemon.tray import run_tray_app
 
         try:
-            run_menubar_app()
+            run_tray_app()
         except DaemonUserError as exc:
-            logger.error("menubar child failed: %s", exc.user_message)
+            logger.error("tray child failed: %s", exc.user_message)
             print(f"Error: {exc.user_message}")
             raise SystemExit(1)
         except Exception as exc:
-            logger.exception("menubar child crashed")
-            print(f"Error: menubar daemon failed to start: {exc}")
+            logger.exception("tray child crashed")
+            print(f"Error: tray daemon failed to start: {exc}")
             raise SystemExit(1)
         return
 
-    if getattr(args, "xmpp_daemon", False) is True:
+    if getattr(args, "daemon", False) is True:
         from asky.daemon.errors import DaemonUserError
         from asky.daemon.launcher import LaunchMode, resolve_launch_mode, spawn_background_child
 
-        logger.info("dispatching xmpp daemon mode")
+        logger.info("dispatching daemon mode")
         
         is_foreground = getattr(args, "foreground", False)
         is_no_tray = getattr(args, "no_tray", False)
         is_double_verbose = getattr(args, "double_verbose", False)
         is_verbose = getattr(args, "verbose", False)
 
-        if getattr(args, "xmpp_menubar_child", False):
-            # Inline execution of menubar app for tray background mode child process
+        if getattr(args, "tray_child", False):
+            # Inline execution of tray app for tray background mode child process
             try:
-                from asky.daemon.menubar import run_menubar_app
-                logger.info("running menubar app inline (child invocation)")
-                run_menubar_app()
+                from asky.daemon.tray import run_tray_app
+                logger.info("running tray app inline (child invocation)")
+                run_tray_app()
                 return
             except Exception:
-                logger.exception("menubar inline run failed")
+                logger.exception("tray inline run failed")
                 raise SystemExit(1)
 
         mode = resolve_launch_mode(
@@ -2181,22 +2182,28 @@ def main() -> None:
         if mode != LaunchMode.FOREGROUND:
             # We are backgrounding. If TRAY, check app bundle and already running.
             if mode == LaunchMode.BACKGROUND_TRAY:
-                from asky.daemon.menubar import MENUBAR_ALREADY_RUNNING_MESSAGE, is_menubar_instance_running
+                from asky.daemon.tray import is_tray_supported
+                from asky.daemon.runtime_owner import RuntimeOwnerLock, RuntimeMode
+                from asky.daemon.menubar import MENUBAR_ALREADY_RUNNING_MESSAGE
+                
                 try:
                     _slixmpp_available = True
                     import slixmpp  # noqa: F401
                 except ImportError:
                     _slixmpp_available = False
 
-                if _slixmpp_available:
+                if _slixmpp_available and platform.system().lower() == "darwin":
                     try:
                         from asky.daemon.app_bundle_macos import ensure_bundle_exists
                         ensure_bundle_exists()
                     except Exception:
                         logger.debug("app bundle creation skipped", exc_info=True)
 
-                if is_menubar_instance_running():
-                    logger.warning("menubar daemon launch rejected: already running")
+                lock = RuntimeOwnerLock()
+                if lock.is_conflict(RuntimeMode.TRAY):
+                    # For background spawn, we don't want to takeover here, 
+                    # we just fail if already running.
+                    logger.warning("daemon launch rejected: already running")
                     print(f"Error: {MENUBAR_ALREADY_RUNNING_MESSAGE}")
                     raise SystemExit(1)
             

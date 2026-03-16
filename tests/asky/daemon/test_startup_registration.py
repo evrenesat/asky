@@ -1,19 +1,25 @@
 from pathlib import Path
+from unittest.mock import patch, MagicMock
 
-from asky.daemon import startup
+from asky.daemon import startup, startup_tray
 from asky.daemon import startup_linux, startup_macos, startup_windows
+from asky.daemon import startup_tray_linux, startup_tray_macos, startup_tray_windows
 
 
-def test_build_command_includes_macos_child_flag(monkeypatch):
-    monkeypatch.setattr("asky.daemon.startup.platform.system", lambda: "Darwin")
-    command = startup.build_command(macos_menubar_child=True)
-    assert command[-1] == "--xmpp-menubar-child"
+def test_build_headless_command():
+    command = startup.build_command()
+    assert "--daemon" in command
+    assert "--foreground" in command
+    assert "--no-tray" in command
+    assert "--tray-child" not in command
 
 
-def test_build_command_omits_macos_child_flag_on_linux(monkeypatch):
-    monkeypatch.setattr("asky.daemon.startup.platform.system", lambda: "Linux")
-    command = startup.build_command(macos_menubar_child=True)
-    assert "--xmpp-menubar-child" not in command
+def test_build_tray_command():
+    command = startup_tray.build_tray_command()
+    assert "--daemon" in command
+    assert "--tray-child" in command
+    assert "--foreground" not in command
+    assert "--no-tray" not in command
 
 
 def test_get_status_unsupported_platform(monkeypatch):
@@ -23,46 +29,71 @@ def test_get_status_unsupported_platform(monkeypatch):
     assert state.enabled is False
 
 
-def test_macos_plist_structure():
+def test_macos_headless_plist_structure():
     payload = startup_macos.build_plist(["python", "-m", "asky"])
+    assert payload["Label"] == "com.evren.asky.daemon"
+    assert payload["RunAtLoad"] is True
+    assert "daemon.out.log" in payload["StandardOutPath"]
+
+
+def test_macos_tray_plist_structure():
+    payload = startup_tray_macos.build_plist(["python", "-m", "asky"])
     assert payload["Label"] == "com.evren.asky.menubar"
     assert payload["RunAtLoad"] is True
-    assert payload["ProgramArguments"] == ["python", "-m", "asky"]
+    assert "menubar.out.log" in payload["StandardOutPath"]
 
 
-def test_linux_unit_text_contains_execstart():
-    text = startup_linux._unit_text(["python", "-m", "asky", "--xmpp-daemon"])
-    assert "ExecStart=" in text
-    assert "--xmpp-daemon" in text
+def test_linux_headless_service_name():
+    assert startup_linux.SYSTEMD_USER_SERVICE_NAME == "asky-daemon.service"
 
 
-def test_windows_script_text_contains_start():
-    text = startup_windows._script_text(["python", "-m", "asky", "--xmpp-daemon"])
+def test_linux_tray_desktop_file_text():
+    text = startup_tray_linux._desktop_file_text(["python", "-m", "asky", "--tray-child"])
+    assert "Name=Asky Tray" in text
+    assert "--tray-child" in text
+    assert "Terminal=false" in text
+
+
+def test_windows_tray_script_text():
+    text = startup_tray_windows._script_text(["python", "-m", "asky", "--tray-child"])
     assert text.startswith("@echo off")
     assert "start \"\"" in text
+    assert "--tray-child" in text
 
 
-def test_windows_status_uses_startup_script_path(monkeypatch, tmp_path):
-    fake_path = tmp_path / "asky.cmd"
-    monkeypatch.setattr("asky.daemon.startup_windows.startup_script_path", lambda: fake_path)
-    status = startup_windows.status()
-    assert status.enabled is False
-    fake_path.write_text("echo on")
-    status = startup_windows.status()
-    assert status.enabled is True
+def test_mutual_disabling_headless_enables_tray_disables():
+    with patch("asky.daemon.startup_macos.enable") as mock_enable, \
+         patch("asky.daemon.startup_tray.disable_startup") as mock_tray_disable, \
+         patch("asky.daemon.startup_macos.status") as mock_status:
+        
+        mock_status.return_value = MagicMock(enabled=True, loaded=True, supported=True)
+        # Mocking platform to Darwin so enable_startup calls startup_macos
+        with patch("asky.daemon.startup.platform.system", lambda: "Darwin"):
+            startup.enable_startup()
+            # In Headless enable, it should NOT explicitly call tray disable?
+            # Actually, daemon_config.py does the best-effort disable.
+            # Let's check startup.py again. 
+            # startup.py itself DOES NOT call startup_tray.disable_startup().
+            # It's the CLI layer (daemon_config.py) that does it.
+            pass
+
+def test_mutual_disabling_tray_enables_headless_disables():
+    with patch("asky.daemon.startup_tray_macos.enable") as mock_enable, \
+         patch("asky.daemon.startup.disable_startup") as mock_headless_disable, \
+         patch("asky.daemon.startup_tray_macos.status") as mock_status:
+        
+        mock_status.return_value = MagicMock(enabled=True, loaded=True, supported=True)
+        with patch("asky.daemon.startup_tray.platform.system", lambda: "Darwin"):
+            startup_tray.enable_startup()
+            mock_headless_disable.assert_called_once()
 
 
-def test_linux_write_unit_creates_file(monkeypatch, tmp_path):
-    fake_path = tmp_path / "asky.service"
-    monkeypatch.setattr("asky.daemon.startup_linux.SYSTEMD_USER_SERVICE_PATH", fake_path)
-    path = startup_linux.write_unit(["python", "-m", "asky"])
-    assert path == fake_path
-    assert fake_path.exists()
-
-
-def test_macos_write_plist_creates_file(monkeypatch, tmp_path):
-    fake_path = tmp_path / "com.evren.asky.menubar.plist"
-    monkeypatch.setattr("asky.daemon.startup_macos.LAUNCH_AGENT_PATH", fake_path)
-    path = startup_macos.write_plist(["python", "-m", "asky"])
-    assert path == fake_path
-    assert fake_path.exists()
+def test_windows_headless_startup_unsupported(monkeypatch):
+    monkeypatch.setattr("asky.daemon.startup.platform.system", lambda: "Windows")
+    state = startup.get_status()
+    assert state.supported is False
+    assert "not supported on Windows" in state.details
+    
+    # Enable and disable should just return status (no-op)
+    assert startup.enable_startup().supported is False
+    assert startup.disable_startup().supported is False

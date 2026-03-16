@@ -157,10 +157,11 @@ def edit_daemon_command() -> None:
     console.print(f"Current daemon enabled: {current.enabled}")
     console.print(f"Current JID: {current.jid or '(empty)'}")
     console.print(f"Allowed users count: {len(current.allowed_jids)}")
-    if startup_status.supported:
-        console.print(f"Run at login: {startup_status.enabled}")
-    else:
-        console.print(f"Run at login: unsupported ({startup_status.platform_name})")
+    if startup_status.platform_name != "windows":
+        if startup_status.supported:
+            console.print(f"Run headless daemon at login: {startup_status.enabled}")
+        else:
+            console.print(f"Run headless daemon at login: unsupported ({startup_status.platform_name})")
 
     enabled = Confirm.ask("Enable XMPP daemon", default=current.enabled)
     jid = Prompt.ask("XMPP JID", default=current.jid)
@@ -196,10 +197,17 @@ def edit_daemon_command() -> None:
         updated.has_minimum_requirements(),
     )
 
-    if startup_status.supported:
+    if startup_status.platform_name != "windows" and startup_status.supported:
         startup_default = startup_status.enabled
-        set_startup = Confirm.ask("Run at login", default=startup_default)
+        set_startup = Confirm.ask("Run headless daemon at login", default=startup_default)
         if set_startup:
+            # Best-effort disable tray startup to avoid conflicts
+            try:
+                from asky.daemon import startup_tray
+                startup_tray.disable_startup()
+            except Exception:
+                logger.debug("failed to disable tray startup while enabling headless startup", exc_info=True)
+
             state = startup.enable_startup()
             logger.debug(
                 "startup enable result supported=%s enabled=%s active=%s details=%s",

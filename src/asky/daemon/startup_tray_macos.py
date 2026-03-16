@@ -1,4 +1,4 @@
-"""macOS startup registration via LaunchAgents."""
+"""macOS tray-login startup registration via LaunchAgents."""
 
 from __future__ import annotations
 
@@ -9,7 +9,8 @@ import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 
-LAUNCH_AGENT_LABEL = "com.evren.asky.daemon"
+# Use the existing legacy label for the tray/menubar app
+LAUNCH_AGENT_LABEL = "com.evren.asky.menubar"
 LAUNCH_AGENT_PATH = (
     Path.home() / "Library" / "LaunchAgents" / f"{LAUNCH_AGENT_LABEL}.plist"
 )
@@ -46,8 +47,8 @@ def build_plist(program_args: list[str]) -> dict:
         "ProgramArguments": list(program_args),
         "RunAtLoad": True,
         "KeepAlive": False,
-        "StandardOutPath": str(Path.home() / ".config" / "asky" / "logs" / "daemon.out.log"),
-        "StandardErrorPath": str(Path.home() / ".config" / "asky" / "logs" / "daemon.err.log"),
+        "StandardOutPath": str(Path.home() / ".config" / "asky" / "logs" / "menubar.out.log"),
+        "StandardErrorPath": str(Path.home() / ".config" / "asky" / "logs" / "menubar.err.log"),
     }
 
 
@@ -92,7 +93,7 @@ def status() -> MacStartupStatus:
 
 def enable(program_args: list[str]) -> MacStartupStatus:
     """Write plist and bootstrap it into launchd."""
-    logger.info("enabling macos startup registration")
+    logger.info("enabling macos tray startup registration")
     write_plist(program_args)
     domain = _launchctl_domain()
     try:
@@ -105,13 +106,13 @@ def enable(program_args: list[str]) -> MacStartupStatus:
         details = (exc.stderr or exc.stdout or str(exc)).strip()
         logger.warning("launchctl bootstrap failed: %s", details)
         return MacStartupStatus(enabled=True, loaded=False, details=details)
-    logger.info("macos startup registration enabled")
+    logger.info("macos tray startup registration enabled")
     return status()
 
 
 def disable() -> MacStartupStatus:
     """Unload and remove LaunchAgent registration."""
-    logger.info("disabling macos startup registration")
+    logger.info("disabling macos tray startup registration")
     domain = _launchctl_domain()
     try:
         _run_launchctl("bootout", domain, str(LAUNCH_AGENT_PATH))
@@ -119,5 +120,5 @@ def disable() -> MacStartupStatus:
         remove_plist()
         return MacStartupStatus(enabled=False, loaded=False, details=str(exc))
     remove_plist()
-    logger.info("macos startup registration disabled")
+    logger.info("macos tray startup registration disabled")
     return status()

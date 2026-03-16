@@ -78,15 +78,10 @@ def resolve_launch_mode(
     if is_foreground or is_legacy_double_verbose:
         return LaunchMode.FOREGROUND
 
-    is_macos = platform.system().lower() == "darwin"
-    
-    if is_macos and not is_no_tray:
-        try:
-            from asky.daemon.menubar import has_rumps
-            if has_rumps():
-                return LaunchMode.BACKGROUND_TRAY
-        except ImportError:
-            pass
+    if not is_no_tray:
+        from asky.daemon.tray import is_tray_supported
+        if is_tray_supported():
+            return LaunchMode.BACKGROUND_TRAY
             
     return LaunchMode.BACKGROUND_HEADLESS
 
@@ -100,10 +95,10 @@ def spawn_background_child(
     if mode == LaunchMode.FOREGROUND:
         raise ValueError("Cannot spawn a foreground process via background spawn helper")
 
-    command = [sys.executable, "-m", "asky", "--xmpp-daemon"]
+    command = [sys.executable, "-m", "asky", "--daemon"]
 
     if mode == LaunchMode.BACKGROUND_TRAY:
-        command.append("--xmpp-menubar-child")
+        command.append("--tray-child")
     else:
         command.append("--foreground")
 

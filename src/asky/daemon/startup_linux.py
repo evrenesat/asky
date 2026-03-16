@@ -8,7 +8,7 @@ import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 
-SYSTEMD_USER_SERVICE_NAME = "asky-xmpp-daemon.service"
+SYSTEMD_USER_SERVICE_NAME = "asky-daemon.service"
 SYSTEMD_USER_SERVICE_PATH = (
     Path.home() / ".config" / "systemd" / "user" / SYSTEMD_USER_SERVICE_NAME
 )
@@ -39,7 +39,7 @@ def _unit_text(program_args: list[str]) -> str:
     return "\n".join(
         [
             "[Unit]",
-            "Description=asky XMPP daemon",
+            "Description=asky daemon",
             "",
             "[Service]",
             "Type=simple",

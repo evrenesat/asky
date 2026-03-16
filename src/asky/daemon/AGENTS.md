@@ -7,17 +7,16 @@ Core daemon lifecycle infrastructure. This package owns the foreground daemon en
 | Module                | Purpose                                                                     |
 | --------------------- | --------------------------------------------------------------------------- |
 | `launcher.py`         | Background vs foreground mode resolver + spawn logic                        |
-| `service.py`          | `DaemonService` — transport-agnostic lifecycle: fires hooks, runs transport |
-| `menubar.py`          | macOS singleton lock and thin `run_menubar_app()` launcher                  |
-| `launch_context.py`   | `LaunchContext` enum + get/set/is_interactive helpers                       |
+| `runtime_owner.py`    | `RuntimeOwnerLock` — mutual exclusion and mode-based takeovers               |
+| `service.py`          | `DaemonService` — transport-agnostic lifecycle coordinator                  |
+| `tray.py`             | Tray selection and entry point dispatcher                                   |
 | `tray_protocol.py`    | `TrayApp` ABC, `TrayStatus`, `TrayPluginEntry` data contracts               |
 | `tray_controller.py`  | `TrayController` — generic daemon service lifecycle + startup toggle        |
-| `tray_macos.py`       | `MacosTrayApp(TrayApp)` — dynamic plugin-driven rumps menu                  |
-| `app_bundle_macos.py` | macOS `.app` bundle creation/update for Spotlight integration               |
-| `startup.py`          | Cross-platform startup-at-login dispatcher                                  |
-| `startup_macos.py`    | LaunchAgent plist management                                                |
-| `startup_linux.py`    | systemd user service management                                             |
-| `startup_windows.py`  | Windows Startup folder launcher script                                      |
+| `tray_macos.py`       | `MacosTrayApp(TrayApp)` — macOS rumps implementation                        |
+| `tray_pystray.py`     | `PystrayTrayApp(TrayApp)` — Linux/Windows pystray implementation            |
+| `app_bundle_macos.py` | macOS `.app` bundle creation for Spotlight integration                       |
+| `startup_tray.py`     | Cross-platform tray-login startup (LaunchAgent/Desktop file/CMD link)       |
+| `startup.py`          | Cross-platform headless service startup (systemd/LaunchAgent)               |
 | `errors.py`           | Daemon-specific exception types                                             |
 
 ---
@@ -61,7 +60,23 @@ plugins/xmpp_daemon/plugin.py          — built-in plugin, registers XMPP trans
 
 `menubar.py` is a thin launcher: it acquires the singleton lock then delegates to `MacosTrayApp().run()`. It retains `MenubarSingletonLock`, `acquire_menubar_singleton_lock`, and `is_menubar_instance_running` helpers.
 
-`launch_context.py` provides `LaunchContext` enum (`INTERACTIVE_CLI`, `DAEMON_FOREGROUND`, `MACOS_APP`) and module-level `get/set_launch_context()` / `is_interactive()` helpers. `main.py` sets the context before entering each daemon code path.
+## Runtime Precedence and Mutual Exclusion
+
+The daemon supports two runtime modes: `tray` (UI and service) and `headless` (system service only). `RuntimeOwnerLock` in `runtime_owner.py` enforces the following precedence policy:
+
+1. **Tray Wins**: Tray runtime always takes precedence over headless runtime.
+2. **Takeover**: If a tray app starts and detects a running headless daemon, it stops the headless process, disables its auto-start registration, and claims ownership.
+3. **Headless Rejection**: If a headless daemon starts and detects a running tray app, it prints an "already running" message and exits immediately.
+4. **Duplicates**: Duplicate launches of the same mode (tray-vs-tray or headless-vs-headless) always reject the new instance.
+
+## Startup Registration Split
+
+Startup support is split into two independent paths to prevent runtime conflicts:
+
+- **Headless Service Startup** (`startup.py`): Configured via CLI (`asky --config daemon edit`). On Linux it uses `systemd --user`, on macOS it uses a dedicated `com.evren.asky.daemon` LaunchAgent. Not supported on Windows.
+- **Tray-Login Startup** (`startup_tray.py`): Configured via the system tray menu. It launches the tray UI first, which then starts the service. On Linux it uses a `.desktop` file in `~/.config/autostart`, on macOS it uses the legacy `com.evren.asky.menubar` LaunchAgent, and on Windows it adds a `.cmd` script to the Startup folder.
+
+When one startup path is enabled, the system makes a best-effort attempt to disable the other to avoid boot-time race conditions.
 
 ---
 
