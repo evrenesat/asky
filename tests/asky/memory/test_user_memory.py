@@ -102,6 +102,11 @@ class TestMemoryStore:
         db = _make_db(tmp_path)
         assert has_any_memories(db) is False
 
+    def test_has_any_memories_false_when_table_missing(self, tmp_path):
+        db = tmp_path / "fresh.db"
+        sqlite3.connect(db).close()
+        assert has_any_memories(db) is False
+
     def test_has_any_memories_true_after_embed(self, tmp_path):
         db = _make_db(tmp_path)
         _insert_with_embedding(db, "User likes Python")

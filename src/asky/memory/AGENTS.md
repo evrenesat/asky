@@ -47,6 +47,7 @@ Cosine similarity scores for normalized vectors range from 0 (orthogonal / unrel
 5. Caller (`api/preload.py`) appends this to the system prompt via `PreloadResolution.memory_context`.
 
 Recall is skipped in `lean` mode.
+If the SQLite file exists but the `user_memories` table has not been initialized yet, recall must fail open and behave as if no memories exist.
 
 ## `save_memory` Tool
 

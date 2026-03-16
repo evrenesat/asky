@@ -159,8 +159,14 @@ def delete_all_memories_from_db(db_path: Path) -> int:
 def has_any_memories(db_path: Path) -> bool:
     """Return True if at least one memory with an embedding exists."""
     conn = sqlite3.connect(db_path)
-    c = conn.cursor()
-    c.execute("SELECT 1 FROM user_memories WHERE embedding IS NOT NULL LIMIT 1")
-    row = c.fetchone()
-    conn.close()
-    return row is not None
+    try:
+        c = conn.cursor()
+        c.execute("SELECT 1 FROM user_memories WHERE embedding IS NOT NULL LIMIT 1")
+        row = c.fetchone()
+        return row is not None
+    except sqlite3.OperationalError as exc:
+        if "no such table" in str(exc).lower():
+            return False
+        raise
+    finally:
+        conn.close()

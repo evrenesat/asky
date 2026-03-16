@@ -2,6 +2,7 @@
 
 import asyncio
 import os
+import threading
 import xml.etree.ElementTree as ET
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
@@ -16,6 +17,30 @@ from asky.plugins.xmpp_daemon.file_upload import (
     set_file_upload_service,
 )
 from asky.plugins.xmpp_daemon.xmpp_client import AskyXMPPClient
+
+
+def _run_async(coro):
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        return asyncio.run(coro)
+
+    result: dict[str, object] = {}
+    error: list[BaseException] = []
+
+    def _target() -> None:
+        try:
+            result["value"] = asyncio.run(coro)
+        except BaseException as exc:
+            error.append(exc)
+
+    thread = threading.Thread(target=_target)
+    thread.start()
+    thread.join()
+
+    if error:
+        raise error[0]
+    return result["value"]
 
 
 class _MockXEP0363:
@@ -41,7 +66,7 @@ class _MockXEP0363Old:
 class _MockLoop:
     def asyncio_run_coroutine_threadsafe(self, coro, loop):
         # Synchronously run for testing
-        return MagicMock(result=lambda timeout: asyncio.run(coro))
+        return MagicMock(result=lambda timeout: _run_async(coro))
 
 
 @pytest.fixture

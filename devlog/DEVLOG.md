@@ -2,6 +2,44 @@
 
 For full detailed entries, see [DEVLOG_ARCHIVE.md](DEVLOG_ARCHIVE.md).
 
+## 2026-03-17: Fail Open When User Memory Table Is Missing
+
+- **Summary**: Fixed a CI-only CLI startup regression where a fresh SQLite database could reach the memory-recall path before `user_memories` existed, causing non-memory turns to abort before `ConversationEngine.run()` was called. Bumped the package version to `0.4.14`.
+- **Changes**:
+  - `src/asky/memory/store.py`: Updated `has_any_memories()` to treat a missing `user_memories` table as an empty-memory state instead of raising `sqlite3.OperationalError`.
+  - `tests/asky/memory/test_user_memory.py`: Added a regression test that points `has_any_memories()` at a brand-new SQLite file with no schema and asserts it returns `False`.
+  - `src/asky/memory/AGENTS.md`: Documented the fail-open invariant for uninitialized memory tables.
+  - `pyproject.toml`, `src/asky/__init__.py`: Bumped the package version to `0.4.14`.
+- **Gotchas**:
+  - The reported failure was masked locally when the developer database already had `user_memories`; CI exposed it because the sandboxed database file was fresh.
+  - This fix is intentionally narrow. Missing table means "no memories yet", not "initialize schema from the recall path".
+- **Verification**:
+  - Focused regression: `env UV_CACHE_DIR=/tmp/uv-cache uv run pytest tests/asky/cli/test_cli.py::test_main_flow_default_no_context tests/asky/memory/test_user_memory.py -q -o addopts='-n0 --record-mode=none'` -> `35 passed in 3.86s`
+  - CI-shaped node: `env UV_CACHE_DIR=/tmp/uv-cache uv run pytest tests/asky/cli/test_cli.py::test_main_flow_default_no_context -q -n 3 --record-mode=none` -> `1 passed in 5.61s`
+  - Full-suite note: multiple attempts to capture a complete sandbox-local `uv run pytest -q` transcript did not return a stable final summary from this environment, but the single-process run no longer failed quickly on this path and the targeted CI regression passed under xdist.
+
+## 2026-03-16: Fix Async Test Harness for Python 3.12 xdist, Restore 3.11 Metadata
+
+- **Summary**: Fixed the real cause of the CI-only-looking async failures, which was a test harness pattern that breaks when a pytest worker thread already has a running event loop. Restored package metadata to `>=3.11` because the earlier Python floor bump was masking a test problem, not a runtime requirement.
+- **Changes**:
+  - `tests/asky/plugins/xmpp_daemon/test_xmpp_adhoc.py`: Replaced the sync `_run()` helper with a version that detects an already-running loop and executes the coroutine in a worker thread with its own event loop. Replaced the direct `asyncio.run(...)` usage in `test_list_tools_returns_tool_list`. Added a regression test that calls `_run()` from inside a running event loop.
+  - `tests/asky/plugins/gui_server/test_gui_server_plugin.py`: Replaced the direct `asyncio.run(...)` middleware test call with the same loop-safe helper pattern.
+  - `tests/asky/plugins/xmpp_daemon/test_xmpp_file_upload.py`: Replaced a mock `asyncio.run(...)` call with the same loop-safe helper pattern so the file-upload tests do not depend on owning the current thread's event loop.
+  - `pyproject.toml`: Restored `requires-python = ">=3.11"` and re-added the Python 3.11 classifier.
+  - `tests/asky/plugins/xmpp_daemon/test_xmpp_adhoc.py`: Revised the new regression test to force the running-loop branch with `monkeypatch` instead of trying to start another event loop in the same thread.
+  - `pyproject.toml`, `src/asky/__init__.py`: Bumped the package version to `0.4.13` and synced the exported `__version__`.
+- **Gotchas**:
+  - The failure mode is real on local Ubuntu with Python 3.12.3 too; it just stayed hidden on the usual Python 3.14 environments.
+  - These failures are test-only. The application code path was not the source of the nested-loop exception.
+  - A separate early-suite failure still exists under the local default `pytest -n 3 -x` run even when `-k 'not xmpp_adhoc'` is used, so any remaining full-suite instability is not this XMPP ad-hoc issue.
+- **Verification**:
+  - Exact failing CI nodes plus new regression under xdist: `./.venv/bin/pytest -q -n 3 --record-mode=none tests/asky/plugins/xmpp_daemon/test_xmpp_adhoc.py::test_unauthorized_iq_returns_error_note_for_status tests/asky/plugins/xmpp_daemon/test_xmpp_adhoc.py::test_unauthorized_iq_returns_error_note_for_query tests/asky/plugins/xmpp_daemon/test_xmpp_adhoc.py::test_unauthorized_iq_on_query_submit_returns_error tests/asky/plugins/xmpp_daemon/test_xmpp_adhoc.py::test_status_returns_jid_and_feature_flags tests/asky/plugins/xmpp_daemon/test_xmpp_adhoc.py::test_status_includes_connected_jid tests/asky/plugins/xmpp_daemon/test_xmpp_adhoc.py::test_list_sessions_calls_execute_session_command tests/asky/plugins/xmpp_daemon/test_xmpp_adhoc.py::test_list_history_calls_execute_command_text tests/asky/plugins/xmpp_daemon/test_xmpp_adhoc.py::test_list_transcripts_calls_execute_command_text tests/asky/plugins/xmpp_daemon/test_xmpp_adhoc.py::test_list_tools_returns_tool_list tests/asky/plugins/xmpp_daemon/test_xmpp_adhoc.py::test_list_prompts_no_prompts_returns_text tests/asky/plugins/xmpp_daemon/test_xmpp_adhoc.py::test_run_uses_worker_thread_when_loop_is_already_running` -> `11 passed in 0.36s`
+  - Revised regression spot-check: `./.venv/bin/pytest -q -n 3 --record-mode=none tests/asky/plugins/xmpp_daemon/test_xmpp_adhoc.py::test_run_uses_worker_thread_when_loop_is_already_running tests/asky/plugins/xmpp_daemon/test_xmpp_adhoc.py::test_list_tools_returns_tool_list tests/asky/plugins/xmpp_daemon/test_xmpp_adhoc.py::test_list_prompts_no_prompts_returns_text` -> `3 passed in 0.36s`
+  - Same exact nodes single-process: `./.venv/bin/pytest -q -n 0 --record-mode=none ...` -> `11 passed in 0.10s`
+  - GUI middleware regression: `./.venv/bin/pytest -q -n 3 --record-mode=none tests/asky/plugins/gui_server/test_gui_server_plugin.py::test_default_runner_auth_middleware_redirects_with_http_response` -> `1 passed in 0.83s`
+  - XMPP file upload regression: `./.venv/bin/pytest -q -n 3 --record-mode=none tests/asky/plugins/xmpp_daemon/test_xmpp_file_upload.py` -> `7 passed in 0.45s`
+  - Full-suite smoke: `./.venv/bin/pytest -q -n 3 --record-mode=none -x -k 'not xmpp_adhoc'` still reports an unrelated early failure outside `xmpp_adhoc`.
+
 ## 2026-03-16: Require Python 3.12+ (v0.4.0)
 
 - **Summary**: Bumped minimum Python version to 3.12 to resolve CI async test failures.

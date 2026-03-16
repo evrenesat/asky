@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import threading
 import xml.etree.ElementTree as ET
 from types import SimpleNamespace
 from unittest.mock import MagicMock, Mock, patch
@@ -123,11 +124,36 @@ def _make_handler(authorized: bool = True, voice_enabled: bool = False, image_en
 
 
 def _run(coro):
-    loop = asyncio.new_event_loop()
     try:
-        return loop.run_until_complete(coro)
-    finally:
-        loop.close()
+        asyncio.get_running_loop()
+    except RuntimeError:
+        loop = asyncio.new_event_loop()
+        try:
+            return loop.run_until_complete(coro)
+        finally:
+            loop.close()
+
+    result: dict[str, object] = {}
+    error: list[BaseException] = []
+
+    def _target() -> None:
+        loop = asyncio.new_event_loop()
+        try:
+            asyncio.set_event_loop(loop)
+            result["value"] = loop.run_until_complete(coro)
+        except BaseException as exc:
+            error.append(exc)
+        finally:
+            asyncio.set_event_loop(None)
+            loop.close()
+
+    thread = threading.Thread(target=_target)
+    thread.start()
+    thread.join()
+
+    if error:
+        raise error[0]
+    return result["value"]
 
 
 # ---------------------------------------------------------------------------
@@ -242,22 +268,6 @@ def test_list_transcripts_calls_execute_command_text():
 def test_list_tools_returns_tool_list():
     handler, _, _ = _make_handler()
     with patch(
-        "asky.plugins.xmpp_daemon.adhoc_commands.AdHocCommandHandler._run_blocking",
-        new=lambda self, fn, *a, **kw: asyncio.coroutine(lambda: fn())(),
-    ):
-        pass
-
-    def _fake_get_tools():
-        from asky.core.tool_registry_factory import get_all_available_tool_names  # noqa: F401
-
-        return "Available LLM tools:\n  - web_search"
-
-    async def _run_test():
-        with patch.object(handler, "_run_blocking", side_effect=lambda fn, *a, **kw: asyncio.sleep(0, result=fn())):
-            return await handler._cmd_list_tools(_MockIQ("user@example.com"), {})
-
-    # Use simple mock approach instead
-    with patch(
         "asky.plugins.xmpp_daemon.adhoc_commands.AdHocCommandHandler._run_blocking"
     ) as mock_run:
 
@@ -274,7 +284,26 @@ def test_list_tools_returns_tool_list():
                 result = await handler._cmd_list_tools(_MockIQ("user@example.com"), {})
                 assert "web_search" in result["notes"][0][1]
 
-        asyncio.run(_inner())
+        _run(_inner())
+
+
+def test_run_uses_worker_thread_when_loop_is_already_running(monkeypatch):
+    started = False
+    original_thread = threading.Thread
+
+    class _TrackingThread(original_thread):
+        def start(self):
+            nonlocal started
+            started = True
+            return super().start()
+
+    monkeypatch.setattr(asyncio, "get_running_loop", lambda: object())
+    monkeypatch.setattr(threading, "Thread", _TrackingThread)
+
+    result = _run(asyncio.sleep(0, result=7))
+
+    assert started is True
+    assert result == 7
 
 
 def test_list_prompts_no_prompts_returns_text():
