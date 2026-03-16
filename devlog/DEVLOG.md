@@ -2,6 +2,19 @@
 
 For full detailed entries, see [DEVLOG_ARCHIVE.md](DEVLOG_ARCHIVE.md).
 
+## 2026-03-16: Require Python 3.12+ (v0.4.0)
+
+- **Summary**: Bumped minimum Python version to 3.12 to resolve CI async test failures.
+- **Changes**:
+  - Updated `requires-python = ">=3.12"` in pyproject.toml
+  - Removed Python 3.11 from classifiers
+  - Bumped version to 0.4.0
+- **Gotchas**:
+  - The async test failures in CI were due to Python 3.11's event loop handling differences with pytest-xdist
+  - Python 3.12 has improved asyncio behavior that resolves the "Cannot run the event loop while another loop is running" errors
+- **Verification**:
+  - Tests pass locally on Python 3.12 with `-n 3` parallelism
+
 ## 2026-03-16: CI Test Fixes and Startup Performance
 
 - **Summary**: Fixed two CI failures: xmpp_adhoc tests crashing with `asyncio.run()` inside a running event loop, and startup time budget exceeded due to eager nicegui import.
