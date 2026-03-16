@@ -28,10 +28,11 @@ The same offline markdown documentation must be the single source of truth for:
 ## Git Tracking
 
 - Plan Branch: `main`
-- Pre-Handoff Base HEAD: `8ada7e4d5b7a6512192bad1c53fa47bd4feff3ab`
-- Last Reviewed HEAD: `none`
+- Pre-Handoff Base HEAD: `0bdd0647166d0644d5b701d25331d17b280ae279`
+- Last Reviewed HEAD: `completed through pre-squash HEAD 0361f7e291236363cb0c583c26c9e2cf08980a5a`
 - Review Log:
-  - None yet.
+  - `2026-03-16`: reviewed `0bdd0647166d0644d5b701d25331d17b280ae279..b2e8b660c6f9576eb83d6498821db3e5ba55f77f`, outcome `changes-requested`.
+  - `2026-03-16`: reviewed `b2e8b660c6f9576eb83d6498821db3e5ba55f77f..0361f7e291236363cb0c583c26c9e2cf08980a5a`, outcome `approved+squashed` for the full accumulated handoff `0bdd0647166d0644d5b701d25331d17b280ae279..0361f7e291236363cb0c583c26c9e2cf08980a5a`.
 
 ## Done Means
 
@@ -72,7 +73,7 @@ The same offline markdown documentation must be the single source of truth for:
 
 ## Checkpoints
 
-### [ ] Checkpoint 1: Packaged Persona Docs Catalog And CLI Docs Surface
+### [x] Checkpoint 1: Packaged Persona Docs Catalog And CLI Docs Surface
 
 **Goal:**
 
@@ -169,7 +170,7 @@ The same offline markdown documentation must be the single source of truth for:
 - The implementation still depends on reading docs from unpackaged top-level paths at runtime.
 - The implementation start still has unrelated dirty daemon/tray work in the tree after the user said it would be removed.
 
-### [ ] Checkpoint 2: UI-Agnostic Persona Creation Service With Initial Source Specs
+### [x] Checkpoint 2: UI-Agnostic Persona Creation Service With Initial Source Specs
 
 **Goal:**
 
@@ -262,7 +263,7 @@ The same offline markdown documentation must be the single source of truth for:
 - Rolling back a failed new-persona creation cannot be implemented safely without changing the on-disk persona layout.
 - The create flow would require new source semantics beyond the locked authored-book and manual-source variants.
 
-### [ ] Checkpoint 3: Browser Persona Creation Page With Shared Field Help
+### [x] Checkpoint 3: Browser Persona Creation Page With Shared Field Help
 
 **Goal:**
 
@@ -353,7 +354,7 @@ The same offline markdown documentation must be the single source of truth for:
 - The new page would require browser upload semantics or a second background worker.
 - Reusing authored-book preflight for staged creation would force implicit duplicate bypass or resumable-job loss.
 
-### [ ] Checkpoint 4: Documentation Parity, Agent Guidance, And Full Regression
+### [x] Checkpoint 4: Documentation Parity, Agent Guidance, And Full Regression
 
 **Goal:**
 
@@ -453,18 +454,18 @@ The same offline markdown documentation must be the single source of truth for:
 
 ## Plan-to-Verification Matrix
 
-| Requirement | Verification |
-| --- | --- |
-| Packaged docs are the runtime source of truth | `uv run pytest tests/asky/plugins/manual_persona_creator/test_feature_docs.py -q -n0` |
-| CLI exposes persona docs without network access | `uv run pytest tests/integration/cli_recorded/test_cli_persona_recorded.py -q -o addopts='-n0 --record-mode=none' -k docs` |
-| Persona help surface tracks new docs command | `uv run pytest tests/asky/cli/test_help_discoverability.py -q -n0` |
-| Creation service validates prompt and initial sources | `uv run pytest tests/asky/plugins/manual_persona_creator/test_creation_service.py -q -n0` |
-| Persona detail reads real prompt content | `uv run pytest tests/asky/plugins/manual_persona_creator/test_persona_gui_service.py -q -n0` |
-| Browser create route enforces required fields and staged sources | `uv run pytest tests/asky/plugins/manual_persona_creator/test_gui_creation_flow.py -q -n0` |
-| Authored-book staging preserves duplicate/resumable rules | `uv run pytest tests/asky/plugins/manual_persona_creator/test_gui_book_flow.py tests/asky/plugins/manual_persona_creator/test_gui_book_resume_flow.py -q -n0` |
-| Browser create uses existing queue job types | `uv run pytest tests/asky/plugins/manual_persona_creator/test_gui_creation_flow.py -q -n0 -k enqueue` |
-| Docs parity matches shipped behavior | `rg -n "persona docs|/personas/new|server-local|upload|browser chat" ARCHITECTURE.md docs/plugins.md docs/web_admin.md src/asky/cli/AGENTS.md src/asky/plugins/manual_persona_creator/AGENTS.md src/asky/plugins/gui_server/AGENTS.md src/asky/plugins/gui_server/pages/AGENTS.md` |
-| Final regression remains acceptable | `uv run pytest -q` |
+| Requirement                                                      | Verification                                                                                                                                                  |
+| ---------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------- | ------------ | ------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Packaged docs are the runtime source of truth                    | `uv run pytest tests/asky/plugins/manual_persona_creator/test_feature_docs.py -q -n0`                                                                         |
+| CLI exposes persona docs without network access                  | `uv run pytest tests/integration/cli_recorded/test_cli_persona_recorded.py -q -o addopts='-n0 --record-mode=none' -k docs`                                    |
+| Persona help surface tracks new docs command                     | `uv run pytest tests/asky/cli/test_help_discoverability.py -q -n0`                                                                                            |
+| Creation service validates prompt and initial sources            | `uv run pytest tests/asky/plugins/manual_persona_creator/test_creation_service.py -q -n0`                                                                     |
+| Persona detail reads real prompt content                         | `uv run pytest tests/asky/plugins/manual_persona_creator/test_persona_gui_service.py -q -n0`                                                                  |
+| Browser create route enforces required fields and staged sources | `uv run pytest tests/asky/plugins/manual_persona_creator/test_gui_creation_flow.py -q -n0`                                                                    |
+| Authored-book staging preserves duplicate/resumable rules        | `uv run pytest tests/asky/plugins/manual_persona_creator/test_gui_book_flow.py tests/asky/plugins/manual_persona_creator/test_gui_book_resume_flow.py -q -n0` |
+| Browser create uses existing queue job types                     | `uv run pytest tests/asky/plugins/manual_persona_creator/test_gui_creation_flow.py -q -n0 -k enqueue`                                                         |
+| Docs parity matches shipped behavior                             | `rg -n "persona docs                                                                                                                                          | /personas/new | server-local | upload | browser chat" ARCHITECTURE.md docs/plugins.md docs/web_admin.md src/asky/cli/AGENTS.md src/asky/plugins/manual_persona_creator/AGENTS.md src/asky/plugins/gui_server/AGENTS.md src/asky/plugins/gui_server/pages/AGENTS.md` |
+| Final regression remains acceptable                              | `uv run pytest -q`                                                                                                                                            |
 
 ## Assumptions And Defaults
 

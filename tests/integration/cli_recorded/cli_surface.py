@@ -113,6 +113,7 @@ PERSONA_SUBCOMMANDS = {
     "persona web-approve-page",
     "persona web-retract-page",
     "persona web-reject-page",
+    "persona docs",
 }
 
 PLUGIN_FLAGS = {
@@ -262,6 +263,7 @@ COVERAGE_OWNERSHIP = {
     "persona web-approve-page": "test_cli_persona_recorded.py",
     "persona web-retract-page": "test_cli_persona_recorded.py",
     "persona web-reject-page": "test_cli_persona_recorded.py",
+    "persona docs": "test_cli_persona_recorded.py",
     "persona @mention": "test_cli_persona_recorded.py",
     "persona alias mention": "test_cli_persona_recorded.py",
 

@@ -238,6 +238,13 @@ The `manual_persona_creator` plugin implements a structured **Authored Book** in
 3. **Execution**: Multi-pass extraction with strict JSON validation and warning accumulation.
 4. **Inspection**: Reusable queries for listing books, viewing reports, and searching viewpoints across the persona.
 
+### Persona Creation and Documentation
+
+Milestone 6 introduces a holistic persona creation workflow that allows creating a persona shell along with initial knowledge sources in a single operation.
+
+- **Creation Service (`creation_service.py`)**: Orchestrates the atomic creation of persona metadata, behavior prompt, and initial source ingestion jobs. It ensures that no partial persona shells are left behind if source staging or job creation fails.
+- **Documentation System (`feature_docs.py`)**: A managed documentation layer that provides markdown topics with TOML metadata. These topics are surfaced in both the CLI (`asky persona docs`) and as inline help in the browser UI.
+
 ---
 
 ## Persona Runtime Answering Pipeline (Milestone 2)

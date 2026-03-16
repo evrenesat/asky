@@ -90,67 +90,56 @@ def test_registered_pages_render_without_error(tmp_path: Path):
     class FakeUI:
         def __init__(self):
             self.elements = []
+            self.value = "mock_value"
+
         def label(self, text, **kwargs):
             self.elements.append(("label", text))
             return self
+
         def classes(self, *args, **kwargs): return self
         def props(self, *args, **kwargs): return self
         def on(self, *args, **kwargs): return self
         def set_text(self, *args): return self
+        def hide(self): return self
+        def show(self): return self
+        def clear(self): return self
+        def icon(self, *a, **kw): return self
 
         def button(self, text=None, icon=None, on_click=None, **kwargs):
             self.elements.append(("button", text or icon))
             return self
+
         def link(self, *a, **kw): return self
         def select(self, *a, **kw): return self
-        def row(self):
-            class Context:
-                def __enter__(self): return self
-                def __exit__(self, *a): pass
-                def classes(self, *s): return self
-            return Context()
-        def column(self):
-            class Context:
-                def __enter__(self): return self
-                def __exit__(self, *a): pass
-                def classes(self, *s): return self
-            return Context()
-        def card(self):
-            class Context:
-                def __enter__(self): return self
-                def __exit__(self, *a): pass
-                def classes(self, *s): return self
-                def on(self, *a, **kw): return self
-            return Context()
-        def tabs(self):
-            class Context:
-                def __enter__(self): return self
-                def __exit__(self, *a): pass
-                def classes(self, *s): return self
-            return Context()
-        def tab(self, *a, **kw): pass
-        def tab_panels(self, *a, **kw):
-            class Context:
-                def __enter__(self): return self
-                def __exit__(self, *a): pass
-                def classes(self, *s): return self
-            return Context()
-        def tab_panel(self, *a, **kw):
-            class Context:
-                def __enter__(self): return self
-                def __exit__(self, *a): pass
-                def classes(self, *s): return self
-            return Context()
+        def input(self, *a, **kw): return self
+        def textarea(self, *a, **kw): return self
+        def number(self, *a, **kw): return self
+
+        def __enter__(self): return self
+        def __exit__(self, *a): pass
+
+        def row(self): 
+            self.elements.append(("row", "start"))
+            return self
+        def column(self): 
+            self.elements.append(("column", "start"))
+            return self
+        def card(self): 
+            self.elements.append(("card", "start"))
+            return self
+        def tabs(self): return self
+        def tab(self, *a, **kw): return self
+        def tab_panels(self, *a, **kw): return self
+        def tab_panel(self, *a, **kw): return self
+        def dialog(self): return self
+        def open(self): pass
+        def close(self): pass
+
         def separator(self): pass
         def markdown(self, *a, **kw): return self
-        def element(self, tag, **kw):
-            class Context:
-                def __enter__(self): return self
-                def __exit__(self, *a): pass
-                def classes(self, *s): return self
-                def set_text(self, *a): pass
-            return Context()
+        def element(self, tag, **kw): return self
         def notify(self, *a, **kw): pass
+
         @property
         def navigate(self):
             class Nav:

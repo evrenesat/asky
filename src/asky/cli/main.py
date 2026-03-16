@@ -1856,6 +1856,11 @@ def main() -> None:
         )
         rebuild_index_parser.add_argument("name", help="Persona name")
 
+        docs_parser = subparsers.add_parser(
+            "docs", help="Show persona documentation topics"
+        )
+        docs_parser.add_argument("topic", nargs="?", help="Topic ID (optional)")
+
         # Parse persona args (skip "persona" token)
         persona_args = parser.parse_args(sys.argv[2:])
 
@@ -1951,6 +1956,8 @@ def main() -> None:
             persona_commands.handle_persona_aliases(persona_args)
         elif persona_cmd == "rebuild-index":
             persona_commands.handle_persona_rebuild_index(persona_args)
+        elif persona_cmd == "docs":
+            persona_commands.handle_persona_docs(persona_args)
         return
 
     # Normal query parsing flow

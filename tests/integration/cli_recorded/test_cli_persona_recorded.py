@@ -145,3 +145,21 @@ def test_persona_source_commands_smoke(tmp_path):
     # 8. reject-source (help smoke)
     result_reject = run_cli_inprocess(["persona", "reject-source", "--help"])
     assert result_reject.exit_code == 0
+
+
+def test_persona_docs_smoke():
+    """Smoke test for persona documentation commands."""
+    # 1. List docs
+    result_list = run_cli_inprocess(["persona", "docs"])
+    assert result_list.exit_code == 0
+    assert "persona documentation" in normalize_cli_output(result_list.stdout).lower()
+    assert "create-persona" in normalize_cli_output(result_list.stdout).lower()
+
+    # 2. Show specific doc
+    result_show = run_cli_inprocess(["persona", "docs", "create-persona"])
+    assert result_show.exit_code == 0
+    assert "creating a persona" in normalize_cli_output(result_show.stdout).lower()
+
+    # 3. Unknown topic
+    result_err = run_cli_inprocess(["persona", "docs", "unknown-topic"])
+    assert "unknown topic id: unknown-topic" in normalize_cli_output(result_err.stdout).lower()

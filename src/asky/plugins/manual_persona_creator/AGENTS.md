@@ -21,6 +21,8 @@ Creates and maintains local persona packages using Schema v3.
 | `web_job.py` | Background collection job logic |
 | `web_types.py` | Typed models for web collection and review state |
 | `web_prompts.py` | Web page classification and preview extraction prompts |
+| `feature_docs.py` | Persona documentation topics loader and metadata extraction |
+| `creation_service.py` | Holistic service for validated persona creation from scratch |
 
 ## Schema v3 Foundation
 
@@ -138,6 +140,21 @@ Rules to preserve:
 - staged content must not affect runtime knowledge until approval
 - page approval and rejection should call `web_service.py`
 - browser pages must not project pending content implicitly
+
+### Holistic persona creation flow
+
+Current browser flow for creating a new persona:
+
+1. Stage basic info (name, description, behavior prompt).
+2. Stage at least one initial knowledge source (authored book or manual source).
+3. Staged sources use the same preflight and validation logic as single-source addition, but wait for persona submission.
+4. Call `creation_service.create_persona_from_scratch` to create the persona shell and ingestion jobs atomically.
+5. Ingestion jobs are enqueued after successful shell creation.
+
+Rules to preserve:
+- rollback persona directory if any initial job creation fails.
+- ensure names follow the global validation pattern.
+- behavior prompt cannot be empty.
 
 ## Queue Contracts
 

@@ -91,9 +91,13 @@ def get_persona_detail(data_dir: Path, persona_name: str) -> Dict[str, Any]:
     for cid in list_web_collections(paths.root_dir):
         collections.append({"collection_id": cid})
 
+    from asky.plugins.manual_persona_creator.storage import read_prompt
+    behavior_prompt = read_prompt(paths.prompt_path) if paths.prompt_path.exists() else ""
+
     return {
         "name": persona_name,
         "metadata": metadata,
+        "behavior_prompt": behavior_prompt,
         "books": [asdict(b) for b in books],
         "approved_sources": approved_sources,
         "pending_sources": pending_sources,

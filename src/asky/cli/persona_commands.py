@@ -41,6 +41,39 @@ from asky.plugins.manual_persona_creator.storage import (
 console = Console()
 
 
+def handle_persona_docs(args: argparse.Namespace) -> None:
+    """Show persona documentation topics."""
+    from asky.plugins.manual_persona_creator import feature_docs
+    from rich.markdown import Markdown
+
+    topic_id = getattr(args, "topic", None)
+
+    if not topic_id:
+        # List topics
+        topics = feature_docs.list_topics()
+        if not topics:
+            console.print("[yellow]No persona documentation topics found.[/yellow]")
+            return
+
+        table = Table(title="Persona Documentation", show_header=True, header_style="bold magenta")
+        table.add_column("Topic ID", style="cyan")
+        table.add_column("Title")
+        table.add_column("Summary")
+
+        for t in topics:
+            table.add_row(t.id, t.title, t.summary)
+
+        console.print(table)
+        console.print("\nRun [cyan]asky persona docs <topic-id>[/cyan] to view full content.")
+        return
+
+    try:
+        topic = feature_docs.load_topic(topic_id)
+        console.print(Markdown(topic.body))
+    except ValueError as e:
+        console.print(f"[red]Error: {e}[/red]")
+
+
 def _get_data_dir() -> Path:
     """Get the plugin data directory."""
     return _get_config_dir() / "plugins"

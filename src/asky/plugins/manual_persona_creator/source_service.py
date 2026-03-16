@@ -165,6 +165,30 @@ def add_manual_sources(
 
 # Milestone-3 Service Entrypoints
 
+def validate_manual_source(kind: str, source_path: Path) -> None:
+    """Validate manual source kind and path before staging.
+
+    Raises ValueError if kind is unsupported or path does not exist.
+    """
+    supported_kinds = {
+        "biography",
+        "autobiography",
+        "interview",
+        "article",
+        "essay",
+        "speech",
+        "notes",
+        "posts",
+    }
+
+    if kind not in supported_kinds:
+        raise ValueError(f"Unsupported source kind: {kind}")
+
+    expanded_path = Path(source_path).expanduser()
+    if not expanded_path.exists():
+        raise ValueError(f"Source path does not exist: {source_path}")
+
+
 def prepare_source_preflight(
     data_dir: Path,
     persona_name: str,

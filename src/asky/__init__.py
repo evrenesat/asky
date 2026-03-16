@@ -1,6 +1,6 @@
 """asky - AI-powered web search CLI with LLM tool-calling capabilities."""
 
-__version__ = "0.1.0"
+__version__ = "0.3.0"
 
 def main() -> None:
     """Run the CLI entry point with lazy import."""

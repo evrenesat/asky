@@ -2,6 +2,27 @@
 
 For full detailed entries, see [DEVLOG_ARCHIVE.md](DEVLOG_ARCHIVE.md).
 
+## 2026-03-16: Persona Docs and Browser Persona Creation
+
+- **Summary**: Added shared offline persona docs, a route-based browser persona creation flow at `/personas/new`, and the follow-up fixes needed to keep authored-book preflight, resumable jobs, and manual-source staging aligned with the existing service rules. Bumped package metadata to `0.3.0`.
+- **Changes**:
+  - Added the packaged persona docs catalog under `src/asky/plugins/manual_persona_creator/docs/` plus `feature_docs.py`, and exposed it through `asky persona docs` in the CLI and shared browser help surfaces.
+  - Added `creation_service.py` to validate and create a new persona shell with staged authored-book and manual-source jobs, including rollback when initial job preparation fails.
+  - Added the `/personas/new` browser flow so a user can stage persona basics plus at least one offline source before final submit, then enqueue the returned `authored_book_ingest` and `source_ingest` jobs.
+  - Fixed persona detail DTOs to read the real `behavior_prompt.md` content.
+  - Fixed staged authored-book preflight to require the intended persona name before preflight, preserving duplicate and resumable-job detection against the real persona context.
+  - Fixed resumable authored-book finalization to keep and enqueue the existing job id instead of `None`.
+  - Added `validate_manual_source` and wired manual-source staging through it so invalid kinds and nonexistent paths are rejected before they enter staged page state.
+  - Added focused browser-creation coverage in `test_gui_creation_flow.py`, plus regression coverage for resumable authored-book ids and persona-name validation.
+- **Gotchas**:
+  - Browser creation remains server-local-path based. This handoff does not add uploads, browser chat, or shell-only persona creation.
+  - Final submit still requires a valid persona name, a non-empty behavior prompt, and at least one staged offline source.
+  - Authored-book preflight now fails fast until the intended persona name is valid, and manual-source staging validates immediately instead of waiting for final submit.
+- **Verification**:
+  - Focused persona/browser regression: `uv run pytest tests/asky/plugins/manual_persona_creator tests/asky/plugins/gui_server tests/integration/cli_recorded/test_cli_persona_recorded.py -q -o addopts="-n0 --record-mode=none"` -> `110 passed in 7.78s`
+  - Full regression suite: `uv run pytest -q` -> `1632 passed in 16.95s`
+  - Runtime note: compared with the earlier handoff baseline of `1623 passed in 16.61s`, the full suite increased by about `0.34s` while adding 9 tests.
+
 ## 2026-03-16: Linux and Windows Tray Support via pystray
 
 - **Summary**: Added Linux and Windows tray support via `pystray`, moved public daemon ownership into core, split tray-login startup from headless startup, enforced tray-over-headless runtime precedence, and fixed the follow-up takeover and Windows startup-surface gaps found during review.
@@ -1175,4 +1196,3 @@ Total tests: 1344 passed.
 4. Add proper validation for inputs
 5. Remove ISBN input field (not in BookMetadata)
 6. Update submit logic to use `submit_authored_book` helper
-

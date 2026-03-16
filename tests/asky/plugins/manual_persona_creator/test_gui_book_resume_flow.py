@@ -200,3 +200,58 @@ def test_resumable_authored_book_update(monkeypatch):
 def test_duplicate_active_job_path(monkeypatch):
     # Tests that 'Restart New' has been completely removed to prevent duplicate active jobs
     pass
+
+def test_stage_book_requires_valid_persona_name(monkeypatch):
+    """Verify that staging an authored book requires a valid persona name."""
+    from asky.plugins.gui_server.pages.personas import _stage_book_dialog
+
+    ui = FakeUI()
+    staged_list = []
+    refresh_fn = MagicMock()
+    data_dir = Path("/tmp/data")
+
+    # Test 1: No persona name (None)
+    _stage_book_dialog(ui, staged_list, refresh_fn, data_dir, persona_name=None)
+
+    path_input = None
+    for e in ui.elements:
+        if e[0] == "input" and e[1] == "Local Path to Book":
+            path_input = e[2]
+            break
+    assert path_input is not None
+    path_input.value = "/tmp/book.txt"
+
+    preflight_btn_click = None
+    for e in ui.elements:
+        if e[0] == "button" and e[1] == "Preflight":
+            preflight_btn_click = e[2]
+            break
+    assert preflight_btn_click is not None
+    preflight_btn_click()
+
+    # Should notify about missing persona name
+    assert any("Persona Name is required" in msg for msg in ui.notified)
+
+    # Test 2: Invalid persona name
+    ui2 = FakeUI()
+    staged_list2 = []
+    _stage_book_dialog(ui2, staged_list2, refresh_fn, data_dir, persona_name="invalid name!")
+
+    path_input2 = None
+    for e in ui2.elements:
+        if e[0] == "input" and e[1] == "Local Path to Book":
+            path_input2 = e[2]
+            break
+    assert path_input2 is not None
+    path_input2.value = "/tmp/book.txt"
+
+    preflight_btn_click2 = None
+    for e in ui2.elements:
+        if e[0] == "button" and e[1] == "Preflight":
+            preflight_btn_click2 = e[2]
+            break
+    assert preflight_btn_click2 is not None
+    preflight_btn_click2()
+
+    # Should notify about invalid persona name
+    assert any("Invalid persona name" in msg for msg in ui2.notified)
