@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>asky - Command-Line AI Assistant with Web Search & Document Q&A</title>
+    <meta name="description" content="asky is a free, open-source Python CLI AI assistant with web search, local document Q&A, conversation history, deep research mode, and XMPP remote chat. Install with uv tool install asky-cli.">
+    <meta name="keywords" content="asky, CLI, AI assistant, command line, web search, document QA, Python, open source, LLM, chatbot">
+    <meta name="author" content="evrenesat">
+    
+    <!-- Open Graph / Facebook -->
+    <meta property="og:type" content="website">
+    <meta property="og:url" content="https://asky.foo">
+    <meta property="og:title" content="asky - Command-Line AI Assistant">
+    <meta property="og:description" content="Free, open-source Python CLI AI assistant with web search, document Q&A, and more.">
+    <meta property="og:image" content="asky-icon.png">
+
+    <!-- Twitter -->
+    <meta property="twitter:card" content="summary">
+    <meta property="twitter:url" content="https://asky.foo">
+    <meta property="twitter:title" content="asky - Command-Line AI Assistant">
+    <meta property="twitter:description" content="Free, open-source Python CLI AI assistant with web search, document Q&A, and more.">
+    <meta property="twitter:image" content="asky-icon.png">
+
+    <link rel="icon" type="image/png" href="asky-icon.png">
+    <link rel="stylesheet" href="styles.css">
+    
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+</head>
+<body>
+    <main>
+        <!-- Hero Section -->
+        <section class="hero">
+            <div class="hero-gradient"></div>
+            <div class="container hero-content">
+                <img src="asky-icon.png" alt="asky mascot" class="hero-logo" width="160" height="160">
+                <h1 class="brand-name">asky</h1>
+                <p class="hero-description">
+                    A command-line AI assistant with web search, document Q&A, conversation history, and XMPP remote chat.
+                </p>
+                <div class="cta-group">
+                    <a href="https://github.com/evrenesat/asky" target="_blank" rel="noopener noreferrer" class="btn btn-secondary">
+                        <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 0 0-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0 0 20 4.77 5.07 5.07 0 0 0 19.91 1S18.73.65 16 2.48a13.38 13.38 0 0 0-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 0 0 5 4.77a5.44 5.44 0 0 0-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 0 0 9 18.13V22"></path></svg>
+                        View on GitHub
+                    </a>
+                    <a href="https://github.com/evrenesat/asky/blob/main/docs/quickstart.md" target="_blank" rel="noopener noreferrer" class="btn btn-primary">
+                        Quick Start
+                        <svg class="icon icon-xs" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"></line><polyline points="12 5 19 12 12 19"></polyline></svg>
+                    </a>
+                </div>
+            </div>
+        </section>
+
+        <!-- Install Section -->
+        <section class="container section-padding">
+            <div class="terminal-card">
+                <div class="terminal-header">
+                    <svg class="icon-sm text-emerald" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 17 10 11 4 5"></polyline><line x1="12" y1="19" x2="20" y2="19"></line></svg>
+                    <span class="terminal-meta">Install with uv</span>
+                </div>
+                <code>uv tool install asky-cli</code>
+            </div>
+        </section>
+
+        <!-- Features Section -->
+        <section class="container section-padding">
+            <h2 class="section-title">Features</h2>
+            <div class="feature-grid">
+                <!-- Row 1 -->
+                <a href="https://github.com/evrenesat/asky/blob/main/docs/configuration.md#6-model-management-modelstoml" class="feature-card" target="_blank" rel="noopener noreferrer">
+                    <div class="feature-icon">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="2" ry="2"></rect><rect x="9" y="9" width="6" height="6"></rect><line x1="9" y1="1" x2="9" y2="4"></line><line x1="15" y1="1" x2="15" y2="4"></line><line x1="9" y1="20" x2="9" y2="23"></line><line x1="15" y1="20" x2="15" y2="23"></line><line x1="20" y1="9" x2="23" y2="9"></line><line x1="20" y1="15" x2="23" y2="15"></line><line x1="1" y1="9" x2="4" y2="9"></line><line x1="1" y1="15" x2="4" y2="15"></line></svg>
+                    </div>
+                    <h3>Multi-Model Support</h3>
+                    <p>Works with OpenRouter, Gemini, OpenAI, Anthropic, or local models via LM Studio and Ollama.</p>
+                </a>
+                <a href="https://github.com/evrenesat/asky/blob/main/docs/configuration.md#5-web-search-providers" class="feature-card" target="_blank" rel="noopener noreferrer">
+                    <div class="feature-icon">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+                    </div>
+                    <h3>Web Search & Tools</h3>
+                    <p>Search the web, fetch URLs, and use tool calling. Supports SearXNG, Tavily, and Serper.</p>
+                </a>
+                <a href="https://github.com/evrenesat/asky/blob/main/docs/document_qa.md" class="feature-card" target="_blank" rel="noopener noreferrer">
+                    <div class="feature-icon">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
+                    </div>
+                    <h3>Document Q&A</h3>
+                    <p>Ask questions about PDFs, EPUBs, or entire folders. Vector-indexed for semantic search.</p>
+                </a>
+                
+                <!-- Row 2 -->
+                <a href="https://github.com/evrenesat/asky/blob/main/docs/xmpp_daemon.md" class="feature-card" target="_blank" rel="noopener noreferrer">
+                    <div class="feature-icon">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"></path></svg>
+                    </div>
+                    <h3>XMPP Daemon Mode</h3>
+                    <p>Run as a background service and chat from any XMPP client on phone or desktop.</p>
+                </a>
+                <a href="https://github.com/evrenesat/asky/blob/main/docs/configuration.md#4-session-management--compaction" class="feature-card" target="_blank" rel="noopener noreferrer">
+                    <div class="feature-icon">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 17 10 11 4 5"></polyline><line x1="12" y1="19" x2="20" y2="19"></line></svg>
+                    </div>
+                    <h3>Conversation History</h3>
+                    <p>Every query is saved. Resume conversations with -c or use named sessions with -ss.</p>
+                </a>
+                <a href="https://github.com/evrenesat/asky/blob/main/docs/research_mode.md" class="feature-card" target="_blank" rel="noopener noreferrer">
+                    <div class="feature-icon">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+                    </div>
+                    <h3>Deep Research Mode</h3>
+                    <p>Iterative retrieval across web sources and local documents for comprehensive answers.</p>
+                </a>
+
+                <!-- Row 3 (New Features) -->
+                <a href="https://github.com/evrenesat/asky/blob/main/docs/persona_runtime.md" class="feature-card" target="_blank" rel="noopener noreferrer">
+                    <div class="feature-icon">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>
+                    </div>
+                    <h3>Personas</h3>
+                    <p>Create and switch between specialized AI personas tailored for specific workflows or domains.</p>
+                </a>
+                <a href="https://github.com/evrenesat/asky/blob/main/docs/custom_tools.md" class="feature-card" target="_blank" rel="noopener noreferrer">
+                    <div class="feature-icon">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"></path></svg>
+                    </div>
+                    <h3>Custom Tools</h3>
+                    <p>Extend capabilities by defining your own executable tools that asky can use to solve tasks.</p>
+                </a>
+                <a href="https://github.com/evrenesat/asky/blob/main/docs/elephant_mode.md" class="feature-card" target="_blank" rel="noopener noreferrer">
+                    <div class="feature-icon">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"></path><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"></path></svg>
+                    </div>
+                    <h3>User Memory & Elephant Mode</h3>
+                    <p>Long term memory storage allowing the assistant to remember your preferences and past context across sessions.</p>
+                </a>
+            </div>
+        </section>
+
+        <!-- Usage Examples -->
+        <section class="container section-padding">
+            <h2 class="section-title">Usage Examples</h2>
+            <div class="terminal-card terminal-usage">
+                <div class="usage-block">
+                    <span class="comment"># Basic query</span>
+                    <div class="cmd">asky what is the correct temperature for green tea</div>
+                </div>
+                <div class="usage-block">
+                    <span class="comment"># Ask about a local document</span>
+                    <div class="cmd">asky -r path/to/report.pdf "What are the main conclusions?"</div>
+                </div>
+                <div class="usage-block">
+                    <span class="comment"># Web research mode</span>
+                    <div class="cmd">asky -r web "Compare the latest iPhone vs Samsung flagship specs"</div>
+                </div>
+                <div class="usage-block">
+                    <span class="comment"># Continue a conversation</span>
+                    <div class="cmd">asky -c "~1" explain more</div>
+                </div>
+                <div class="usage-block">
+                    <span class="comment"># Use a specific model</span>
+                    <div class="cmd">asky -m gf "Explain quantum entanglement"</div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Footer CTA -->
+        <section class="container section-padding text-center">
+            <p class="secondary-text">Free and open source. MIT License.</p>
+            <a href="https://github.com/evrenesat/asky" target="_blank" rel="noopener noreferrer" class="link-emerald flex-center gap-2">
+                <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 0 0-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0 0 20 4.77 5.07 5.07 0 0 0 19.91 1S18.73.65 16 2.48a13.38 13.38 0 0 0-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 0 0 5 4.77a5.44 5.44 0 0 0-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 0 0 9 18.13V22"></path></svg>
+                github.com/evrenesat/asky
+            </a>
+        </section>
+
+        <footer class="footer">
+            <div class="container container-center">
+                <p>asky - Command-line AI assistant</p>
+            </div>
+        </footer>
+    </main>
+</body>
+</html>

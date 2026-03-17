@@ -2,6 +2,22 @@
 
 For full detailed entries, see [DEVLOG_ARCHIVE.md](DEVLOG_ARCHIVE.md).
 
+## 2026-03-17: Static Website Conversion and Feature Expansion
+
+- **Summary**: Converted the Next.js/React landing page into a lightweight, no-JavaScript static HTML/CSS site and expanded the feature grid to include Personas, Custom Tools, and User Memory sections.
+- **Changes**:
+  - `website/index.html`: Created a semantic HTML5 structure with comprehensive SEO metadata and a 3x3 feature grid.
+  - `website/styles.css`: Implemented a modern, dark-themed vanilla CSS design with emerald accents and responsive grid layout.
+  - `website/asky-icon.png`: Moved from `public/` to the root for simpler static serving.
+  - **Feature Grid**: Added "Personas", "Custom Tools", and "User Memory & Elephant Mode" to complete the 3x3 grid.
+  - **Cleanup**: Removed all Next.js, React, and build-toolchain files (`app/`, `components/`, `package.json`, etc.) leaving only static assets.
+- **Verification**:
+  - Visual verification via browser subagent confirmed correct rendering of the dark theme, emerald accents, and the 9-box feature grid.
+  - Verified that all links correctly point to the GitHub repository and documentation.
+  - Confirmed the site functions without any JavaScript.
+- **Gotchas**:
+  - Cleanup was performed natively in the VM to avoid host shell expansion issues with `rm -rf`.
+
 ## 2026-03-17: Fail Open When User Memory Table Is Missing
 
 - **Summary**: Fixed a CI-only CLI startup regression where a fresh SQLite database could reach the memory-recall path before `user_memories` existed, causing non-memory turns to abort before `ConversationEngine.run()` was called. Bumped the package version to `0.4.14`.
